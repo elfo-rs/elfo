@@ -7,3 +7,21 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# TODO: replace `tokio` with `agnostik`.
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+#agnostik = { version = "0.2.2", default-features = false }
+
+sharded-slab = "0.1.1"
+futures-intrusive = "0.4.0"
+parking_lot = "0.11.1"
+smallbox = "0.8.0"
+serde = { version = "1.0.120", features = ["derive"] }
+derive_more = "0.99.11"
+anyhow = "1.0.38"
+tracing = "0.1.22"
+futures = "0.3.12"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+agnostik = { version = "0.2.2", default-features = false, features = ["runtime_tokio"] }
+tracing-subscriber = "0.2.15"
