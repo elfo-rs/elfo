@@ -82,6 +82,11 @@ impl<M: Message> Envelope<M> {
             message: smallbox!(self.message),
         }
     }
+
+    #[inline]
+    pub fn into_message(self) -> M {
+        self.message
+    }
 }
 
 impl Envelope {
