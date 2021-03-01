@@ -4,7 +4,7 @@
 
 pub use crate::{
     context::Context,
-    envelope::{Envelope, Message, ReplyToken},
+    envelope::{Envelope, Message, ReplyToken, Request},
 };
 
 pub mod trace_id;

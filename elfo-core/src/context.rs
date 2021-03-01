@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     addr::Addr,
     address_book::AddressBook,
-    envelope::{Envelope, Message, MessageKind},
+    envelope::{Envelope, Message, MessageKind, ReplyToken, Request},
     mailbox::{SendError, TryRecvError},
 };
 
@@ -72,6 +72,17 @@ impl<C, K> Context<C, K> {
             }
             None => Err(SendError(Some(message))),
         }
+    }
+
+    pub fn reply<R: Request>(
+        &self,
+        token: ReplyToken<R>,
+        message: impl Into<R::Response>,
+    ) -> Result<(), SendError<R>> {
+        let tx = token.into_sender();
+        let envelope = Envelope::new(self.addr, message.into(), MessageKind::regular());
+        tx.send(envelope.upcast())
+            .map_err(|err| SendError(err.0.downcast().expect("impossible").into_message()))
     }
 
     #[inline]

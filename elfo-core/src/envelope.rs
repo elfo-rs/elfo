@@ -16,6 +16,9 @@ pub struct Envelope<M = AnyMessage> {
 }
 
 pub trait Message: Any + Send + Clone {}
+pub trait Request: Message {
+    type Response: Message;
+}
 
 // TODO: make private?
 #[derive(Debug)]
@@ -56,6 +59,10 @@ impl<T> ReplyToken<T> {
     pub fn from_sender(tx: OneshotSender<Envelope>) -> Self {
         let marker = PhantomData;
         Self { tx, marker }
+    }
+
+    pub(crate) fn into_sender(self) -> OneshotSender<Envelope> {
+        self.tx
     }
 }
 

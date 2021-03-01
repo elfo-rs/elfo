@@ -31,7 +31,7 @@ impl Mailbox {
     ) -> Result<(), SendError<Envelope<M>>> {
         let fut = self.queue.send(envelope.upcast());
         fut.await
-            .map_err(|err| err.0.downcast::<M>().expect("Impossible"))
+            .map_err(|err| err.0.downcast::<M>().expect("impossible"))
             .map_err(SendError)
     }
 
@@ -43,10 +43,10 @@ impl Mailbox {
             .try_send(envelope.upcast())
             .map_err(|err| match err {
                 channel::TrySendError::Full(envelope) => {
-                    TrySendError::Full(envelope.downcast().expect("Impossible"))
+                    TrySendError::Full(envelope.downcast().expect("impossible"))
                 }
                 channel::TrySendError::Closed(envelope) => {
-                    TrySendError::Closed(envelope.downcast().expect("Impossible"))
+                    TrySendError::Closed(envelope.downcast().expect("impossible"))
                 }
             })
     }

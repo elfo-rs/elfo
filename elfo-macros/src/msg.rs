@@ -63,7 +63,7 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
     let mut groups = Vec::<MessageGroup>::with_capacity(input.arms.len());
 
     for arm in input.arms.into_iter() {
-        let kind = extract_kind(&arm.pat, true).expect("Invalid pattern");
+        let kind = extract_kind(&arm.pat, true).expect("invalid pattern");
 
         match groups.iter_mut().find(|group| group.kind == kind) {
             Some(group) => group.arms.push(arm),
