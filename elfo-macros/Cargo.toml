@@ -1,0 +1,12 @@
+[package]
+name = "elfo-macros"
+version = "0.1.0"
+authors = ["Paul Loyd <pavelko95@gmail.com>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.9"
+syn = { version = "1.0.60", features = ["full"] }

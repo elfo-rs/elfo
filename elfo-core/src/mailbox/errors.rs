@@ -50,13 +50,13 @@ pub enum TryRecvError {
 impl TryRecvError {
     /// Returns whether the error is the `Empty` variant.
     #[inline]
-    pub fn is_empty(self) -> bool {
+    pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
     }
 
     /// Returns whether the error is the `Closed` variant.
     #[inline]
-    pub fn is_closed(self) -> bool {
+    pub fn is_closed(&self) -> bool {
         matches!(self, Self::Closed)
     }
 }

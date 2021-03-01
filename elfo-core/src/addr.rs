@@ -14,6 +14,8 @@ impl fmt::Display for Addr {
 }
 
 impl Addr {
+    pub const NULL: Addr = Addr(usize::MAX);
+
     pub(crate) fn from_bits(bits: usize) -> Self {
         Addr(bits)
     }

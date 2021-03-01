@@ -94,7 +94,7 @@ impl<C, K> Context<C, K> {
 impl<C, K> Context<C, K> {
     pub(crate) fn root(book: AddressBook) -> Self {
         Self {
-            addr: Addr::from_bits(usize::MAX),
+            addr: Addr::NULL,
             book,
             _config: PhantomData,
             _key: PhantomData,

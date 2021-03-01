@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, marker::PhantomData};
 
 use futures_intrusive::channel::shared::{self, OneshotReceiver, OneshotSender};
 use smallbox::{smallbox, SmallBox};
@@ -41,6 +41,21 @@ impl MessageKind {
     pub fn request() -> (OneshotReceiver<Envelope>, Self) {
         let (tx, rx) = shared::oneshot_channel();
         (rx, MessageKind::Request(tx))
+    }
+}
+
+#[must_use]
+pub struct ReplyToken<T> {
+    tx: OneshotSender<Envelope>,
+    marker: PhantomData<T>,
+}
+
+impl<T> ReplyToken<T> {
+    #[doc(hidden)]
+    #[inline]
+    pub fn from_sender(tx: OneshotSender<Envelope>) -> Self {
+        let marker = PhantomData;
+        Self { tx, marker }
     }
 }
 
@@ -91,6 +106,11 @@ impl<M: Message> Envelope<M> {
 
 impl Envelope {
     #[inline]
+    pub fn is<M: Message>(&self) -> bool {
+        self.message.is::<M>()
+    }
+
+    #[inline]
     pub fn downcast<M: Message>(self) -> Result<Envelope<M>, Envelope> {
         match self.message.downcast::<M>() {
             Ok(message) => Ok(Envelope {
@@ -106,6 +126,61 @@ impl Envelope {
                 message,
             }),
         }
+    }
+}
+
+// Extra traits to support both owned and borrowed usages of `msg!(..)`.
+
+pub trait EnvelopeOwned {
+    fn unpack_regular(self) -> AnyMessage;
+    fn unpack_request(self) -> (AnyMessage, OneshotSender<Envelope>);
+}
+
+pub trait EnvelopeBorrowed {
+    fn unpack_regular(&self) -> &AnyMessage;
+}
+
+impl EnvelopeOwned for Envelope {
+    #[inline]
+    fn unpack_regular(self) -> AnyMessage {
+        self.message
+    }
+
+    #[inline]
+    fn unpack_request(self) -> (AnyMessage, OneshotSender<Envelope>) {
+        match self.kind {
+            MessageKind::Request(tx) => (self.message, tx),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl EnvelopeBorrowed for Envelope {
+    #[inline]
+    fn unpack_regular(&self) -> &AnyMessage {
+        &self.message
+    }
+}
+
+pub trait AnyMessageOwned {
+    fn downcast2<T: 'static>(self) -> T;
+}
+
+pub trait AnyMessageBorrowed {
+    fn downcast2<T: 'static>(&self) -> &T;
+}
+
+impl AnyMessageOwned for AnyMessage {
+    #[inline]
+    fn downcast2<T: 'static>(self) -> T {
+        self.downcast::<T>().unwrap().into_inner()
+    }
+}
+
+impl AnyMessageBorrowed for AnyMessage {
+    #[inline]
+    fn downcast2<T: 'static>(&self) -> &T {
+        self.downcast_ref::<T>().unwrap()
     }
 }
 
