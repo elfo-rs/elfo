@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Arm, ExprMatch, Pat, Path};
+use syn::{parse_macro_input, Arm, ExprMatch, Pat, PatIdent, Path};
 
 // TODO: use `proc-macro-error` instead of `panic!`.
 // TODO: use `proc-macro-crate`?
@@ -21,6 +21,10 @@ enum GroupKind {
     Wild,
 }
 
+fn is_valid_token_ident(ident: &PatIdent) -> bool {
+    !ident.ident.to_string().starts_with('_')
+}
+
 fn extract_kind(pat: &Pat, is_top_level: bool) -> Result<GroupKind, &'static str> {
     match pat {
         Pat::Box(_) => Err("box patterns are forbidden"),
@@ -37,13 +41,18 @@ fn extract_kind(pat: &Pat, is_top_level: bool) -> Result<GroupKind, &'static str
             .find_map(|pat| extract_kind(pat, false).ok())
             .ok_or("cannot determine the message's type"),
         Pat::Path(pat) => Ok(GroupKind::Regular(pat.path.clone())),
-        Pat::Range(_) => panic!("range patterns are forbidden"),
+        Pat::Range(_) => Err("range patterns are forbidden"),
         Pat::Reference(pat) => extract_kind(&pat.pat, false),
-        Pat::Rest(_) => panic!("rest patterns are forbidden"),
-        Pat::Slice(_) => panic!("slice patterns are forbidden"),
+        Pat::Rest(_) => Err("rest patterns are forbidden"),
+        Pat::Slice(_) => Err("slice patterns are forbidden"),
         Pat::Struct(pat) => Ok(GroupKind::Regular(pat.path.clone())),
         Pat::Tuple(pat) if is_top_level => {
             assert_eq!(pat.elems.len(), 2, "invalid request pattern");
+
+            match pat.elems.last().unwrap() {
+                Pat::Ident(pat) if is_valid_token_ident(pat) => {}
+                _ => panic!("the token must be used"),
+            }
 
             match extract_kind(pat.elems.first().unwrap(), false)? {
                 GroupKind::Regular(path) => Ok(GroupKind::Request(path)),
@@ -54,7 +63,7 @@ fn extract_kind(pat: &Pat, is_top_level: bool) -> Result<GroupKind, &'static str
         Pat::TupleStruct(pat) => Ok(GroupKind::Regular(pat.path.clone())),
         Pat::Type(_) => Err("type ascription patterns are forbidden"),
         Pat::Wild(_) => Ok(GroupKind::Wild),
-        _ => panic!("unknown tokens"),
+        _ => Err("unknown tokens"),
     }
 }
 
