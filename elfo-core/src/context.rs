@@ -77,10 +77,11 @@ impl<C, K> Context<C, K> {
     pub fn reply<R: Request>(
         &self,
         token: ReplyToken<R>,
-        message: impl Into<R::Response>,
+        // TODO: support many responses.
+        message: R::Response,
     ) -> Result<(), SendError<R>> {
         let tx = token.into_sender();
-        let envelope = Envelope::new(self.addr, message.into(), MessageKind::regular());
+        let envelope = Envelope::new(self.addr, message, MessageKind::regular());
         tx.send(envelope.upcast())
             .map_err(|err| SendError(err.0.downcast().expect("impossible").into_message()))
     }

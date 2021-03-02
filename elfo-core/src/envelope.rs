@@ -17,7 +17,9 @@ pub struct Envelope<M = AnyMessage> {
 
 static_assertions::assert_eq_size!(Envelope, [u8; 128]);
 
-pub trait Message: Any + Send + Clone {}
+pub trait Message: Any + Send + Clone {
+    // TODO: vtable (name, clone, serialize, etc).
+}
 pub trait Request: Message {
     type Response: Message;
 }
