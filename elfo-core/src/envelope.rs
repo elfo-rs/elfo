@@ -15,6 +15,8 @@ pub struct Envelope<M = AnyMessage> {
     message: M,
 }
 
+static_assertions::assert_eq_size!(Envelope, [u8; 128]);
+
 pub trait Message: Any + Send + Clone {}
 pub trait Request: Message {
     type Response: Message;
@@ -189,9 +191,4 @@ impl AnyMessageBorrowed for AnyMessage {
     fn downcast2<T: 'static>(&self) -> &T {
         self.downcast_ref::<T>().unwrap()
     }
-}
-
-#[test]
-fn envelope_size() {
-    assert_eq!(std::mem::size_of::<Envelope>(), 128);
 }

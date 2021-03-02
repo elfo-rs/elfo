@@ -9,6 +9,9 @@ pub(crate) struct Object {
     kind: ObjectKind,
 }
 
+// Force the size in order to avoid false sharing.
+// TODO: static_assertions::assert_eq_size!(Object, [u8; 256]);
+
 enum ObjectKind {
     Actor {
         mailbox: Mailbox,
@@ -58,10 +61,4 @@ impl Object {
             ObjectKind::Group { .. } => todo!(),
         }
     }
-}
-
-#[test]
-fn object_size() {
-    // Force the size in order to avoid false sharing.
-    assert_eq!(std::mem::size_of::<Object>(), 256);
 }
