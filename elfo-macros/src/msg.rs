@@ -123,8 +123,7 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
                 }
             },
             (GroupKind::Wild, _) => panic!("too many default branches"),
-        })
-        .collect::<Vec<_>>();
+        });
 
     let match_expr = input.expr;
 
