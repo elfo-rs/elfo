@@ -93,6 +93,14 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
         .map(|group| match (&group.kind, &group.arms[..]) {
             (GroupKind::Regular(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
+                    // TODO: replace with `static_assertions`.
+                    trait Forbidden<A, E> { fn test(_: &E) {} }
+                    impl<E, M> Forbidden<(), E> for M {}
+                    struct Invalid;
+                    impl<E: EnvelopeOwned, M: elfo::Request> Forbidden<Invalid, E> for M {}
+                    let _ = <#path as Forbidden<_, _>>::test(&#envelope_ident);
+                    // -----
+
                     let #message_ident = #envelope_ident.unpack_regular();
                     match #message_ident.downcast2::<#path>() {
                         #(#arms)*
@@ -101,7 +109,7 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
             },
             (GroupKind::Request(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
-                    // TODO: ensure `Request` instance.
+                    static_assertions::assert_impl_all!(#path: elfo::Request);
                     let (#message_ident, #tx_ident) = #envelope_ident.unpack_request();
                     let #token_ident: elfo::ReplyToken<#path> = elfo::ReplyToken::from_sender(#tx_ident);
                     match (#message_ident.downcast2::<#path>(), #token_ident) {

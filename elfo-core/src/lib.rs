@@ -25,4 +25,5 @@ pub mod _priv {
     pub use crate::envelope::{
         AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned,
     };
+    pub use static_assertions;
 }
