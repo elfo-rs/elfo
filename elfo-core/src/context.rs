@@ -46,32 +46,26 @@ impl<C, K> Context<C, K> {
         recipient: Addr,
         message: M,
     ) -> Result<(), SendError<M>> {
-        match self.book.get(recipient) {
-            Some(object) => {
-                let envelope = Envelope::new(self.addr, message, MessageKind::regular());
-                let result = object.send(envelope).await;
-                result.map_err(|err| SendError(err.0.into_message()))
-            }
-            None => Err(SendError(message)),
-        }
+        let object = ward!(self.book.get(recipient), return Err(SendError(message)));
+        let envelope = Envelope::new(self.addr, message, MessageKind::regular());
+        let result = object.send(envelope).await;
+        result.map_err(|err| SendError(err.0.into_message()))
     }
 
-    pub async fn ask<M: Message>(
+    pub async fn ask<R: Request>(
         &self,
         recipient: Addr,
-        message: M,
+        message: R,
         // TODO: avoid `Option`.
-    ) -> Result<Envelope, SendError<Option<M>>> {
-        match self.book.get(recipient) {
-            Some(object) => {
-                let (rx, kind) = MessageKind::request();
-                let envelope = Envelope::new(self.addr, message, kind);
-                let result = object.send(envelope).await;
-                result.map_err(|err| SendError(Some(err.0.into_message())))?;
-                rx.receive().await.ok_or(SendError(None))
-            }
-            None => Err(SendError(Some(message))),
-        }
+    ) -> Result<Envelope<R::Response>, SendError<Option<R>>> {
+        let book = &self.book;
+        let object = ward!(book.get(recipient), return Err(SendError(Some(message))));
+        let (rx, kind) = MessageKind::request();
+        let envelope = Envelope::new(self.addr, message, kind);
+        let result = object.send(envelope).await;
+        result.map_err(|err| SendError(Some(err.0.into_message())))?;
+        let envelope = rx.receive().await.ok_or(SendError(None))?;
+        Ok(envelope.downcast().expect("invalid response"))
     }
 
     pub fn reply<R: Request>(
@@ -90,10 +84,7 @@ impl<C, K> Context<C, K> {
     pub async fn recv(&self) -> Option<Envelope> {
         // TODO: cache `OwnedEntry`?
         let object = self.book.get(self.addr)?;
-        match object.mailbox() {
-            Some(mailbox) => mailbox.recv().await,
-            None => None,
-        }
+        object.mailbox()?.recv().await
     }
 
     #[inline]
