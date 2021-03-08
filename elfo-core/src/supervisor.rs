@@ -85,16 +85,13 @@ where
         match result {
             ActorResult::Completed => {}
             ActorResult::Failed(error) => {
-                error!(%error, "task failed");
+                error!(%error, "actor failed");
             }
             ActorResult::Panicked(panic) => {
                 let error = payload_to_string(&*panic);
-                error!(%error, "task panicked");
+                error!(%error, "actor panicked");
             }
         }
-
-        // TODO: rerun.
-        // self.context.rm_object(addr);
     }
 
     fn spawn(&self, key: R::Key) -> ObjectArc {
@@ -105,17 +102,13 @@ where
 
             let handle = tokio::spawn(async move {
                 let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
-                let res = match fut.await {
+                let _res = match fut.await {
                     Ok(Ok(())) => ActorResult::Completed,
                     Ok(Err(err)) => ActorResult::Failed(err),
                     Err(panic) => ActorResult::Panicked(panic),
                 };
 
                 // TODO
-
-                // ctx.send_to(ctx.addr(), RestartActorByKey(key))
-                //.await
-                //.expect("system message");
             });
 
             Object::new_actor(addr, handle)

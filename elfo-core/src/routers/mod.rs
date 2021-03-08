@@ -20,7 +20,7 @@ pub enum Outcome<T> {
 
 impl<T> Outcome<T> {
     #[inline]
-    fn map<U>(self, f: impl FnOnce(T) -> U) -> Outcome<U> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Outcome<U> {
         match self {
             Outcome::Unicast(val) => Outcome::Unicast(f(val)),
             Outcome::Broadcast => Outcome::Broadcast,

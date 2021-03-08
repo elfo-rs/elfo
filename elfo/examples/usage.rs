@@ -86,7 +86,9 @@ async fn main() {
     println!("system started");
     let summator = summator(&ctx);
     let producer = producer(&ctx, summator);
-    // let _ = ctx.send_to(producer, ()).await;
+    let _ = ctx.send_to(producer, Report(23)).await;
+
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     // core.wait_all().await;
     println!("everything stopped");
 }
