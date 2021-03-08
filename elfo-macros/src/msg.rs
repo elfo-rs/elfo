@@ -1,3 +1,5 @@
+use std::char;
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Arm, ExprMatch, Pat, PatIdent, Path};
@@ -25,24 +27,35 @@ fn is_valid_token_ident(ident: &PatIdent) -> bool {
     !ident.ident.to_string().starts_with('_')
 }
 
-fn extract_kind(pat: &Pat, is_top_level: bool) -> Result<GroupKind, &'static str> {
+fn extract_kind(pat: &mut Pat, is_top_level: bool) -> Result<GroupKind, &'static str> {
     match pat {
         Pat::Box(_) => Err("box patterns are forbidden"),
-        Pat::Ident(pat) => pat
-            .subpat
-            .as_ref()
-            .map(|sp| extract_kind(&sp.1, false))
-            .unwrap_or(Ok(GroupKind::Wild)),
+        Pat::Ident(pat) => match pat.subpat.as_mut() {
+            Some(sp) => extract_kind(&mut sp.1, false),
+            None => {
+                if pat
+                    .ident
+                    .to_string()
+                    .chars()
+                    .next()
+                    .map_or(false, char::is_uppercase)
+                {
+                    Ok(GroupKind::Regular(Path::from(pat.ident.clone())))
+                } else {
+                    Ok(GroupKind::Wild)
+                }
+            }
+        },
         Pat::Lit(_) => Err("literal patterns are forbidden"),
         Pat::Macro(_) => Err("macros in pattern position are forbidden"),
         Pat::Or(pat) => pat
             .cases
-            .iter()
+            .iter_mut()
             .find_map(|pat| extract_kind(pat, false).ok())
             .ok_or("cannot determine the message's type"),
         Pat::Path(pat) => Ok(GroupKind::Regular(pat.path.clone())),
         Pat::Range(_) => Err("range patterns are forbidden"),
-        Pat::Reference(pat) => extract_kind(&pat.pat, false),
+        Pat::Reference(pat) => extract_kind(&mut pat.pat, false),
         Pat::Rest(_) => Err("rest patterns are forbidden"),
         Pat::Slice(_) => Err("slice patterns are forbidden"),
         Pat::Struct(pat) => Ok(GroupKind::Regular(pat.path.clone())),
@@ -54,7 +67,7 @@ fn extract_kind(pat: &Pat, is_top_level: bool) -> Result<GroupKind, &'static str
                 _ => panic!("the token must be used"),
             }
 
-            match extract_kind(pat.elems.first().unwrap(), false)? {
+            match extract_kind(pat.elems.first_mut().unwrap(), false)? {
                 GroupKind::Regular(path) => Ok(GroupKind::Request(path)),
                 _ => Err("cannot determine the request's type"),
             }
@@ -71,8 +84,9 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ExprMatch);
     let mut groups = Vec::<MessageGroup>::with_capacity(input.arms.len());
 
-    for arm in input.arms.into_iter() {
-        let kind = extract_kind(&arm.pat, true).expect("invalid pattern");
+    for mut arm in input.arms.into_iter() {
+        let kind = extract_kind(&mut arm.pat, true).expect("invalid pattern");
+        // TODO: println!(">>> {:?} {:#?}", kind, arm.pat);
 
         match groups.iter_mut().find(|group| group.kind == kind) {
             Some(group) => group.arms.push(arm),
@@ -83,10 +97,10 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
         }
     }
 
-    let envelope_ident = quote! { __elfo_envelope };
-    let message_ident = quote! { __elfo_message };
-    let tx_ident = quote! { __elfo_tx };
-    let token_ident = quote! { __elfo_token };
+    let envelope_ident = quote! { _elfo_envelope };
+    let message_ident = quote! { _elfo_message };
+    let tx_ident = quote! { _elfo_tx };
+    let token_ident = quote! { _elfo_token };
 
     let groups = groups
         .iter()
@@ -97,7 +111,7 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
                     trait Forbidden<A, E> { fn test(_: &E) {} }
                     impl<E, M> Forbidden<(), E> for M {}
                     struct Invalid;
-                    impl<E: EnvelopeOwned, M: elfo::Request> Forbidden<Invalid, E> for M {}
+                    impl<E: EnvelopeOwned, M: ::elfo::Request> Forbidden<Invalid, E> for M {}
                     let _ = <#path as Forbidden<_, _>>::test(&#envelope_ident);
                     // -----
 
@@ -109,9 +123,9 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
             },
             (GroupKind::Request(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
-                    static_assertions::assert_impl_all!(#path: elfo::Request);
+                    assert_impl_all!(#path: ::elfo::Request);
                     let (#message_ident, #tx_ident) = #envelope_ident.unpack_request();
-                    let #token_ident: elfo::ReplyToken<#path> = elfo::ReplyToken::from_sender(#tx_ident);
+                    let #token_ident: ::elfo::ReplyToken<#path> = ::elfo::ReplyToken::from_sender(#tx_ident);
                     match (#message_ident.downcast2::<#path>(), #token_ident) {
                         #(#arms)*
                     }
@@ -129,7 +143,7 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
 
     // TODO: propagate `input.attrs`?
     let expanded = quote! {{
-        use elfo::_priv::*;
+        use ::elfo::_priv::*;
         let #envelope_ident = #match_expr;
         if false { unreachable!(); }
         #(#groups)*
