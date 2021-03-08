@@ -63,11 +63,12 @@ impl<R, C, X> ActorGroup<R, C, X> {
         }
     }
 
-    pub fn exec<X1>(self, exec: X1) -> ActorGroup<R, C, X1>
+    pub fn exec<X1, O, ER>(self, exec: X1) -> ActorGroup<R, C, X1>
     where
         R: Router,
-        X1: Exec<Context<C, R::Key>>,
-        <X1::Output as Future>::Output: ExecResult,
+        X1: Fn(Context<C, R::Key>) -> O + Send + Sync + 'static,
+        O: Future<Output = ER> + Send + 'static,
+        ER: ExecResult,
     {
         ActorGroup {
             name: self.name,

@@ -23,7 +23,7 @@ struct Terminate;
 fn producer(ctx: &Context, dest: Addr) -> Addr {
     ActorGroup::new()
         .name("producer")
-        .exec(move |ctx: Context<(), u32>| async move {
+        .exec(move |ctx| async move {
             // Send some numbers.
             for i in 0..50 {
                 let msg = AddNum {
@@ -58,7 +58,7 @@ fn summator(ctx: &Context) -> Addr {
                 _ => Outcome::Discard,
             })
         }))
-        .exec(|ctx: Context<(), u32>| async move {
+        .exec(|ctx| async move {
             let mut sum = 0;
 
             while let Some(envelope) = ctx.recv().await {
