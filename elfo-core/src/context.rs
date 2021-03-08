@@ -3,27 +3,19 @@ use std::marker::PhantomData;
 use crate::{
     addr::Addr,
     address_book::AddressBook,
-    envelope::{Envelope, Message, MessageKind, ReplyToken, Request},
+    envelope::{Envelope, MessageKind, ReplyToken},
     mailbox::{SendError, TryRecvError},
+    message::{Message, Request},
 };
 
-pub struct Context<C, K> {
+pub struct Context<C = (), K = ()> {
     addr: Addr,
     book: AddressBook,
+    key: K,
     _config: PhantomData<C>,
-    _key: PhantomData<K>,
 }
 
-impl<C, K> Clone for Context<C, K> {
-    fn clone(&self) -> Self {
-        Self {
-            addr: self.addr,
-            book: self.book.clone(),
-            _config: PhantomData,
-            _key: PhantomData,
-        }
-    }
-}
+assert_impl_all!(Context: Send);
 
 impl<C, K> Context<C, K> {
     #[inline]
@@ -38,7 +30,7 @@ impl<C, K> Context<C, K> {
 
     #[inline]
     pub fn key(&self) -> &K {
-        todo!()
+        &self.key
     }
 
     pub async fn send_to<M: Message>(
@@ -46,10 +38,12 @@ impl<C, K> Context<C, K> {
         recipient: Addr,
         message: M,
     ) -> Result<(), SendError<M>> {
-        let object = ward!(self.book.get(recipient), return Err(SendError(message)));
+        let entry = self.book.get_owned(recipient);
+        let object = ward!(entry, return Err(SendError(message)));
         let envelope = Envelope::new(self.addr, message, MessageKind::regular());
-        let result = object.send(envelope).await;
-        result.map_err(|err| SendError(err.0.into_message()))
+        let fut = object.send(self, envelope.upcast());
+        let result = fut.await;
+        result.map_err(|err| SendError(err.0.downcast().expect("impossible").into_message()))
     }
 
     pub async fn ask<R: Request>(
@@ -57,15 +51,20 @@ impl<C, K> Context<C, K> {
         recipient: Addr,
         message: R,
         // TODO: avoid `Option`.
-    ) -> Result<Envelope<R::Response>, SendError<Option<R>>> {
-        let book = &self.book;
-        let object = ward!(book.get(recipient), return Err(SendError(Some(message))));
+    ) -> Result<R::Response, SendError<Option<R>>> {
+        let entry = self.book.get_owned(recipient);
+        let object = ward!(entry, return Err(SendError(Some(message))));
         let (rx, kind) = MessageKind::request();
         let envelope = Envelope::new(self.addr, message, kind);
-        let result = object.send(envelope).await;
-        result.map_err(|err| SendError(Some(err.0.into_message())))?;
-        let envelope = rx.receive().await.ok_or(SendError(None))?;
-        Ok(envelope.downcast().expect("invalid response"))
+        let result = object.send(self, envelope.upcast()).await;
+        result
+            .map_err(|err| SendError(Some(err.0.downcast().expect("impossible").into_message())))?;
+        let envelope = rx.receive();
+        let envelope = envelope.await.ok_or(SendError(None))?;
+        Ok(envelope
+            .downcast()
+            .expect("invalid response")
+            .into_message())
     }
 
     pub fn reply<R: Request>(
@@ -83,7 +82,7 @@ impl<C, K> Context<C, K> {
     #[inline]
     pub async fn recv(&self) -> Option<Envelope> {
         // TODO: cache `OwnedEntry`?
-        let object = self.book.get(self.addr)?;
+        let object = self.book.get_owned(self.addr)?;
         object.mailbox()?.recv().await
     }
 
@@ -92,24 +91,39 @@ impl<C, K> Context<C, K> {
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
         object.mailbox().ok_or(TryRecvError::Closed)?.try_recv()
     }
-}
 
-impl<C, K> Context<C, K> {
-    pub(crate) fn root(book: AddressBook) -> Self {
-        Self {
-            addr: Addr::NULL,
-            book,
-            _config: PhantomData,
-            _key: PhantomData,
-        }
+    pub(crate) fn book(&self) -> &AddressBook {
+        &self.book
     }
 
-    pub(crate) fn child(&self, addr: Addr) -> Self {
-        Self {
+    pub(crate) fn child<C1, K1>(&self, addr: Addr, key: K1) -> Context<C1, K1> {
+        Context {
             addr,
             book: self.book.clone(),
+            key,
             _config: PhantomData,
-            _key: PhantomData,
+        }
+    }
+}
+
+impl Context<(), ()> {
+    pub fn root() -> Self {
+        Self {
+            addr: Addr::NULL,
+            book: AddressBook::new(),
+            key: (),
+            _config: PhantomData,
+        }
+    }
+}
+
+impl<C, K: Clone> Clone for Context<C, K> {
+    fn clone(&self) -> Self {
+        Self {
+            addr: self.addr,
+            book: self.book.clone(),
+            key: self.key.clone(),
+            _config: PhantomData,
         }
     }
 }

@@ -3,4 +3,6 @@
 pub use elfo_core::*;
 pub use elfo_macros::{message, msg};
 
-// TODO: add a prelude.
+pub mod prelude {
+    pub use super::{message, msg, ActorGroup, Addr, Context};
+}

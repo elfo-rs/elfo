@@ -5,6 +5,8 @@ authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+elfo-macros = { path = "../elfo-macros" }
+
 # TODO: replace `tokio` with `agnostik`.
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 sharded-slab = "0.1.1"
@@ -13,11 +15,13 @@ parking_lot = "0.11.1"
 smallbox = "0.8.0"
 serde = { version = "1.0.120", features = ["derive"] }
 derive_more = "0.99.11"
-tracing = "0.1.22"
+tracing = "0.1.25"
 futures = "0.3.12"
 static_assertions = "1.1.0"
+dashmap = "4.0.2"
+fxhash = "0.2.1"
+linkme = "0.2.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
-agnostik = { version = "0.2.2", default-features = false, features = ["runtime_tokio"] }
 tracing-subscriber = "0.2.15"

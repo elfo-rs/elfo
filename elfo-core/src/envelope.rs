@@ -1,51 +1,40 @@
-use std::{any::Any, marker::PhantomData};
+use std::marker::PhantomData;
 
 use futures_intrusive::channel::shared::{self, OneshotReceiver, OneshotSender};
-use smallbox::{smallbox, SmallBox};
+use smallbox::smallbox;
 
-use crate::{addr::Addr, trace_id::TraceId};
+use crate::{
+    addr::Addr,
+    message::{with_vtable, AnyMessage, LocalTypeId, Message},
+    trace_id::TraceId,
+};
 
-// TODO: granular messages.
-
-#[derive(Debug, Clone)]
+// TODO: use granular messages instead of `SmallBox`.
+#[derive(Debug)]
 pub struct Envelope<M = AnyMessage> {
     trace_id: TraceId,
     sender: Addr,
     kind: MessageKind,
+    ltid: LocalTypeId,
     message: M,
 }
 
-static_assertions::assert_eq_size!(Envelope, [u8; 128]);
+assert_eq_size!(Envelope, [u8; 128]);
 
-pub trait Message: Any + Send + Clone {
-    // TODO: vtable (name, clone, serialize, etc).
-}
-pub trait Request: Message {
-    type Response: Message;
-}
-
-// TODO: make private?
 #[derive(Debug)]
-pub enum MessageKind {
+pub(crate) enum MessageKind {
     Regular,
     Request(OneshotSender<Envelope>),
 }
 
-impl Clone for MessageKind {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self::Regular // TODO
-    }
-}
-
 impl MessageKind {
     #[inline]
-    pub fn regular() -> Self {
+    pub(crate) fn regular() -> Self {
         MessageKind::Regular
     }
 
     #[inline]
-    pub fn request() -> (OneshotReceiver<Envelope>, Self) {
+    pub(crate) fn request() -> (OneshotReceiver<Envelope>, Self) {
         let (tx, rx) = shared::oneshot_channel();
         (rx, MessageKind::Request(tx))
     }
@@ -70,15 +59,13 @@ impl<T> ReplyToken<T> {
     }
 }
 
-pub(crate) type AnyMessage = SmallBox<dyn Any + Send, [u8; 88]>;
-
-impl<M> Envelope<M> {
-    #[inline]
-    pub fn new(sender: Addr, message: M, kind: MessageKind) -> Self {
+impl<M: Message> Envelope<M> {
+    pub(crate) fn new(sender: Addr, message: M, kind: MessageKind) -> Self {
         Self {
             trace_id: TraceId::new(1).unwrap(), // TODO: load trace_id.
             sender,
             kind,
+            ltid: M::_LTID,
             message,
         }
     }
@@ -88,23 +75,13 @@ impl<M> Envelope<M> {
         self.sender
     }
 
-    // XXX
-    #[cfg(feature = "test-util")]
-    pub(crate) fn downgrade_to_reqular(&mut self) -> Option<OneshotSender<Envelope>> {
-        match std::mem::replace(&mut self.kind, MessageKind::Regular) {
-            MessageKind::Request(tx) => Some(tx),
-            _ => None,
-        }
-    }
-}
-
-impl<M: Message> Envelope<M> {
     #[inline]
     pub fn upcast(self) -> Envelope {
         Envelope {
             trace_id: self.trace_id,
             sender: self.sender,
             kind: self.kind,
+            ltid: self.ltid,
             message: smallbox!(self.message),
         }
     }
@@ -128,14 +105,27 @@ impl Envelope {
                 trace_id: self.trace_id,
                 sender: self.sender,
                 kind: self.kind,
+                ltid: self.ltid,
                 message: message.into_inner(),
             }),
             Err(message) => Err(Envelope {
                 trace_id: self.trace_id,
                 sender: self.sender,
                 kind: self.kind,
+                ltid: self.ltid,
                 message,
             }),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn clone(&self) -> Self {
+        Self {
+            trace_id: self.trace_id,
+            sender: self.sender,
+            kind: MessageKind::Regular, // TODO
+            ltid: self.ltid,
+            message: with_vtable(self.ltid, |vtable| (vtable.clone)(&self.message)),
         }
     }
 }

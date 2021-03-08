@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use sharded_slab::{self as slab, Slab};
+use sharded_slab::Slab;
 
-use crate::{addr::Addr, object::Object};
+use crate::{
+    addr::Addr,
+    object::{Object, ObjectArc, ObjectRef},
+};
 
 #[derive(Clone)]
 pub(crate) struct AddressBook {
@@ -10,8 +13,7 @@ pub(crate) struct AddressBook {
     slab: Arc<Slab<Object>>,
 }
 
-pub(crate) type Entry<'a> = slab::Entry<'a, Object>;
-pub(crate) type OwnedEntry = slab::OwnedEntry<Object>;
+assert_impl_all!(AddressBook: Sync);
 
 impl AddressBook {
     pub(crate) fn new() -> Self {
@@ -20,11 +22,18 @@ impl AddressBook {
         }
     }
 
-    pub(crate) fn get(&self, addr: Addr) -> Option<Entry<'_>> {
+    pub(crate) fn get(&self, addr: Addr) -> Option<ObjectRef<'_>> {
         self.slab.get(addr.into_bits())
     }
 
-    pub(crate) fn get_owned(&self, addr: Addr) -> Option<OwnedEntry> {
+    pub(crate) fn get_owned(&self, addr: Addr) -> Option<ObjectArc> {
         self.slab.clone().get_owned(addr.into_bits())
+    }
+
+    pub(crate) fn insert_with_addr(&self, f: impl FnOnce(Addr) -> Object) -> Addr {
+        let entry = self.slab.vacant_entry().expect("too many actors");
+        let key = Addr::from_bits(entry.key());
+        entry.insert(f(key));
+        key
     }
 }

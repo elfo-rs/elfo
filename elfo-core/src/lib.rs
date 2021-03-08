@@ -1,10 +1,16 @@
 #![warn(rust_2018_idioms, unreachable_pub)]
 
+#[macro_use]
+extern crate static_assertions;
+
 // TODO: missing_docs
 
 pub use crate::{
+    addr::Addr,
     context::Context,
-    envelope::{Envelope, Message, ReplyToken, Request},
+    envelope::{Envelope, ReplyToken},
+    group::ActorGroup,
+    message::{Message, Request},
 };
 
 /// Returns the contents of a `Option<T>`'s `Some(T)`, otherwise it returns
@@ -16,6 +22,7 @@ macro_rules! ward {
     ($o:expr, $early:stmt) => (ward!($o, else { $early }));
 }
 
+pub mod routers;
 pub mod trace_id;
 
 pub mod errors {
@@ -26,13 +33,20 @@ mod addr;
 mod address_book;
 mod context;
 mod envelope;
+mod exec;
+mod group;
 mod mailbox;
+mod message;
 mod object;
+mod supervisor;
 
 #[doc(hidden)]
 pub mod _priv {
-    pub use crate::envelope::{
-        AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned,
+    pub use crate::{
+        envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
+        message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},
     };
-    pub use static_assertions;
+    pub use linkme;
+    pub use smallbox;
+    pub use static_assertions::assert_impl_all;
 }

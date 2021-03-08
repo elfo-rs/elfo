@@ -7,3 +7,7 @@ edition = "2018"
 [dependencies]
 elfo-core = { path = "../elfo-core" }
 elfo-macros = { path = "../elfo-macros" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tracing-subscriber = "0.2.15"

@@ -4,13 +4,15 @@ use futures_intrusive::{
 };
 use parking_lot::RawMutex;
 
-use crate::envelope::{Envelope, Message};
+use crate::envelope::Envelope;
 
+#[allow(unreachable_pub)]
 pub use errors::{SendError, TryRecvError, TrySendError};
 
 mod errors;
 
 // TODO: make mailboxes bounded by time instead of size.
+// TODO: use it.
 const LIMIT: usize = 128;
 
 pub(crate) struct Mailbox {
@@ -25,30 +27,16 @@ impl Mailbox {
         }
     }
 
-    pub(crate) async fn send<M: Message>(
-        &self,
-        envelope: Envelope<M>,
-    ) -> Result<(), SendError<Envelope<M>>> {
-        let fut = self.queue.send(envelope.upcast());
-        fut.await
-            .map_err(|err| err.0.downcast::<M>().expect("impossible"))
-            .map_err(SendError)
+    pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
+        let fut = self.queue.send(envelope);
+        fut.await.map_err(|err| SendError(err.0))
     }
 
-    pub(crate) fn try_send<M: Message>(
-        &self,
-        envelope: Envelope<M>,
-    ) -> Result<(), TrySendError<Envelope<M>>> {
-        self.queue
-            .try_send(envelope.upcast())
-            .map_err(|err| match err {
-                channel::TrySendError::Full(envelope) => {
-                    TrySendError::Full(envelope.downcast().expect("impossible"))
-                }
-                channel::TrySendError::Closed(envelope) => {
-                    TrySendError::Closed(envelope.downcast().expect("impossible"))
-                }
-            })
+    pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
+        self.queue.try_send(envelope).map_err(|err| match err {
+            channel::TrySendError::Full(envelope) => TrySendError::Full(envelope),
+            channel::TrySendError::Closed(envelope) => TrySendError::Closed(envelope),
+        })
     }
 
     pub(crate) async fn recv(&self) -> Option<Envelope> {
