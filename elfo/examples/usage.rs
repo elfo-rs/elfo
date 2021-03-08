@@ -10,7 +10,7 @@ struct AddNum {
     num: u32,
 }
 
-#[message(response(Report))]
+#[message(ret = Report)]
 struct Summarize {
     group: u32,
 }

@@ -1,6 +1,6 @@
 use elfo::{prelude::*, Envelope};
 
-#[message(response(Num))]
+#[message(ret = Num)]
 #[derive(Debug, PartialEq)]
 pub struct Num(pub u32);
 

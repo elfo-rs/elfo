@@ -3,39 +3,30 @@ use std::time::UNIX_EPOCH;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
-    parse_macro_input,
-    punctuated::Punctuated,
-    DeriveInput, Ident, Path, Token,
+    parse_macro_input, DeriveInput, Ident, Path, Token,
 };
 
 struct MessageArgs {
-    responses: Vec<Path>,
+    response: Option<Path>,
 }
 
 impl Parse for MessageArgs {
     fn parse(input: ParseStream<'_>) -> Result<Self, ParseError> {
         // `#[message]`
         if input.is_empty() {
-            return Ok(MessageArgs {
-                responses: Vec::new(),
-            });
+            return Ok(MessageArgs { response: None });
         }
 
-        // `#[message(response(A, B, C))]`
+        // `#[message(ret = Ret)]`
         let ident: Ident = input.parse()?;
-        assert_eq!(ident.to_string(), "response");
+        assert_eq!(ident.to_string(), "ret");
 
-        let content;
-        parenthesized!(content in input);
-        let punctuated: Punctuated<Path, Token![,]> = content.parse_terminated(Path::parse)?;
+        let _: Token![=] = input.parse()?;
+        let path: Path = input.parse()?;
 
         Ok(MessageArgs {
-            responses: punctuated
-                .into_pairs()
-                .map(|pair| pair.into_value())
-                .collect(),
+            response: Some(path),
         })
     }
 }
@@ -54,11 +45,10 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let mod_name = Ident::new(&format!("_elfo_{}", name), name.span());
     let ltid = gen_ltid();
 
-    let derive_request = if !args.responses.is_empty() {
-        let responses = args.responses;
+    let derive_request = if let Some(response) = args.response {
         quote! {
             impl elfo::Request for #name {
-                type Response = #(#responses)*;
+                type Response = #response;
             }
         }
     } else {
