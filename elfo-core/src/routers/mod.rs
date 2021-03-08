@@ -30,10 +30,10 @@ impl<T> Outcome<T> {
 }
 
 impl Router for () {
-    type Key = ();
+    type Key = u32;
 
     #[inline]
     fn route(&self, _: &Envelope) -> Outcome<Self::Key> {
-        Outcome::Unicast(())
+        Outcome::Unicast(0)
     }
 }

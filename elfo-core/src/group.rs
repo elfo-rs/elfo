@@ -1,4 +1,4 @@
-use std::{future::Future, hash::Hash, marker::PhantomData};
+use std::{fmt::Display, future::Future, hash::Hash, marker::PhantomData};
 
 use smallbox::{smallbox, SmallBox};
 
@@ -21,6 +21,7 @@ pub struct ActorGroup<R, C, X> {
 }
 
 impl ActorGroup<(), (), ()> {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             name: "<unnamed>".into(),
@@ -79,14 +80,14 @@ impl<R, C, X> ActorGroup<R, C, X> {
     pub fn spawn<PC, PK>(self, ctx: &Context<PC, PK>) -> Addr
     where
         R: Router,
-        R::Key: Clone + Hash + Eq + Send + Sync, // TODO: why is `Sync` required?
+        R::Key: Clone + Hash + Eq + Display + Send + Sync, // TODO: why is `Sync` required?
         C: Send + Sync + 'static,
         X: Exec<Context<C, R::Key>>,
         <X::Output as Future>::Output: ExecResult,
     {
         ctx.book().insert_with_addr(|addr| {
             let ctx: Context<C, _> = ctx.child(addr, ());
-            let sv = Supervisor::new(ctx, self.exec, self.router);
+            let sv = Supervisor::new(ctx, self.name, self.exec, self.router);
             Object::new_group(addr, smallbox!(move |envelope| { sv.route(envelope) }))
         })
     }

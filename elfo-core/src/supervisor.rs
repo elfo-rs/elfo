@@ -1,9 +1,9 @@
-use std::{any::Any, future::Future, hash::Hash, panic::AssertUnwindSafe};
+use std::{any::Any, fmt::Display, future::Future, hash::Hash, panic::AssertUnwindSafe};
 
 use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
-use tracing::error;
+use tracing::{error, error_span, Instrument, Span};
 
 use crate::{
     addr::Addr,
@@ -16,23 +16,23 @@ use crate::{
 };
 
 pub(crate) struct Supervisor<R: Router, C, X> {
+    name: String,
     context: Context<C, ()>,
     objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
     router: R,
     exec: X,
 }
 
-// as Exec<Context<C, <R as Router>::Key>>>::Output: futures::Future<Output =
-// ER>, ER: ExecResult,
 impl<R, C, X> Supervisor<R, C, X>
 where
     R: Router,
-    R::Key: Clone + Hash + Eq,
+    R::Key: Clone + Hash + Eq + Display,
     X: Exec<Context<C, R::Key>>,
     <X::Output as Future>::Output: ExecResult,
 {
-    pub(crate) fn new(ctx: Context<C, ()>, exec: X, router: R) -> Self {
+    pub(crate) fn new(ctx: Context<C, ()>, name: String, exec: X, router: R) -> Self {
         Self {
+            name,
             context: ctx,
             objects: DashMap::default(),
             router,
@@ -96,11 +96,14 @@ where
 
     fn spawn(&self, key: R::Key) -> ObjectArc {
         let addr = self.context.book().insert_with_addr(move |addr| {
-            let ctx = self.context.clone();
-            // TODO: protect against panics (for `fn(..) -> impl Future`).
-            let fut = self.exec.exec(ctx.child(addr, key.clone()));
+            let full_name = format!("{}.{}", self.name, key);
+            let span = error_span!(parent: Span::none(), "", actor = %full_name);
+            let _entered = span.enter();
 
-            let handle = tokio::spawn(async move {
+            // TODO: protect against panics (for `fn(..) -> impl Future`).
+            let ctx = self.context.clone();
+            let fut = self.exec.exec(ctx.child(addr, key.clone()));
+            let fut = async move {
                 let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
                 let _res = match fut.await {
                     Ok(Ok(())) => ActorResult::Completed,
@@ -109,7 +112,10 @@ where
                 };
 
                 // TODO
-            });
+            };
+
+            drop(_entered);
+            let handle = tokio::spawn(fut.instrument(span));
 
             Object::new_actor(addr, handle)
         });

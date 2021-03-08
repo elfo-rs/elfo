@@ -2,6 +2,7 @@ use elfo::{
     prelude::*,
     routers::{MapRouter, Outcome},
 };
+use tracing::info;
 
 #[message]
 struct AddNum {
@@ -22,7 +23,7 @@ struct Terminate;
 fn producer(ctx: &Context, dest: Addr) -> Addr {
     ActorGroup::new()
         .name("producer")
-        .exec(move |ctx: Context<(), ()>| async move {
+        .exec(move |ctx: Context<(), u32>| async move {
             // Send some numbers.
             for i in 0..50 {
                 let msg = AddNum {
@@ -30,13 +31,13 @@ fn producer(ctx: &Context, dest: Addr) -> Addr {
                     num: i,
                 };
                 let _ = ctx.send_to(dest, msg).await;
-                println!("sent {}", i);
+                info!(%i, "sent");
             }
 
             // Ask every group.
             for &group in &[0, 1, 2] {
                 if let Ok(report) = ctx.ask(dest, Summarize { group }).await {
-                    println!("group={} sum={}", group, report.0);
+                    info!(group, sum = report.0, "asked");
                 }
             }
 
@@ -63,7 +64,7 @@ fn summator(ctx: &Context) -> Addr {
             while let Some(envelope) = ctx.recv().await {
                 msg!(match envelope {
                     msg @ AddNum { .. } => {
-                        println!("got {}", msg.num);
+                        info!(num = msg.num, "got");
                         sum += msg.num;
                     }
                     (Summarize { .. }, token) => {
@@ -81,14 +82,18 @@ fn summator(ctx: &Context) -> Addr {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .init();
+
     let ctx = Context::root();
 
-    println!("system started");
+    info!("system started");
     let summator = summator(&ctx);
     let producer = producer(&ctx, summator);
     let _ = ctx.send_to(producer, Report(23)).await;
 
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     // core.wait_all().await;
-    println!("everything stopped");
+    info!("everything stopped");
 }
