@@ -94,4 +94,4 @@ impl<R, C, X> ActorGroup<R, C, X> {
     }
 }
 
-pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 160]>;
+pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 220]>;

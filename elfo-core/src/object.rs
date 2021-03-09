@@ -16,7 +16,7 @@ pub(crate) struct Object {
 }
 
 assert_impl_all!(Object: Sync);
-// TODO: assert_eq_size!(Object, [u8; 256]);
+assert_eq_size!(Object, [u8; 256]);
 
 pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object>;
 pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object>;
