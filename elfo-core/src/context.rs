@@ -63,6 +63,16 @@ impl<C, K> Context<C, K> {
             return Err(SendError(downcast(envelope)));
         }
 
+        if addrs.len() == 1 {
+            return match self.book.get_owned(addrs[0]) {
+                Some(object) => object
+                    .send(self, envelope)
+                    .await
+                    .map_err(|err| SendError(downcast(err.0))),
+                None => Err(SendError(downcast(envelope))),
+            };
+        }
+
         let mut unused = None;
         let mut success = false;
 
