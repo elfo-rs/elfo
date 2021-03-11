@@ -21,6 +21,7 @@ static_assertions = "1.1.0"
 dashmap = "4.0.2"
 fxhash = "0.2.1"
 linkme = "0.2.4"
+smallvec = { version = "1.6.1", features = ["union"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

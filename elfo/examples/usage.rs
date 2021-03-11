@@ -20,40 +20,38 @@ struct Report(u32);
 #[message]
 struct Terminate;
 
-fn producer(ctx: &Context, dest: Addr) -> Addr {
-    ActorGroup::new()
-        .name("producer")
-        .exec(move |ctx| async move {
-            // Send some numbers.
-            for i in 0..50 {
-                let msg = AddNum {
-                    group: i % 3,
-                    num: i,
-                };
-                let _ = ctx.send_to(dest, msg).await;
-                info!(%i, "sent");
-            }
+fn producers() -> Schema {
+    ActorGroup::new().exec(move |ctx| async move {
+        // Send some numbers.
+        for i in 0..50 {
+            let msg = AddNum {
+                group: i % 3,
+                num: i,
+            };
+            let _ = ctx.send(msg).await;
+            info!(%i, "sent");
+        }
 
-            // Ask every group.
-            for &group in &[0, 1, 2] {
-                if let Ok(report) = ctx.ask(dest, Summarize { group }).await {
-                    info!(group, sum = report.0, "asked");
-                }
+        // Ask every group.
+        for &group in &[0, 1, 2] {
+            if let Ok(report) = ctx.request(Summarize { group }).await {
+                info!(group, sum = report.0, "asked");
             }
+        }
 
-            // Terminate everything.
-            let _ = ctx.send_to(dest, Terminate).await;
-        })
-        .spawn(ctx)
+        // Terminate everything.
+        let _ = ctx.send(Terminate).await;
+    })
 }
 
-fn summator(ctx: &Context) -> Addr {
+fn summators() -> Schema {
     ActorGroup::new()
-        .name("summator")
         .router(MapRouter::new(|envelope| {
             msg!(match envelope {
                 AddNum { group, .. } => Outcome::Unicast(*group),
-                Summarize { group, .. } => Outcome::Unicast(*group),
+                Summarize { group, .. } => {
+                    Outcome::Unicast(*group)
+                }
                 Terminate => Outcome::Broadcast,
                 _ => Outcome::Discard,
             })
@@ -68,7 +66,7 @@ fn summator(ctx: &Context) -> Addr {
                         sum += msg.num;
                     }
                     (Summarize { .. }, token) => {
-                        let _ = ctx.reply(token, Report(sum));
+                        let _ = ctx.respond(token, Report(sum));
                     }
                     Terminate => break,
                     _ => {}
@@ -77,7 +75,6 @@ fn summator(ctx: &Context) -> Addr {
 
             Err("some error")
         })
-        .spawn(ctx)
 }
 
 #[tokio::main]
@@ -86,14 +83,24 @@ async fn main() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    let ctx = Context::root();
+    let topology = elfo::Topology::default();
 
-    info!("system started");
-    let summator = summator(&ctx);
-    let producer = producer(&ctx, summator);
-    let _ = ctx.send_to(producer, Report(23)).await;
+    let producers = topology.local("producers");
+    let summators = topology.local("summators");
+    // let informers = topology.remote("informers");
 
-    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-    // core.wait_all().await;
-    info!("everything stopped");
+    // producers.route_to(&summators, |e| {
+    // msg!(match e {
+    // AddNum { .. } | Summarize { .. } | Terminate => true,
+    //_ => false,
+    //});
+
+    producers.route_to(&summators, |_e| true);
+
+    // (&producers + &summators).route_all_to(&informers);
+
+    summators.mount(self::summators(), None::<Report>).await;
+    producers.mount(self::producers(), Some(Report(2))).await;
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 }

@@ -1,98 +1,72 @@
 use std::{fmt::Display, future::Future, hash::Hash, marker::PhantomData};
 
-use smallbox::{smallbox, SmallBox};
+use smallbox::smallbox;
 
 use crate::{
-    addr::Addr,
-    context::Context,
-    envelope::Envelope,
-    exec::{Exec, ExecResult},
-    object::Object,
-    routers::Router,
-    supervisor::{RouteReport, Supervisor},
+    context::Context, exec::ExecResult, object::Object, routers::Router, supervisor::Supervisor,
 };
 
 #[derive(Debug)]
-pub struct ActorGroup<R, C, X> {
-    name: String,
+pub struct ActorGroup<R, C> {
     router: R,
-    exec: X,
     _config: PhantomData<C>,
 }
 
-impl ActorGroup<(), (), ()> {
+impl ActorGroup<(), ()> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
-            name: "<unnamed>".into(),
             router: (),
-            exec: (),
             _config: PhantomData,
         }
     }
 }
 
-impl<R, C, X> ActorGroup<R, C, X> {
-    pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.name = name.into();
-        self
-    }
-
-    pub fn config<C1>(self) -> ActorGroup<R, C1, X>
+impl<R, C> ActorGroup<R, C> {
+    pub fn config<C1>(self) -> ActorGroup<R, C1>
     where
         C1: Send + Sync + 'static,
     {
         ActorGroup {
-            name: self.name,
             router: self.router,
-            exec: self.exec,
             _config: PhantomData,
         }
     }
 
-    pub fn router<R1>(self, router: R1) -> ActorGroup<R1, C, X>
+    pub fn router<R1>(self, router: R1) -> ActorGroup<R1, C>
     where
         R1: Router,
         R1::Key: Clone + Hash + Eq + Send + Sync, // TODO: why is `Sync` required?
     {
         ActorGroup {
-            name: self.name,
             router,
-            exec: self.exec,
             _config: self._config,
         }
     }
 
-    pub fn exec<X1, O, ER>(self, exec: X1) -> ActorGroup<R, C, X1>
-    where
-        R: Router,
-        X1: Fn(Context<C, R::Key>) -> O + Send + Sync + 'static,
-        O: Future<Output = ER> + Send + 'static,
-        ER: ExecResult,
-    {
-        ActorGroup {
-            name: self.name,
-            router: self.router,
-            exec,
-            _config: self._config,
-        }
-    }
-
-    pub fn spawn<PC, PK>(self, ctx: &Context<PC, PK>) -> Addr
+    pub fn exec<X, O, ER>(self, exec: X) -> Schema
     where
         R: Router,
         R::Key: Clone + Hash + Eq + Display + Send + Sync, // TODO: why is `Sync` required?
+        X: Fn(Context<C, R::Key>) -> O + Send + Sync + 'static,
+        O: Future<Output = ER> + Send + 'static,
+        ER: ExecResult,
+        // TODO
         C: Send + Sync + 'static,
-        X: Exec<Context<C, R::Key>>,
-        <X::Output as Future>::Output: ExecResult,
+        /* X: Exec<Context<C, R::Key>>,
+         * as Future>::Output: ExecResult, */
     {
-        let entry = ctx.book().vacant_entry();
-        let addr = entry.addr();
-        let ctx: Context<C, _> = ctx.child(addr, ());
-        let sv = Supervisor::new(ctx, self.name, self.exec, self.router);
-        let object = Object::new_group(addr, smallbox!(move |envelope| { sv.route(envelope) }));
-        entry.insert(object);
+        let run = move |ctx: Context, name: String| {
+            let ctx = ctx.with_config::<C>();
+            let addr = ctx.addr();
+            let sv = Supervisor::new(ctx, name, exec, self.router);
+            Object::new_group(addr, smallbox!(move |envelope| { sv.route(envelope) }))
+        };
+
+        Schema { run: Box::new(run) }
     }
 }
 
-pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 220]>;
+pub struct Schema {
+    pub(crate) run: Box<dyn FnOnce(Context, String) -> Object>,
+}

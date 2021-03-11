@@ -29,7 +29,7 @@ fn test(ctx: Context<(), ()>, envelope: elfo::Envelope) {
         // TODO
         // n @ Num2 => Num(n.inner),
         (num @ Num(_), token) => {
-            let _ = ctx.reply(token, num.clone());
+            let _ = ctx.respond(token, num.clone());
             num
         }
         _ => Num(0),

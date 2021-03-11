@@ -1,11 +1,12 @@
 use futures::future::join_all;
 use tokio::{sync::Mutex, task::JoinHandle};
 
+use smallbox::SmallBox;
+
 use crate::{
     addr::Addr,
     context::Context,
     envelope::Envelope,
-    group::GroupRouter,
     mailbox::{Mailbox, SendError},
     supervisor::RouteReport,
 };
@@ -119,3 +120,5 @@ struct ActorHandle {
 struct GroupHandle {
     router: GroupRouter,
 }
+
+pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 220]>;

@@ -9,8 +9,9 @@ pub use crate::{
     addr::Addr,
     context::Context,
     envelope::{Envelope, ReplyToken},
-    group::ActorGroup,
+    group::{ActorGroup, Schema},
     message::{Message, Request},
+    topology::Topology,
 };
 
 /// Returns the contents of a `Option<T>`'s `Some(T)`, otherwise it returns
@@ -32,6 +33,7 @@ pub mod errors {
 mod addr;
 mod address_book;
 mod context;
+mod demux;
 mod envelope;
 mod exec;
 mod group;
@@ -39,6 +41,7 @@ mod mailbox;
 mod message;
 mod object;
 mod supervisor;
+mod topology;
 
 #[doc(hidden)]
 pub mod _priv {

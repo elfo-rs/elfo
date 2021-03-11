@@ -28,6 +28,7 @@ pub static MESSAGE_LIST: [MessageVTable] = [..];
 
 thread_local! {
     // TODO: access it speculatively during initialization.
+    // TODO: use simd + `SmallVec<[Vec<MessageVTable>; N]>` and sequential LTIDs.
     static MESSAGE_BY_LTID: FxHashMap<LocalTypeId, MessageVTable> = {
         MESSAGE_LIST.iter()
             .map(|vtable| (vtable.ltid, vtable.clone()))

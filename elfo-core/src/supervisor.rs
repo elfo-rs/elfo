@@ -103,8 +103,8 @@ where
         let _entered = span.enter();
 
         // TODO: protect against panics (for `fn(..) -> impl Future`).
-        let ctx = self.context.clone();
-        let fut = self.exec.exec(ctx.child(addr, key.clone()));
+        let ctx = self.context.clone().with_addr(addr).with_key(key);
+        let fut = self.exec.exec(ctx);
         let fut = async move {
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             let _res = match fut.await {

@@ -1,6 +1,6 @@
 use std::{error::Error, future::Future};
 
-pub trait Exec<CTX>: Send + Sync + 'static {
+pub(crate) trait Exec<CTX>: Send + Sync + 'static {
     type Output: Future + Send + 'static;
 
     fn exec(&self, ctx: CTX) -> Self::Output;
