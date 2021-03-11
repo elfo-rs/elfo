@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use sharded_slab::Slab;
+use sharded_slab::{self as slab, Slab};
 
 use crate::{
     addr::Addr,
@@ -30,10 +30,22 @@ impl AddressBook {
         self.slab.clone().get_owned(addr.into_bits())
     }
 
-    pub(crate) fn insert_with_addr(&self, f: impl FnOnce(Addr) -> Object) -> Addr {
-        let entry = self.slab.vacant_entry().expect("too many actors");
-        let key = Addr::from_bits(entry.key());
-        entry.insert(f(key));
-        key
+    pub(crate) fn vacant_entry(&self) -> VacantEntry<'_> {
+        self.slab
+            .vacant_entry()
+            .map(VacantEntry)
+            .expect("too many actors")
+    }
+}
+
+pub(crate) struct VacantEntry<'b>(slab::VacantEntry<'b, Object>);
+
+impl<'b> VacantEntry<'b> {
+    pub(crate) fn insert(self, object: Object) {
+        self.0.insert(object)
+    }
+
+    pub(crate) fn addr(&self) -> Addr {
+        Addr::from_bits(self.0.key())
     }
 }

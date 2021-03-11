@@ -86,11 +86,12 @@ impl<R, C, X> ActorGroup<R, C, X> {
         X: Exec<Context<C, R::Key>>,
         <X::Output as Future>::Output: ExecResult,
     {
-        ctx.book().insert_with_addr(|addr| {
-            let ctx: Context<C, _> = ctx.child(addr, ());
-            let sv = Supervisor::new(ctx, self.name, self.exec, self.router);
-            Object::new_group(addr, smallbox!(move |envelope| { sv.route(envelope) }))
-        })
+        let entry = ctx.book().vacant_entry();
+        let addr = entry.addr();
+        let ctx: Context<C, _> = ctx.child(addr, ());
+        let sv = Supervisor::new(ctx, self.name, self.exec, self.router);
+        let object = Object::new_group(addr, smallbox!(move |envelope| { sv.route(envelope) }));
+        entry.insert(object);
     }
 }
 

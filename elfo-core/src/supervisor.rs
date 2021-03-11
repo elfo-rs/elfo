@@ -95,30 +95,31 @@ where
     }
 
     fn spawn(&self, key: R::Key) -> ObjectArc {
-        let addr = self.context.book().insert_with_addr(move |addr| {
-            let full_name = format!("{}.{}", self.name, key);
-            let span = error_span!(parent: Span::none(), "", actor = %full_name);
-            let _entered = span.enter();
+        let entry = self.context.book().vacant_entry();
+        let addr = entry.addr();
 
-            // TODO: protect against panics (for `fn(..) -> impl Future`).
-            let ctx = self.context.clone();
-            let fut = self.exec.exec(ctx.child(addr, key.clone()));
-            let fut = async move {
-                let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
-                let _res = match fut.await {
-                    Ok(Ok(())) => ActorResult::Completed,
-                    Ok(Err(err)) => ActorResult::Failed(err),
-                    Err(panic) => ActorResult::Panicked(panic),
-                };
+        let full_name = format!("{}.{}", self.name, key);
+        let span = error_span!(parent: Span::none(), "", actor = %full_name);
+        let _entered = span.enter();
 
-                // TODO
+        // TODO: protect against panics (for `fn(..) -> impl Future`).
+        let ctx = self.context.clone();
+        let fut = self.exec.exec(ctx.child(addr, key.clone()));
+        let fut = async move {
+            let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
+            let _res = match fut.await {
+                Ok(Ok(())) => ActorResult::Completed,
+                Ok(Err(err)) => ActorResult::Failed(err),
+                Err(panic) => ActorResult::Panicked(panic),
             };
 
-            drop(_entered);
-            let handle = tokio::spawn(fut.instrument(span));
+            // TODO
+        };
 
-            Object::new_actor(addr, handle)
-        });
+        drop(_entered);
+        let handle = tokio::spawn(fut.instrument(span));
+
+        entry.insert(Object::new_actor(addr, handle));
 
         self.context.book().get_owned(addr).expect("just created")
     }
