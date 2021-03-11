@@ -40,7 +40,7 @@ where
         }
     }
 
-    pub(crate) fn route(&self, envelope: Envelope) -> RouteReport {
+    pub(crate) fn handle(&self, envelope: Envelope) -> RouteReport {
         let outcome = self.router.route(&envelope);
 
         match outcome {

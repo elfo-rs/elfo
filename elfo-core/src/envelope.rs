@@ -118,7 +118,6 @@ impl Envelope {
         }
     }
 
-    #[inline]
     pub(crate) fn clone(&self) -> Self {
         Self {
             trace_id: self.trace_id,

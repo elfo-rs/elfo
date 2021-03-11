@@ -60,7 +60,7 @@ impl<R, C> ActorGroup<R, C> {
             let ctx = ctx.with_config::<C>();
             let addr = ctx.addr();
             let sv = Supervisor::new(ctx, name, exec, self.router);
-            Object::new_group(addr, smallbox!(move |envelope| { sv.route(envelope) }))
+            Object::new_group(addr, smallbox!(move |envelope| { sv.handle(envelope) }))
         };
 
         Schema { run: Box::new(run) }
