@@ -3,11 +3,8 @@ use std::time::UNIX_EPOCH;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
-    parse_macro_input, parse_quote,
-    punctuated::Punctuated,
-    DeriveInput, Ident, Path, Token, Type,
+    parse_macro_input, parse_quote, DeriveInput, Ident, Path, Token, Type,
 };
 
 #[derive(Debug)]
@@ -70,10 +67,34 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let ltid = gen_ltid();
     let crate_ = args.crate_;
 
-    let derive_request = if let Some(ret) = args.ret {
+    let derive_request = if let Some(ret) = &args.ret {
         quote! {
             impl #crate_::Request for #name {
                 type Response = #ret;
+                type Wrapper = #mod_name::Wrapper;
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let request_wrapper = if let Some(ret) = &args.ret {
+        quote! {
+            #[message(elfo = #crate_)] // `message` is imported in the module.
+            pub struct Wrapper(#ret);
+
+            impl From<#ret> for Wrapper {
+                #[inline]
+                fn from(inner: #ret) -> Self {
+                    Wrapper(inner)
+                }
+            }
+
+            impl From<Wrapper> for #ret {
+                #[inline]
+                fn from(wrapper: Wrapper) -> Self {
+                    wrapper.0
+                }
             }
         }
     } else {
@@ -91,9 +112,12 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
         #[allow(non_snake_case)]
         mod #mod_name {
-            use super::#name;
+            use super::*;
 
             use #crate_::_priv::{MESSAGE_LIST, MessageVTable, smallbox::{smallbox}, AnyMessage, linkme};
+            use #crate_::message;
+
+            #request_wrapper
 
             fn clone(message: &AnyMessage) -> AnyMessage {
                 smallbox!(message.downcast_ref::<#name>().expect("invalid vtable").clone())

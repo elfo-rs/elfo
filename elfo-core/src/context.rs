@@ -49,10 +49,12 @@ impl<C, K> Context<C, K> {
             .await
             .map_err(|err| SendError(Some(err.0)))?;
         let envelope = rx.receive().await.ok_or(SendError(None))?;
-        Ok(envelope
+        let wrapper: R::Wrapper = envelope
             .downcast()
             .expect("invalid response")
-            .into_message())
+            .into_message();
+
+        Ok(wrapper.into())
     }
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
@@ -128,10 +130,12 @@ impl<C, K> Context<C, K> {
             .map_err(|err| SendError(Some(err.0.downcast().expect("impossible").into_message())))?;
         let envelope = rx.receive();
         let envelope = envelope.await.ok_or(SendError(None))?;
-        Ok(envelope
+        let wrapper: R::Wrapper = envelope
             .downcast()
             .expect("invalid response")
-            .into_message())
+            .into_message();
+
+        Ok(wrapper.into())
     }
 
     pub fn respond<R: Request>(
@@ -140,11 +144,11 @@ impl<C, K> Context<C, K> {
         token: ReplyToken<R>,
         // TODO: support many responses.
         message: R::Response,
-    ) -> Result<(), SendError<R>> {
+    ) -> Result<(), SendError<()>> {
         let tx = token.into_sender();
+        let message = R::Wrapper::from(message);
         let envelope = Envelope::new(self.addr, message, MessageKind::regular());
-        tx.send(envelope.upcast())
-            .map_err(|err| SendError(err.0.downcast().expect("impossible").into_message()))
+        tx.send(envelope.upcast()).map_err(|_| SendError(()))
     }
 
     #[inline]
