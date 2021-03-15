@@ -2,16 +2,16 @@ use derive_more::{Display, Error};
 
 #[derive(Debug, Display, Error)]
 #[display(fmt = "mailbox closed")]
-pub struct SendError<T>(pub T);
+pub struct SendError<T>(#[error(not(source))] pub T);
 
 #[derive(Debug, Display, Error)]
 pub enum TrySendError<T> {
     /// The channel is full.
     #[display(fmt = "mailbox full")]
-    Full(T),
+    Full(#[error(not(source))] T),
     /// The channel has been closed.
     #[display(fmt = "mailbox closed")]
-    Closed(T),
+    Closed(#[error(not(source))] T),
 }
 
 impl<T> TrySendError<T> {
