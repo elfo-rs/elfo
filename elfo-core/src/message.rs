@@ -12,7 +12,10 @@ pub trait Message: Any + Send {
 }
 
 pub trait Request: Message {
-    type Response: Message;
+    type Response;
+
+    #[doc(hidden)]
+    type Wrapper: Message + Into<Self::Response> + From<Self::Response>;
 }
 
 pub type AnyMessage = SmallBox<dyn Any + Send, [u8; 80]>;
