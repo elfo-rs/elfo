@@ -1,11 +1,18 @@
 use proc_macro::TokenStream;
+use syn::parse_quote;
 
 mod message;
 mod msg;
 
 #[proc_macro]
 pub fn msg(input: TokenStream) -> TokenStream {
-    msg::msg_impl(input)
+    msg::msg_impl(input, parse_quote!(::elfo))
+}
+
+// TODO: is it enough to have only one `msg!` instead?
+#[proc_macro]
+pub fn msg_internal(input: TokenStream) -> TokenStream {
+    msg::msg_impl(input, parse_quote!(crate))
 }
 
 #[proc_macro_attribute]

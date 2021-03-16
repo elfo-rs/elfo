@@ -1,7 +1,7 @@
 use std::time::UNIX_EPOCH;
 
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote, ToTokens};
 use syn::{
     parse::{Error as ParseError, Parse, ParseStream},
     parse_macro_input, parse_quote, DeriveInput, Ident, Path, Token, Type,
@@ -24,7 +24,7 @@ impl Parse for MessageArgs {
 
         // `#[message]`
         // `#[message(ret(A))]`
-        // `#[message(ret(A), crate = "some")]`
+        // `#[message(ret(A), crate = some)]`
         // `#[message(crate = some::path)]`
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
@@ -63,8 +63,9 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     // TODO: what about parsing into something cheaper?
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident.clone();
-    let mod_name = Ident::new(&format!("_elfo_{}", name), name.span());
+    let mod_name = format_ident!("_elfo_{}", name);
     let ltid = gen_ltid();
+    let serde_crate = format!("{}::_priv::serde", args.crate_.to_token_stream());
     let crate_ = args.crate_;
 
     let derive_request = if let Some(ret) = &args.ret {
@@ -101,9 +102,10 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    // TODO: impl `Serialize` and `Deserialize`.
     TokenStream::from(quote! {
         #[derive(Clone)]
+        #[derive(#crate_::_priv::serde::Serialize, #crate_::_priv::serde::Deserialize)]
+        #[serde(crate = #serde_crate)]
         #input
 
         impl #crate_::Message for #name {

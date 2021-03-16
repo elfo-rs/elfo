@@ -50,6 +50,7 @@ pub mod _priv {
         message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},
     };
     pub use linkme;
+    pub use serde;
     pub use smallbox;
     pub use static_assertions::assert_impl_all;
 }

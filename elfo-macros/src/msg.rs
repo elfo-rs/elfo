@@ -80,9 +80,10 @@ fn extract_kind(pat: &mut Pat, is_top_level: bool) -> Result<GroupKind, &'static
     }
 }
 
-pub fn msg_impl(input: TokenStream) -> TokenStream {
+pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
     let input = parse_macro_input!(input as ExprMatch);
     let mut groups = Vec::<MessageGroup>::with_capacity(input.arms.len());
+    let crate_ = path_to_elfo;
 
     for mut arm in input.arms.into_iter() {
         let kind = extract_kind(&mut arm.pat, true).expect("invalid pattern");
@@ -111,7 +112,7 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
                     trait Forbidden<A, E> { fn test(_: &E) {} }
                     impl<E, M> Forbidden<(), E> for M {}
                     struct Invalid;
-                    impl<E: EnvelopeOwned, M: ::elfo::Request> Forbidden<Invalid, E> for M {}
+                    impl<E: EnvelopeOwned, M: #crate_::Request> Forbidden<Invalid, E> for M {}
                     let _ = <#path as Forbidden<_, _>>::test(&#envelope_ident);
                     // -----
 
@@ -123,9 +124,9 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
             },
             (GroupKind::Request(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
-                    assert_impl_all!(#path: ::elfo::Request);
+                    assert_impl_all!(#path: #crate_::Request);
                     let (#message_ident, #tx_ident) = #envelope_ident.unpack_request();
-                    let #token_ident: ::elfo::ReplyToken<#path> = ::elfo::ReplyToken::from_sender(#tx_ident);
+                    let #token_ident: #crate_::ReplyToken<#path> = #crate_::ReplyToken::from_sender(#tx_ident);
                     match (#message_ident.downcast2::<#path>(), #token_ident) {
                         #(#arms)*
                     }
@@ -143,7 +144,7 @@ pub fn msg_impl(input: TokenStream) -> TokenStream {
 
     // TODO: propagate `input.attrs`?
     let expanded = quote! {{
-        use ::elfo::_priv::*;
+        use #crate_::_priv::*;
         let #envelope_ident = #match_expr;
         if false { unreachable!(); }
         #(#groups)*
