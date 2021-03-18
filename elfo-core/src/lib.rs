@@ -23,12 +23,9 @@ macro_rules! ward {
     ($o:expr, $early:stmt) => (ward!($o, else { $early }));
 }
 
+pub mod errors;
 pub mod routers;
 pub mod trace_id;
-
-pub mod errors {
-    pub use crate::mailbox::{SendError, TryRecvError, TrySendError};
-}
 
 mod addr;
 mod address_book;
