@@ -8,9 +8,10 @@ extern crate static_assertions;
 pub use crate::{
     addr::Addr,
     context::Context,
-    envelope::{Envelope, ReplyToken},
+    envelope::Envelope,
     group::{ActorGroup, Schema},
     message::{Message, Request},
+    request_table::ResponseToken,
     topology::Topology,
 };
 
@@ -38,6 +39,7 @@ mod macros;
 mod mailbox;
 mod message;
 mod object;
+mod request_table;
 mod supervisor;
 mod topology;
 
