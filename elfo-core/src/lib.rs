@@ -34,6 +34,7 @@ mod demux;
 mod envelope;
 mod exec;
 mod group;
+mod macros;
 mod mailbox;
 mod message;
 mod object;
