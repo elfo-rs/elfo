@@ -62,6 +62,7 @@ where
             Outcome::Broadcast => {
                 let mut waiters = Vec::new();
 
+                // TODO: avoid the loop in `try_send` case.
                 for object in self.objects.iter() {
                     // TODO: we shouldn't clone `envelope` for the last object in a sequence.
                     let envelope = envelope.duplicate(self.context.book()).expect("TODO");

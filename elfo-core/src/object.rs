@@ -3,8 +3,13 @@ use smallbox::SmallBox;
 use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use crate::{
-    addr::Addr, context::Context, envelope::Envelope, errors::SendError, mailbox::Mailbox,
-    request_table::RequestTable, supervisor::RouteReport,
+    addr::Addr,
+    context::Context,
+    envelope::Envelope,
+    errors::{SendError, TrySendError},
+    mailbox::Mailbox,
+    request_table::RequestTable,
+    supervisor::RouteReport,
 };
 
 pub(crate) struct Object {
@@ -99,6 +104,20 @@ impl Object {
                         .unwrap_or(Ok(()))
                 }
                 RouteReport::Closed(_) => Ok(()),
+            },
+        }
+    }
+
+    pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
+        match &self.kind {
+            ObjectKind::Actor(handle) => handle.mailbox.try_send(envelope),
+            ObjectKind::Group(handle) => match (handle.router)(envelope) {
+                RouteReport::Done => Ok(()),
+                RouteReport::Wait(_, envelope) => Err(TrySendError::Full(envelope)),
+                RouteReport::WaitAll(mut pairs) => {
+                    Err(TrySendError::Full(pairs.pop().expect("empty pairs").1))
+                }
+                RouteReport::Closed(envelope) => Err(TrySendError::Closed(envelope)),
             },
         }
     }
