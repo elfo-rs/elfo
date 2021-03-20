@@ -1,14 +1,10 @@
 use futures::future::join_all;
-use tokio::{sync::Mutex, task::JoinHandle};
-
 use smallbox::SmallBox;
+use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use crate::{
-    addr::Addr,
-    context::Context,
-    envelope::Envelope,
-    mailbox::{Mailbox, SendError},
-    supervisor::RouteReport,
+    addr::Addr, context::Context, envelope::Envelope, errors::SendError, mailbox::Mailbox,
+    request_table::RequestTable, supervisor::RouteReport,
 };
 
 pub(crate) struct Object {
@@ -31,7 +27,8 @@ impl Object {
     pub(crate) fn new_actor(addr: Addr, task: JoinHandle<()>) -> Self {
         let handle = ActorHandle {
             mailbox: Mailbox::new(),
-            task: Mutex::new(task),
+            request_table: RequestTable::new(addr),
+            task: AsyncMutex::new(task),
         };
 
         Self {
@@ -65,8 +62,9 @@ impl Object {
                 RouteReport::Wait(addr, envelope) => match ctx.book().get_owned(addr) {
                     Some(object) => {
                         object
-                            .mailbox()
+                            .as_actor()
                             .expect("supervisor stores only actors")
+                            .mailbox
                             .send(envelope)
                             .await
                     }
@@ -83,8 +81,9 @@ impl Object {
                             match object {
                                 Some(object) => {
                                     object
-                                        .mailbox()
+                                        .as_actor()
                                         .expect("supervisor stores only actors")
+                                        .mailbox
                                         .send(envelope)
                                         .await
                                 }
@@ -104,17 +103,18 @@ impl Object {
         }
     }
 
-    pub(crate) fn mailbox(&self) -> Option<&Mailbox> {
+    pub(crate) fn as_actor(&self) -> Option<&ActorHandle> {
         match &self.kind {
-            ObjectKind::Actor(handle) => Some(&handle.mailbox),
+            ObjectKind::Actor(handle) => Some(&handle),
             ObjectKind::Group(_) => None,
         }
     }
 }
 
-struct ActorHandle {
-    mailbox: Mailbox,
-    task: Mutex<JoinHandle<()>>,
+pub(crate) struct ActorHandle {
+    pub(crate) mailbox: Mailbox,
+    pub(crate) request_table: RequestTable,
+    task: AsyncMutex<JoinHandle<()>>,
 }
 
 struct GroupHandle {

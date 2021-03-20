@@ -6,10 +6,10 @@ pub struct SendError<T>(#[error(not(source))] pub T);
 
 #[derive(Debug, Display, Error)]
 pub enum TrySendError<T> {
-    /// The channel is full.
+    /// The mailbox is full.
     #[display(fmt = "mailbox full")]
     Full(#[error(not(source))] T),
-    /// The channel has been closed.
+    /// The mailbox has been closed.
     #[display(fmt = "mailbox closed")]
     Closed(#[error(not(source))] T),
 }
@@ -37,12 +37,45 @@ impl<T> TrySendError<T> {
     }
 }
 
+#[derive(Debug, Display, Error)]
+pub enum RequestError<T> {
+    // Nobody has responded to the request.
+    #[display(fmt = "request ignored")]
+    Ignored, // TODO: can we provide `T` here?
+    /// The mailbox has been closed.
+    #[display(fmt = "mailbox closed")]
+    Closed(#[error(not(source))] T),
+}
+
+impl<T> RequestError<T> {
+    /// Converts the error into its inner value.
+    #[inline]
+    pub fn into_inner(self) -> Option<T> {
+        match self {
+            Self::Ignored => None,
+            Self::Closed(inner) => Some(inner),
+        }
+    }
+
+    /// Returns whether the error is the `Full` variant.
+    #[inline]
+    pub fn is_ignored(&self) -> bool {
+        matches!(self, Self::Ignored)
+    }
+
+    /// Returns whether the error is the `Closed` variant.
+    #[inline]
+    pub fn is_closed(&self) -> bool {
+        matches!(self, Self::Closed(_))
+    }
+}
+
 #[derive(Debug, Clone, Display, Error)]
 pub enum TryRecvError {
-    /// The channel is empty.
+    /// The mailbox is empty.
     #[display(fmt = "mailbox empty")]
     Empty,
-    /// The channel has been closed.
+    /// The mailbox has been closed.
     #[display(fmt = "mailbox closed")]
     Closed,
 }

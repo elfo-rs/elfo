@@ -4,12 +4,10 @@ use futures_intrusive::{
 };
 use parking_lot::RawMutex;
 
-use crate::envelope::Envelope;
-
-#[allow(unreachable_pub)]
-pub use errors::{SendError, TryRecvError, TrySendError};
-
-mod errors;
+use crate::{
+    envelope::Envelope,
+    errors::{SendError, TryRecvError, TrySendError},
+};
 
 // TODO: make mailboxes bounded by time instead of size.
 const LIMIT: usize = 128;

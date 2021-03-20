@@ -4,9 +4,10 @@ use crate::{
     addr::Addr,
     address_book::AddressBook,
     demux::Demux,
-    envelope::{Envelope, MessageKind, ReplyToken},
-    mailbox::{SendError, TryRecvError},
+    envelope::{Envelope, MessageKind},
+    errors::{RequestError, SendError, TryRecvError},
     message::{Message, Request},
+    request_table::ResponseToken,
 };
 
 pub struct Context<C = (), K = ()> {
@@ -36,29 +37,34 @@ impl<C, K> Context<C, K> {
     }
 
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
-        self.do_send(message, MessageKind::regular()).await
+        let kind = MessageKind::Regular { sender: self.addr };
+        self.do_send(message, kind).await
     }
 
-    pub async fn request<R: Request>(
-        &self,
-        request: R,
-        // TODO: avoid `Option`.
-    ) -> Result<R::Response, SendError<Option<R>>> {
-        let (rx, kind) = MessageKind::request();
-        self.do_send(request, kind)
-            .await
-            .map_err(|err| SendError(Some(err.0)))?;
-        let envelope = rx.receive().await.ok_or(SendError(None))?;
-        let wrapper: R::Wrapper = envelope
-            .downcast()
-            .expect("invalid response")
-            .into_message();
+    pub async fn request<R: Request>(&self, request: R) -> Result<R::Response, RequestError<R>> {
+        // TODO: cache `OwnedEntry`?
+        let object = self.book.get_owned(self.addr).expect("invalid addr");
+        let actor = object.as_actor().expect("can be called only on actors");
+        let token = actor.request_table.new_request();
+        let request_id = token.request_id;
 
-        Ok(wrapper.into())
+        let fut = self.do_send(request, MessageKind::RequestAny(token)).await;
+        fut.map_err(|err| RequestError::Closed(err.0))?;
+
+        let mut data = actor.request_table.wait(request_id).await;
+        if let Some(envelope) = data.pop() {
+            let wrapper: R::Wrapper = envelope
+                .downcast()
+                .expect("invalid response")
+                .into_message();
+            Ok(wrapper.into())
+        } else {
+            Err(RequestError::Ignored)
+        }
     }
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
-        let envelope = Envelope::new(self.addr, message, kind).upcast();
+        let envelope = Envelope::new(message, kind).upcast();
         let addrs = self.demux.filter(&envelope);
 
         if addrs.is_empty() {
@@ -81,8 +87,8 @@ impl<C, K> Context<C, K> {
         // TODO: use the visitor pattern in order to avoid extra cloning.
         // TODO: send concurrently.
         for addr in addrs {
-            // TODO: `clone` for requests is broken.
-            let envelope = unused.take().unwrap_or_else(|| envelope.clone());
+            let envelope = unused.take().or_else(|| envelope.duplicate(&self.book));
+            let envelope = ward!(envelope, break);
 
             match self.book.get_owned(addr) {
                 Some(object) => {
@@ -109,7 +115,7 @@ impl<C, K> Context<C, K> {
     ) -> Result<(), SendError<M>> {
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(SendError(message)));
-        let envelope = Envelope::new(self.addr, message, MessageKind::regular());
+        let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
         result.map_err(|err| SendError(err.0.downcast().expect("impossible").into_message()))
@@ -119,49 +125,61 @@ impl<C, K> Context<C, K> {
         &self,
         recipient: Addr,
         message: R,
-        // TODO: avoid `Option`.
-    ) -> Result<R::Response, SendError<Option<R>>> {
-        let entry = self.book.get_owned(recipient);
-        let object = ward!(entry, return Err(SendError(Some(message))));
-        let (rx, kind) = MessageKind::request();
-        let envelope = Envelope::new(self.addr, message, kind);
-        let result = object.send(self, envelope.upcast()).await;
-        result
-            .map_err(|err| SendError(Some(err.0.downcast().expect("impossible").into_message())))?;
-        let envelope = rx.receive();
-        let envelope = envelope.await.ok_or(SendError(None))?;
-        let wrapper: R::Wrapper = envelope
-            .downcast()
-            .expect("invalid response")
-            .into_message();
+    ) -> Result<R::Response, RequestError<R>> {
+        let this_object = self.book.get(self.addr).expect("invalid addr");
+        let actor = this_object
+            .as_actor()
+            .expect("can be called only on actors");
+        let token = actor.request_table.new_request();
+        let request_id = token.request_id;
 
-        Ok(wrapper.into())
+        let recipient_entry = self.book.get_owned(recipient);
+        let recipient_object = ward!(recipient_entry, return Err(RequestError::Closed(message)));
+
+        let envelope = Envelope::new(message, MessageKind::RequestAny(token));
+        let result = recipient_object.send(self, envelope.upcast()).await;
+        result.map_err(|err| {
+            RequestError::Closed(err.0.downcast().expect("impossible").into_message())
+        })?;
+
+        // XXX: remove copy & paste.
+        let mut data = actor.request_table.wait(request_id).await;
+        if let Some(envelope) = data.pop() {
+            let wrapper: R::Wrapper = envelope
+                .downcast()
+                .expect("invalid response")
+                .into_message();
+            Ok(wrapper.into())
+        } else {
+            Err(RequestError::Ignored)
+        }
     }
 
-    pub fn respond<R: Request>(
-        &self,
-        // TODO: rename `ReplyToken`?
-        token: ReplyToken<R>,
-        // TODO: support many responses.
-        message: R::Response,
-    ) -> Result<(), SendError<()>> {
-        let tx = token.into_sender();
+    pub fn respond<R: Request>(&self, token: ResponseToken<R>, message: R::Response) {
         let message = R::Wrapper::from(message);
-        let envelope = Envelope::new(self.addr, message, MessageKind::regular());
-        tx.send(envelope.upcast()).map_err(|_| SendError(()))
+        let sender = token.sender;
+        let envelope = Envelope::new(message, MessageKind::Regular { sender }).upcast();
+        let object = ward!(self.book.get(token.sender));
+        let actor = ward!(object.as_actor());
+        actor.request_table.respond(token.into_untyped(), envelope);
     }
 
     #[inline]
     pub async fn recv(&self) -> Option<Envelope> {
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
-        object.mailbox()?.recv().await
+        let actor = object.as_actor()?;
+        actor.mailbox.recv().await
     }
 
     #[inline]
     pub fn try_recv(&self) -> Result<Envelope, TryRecvError> {
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
-        object.mailbox().ok_or(TryRecvError::Closed)?.try_recv()
+        object
+            .as_actor()
+            .ok_or(TryRecvError::Closed)?
+            .mailbox
+            .try_recv()
     }
 
     pub(crate) fn book(&self) -> &AddressBook {

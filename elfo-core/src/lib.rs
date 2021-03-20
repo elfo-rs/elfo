@@ -8,9 +8,10 @@ extern crate static_assertions;
 pub use crate::{
     addr::Addr,
     context::Context,
-    envelope::{Envelope, ReplyToken},
+    envelope::Envelope,
     group::{ActorGroup, Schema},
     message::{Message, Request},
+    request_table::ResponseToken,
     topology::Topology,
 };
 
@@ -23,12 +24,9 @@ macro_rules! ward {
     ($o:expr, $early:stmt) => (ward!($o, else { $early }));
 }
 
+pub mod errors;
 pub mod routers;
 pub mod trace_id;
-
-pub mod errors {
-    pub use crate::mailbox::{SendError, TryRecvError, TrySendError};
-}
 
 mod addr;
 mod address_book;
@@ -37,9 +35,11 @@ mod demux;
 mod envelope;
 mod exec;
 mod group;
+mod macros;
 mod mailbox;
 mod message;
 mod object;
+mod request_table;
 mod supervisor;
 mod topology;
 

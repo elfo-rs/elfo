@@ -99,9 +99,6 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
     }
 
     let envelope_ident = quote! { _elfo_envelope };
-    let message_ident = quote! { _elfo_message };
-    let tx_ident = quote! { _elfo_tx };
-    let token_ident = quote! { _elfo_token };
 
     let groups = groups
         .iter()
@@ -116,8 +113,8 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
                     let _ = <#path as Forbidden<_, _>>::test(&#envelope_ident);
                     // -----
 
-                    let #message_ident = #envelope_ident.unpack_regular();
-                    match #message_ident.downcast2::<#path>() {
+                    let message = #envelope_ident.unpack_regular();
+                    match message.downcast2::<#path>() {
                         #(#arms)*
                     }
                 }
@@ -125,9 +122,8 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
             (GroupKind::Request(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
                     assert_impl_all!(#path: #crate_::Request);
-                    let (#message_ident, #tx_ident) = #envelope_ident.unpack_request();
-                    let #token_ident: #crate_::ReplyToken<#path> = #crate_::ReplyToken::from_sender(#tx_ident);
-                    match (#message_ident.downcast2::<#path>(), #token_ident) {
+                    let (message, token) = #envelope_ident.unpack_request::<#path>();
+                    match (message.downcast2::<#path>(), token) {
                         #(#arms)*
                     }
                 }

@@ -9,8 +9,8 @@ use crate::{
     addr::Addr,
     context::Context,
     envelope::Envelope,
+    errors::TrySendError,
     exec::{BoxedError, Exec, ExecResult},
-    mailbox::TrySendError,
     object::{Object, ObjectArc},
     routers::{Outcome, Router},
 };
@@ -52,8 +52,8 @@ where
                         .downgrade()
                 });
 
-                let mailbox = object.mailbox().expect("supervisor stores only actors");
-                match mailbox.try_send(envelope) {
+                let actor = object.as_actor().expect("supervisor stores only actors");
+                match actor.mailbox.try_send(envelope) {
                     Ok(()) => RouteReport::Done,
                     Err(TrySendError::Full(envelope)) => RouteReport::Wait(object.addr(), envelope),
                     Err(TrySendError::Closed(envelope)) => RouteReport::Closed(envelope),
@@ -63,10 +63,11 @@ where
                 let mut waiters = Vec::new();
 
                 for object in self.objects.iter() {
-                    let mailbox = object.mailbox().expect("supervisor stores only actors");
-
                     // TODO: we shouldn't clone `envelope` for the last object in a sequence.
-                    if let Err(TrySendError::Full(envelope)) = mailbox.try_send(envelope.clone()) {
+                    let envelope = envelope.duplicate(self.context.book()).expect("TODO");
+                    let actor = object.as_actor().expect("supervisor stores only actors");
+
+                    if let Err(TrySendError::Full(envelope)) = actor.mailbox.try_send(envelope) {
                         waiters.push((object.addr(), envelope));
                     }
                 }
