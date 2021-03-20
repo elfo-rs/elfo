@@ -67,20 +67,13 @@ impl Envelope {
         self.message.is::<M>()
     }
 
-    pub(crate) fn downcast<M: Message>(self) -> Result<Envelope<M>, Envelope> {
-        match self.message.downcast::<M>() {
-            Ok(message) => Ok(Envelope {
-                trace_id: self.trace_id,
-                kind: self.kind,
-                ltid: self.ltid,
-                message: message.into_inner(),
-            }),
-            Err(message) => Err(Envelope {
-                trace_id: self.trace_id,
-                kind: self.kind,
-                ltid: self.ltid,
-                message,
-            }),
+    pub(crate) fn do_downcast<M: Message>(self) -> Envelope<M> {
+        let message = self.message.downcast::<M>().expect("cannot downcast");
+        Envelope {
+            trace_id: self.trace_id,
+            kind: self.kind,
+            ltid: self.ltid,
+            message: message.into_inner(),
         }
     }
 

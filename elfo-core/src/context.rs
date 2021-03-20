@@ -53,10 +53,7 @@ impl<C, K> Context<C, K> {
 
         let mut data = actor.request_table.wait(request_id).await;
         if let Some(envelope) = data.pop() {
-            let wrapper: R::Wrapper = envelope
-                .downcast()
-                .expect("invalid response")
-                .into_message();
+            let wrapper: R::Wrapper = envelope.do_downcast().into_message();
             Ok(wrapper.into())
         } else {
             Err(RequestError::Ignored)
@@ -68,7 +65,7 @@ impl<C, K> Context<C, K> {
         let addrs = self.demux.filter(&envelope);
 
         if addrs.is_empty() {
-            return Err(SendError(downcast(envelope)));
+            return Err(SendError(envelope.do_downcast().into_message()));
         }
 
         if addrs.len() == 1 {
@@ -76,8 +73,8 @@ impl<C, K> Context<C, K> {
                 Some(object) => object
                     .send(self, envelope)
                     .await
-                    .map_err(|err| SendError(downcast(err.0))),
-                None => Err(SendError(downcast(envelope))),
+                    .map_err(|err| SendError(err.0.do_downcast().into_message())),
+                None => Err(SendError(envelope.do_downcast().into_message())),
             };
         }
 
@@ -104,7 +101,7 @@ impl<C, K> Context<C, K> {
         if success {
             Ok(())
         } else {
-            Err(SendError(downcast(envelope)))
+            Err(SendError(envelope.do_downcast().into_message()))
         }
     }
 
@@ -118,7 +115,7 @@ impl<C, K> Context<C, K> {
         let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
-        result.map_err(|err| SendError(err.0.downcast().expect("impossible").into_message()))
+        result.map_err(|err| SendError(err.0.do_downcast().into_message()))
     }
 
     pub fn try_send_to<M: Message>(
@@ -132,10 +129,10 @@ impl<C, K> Context<C, K> {
 
         object.try_send(envelope.upcast()).map_err(|err| match err {
             TrySendError::Full(envelope) => {
-                TrySendError::Full(envelope.downcast().expect("impossible").into_message())
+                TrySendError::Full(envelope.do_downcast().into_message())
             }
             TrySendError::Closed(envelope) => {
-                TrySendError::Closed(envelope.downcast().expect("impossible").into_message())
+                TrySendError::Closed(envelope.do_downcast().into_message())
             }
         })
     }
@@ -157,17 +154,12 @@ impl<C, K> Context<C, K> {
 
         let envelope = Envelope::new(message, MessageKind::RequestAny(token));
         let result = recipient_object.send(self, envelope.upcast()).await;
-        result.map_err(|err| {
-            RequestError::Closed(err.0.downcast().expect("impossible").into_message())
-        })?;
+        result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
 
         // XXX: remove copy & paste.
         let mut data = actor.request_table.wait(request_id).await;
         if let Some(envelope) = data.pop() {
-            let wrapper: R::Wrapper = envelope
-                .downcast()
-                .expect("invalid response")
-                .into_message();
+            let wrapper: R::Wrapper = envelope.do_downcast().into_message();
             Ok(wrapper.into())
         } else {
             Err(RequestError::Ignored)
@@ -253,8 +245,4 @@ impl<C, K: Clone> Clone for Context<C, K> {
             demux: self.demux.clone(),
         }
     }
-}
-
-fn downcast<M: Message>(envelope: Envelope) -> M {
-    envelope.downcast().expect("impossible").into_message()
 }
