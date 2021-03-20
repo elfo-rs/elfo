@@ -5,7 +5,7 @@ use crate::{
     address_book::AddressBook,
     demux::Demux,
     envelope::{Envelope, MessageKind},
-    errors::{RequestError, SendError, TryRecvError},
+    errors::{RequestError, SendError, TryRecvError, TrySendError},
     message::{Message, Request},
     request_table::ResponseToken,
 };
@@ -119,6 +119,25 @@ impl<C, K> Context<C, K> {
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
         result.map_err(|err| SendError(err.0.downcast().expect("impossible").into_message()))
+    }
+
+    pub fn try_send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+    ) -> Result<(), TrySendError<M>> {
+        let entry = self.book.get_owned(recipient);
+        let object = ward!(entry, return Err(TrySendError::Closed(message)));
+        let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
+
+        object.try_send(envelope.upcast()).map_err(|err| match err {
+            TrySendError::Full(envelope) => {
+                TrySendError::Full(envelope.downcast().expect("impossible").into_message())
+            }
+            TrySendError::Closed(envelope) => {
+                TrySendError::Closed(envelope.downcast().expect("impossible").into_message())
+            }
+        })
     }
 
     pub async fn request_from<R: Request>(
