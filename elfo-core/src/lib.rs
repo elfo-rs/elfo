@@ -10,6 +10,7 @@ pub use crate::{
     context::Context,
     envelope::Envelope,
     group::{ActorGroup, Schema},
+    local::Local,
     message::{Message, Request},
     request_table::ResponseToken,
     topology::Topology,
@@ -35,6 +36,7 @@ mod demux;
 mod envelope;
 mod exec;
 mod group;
+mod local;
 mod macros;
 mod mailbox;
 mod message;
