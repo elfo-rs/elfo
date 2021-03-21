@@ -66,7 +66,11 @@ where
                 // TODO: avoid the loop in `try_send` case.
                 for object in self.objects.iter() {
                     // TODO: we shouldn't clone `envelope` for the last object in a sequence.
-                    let envelope = envelope.duplicate(self.context.book()).expect("TODO");
+                    let envelope = ward!(
+                        envelope.duplicate(self.context.book()),
+                        return RouteReport::Done // A requester has died.
+                    );
+
                     let actor = object.as_actor().expect("supervisor stores only actors");
 
                     match actor.mailbox.try_send(envelope) {
@@ -74,7 +78,7 @@ where
                         Err(TrySendError::Full(envelope)) => {
                             waiters.push((object.addr(), envelope))
                         }
-                        Err(TrySendError::Closed(envelope)) => {}
+                        Err(TrySendError::Closed(_)) => {}
                     }
                 }
 
