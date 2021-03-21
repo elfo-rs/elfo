@@ -61,6 +61,7 @@ where
             }
             Outcome::Broadcast => {
                 let mut waiters = Vec::new();
+                let mut someone = false;
 
                 // TODO: avoid the loop in `try_send` case.
                 for object in self.objects.iter() {
@@ -68,18 +69,26 @@ where
                     let envelope = envelope.duplicate(self.context.book()).expect("TODO");
                     let actor = object.as_actor().expect("supervisor stores only actors");
 
-                    if let Err(TrySendError::Full(envelope)) = actor.mailbox.try_send(envelope) {
-                        waiters.push((object.addr(), envelope));
+                    match actor.mailbox.try_send(envelope) {
+                        Ok(_) => someone = true,
+                        Err(TrySendError::Full(envelope)) => {
+                            waiters.push((object.addr(), envelope))
+                        }
+                        Err(TrySendError::Closed(envelope)) => {}
                     }
                 }
 
                 if waiters.is_empty() {
-                    RouteReport::Closed(envelope)
+                    if someone {
+                        RouteReport::Done
+                    } else {
+                        RouteReport::Closed(envelope)
+                    }
                 } else {
-                    RouteReport::WaitAll(waiters)
+                    RouteReport::WaitAll(someone, waiters)
                 }
             }
-            Outcome::Discard => RouteReport::Done, // TODO: should it be the `Closed` variant?
+            Outcome::Discard => RouteReport::Done,
         }
     }
 
@@ -147,5 +156,5 @@ pub(crate) enum RouteReport {
     Done,
     Closed(Envelope),
     Wait(Addr, Envelope),
-    WaitAll(Vec<(Addr, Envelope)>),
+    WaitAll(bool, Vec<(Addr, Envelope)>),
 }

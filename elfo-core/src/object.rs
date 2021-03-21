@@ -75,7 +75,7 @@ impl Object {
                     }
                     None => Err(SendError(envelope)),
                 },
-                RouteReport::WaitAll(pairs) => {
+                RouteReport::WaitAll(someone, pairs) => {
                     debug_assert_ne!(pairs.len(), 0);
 
                     let mut futures = Vec::new();
@@ -97,13 +97,15 @@ impl Object {
                         });
                     }
 
-                    join_all(futures)
-                        .await
-                        .into_iter()
-                        .find(Result::is_err)
-                        .unwrap_or(Ok(()))
+                    let mut results = join_all(futures).await;
+
+                    if someone || results.iter().any(Result::is_ok) {
+                        Ok(())
+                    } else {
+                        results.pop().expect("empty pairs")
+                    }
                 }
-                RouteReport::Closed(_) => Ok(()),
+                RouteReport::Closed(envelope) => Err(SendError(envelope)),
             },
         }
     }
@@ -114,7 +116,8 @@ impl Object {
             ObjectKind::Group(handle) => match (handle.router)(envelope) {
                 RouteReport::Done => Ok(()),
                 RouteReport::Wait(_, envelope) => Err(TrySendError::Full(envelope)),
-                RouteReport::WaitAll(mut pairs) => {
+                RouteReport::WaitAll(someone, _) if someone => Ok(()),
+                RouteReport::WaitAll(_, mut pairs) => {
                     Err(TrySendError::Full(pairs.pop().expect("empty pairs").1))
                 }
                 RouteReport::Closed(envelope) => Err(TrySendError::Closed(envelope)),
