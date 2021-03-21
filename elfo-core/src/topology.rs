@@ -1,5 +1,7 @@
 use std::{cell::RefCell, sync::Arc};
 
+use parking_lot::RwLock;
+
 use crate::{
     addr::Addr,
     address_book::{AddressBook, VacantEntry},
@@ -9,28 +11,68 @@ use crate::{
     group::Schema,
 };
 
+#[derive(Clone)]
 pub struct Topology {
     book: AddressBook,
+    inner: Arc<RwLock<Inner>>,
+}
+
+#[derive(Default)]
+struct Inner {
+    groups: Vec<ActorGroup>,
+    connections: Vec<Connection>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActorGroup {
+    pub addr: Addr,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Connection {
+    pub from: Addr,
+    pub to: Addr,
 }
 
 impl Topology {
     pub fn empty() -> Self {
         Self {
             book: AddressBook::new(),
+            inner: Arc::new(RwLock::new(Inner::default())),
         }
     }
 
     pub fn local(&self, name: impl Into<String>) -> Local<'_> {
+        let name = name.into();
+        let entry = self.book.vacant_entry();
+
+        let mut inner = self.inner.write();
+        inner.groups.push(ActorGroup {
+            addr: entry.addr(),
+            name: name.clone(),
+        });
+
         Local {
-            name: name.into(),
+            name,
             topology: self,
-            entry: self.book.vacant_entry(),
+            entry,
             demux: RefCell::new(Demux::default()),
         }
     }
 
     pub fn remote(&self, _name: impl Into<String>) -> Remote<'_> {
         todo!()
+    }
+
+    pub fn actor_groups(&self) -> impl Iterator<Item = ActorGroup> + '_ {
+        let inner = self.inner.read();
+        inner.groups.clone().into_iter()
+    }
+
+    pub fn connections(&self) -> impl Iterator<Item = Connection> + '_ {
+        let inner = self.inner.read();
+        inner.connections.clone().into_iter()
     }
 }
 
