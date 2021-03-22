@@ -98,6 +98,10 @@ impl Envelope {
             message: with_vtable(self.ltid, |vtable| (vtable.clone)(&self.message)),
         })
     }
+
+    pub(crate) fn set_message<M: Message>(&mut self, message: M) {
+        self.message = smallbox!(message);
+    }
 }
 
 // Extra traits to support both owned and borrowed usages of `msg!(..)`.

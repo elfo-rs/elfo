@@ -1,5 +1,6 @@
 use std::{fmt::Display, future::Future, hash::Hash, marker::PhantomData};
 
+use serde::Deserialize;
 use smallbox::smallbox;
 
 use crate::{
@@ -25,7 +26,7 @@ impl ActorGroup<(), ()> {
 impl<R, C> ActorGroup<R, C> {
     pub fn config<C1>(self) -> ActorGroup<R, C1>
     where
-        C1: Send + Sync + 'static,
+        C1: for<'de> Deserialize<'de> + Send + Sync + 'static,
     {
         ActorGroup {
             router: self.router,
@@ -52,7 +53,7 @@ impl<R, C> ActorGroup<R, C> {
         O: Future<Output = ER> + Send + 'static,
         ER: ExecResult,
         // TODO
-        C: Send + Sync + 'static,
+        C: for<'de> Deserialize<'de> + Send + Sync + 'static,
         /* X: Exec<Context<C, R::Key>>,
          * as Future>::Output: ExecResult, */
     {

@@ -1,4 +1,6 @@
+use anyhow::{anyhow, Result};
 use elfo::{
+    messages::ValidateConfig,
     prelude::*,
     routers::{MapRouter, Outcome},
 };
@@ -56,25 +58,37 @@ fn summators() -> Schema {
                 _ => Outcome::Discard,
             })
         }))
-        .exec(|ctx| async move {
-            let mut sum = 0;
+        .exec(summator)
+}
 
-            while let Some(envelope) = ctx.recv().await {
-                msg!(match envelope {
-                    msg @ AddNum { .. } => {
-                        info!(num = msg.num, "got");
-                        sum += msg.num;
-                    }
-                    (Summarize { .. }, token) => {
-                        let _ = ctx.respond(token, Report(sum));
-                    }
-                    Terminate => break,
-                    _ => {}
-                });
+async fn summator(mut ctx: Context<(), u32>) -> Result<()> {
+    let mut sum = 0;
+
+    while let Some(envelope) = ctx.recv().await {
+        msg!(match envelope {
+            msg @ AddNum { .. } => {
+                info!(num = msg.num, "got");
+                sum += msg.num;
             }
+            (Summarize { .. }, token) => {
+                let _ = ctx.respond(token, Report(sum));
+            }
+            //(SubscribeToOrderUpdates { account_id }, token) => {}
+            // Summarize::Response => {}
+            (ValidateConfig { config, .. }, token) => {
+                let config = ctx.unpack_config(&config);
+                let _ = ctx.respond(token, Err("oops".into()));
+            }
+            // BeforeConfigUpdate(value) => {
+            // ctx.parse_config(value);
+            // }
+            // AfterConfigUpdate(value) => {}
+            Terminate => break,
+            _ => {}
+        });
+    }
 
-            Err("some error")
-        })
+    Err(anyhow!("oops"))
 }
 
 #[tokio::main]
@@ -89,14 +103,9 @@ async fn main() {
     let summators = topology.local("summators");
     // let informers = topology.remote("informers");
 
-    // producers.route_to(&summators, |e| {
-    // msg!(match e {
-    // AddNum { .. } | Summarize { .. } | Terminate => true,
-    //_ => false,
-    //});
+    producers.route_all_to(&summators);
 
-    producers.route_to(&summators, |_e| true);
-
+    // producers.route_to(&summators, |envelope| ...);
     // (&producers + &summators).route_all_to(&informers);
 
     summators.mount(self::summators(), None::<Report>).await;

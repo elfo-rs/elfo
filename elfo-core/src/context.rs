@@ -1,21 +1,27 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
+
+use tracing::info;
+
+use elfo_macros::msg_internal as msg;
 
 use crate::{
     addr::Addr,
     address_book::AddressBook,
+    config::AnyConfig,
     demux::Demux,
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     message::{Message, Request},
+    messages,
     request_table::ResponseToken,
 };
 
 pub struct Context<C = (), K = ()> {
-    addr: Addr,
     book: AddressBook,
-    key: K,
+    addr: Addr,
     demux: Demux,
-    _config: PhantomData<C>,
+    config: Option<Arc<C>>,
+    key: K,
 }
 
 assert_impl_all!(Context: Send);
@@ -28,7 +34,7 @@ impl<C, K> Context<C, K> {
 
     #[inline]
     pub fn config(&self) -> &C {
-        todo!()
+        self.config.as_ref().expect("config must be set")
     }
 
     #[inline]
@@ -133,21 +139,60 @@ impl<C, K> Context<C, K> {
     }
 
     #[inline]
-    pub async fn recv(&self) -> Option<Envelope> {
+    pub async fn recv(&mut self) -> Option<Envelope>
+    where
+        C: 'static,
+    {
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
-        actor.mailbox.recv().await
+
+        msg!(match actor.mailbox.recv().await? {
+            (messages::UpdateConfig { config }, token) => {
+                self.config = config.get().cloned();
+                info!("config updated");
+                let message = messages::ConfigUpdated {};
+                let kind = MessageKind::Regular { sender: self.addr };
+                let envelope = Envelope::new(message.clone(), kind).upcast();
+                self.respond(token, Ok(message));
+                Some(envelope)
+            }
+            envelope => Some(envelope),
+        })
     }
 
     #[inline]
-    pub fn try_recv(&self) -> Result<Envelope, TryRecvError> {
+    pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
+    where
+        C: 'static,
+    {
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
-        object
+        let envelope = object
             .as_actor()
             .ok_or(TryRecvError::Closed)?
             .mailbox
-            .try_recv()
+            .try_recv()?;
+
+        msg!(match envelope {
+            (messages::UpdateConfig { config }, token) => {
+                self.config = config.get().cloned();
+                info!("config updated");
+                let message = messages::ConfigUpdated {};
+                let kind = MessageKind::Regular { sender: self.addr };
+                let envelope = Envelope::new(message.clone(), kind).upcast();
+                self.respond(token, Ok(message));
+                Ok(envelope)
+            }
+            envelope => Ok(envelope),
+        })
+    }
+
+    /// XXX: mb `BoundEnvelope<C>`?
+    pub fn unpack_config<'c>(&self, config: &'c AnyConfig) -> &'c C
+    where
+        C: for<'de> serde::Deserialize<'de> + 'static,
+    {
+        config.get().expect("must already be checked")
     }
 
     pub(crate) fn book(&self) -> &AddressBook {
@@ -156,11 +201,11 @@ impl<C, K> Context<C, K> {
 
     pub(crate) fn with_config<C1>(self) -> Context<C1, K> {
         Context {
-            addr: self.addr,
             book: self.book,
-            key: self.key,
+            addr: self.addr,
             demux: self.demux,
-            _config: PhantomData,
+            config: None,
+            key: self.key,
         }
     }
 
@@ -171,11 +216,11 @@ impl<C, K> Context<C, K> {
 
     pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1> {
         Context {
-            addr: self.addr,
             book: self.book,
-            key,
+            addr: self.addr,
             demux: self.demux,
-            _config: PhantomData,
+            config: self.config,
+            key,
         }
     }
 }
@@ -183,11 +228,11 @@ impl<C, K> Context<C, K> {
 impl Context<(), ()> {
     pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
         Self {
-            addr: Addr::NULL,
             book,
-            key: (),
+            addr: Addr::NULL,
             demux,
-            _config: PhantomData,
+            config: None,
+            key: (),
         }
     }
 }
@@ -195,11 +240,11 @@ impl Context<(), ()> {
 impl<C, K: Clone> Clone for Context<C, K> {
     fn clone(&self) -> Self {
         Self {
-            addr: self.addr,
             book: self.book.clone(),
-            key: self.key.clone(),
-            _config: PhantomData,
+            addr: self.addr,
             demux: self.demux.clone(),
+            config: self.config.clone(),
+            key: self.key.clone(),
         }
     }
 }
@@ -244,7 +289,7 @@ impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
 }
 
 // TODO: add `pub async fn id() { ... }`
-impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
+impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.addr;
@@ -274,7 +319,7 @@ impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     }
 }
 
-impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, All> {
+impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError<R>>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.addr;

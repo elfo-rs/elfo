@@ -3,7 +3,10 @@ use std::{any::Any, fmt::Display, future::Future, hash::Hash, panic::AssertUnwin
 use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
+use serde::Deserialize;
 use tracing::{error, error_span, Instrument, Span};
+
+use elfo_macros::msg_internal as msg;
 
 use crate::{
     addr::Addr,
@@ -11,6 +14,7 @@ use crate::{
     envelope::Envelope,
     errors::TrySendError,
     exec::{BoxedError, Exec, ExecResult},
+    messages,
     object::{Object, ObjectArc},
     routers::{Outcome, Router},
 };
@@ -29,6 +33,7 @@ where
     R::Key: Clone + Hash + Eq + Display,
     X: Exec<Context<C, R::Key>>,
     <X::Output as Future>::Output: ExecResult,
+    C: for<'de> Deserialize<'de> + Send + Sync + 'static,
 {
     pub(crate) fn new(ctx: Context<C, ()>, name: String, exec: X, router: R) -> Self {
         Self {
@@ -41,8 +46,49 @@ where
     }
 
     pub(crate) fn handle(&self, envelope: Envelope) -> RouteReport {
-        let outcome = self.router.route(&envelope);
+        msg!(match &envelope {
+            messages::ValidateConfig { config } => match config.decode::<C>() {
+                Ok(config) => {
+                    let mut envelope = envelope;
+                    envelope.set_message(messages::ValidateConfig { config });
+                    self.do_handle(envelope, Outcome::Broadcast)
+                }
+                Err(reason) => {
+                    msg!(match envelope {
+                        (messages::ValidateConfig { .. }, token) => {
+                            let reject = messages::ConfigRejected { reason };
+                            self.context.respond(token, Err(reject));
+                        }
+                        _ => unreachable!(),
+                    });
+                    RouteReport::Done
+                }
+            },
+            messages::UpdateConfig { config } => match config.decode::<C>() {
+                Ok(config) => {
+                    let mut envelope = envelope;
+                    envelope.set_message(messages::UpdateConfig { config });
+                    self.do_handle(envelope, Outcome::Broadcast)
+                }
+                Err(reason) => {
+                    msg!(match envelope {
+                        (messages::UpdateConfig { .. }, token) => {
+                            let reject = messages::ConfigRejected { reason };
+                            self.context.respond(token, Err(reject));
+                        }
+                        _ => unreachable!(),
+                    });
+                    RouteReport::Done
+                }
+            },
+            _ => {
+                let outcome = self.router.route(&envelope);
+                self.do_handle(envelope, outcome)
+            }
+        })
+    }
 
+    pub(crate) fn do_handle(&self, envelope: Envelope, outcome: Outcome<R::Key>) -> RouteReport {
         match outcome {
             Outcome::Unicast(key) => {
                 let object = ward!(self.objects.get(&key), {

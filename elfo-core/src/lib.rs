@@ -26,10 +26,12 @@ macro_rules! ward {
 }
 
 pub mod errors;
+pub mod messages;
 pub mod routers;
 pub mod trace_id;
 
 mod addr;
+mod config;
 mod address_book;
 mod context;
 mod demux;
