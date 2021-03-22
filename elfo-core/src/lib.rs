@@ -7,7 +7,7 @@ extern crate static_assertions;
 
 pub use crate::{
     addr::Addr,
-    context::Context,
+    context::{Context, RequestBuilder},
     envelope::Envelope,
     group::{ActorGroup, Schema},
     local::Local,

@@ -41,23 +41,9 @@ impl<C, K> Context<C, K> {
         self.do_send(message, kind).await
     }
 
-    pub async fn request<R: Request>(&self, request: R) -> Result<R::Response, RequestError<R>> {
-        // TODO: cache `OwnedEntry`?
-        let object = self.book.get_owned(self.addr).expect("invalid addr");
-        let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor.request_table.new_request();
-        let request_id = token.request_id;
-
-        let fut = self.do_send(request, MessageKind::RequestAny(token)).await;
-        fut.map_err(|err| RequestError::Closed(err.0))?;
-
-        let mut data = actor.request_table.wait(request_id).await;
-        if let Some(envelope) = data.pop() {
-            let wrapper: R::Wrapper = envelope.do_downcast().into_message();
-            Ok(wrapper.into())
-        } else {
-            Err(RequestError::Ignored)
-        }
+    #[inline]
+    pub fn request<R: Request>(&self, request: R) -> RequestBuilder<'_, C, K, R, Any> {
+        RequestBuilder::new(self, request)
     }
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
@@ -135,35 +121,6 @@ impl<C, K> Context<C, K> {
                 TrySendError::Closed(envelope.do_downcast().into_message())
             }
         })
-    }
-
-    pub async fn request_from<R: Request>(
-        &self,
-        recipient: Addr,
-        message: R,
-    ) -> Result<R::Response, RequestError<R>> {
-        let this_object = self.book.get(self.addr).expect("invalid addr");
-        let actor = this_object
-            .as_actor()
-            .expect("can be called only on actors");
-        let token = actor.request_table.new_request();
-        let request_id = token.request_id;
-
-        let recipient_entry = self.book.get_owned(recipient);
-        let recipient_object = ward!(recipient_entry, return Err(RequestError::Closed(message)));
-
-        let envelope = Envelope::new(message, MessageKind::RequestAny(token));
-        let result = recipient_object.send(self, envelope.upcast()).await;
-        result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
-
-        // XXX: remove copy & paste.
-        let mut data = actor.request_table.wait(request_id).await;
-        if let Some(envelope) = data.pop() {
-            let wrapper: R::Wrapper = envelope.do_downcast().into_message();
-            Ok(wrapper.into())
-        } else {
-            Err(RequestError::Ignored)
-        }
     }
 
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, message: R::Response) {
@@ -244,5 +201,113 @@ impl<C, K: Clone> Clone for Context<C, K> {
             _config: PhantomData,
             demux: self.demux.clone(),
         }
+    }
+}
+
+pub struct RequestBuilder<'c, C, K, R, M> {
+    context: &'c Context<C, K>,
+    request: R,
+    from: Option<Addr>,
+    marker: PhantomData<M>,
+}
+
+pub struct Any;
+pub struct All;
+
+impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
+    fn new(context: &'c Context<C, K>, request: R) -> Self {
+        Self {
+            context,
+            request,
+            from: None,
+            marker: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn all(self) -> RequestBuilder<'c, C, K, R, All> {
+        RequestBuilder {
+            context: self.context,
+            request: self.request,
+            from: self.from,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
+    #[inline]
+    pub fn from(mut self, addr: Addr) -> Self {
+        self.from = Some(addr);
+        self
+    }
+}
+
+// TODO: add `pub async fn id() { ... }`
+impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
+    pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
+        // TODO: cache `OwnedEntry`?
+        let this = self.context.addr;
+        let object = self.context.book.get_owned(this).expect("invalid addr");
+        let actor = object.as_actor().expect("can be called only on actors");
+        let token = actor.request_table.new_request();
+        let request_id = token.request_id;
+        let message_kind = MessageKind::RequestAny(token);
+
+        if let Some(recipient) = self.from {
+            let rec_entry = self.context.book.get_owned(recipient);
+            let rec_object = ward!(rec_entry, return Err(RequestError::Closed(self.request)));
+            let envelope = Envelope::new(self.request, message_kind);
+            let result = rec_object.send(self.context, envelope.upcast()).await;
+            result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
+        } else {
+            let fut = self.context.do_send(self.request, message_kind).await;
+            fut.map_err(|err| RequestError::Closed(err.0))?;
+        }
+
+        let mut data = actor.request_table.wait(request_id).await;
+        if let Some(Some(envelope)) = data.pop() {
+            Ok(envelope.do_downcast::<R::Wrapper>().into_message().into())
+        } else {
+            Err(RequestError::Ignored)
+        }
+    }
+}
+
+impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, All> {
+    pub async fn resolve(self) -> Vec<Result<R::Response, RequestError<R>>> {
+        // TODO: cache `OwnedEntry`?
+        let this = self.context.addr;
+        let object = self.context.book.get_owned(this).expect("invalid addr");
+        let actor = object.as_actor().expect("can be called only on actors");
+        let token = actor.request_table.new_request();
+        let request_id = token.request_id;
+        let message_kind = MessageKind::RequestAll(token);
+
+        if let Some(recipient) = self.from {
+            let rec_entry = self.context.book.get_owned(recipient);
+            let rec_object = ward!(
+                rec_entry,
+                return vec![Err(RequestError::Closed(self.request))]
+            );
+            let envelope = Envelope::new(self.request, message_kind);
+            if let Err(err) = rec_object.send(self.context, envelope.upcast()).await {
+                let msg = err.0.do_downcast().into_message();
+                return vec![Err(RequestError::Closed(msg))];
+            }
+        } else if let Err(err) = self.context.do_send(self.request, message_kind).await {
+            return vec![Err(RequestError::Closed(err.0))];
+        }
+
+        actor
+            .request_table
+            .wait(request_id)
+            .await
+            .into_iter()
+            .map(|opt| match opt {
+                Some(envelope) => Ok(envelope.do_downcast::<R::Wrapper>().into_message().into()),
+                None => Err(RequestError::Ignored),
+            })
+            .collect()
     }
 }

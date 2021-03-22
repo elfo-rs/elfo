@@ -34,7 +34,7 @@ fn producers() -> Schema {
 
         // Ask every group.
         for &group in &[0, 1, 2] {
-            if let Ok(report) = ctx.request(Summarize { group }).await {
+            if let Ok(report) = ctx.request(Summarize { group }).resolve().await {
                 info!(group, sum = report.0, "asked");
             }
         }

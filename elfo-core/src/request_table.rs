@@ -15,7 +15,7 @@ pub(crate) struct RequestTable {
 
 assert_impl_all!(RequestTable: Sync);
 
-type Data = SmallVec<[Envelope; 1]>;
+type Data = SmallVec<[Option<Envelope>; 1]>;
 
 #[derive(Default)]
 struct RequestInfo {
@@ -56,7 +56,7 @@ impl RequestTable {
         debug_assert_eq!(token.sender, self.owner);
         let mut requests = self.requests.lock();
         let request = requests.get_mut(token.request_id).expect("unknown request");
-        request.data.push(envelope);
+        request.data.push(Some(envelope));
         request.remainder -= 1;
         if request.remainder == 0 {
             self.notifier.set();
@@ -171,7 +171,7 @@ mod tests {
             let mut data = table.wait(request_id).await;
 
             assert_eq!(data.len(), 1);
-            assert_msg_eq!(data.pop().unwrap(), Num(42));
+            assert_msg_eq!(data.pop().unwrap().unwrap(), Num(42));
         }
     }
 
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(data.len(), n as usize);
 
         for (i, envelope) in data.drain(..).enumerate() {
-            assert_msg_eq!(envelope, Num(i as u32));
+            assert_msg_eq!(envelope.unwrap(), Num(i as u32));
         }
     }
 
