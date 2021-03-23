@@ -1,8 +1,9 @@
-use std::{any::Any, fmt::Display, future::Future, hash::Hash, panic::AssertUnwindSafe};
+use std::{any::Any, fmt::Display, future::Future, hash::Hash, panic::AssertUnwindSafe, sync::Arc};
 
 use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
+use parking_lot::RwLock;
 use serde::Deserialize;
 use tracing::{error, error_span, Instrument, Span};
 
@@ -21,10 +22,11 @@ use crate::{
 
 pub(crate) struct Supervisor<R: Router, C, X> {
     name: String,
-    context: Context<C, ()>,
+    context: Context,
     objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
     router: R,
     exec: X,
+    config: RwLock<Option<Arc<C>>>,
 }
 
 impl<R, C, X> Supervisor<R, C, X>
@@ -35,13 +37,14 @@ where
     <X::Output as Future>::Output: ExecResult,
     C: for<'de> Deserialize<'de> + Send + Sync + 'static,
 {
-    pub(crate) fn new(ctx: Context<C, ()>, name: String, exec: X, router: R) -> Self {
+    pub(crate) fn new(ctx: Context, name: String, exec: X, router: R) -> Self {
         Self {
             name,
             context: ctx,
             objects: DashMap::default(),
             router,
             exec,
+            config: RwLock::new(None),
         }
     }
 
@@ -66,6 +69,8 @@ where
             },
             messages::UpdateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
+                    *self.config.write() = config.get().cloned();
+
                     let mut envelope = envelope;
                     envelope.set_message(messages::UpdateConfig { config });
                     self.do_handle(envelope, Outcome::Broadcast)
@@ -163,8 +168,21 @@ where
         let span = error_span!(parent: Span::none(), "", actor = %full_name);
         let _entered = span.enter();
 
+        let config = self
+            .config
+            .read()
+            .as_ref()
+            .cloned()
+            .expect("config is unset");
+
+        let ctx = self
+            .context
+            .clone()
+            .with_addr(addr)
+            .with_key(key)
+            .with_config(config);
+
         // TODO: protect against panics (for `fn(..) -> impl Future`).
-        let ctx = self.context.clone().with_addr(addr).with_key(key);
         let fut = self.exec.exec(ctx);
         let fut = async move {
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();

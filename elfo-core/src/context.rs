@@ -20,7 +20,7 @@ pub struct Context<C = (), K = ()> {
     book: AddressBook,
     addr: Addr,
     demux: Demux,
-    config: Option<Arc<C>>,
+    config: Arc<C>,
     key: K,
 }
 
@@ -34,7 +34,7 @@ impl<C, K> Context<C, K> {
 
     #[inline]
     pub fn config(&self) -> &C {
-        self.config.as_ref().expect("config must be set")
+        &self.config
     }
 
     #[inline]
@@ -149,7 +149,7 @@ impl<C, K> Context<C, K> {
 
         msg!(match actor.mailbox.recv().await? {
             (messages::UpdateConfig { config }, token) => {
-                self.config = config.get().cloned();
+                self.config = config.get().cloned().expect("must be decoded");
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
                 let kind = MessageKind::Regular { sender: self.addr };
@@ -175,7 +175,7 @@ impl<C, K> Context<C, K> {
 
         msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
-                self.config = config.get().cloned();
+                self.config = config.get().cloned().expect("must be decoded");
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
                 let kind = MessageKind::Regular { sender: self.addr };
@@ -199,12 +199,12 @@ impl<C, K> Context<C, K> {
         &self.book
     }
 
-    pub(crate) fn with_config<C1>(self) -> Context<C1, K> {
+    pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K> {
         Context {
             book: self.book,
             addr: self.addr,
             demux: self.demux,
-            config: None,
+            config,
             key: self.key,
         }
     }
@@ -231,7 +231,7 @@ impl Context<(), ()> {
             book,
             addr: Addr::NULL,
             demux,
-            config: None,
+            config: Arc::new(()),
             key: (),
         }
     }
