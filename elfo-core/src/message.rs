@@ -18,7 +18,7 @@ pub trait Request: Message {
     type Wrapper: Message + Into<Self::Response> + From<Self::Response>;
 }
 
-pub type AnyMessage = SmallBox<dyn Any + Send, [u8; 72]>;
+pub type AnyMessage = SmallBox<dyn Any + Send, [u8; 64]>;
 
 #[derive(Clone)]
 pub struct MessageVTable {

@@ -295,7 +295,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
         let this = self.context.addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor.request_table.new_request();
+        let token = actor.request_table.new_request(self.context.book.clone());
         let request_id = token.request_id;
         let message_kind = MessageKind::RequestAny(token);
 
@@ -325,7 +325,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
         let this = self.context.addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor.request_table.new_request();
+        let token = actor.request_table.new_request(self.context.book.clone());
         let request_id = token.request_id;
         let message_kind = MessageKind::RequestAll(token);
 
