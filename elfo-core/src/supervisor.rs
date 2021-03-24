@@ -108,6 +108,7 @@ where
     }
 
     pub(crate) fn do_handle(&self, envelope: Envelope, outcome: Outcome<R::Key>) -> RouteReport {
+        // TODO: avoid copy & paste.
         match outcome {
             Outcome::Unicast(key) => {
                 let object = ward!(self.objects.get(&key), {
@@ -122,6 +123,46 @@ where
                     Ok(()) => RouteReport::Done,
                     Err(TrySendError::Full(envelope)) => RouteReport::Wait(object.addr(), envelope),
                     Err(TrySendError::Closed(envelope)) => RouteReport::Closed(envelope),
+                }
+            }
+            Outcome::Multicast(list) => {
+                let mut waiters = Vec::new();
+                let mut someone = false;
+
+                // TODO: avoid the loop in `try_send` case.
+                for key in list {
+                    let object = ward!(self.objects.get(&key), {
+                        self.objects
+                            .entry(key.clone())
+                            .or_insert_with(|| self.spawn(key))
+                            .downgrade()
+                    });
+
+                    // TODO: we shouldn't clone `envelope` for the last object in a sequence.
+                    let envelope = ward!(
+                        envelope.duplicate(self.context.book()),
+                        continue // A requester has died, but Multicast is more insistent.
+                    );
+
+                    let actor = object.as_actor().expect("supervisor stores only actors");
+
+                    match actor.mailbox.try_send(envelope) {
+                        Ok(_) => someone = true,
+                        Err(TrySendError::Full(envelope)) => {
+                            waiters.push((object.addr(), envelope))
+                        }
+                        Err(TrySendError::Closed(_)) => {}
+                    }
+                }
+
+                if waiters.is_empty() {
+                    if someone {
+                        RouteReport::Done
+                    } else {
+                        RouteReport::Closed(envelope)
+                    }
+                } else {
+                    RouteReport::WaitAll(someone, waiters)
                 }
             }
             Outcome::Broadcast => {

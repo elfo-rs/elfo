@@ -14,17 +14,21 @@ pub trait Router<C>: Send + Sync + 'static {
 #[derive(Debug)]
 pub enum Outcome<T> {
     Unicast(T),
+    Multicast(Vec<T>), // TODO: use `SmallVec`?
     Broadcast,
     Discard,
     Default,
-    // TODO: Multicast
 }
+
+assert_eq_size!(Outcome<u64>, [u8; 32]);
+assert_eq_size!(Outcome<u128>, [u8; 32]);
 
 impl<T> Outcome<T> {
     #[inline]
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Outcome<U> {
+    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> Outcome<U> {
         match self {
             Outcome::Unicast(val) => Outcome::Unicast(f(val)),
+            Outcome::Multicast(list) => Outcome::Multicast(list.into_iter().map(f).collect()),
             Outcome::Broadcast => Outcome::Broadcast,
             Outcome::Discard => Outcome::Discard,
             Outcome::Default => Outcome::Default,
