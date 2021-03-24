@@ -5,7 +5,7 @@ use futures::FutureExt;
 use fxhash::FxBuildHasher;
 use parking_lot::RwLock;
 use serde::Deserialize;
-use tracing::{error, error_span, Instrument, Span};
+use tracing::{debug, error, error_span, Instrument, Span};
 
 use elfo_macros::msg_internal as msg;
 
@@ -18,6 +18,7 @@ use crate::{
     messages,
     object::{Object, ObjectArc},
     routers::{Outcome, Router},
+    utils::CachePadded,
 };
 
 pub(crate) struct Supervisor<R: Router, C, X> {
@@ -26,7 +27,11 @@ pub(crate) struct Supervisor<R: Router, C, X> {
     objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
     router: R,
     exec: X,
-    config: RwLock<Option<Arc<C>>>,
+    control: CachePadded<RwLock<ControlBlock<C>>>,
+}
+
+struct ControlBlock<C> {
+    config: Option<Arc<C>>,
 }
 
 impl<R, C, X> Supervisor<R, C, X>
@@ -38,13 +43,15 @@ where
     C: for<'de> Deserialize<'de> + Send + Sync + 'static,
 {
     pub(crate) fn new(ctx: Context, name: String, exec: X, router: R) -> Self {
+        let control = ControlBlock { config: None };
+
         Self {
             name,
             context: ctx,
             objects: DashMap::default(),
             router,
             exec,
-            config: RwLock::new(None),
+            control: CachePadded(RwLock::new(control)),
         }
     }
 
@@ -69,7 +76,7 @@ where
             },
             messages::UpdateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
-                    *self.config.write() = config.get().cloned();
+                    self.control.write().config = config.get().cloned();
 
                     let mut envelope = envelope;
                     envelope.set_message(messages::UpdateConfig { config });
@@ -168,12 +175,8 @@ where
         let span = error_span!(parent: Span::none(), "", actor = %full_name);
         let _entered = span.enter();
 
-        let config = self
-            .config
-            .read()
-            .as_ref()
-            .cloned()
-            .expect("config is unset");
+        let control = self.control.read();
+        let config = control.config.as_ref().cloned().expect("config is unset");
 
         let ctx = self
             .context
@@ -185,6 +188,7 @@ where
         // TODO: protect against panics (for `fn(..) -> impl Future`).
         let fut = self.exec.exec(ctx);
         let fut = async move {
+            debug!("started");
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             let _res = match fut.await {
                 Ok(Ok(())) => ActorResult::Completed,

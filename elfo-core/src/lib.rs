@@ -1,9 +1,8 @@
 #![warn(rust_2018_idioms, unreachable_pub)]
+// TODO: add `missing_docs`.
 
 #[macro_use]
 extern crate static_assertions;
-
-// TODO: missing_docs
 
 pub use crate::{
     addr::Addr,
@@ -46,6 +45,7 @@ mod object;
 mod request_table;
 mod supervisor;
 mod topology;
+mod utils;
 
 #[doc(hidden)]
 pub mod _priv {
