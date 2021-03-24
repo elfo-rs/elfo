@@ -37,3 +37,9 @@ impl AnyConfig {
         })
     }
 }
+
+impl Default for AnyConfig {
+    fn default() -> Self {
+        Self::new(Value::Map(Default::default()))
+    }
+}

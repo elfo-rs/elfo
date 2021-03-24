@@ -21,9 +21,10 @@ use crate::{
     utils::CachePadded,
 };
 
-pub(crate) struct Supervisor<R: Router, C, X> {
+pub(crate) struct Supervisor<R: Router<C>, C, X> {
     name: String,
     context: Context,
+    // TODO: replace with `crossbeam_utils::sync::ShardedLock`?
     objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
     router: R,
     exec: X,
@@ -36,7 +37,7 @@ struct ControlBlock<C> {
 
 impl<R, C, X> Supervisor<R, C, X>
 where
-    R: Router,
+    R: Router<C>,
     R::Key: Clone + Hash + Eq + Display,
     X: Exec<Context<C, R::Key>>,
     <X::Output as Future>::Output: ExecResult,
@@ -59,9 +60,10 @@ where
         msg!(match &envelope {
             messages::ValidateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
+                    let outcome = self.router.route(&envelope);
                     let mut envelope = envelope;
                     envelope.set_message(messages::ValidateConfig { config });
-                    self.do_handle(envelope, Outcome::Broadcast)
+                    self.do_handle(envelope, outcome.or(Outcome::Broadcast))
                 }
                 Err(reason) => {
                     msg!(match envelope {
@@ -76,11 +78,15 @@ where
             },
             messages::UpdateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
-                    self.control.write().config = config.get().cloned();
+                    let mut control = self.control.write();
+                    control.config = config.get().cloned();
+                    self.router
+                        .update(&control.config.as_ref().expect("just saved"));
+                    let outcome = self.router.route(&envelope);
 
                     let mut envelope = envelope;
                     envelope.set_message(messages::UpdateConfig { config });
-                    self.do_handle(envelope, Outcome::Broadcast)
+                    self.do_handle(envelope, outcome.or(Outcome::Broadcast))
                 }
                 Err(reason) => {
                     msg!(match envelope {
@@ -150,7 +156,7 @@ where
                     RouteReport::WaitAll(someone, waiters)
                 }
             }
-            Outcome::Discard => RouteReport::Done,
+            Outcome::Discard | Outcome::Default => RouteReport::Done,
         }
     }
 

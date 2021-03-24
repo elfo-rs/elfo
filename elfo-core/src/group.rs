@@ -36,7 +36,7 @@ impl<R, C> ActorGroup<R, C> {
 
     pub fn router<R1>(self, router: R1) -> ActorGroup<R1, C>
     where
-        R1: Router,
+        R1: Router<C>,
         R1::Key: Clone + Hash + Eq + Send + Sync, // TODO: why is `Sync` required?
     {
         ActorGroup {
@@ -47,7 +47,7 @@ impl<R, C> ActorGroup<R, C> {
 
     pub fn exec<X, O, ER>(self, exec: X) -> Schema
     where
-        R: Router,
+        R: Router<C>,
         R::Key: Clone + Hash + Eq + Display + Send + Sync, // TODO: why is `Sync` required?
         X: Fn(Context<C, R::Key>) -> O + Send + Sync + 'static,
         O: Future<Output = ER> + Send + 'static,
@@ -58,7 +58,6 @@ impl<R, C> ActorGroup<R, C> {
          * as Future>::Output: ExecResult, */
     {
         let run = move |ctx: Context, name: String| {
-            let ctx = ctx.with_config::<C>();
             let addr = ctx.addr();
             let sv = Supervisor::new(ctx, name, exec, self.router);
             Object::new_group(addr, smallbox!(move |envelope| { sv.handle(envelope) }))

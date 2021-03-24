@@ -4,10 +4,10 @@ pub use self::map::MapRouter;
 
 mod map;
 
-pub trait Router: Send + Sync + 'static {
+pub trait Router<C>: Send + Sync + 'static {
     type Key;
 
-    // TODO: pass `ctx` or `config`.
+    fn update(&self, _config: &C) {}
     fn route(&self, envelope: &Envelope) -> Outcome<Self::Key>;
 }
 
@@ -16,6 +16,8 @@ pub enum Outcome<T> {
     Unicast(T),
     Broadcast,
     Discard,
+    Default,
+    // TODO: Multicast
 }
 
 impl<T> Outcome<T> {
@@ -25,11 +27,21 @@ impl<T> Outcome<T> {
             Outcome::Unicast(val) => Outcome::Unicast(f(val)),
             Outcome::Broadcast => Outcome::Broadcast,
             Outcome::Discard => Outcome::Discard,
+            Outcome::Default => Outcome::Default,
+        }
+    }
+
+    #[inline]
+    pub fn or(self, outcome: Outcome<T>) -> Self {
+        match self {
+            Outcome::Default => outcome,
+            _ => self,
         }
     }
 }
 
-impl Router for () {
+impl<C> Router<C> for () {
+    // TODO
     type Key = u32;
 
     #[inline]

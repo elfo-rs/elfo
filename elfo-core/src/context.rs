@@ -249,6 +249,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
     }
 }
 
+#[must_use]
 pub struct RequestBuilder<'c, C, K, R, M> {
     context: &'c Context<C, K>,
     request: R,
