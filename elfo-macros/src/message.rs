@@ -103,7 +103,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(quote! {
-        #[derive(Clone)]
+        #[derive(Debug, Clone)]
         #[derive(#crate_::_priv::serde::Serialize, #crate_::_priv::serde::Deserialize)]
         #[serde(crate = #serde_crate)]
         #input
