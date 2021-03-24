@@ -30,8 +30,9 @@ pub mod routers;
 pub mod trace_id;
 
 mod addr;
-mod config;
 mod address_book;
+mod config;
+mod configurer;
 mod context;
 mod demux;
 mod envelope;
@@ -57,4 +58,34 @@ pub mod _priv {
     pub use serde;
     pub use smallbox;
     pub use static_assertions::assert_impl_all;
+}
+
+pub mod actors {
+    pub use crate::configurer::configurers;
+}
+
+// TODO: should it return `Result` instead of panicking?
+pub async fn start(topology: Topology) {
+    let entry = topology.book.vacant_entry();
+    let addr = entry.addr();
+    entry.insert(object::Object::new_actor(addr));
+
+    let root = Context::new(topology.book.clone(), demux::Demux::default()).with_addr(addr);
+
+    // XXX
+    if let Some(group) = topology
+        .actor_groups()
+        .find(|group| group.name.contains("configurer"))
+    {
+        let config = Default::default();
+        root.request(messages::UpdateConfig { config })
+            .from(group.addr)
+            .resolve()
+            .await
+            .expect("initial message cannot be delivered")
+            .expect("entrypoint failed");
+    }
+
+    // TODO: handle SIGTERM and SIGINT.
+    let () = futures::future::pending().await;
 }

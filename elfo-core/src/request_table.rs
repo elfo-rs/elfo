@@ -53,8 +53,9 @@ impl RequestTable {
         Some(ResponseToken::new(token.sender, token.request_id, book))
     }
 
-    pub(crate) fn respond(&self, token: ResponseToken<()>, envelope: Envelope) {
+    pub(crate) fn respond(&self, mut token: ResponseToken<()>, envelope: Envelope) {
         self.resolve(token.sender, token.request_id, Some(envelope));
+        token.forget();
     }
 
     pub(crate) async fn wait(&self, request_id: RequestId) -> Data {
@@ -173,7 +174,7 @@ mod tests {
     use crate::{assert_msg_eq, envelope::MessageKind};
 
     #[message(elfo = crate)]
-    #[derive(Debug, PartialEq)]
+    #[derive(PartialEq)]
     struct Num(u32);
 
     fn envelope(addr: Addr, num: Num) -> Envelope {

@@ -82,6 +82,7 @@ where
                     control.config = config.get().cloned();
                     self.router
                         .update(&control.config.as_ref().expect("just saved"));
+                    drop(control);
                     let outcome = self.router.route(&envelope);
 
                     let mut envelope = envelope;
@@ -206,9 +207,9 @@ where
         };
 
         drop(_entered);
-        let handle = tokio::spawn(fut.instrument(span));
+        tokio::spawn(fut.instrument(span));
 
-        entry.insert(Object::new_actor(addr, handle));
+        entry.insert(Object::new_actor(addr));
 
         self.context.book().get_owned(addr).expect("just created")
     }

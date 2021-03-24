@@ -13,7 +13,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Topology {
-    book: AddressBook,
+    pub(crate) book: AddressBook,
     inner: Arc<RwLock<Inner>>,
 }
 
@@ -109,20 +109,12 @@ impl<'t> Local<'t> {
         self.route_to(dest, |_| true)
     }
 
-    pub async fn mount<M: crate::Message>(self, schema: Schema, msg: Option<M>) {
+    pub fn mount(self, schema: Schema) {
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
-        let root = Context::new(book.clone(), Demux::default());
         let ctx = Context::new(book, self.demux.into_inner()).with_addr(addr);
         let object = (schema.run)(ctx, self.name);
         self.entry.insert(object);
-
-        if let Some(msg) = msg {
-            match root.send_to(addr, msg).await {
-                Ok(_) => tracing::info!("ok"),
-                Err(_) => tracing::error!("fail"),
-            }
-        }
     }
 }
 
@@ -131,6 +123,7 @@ pub struct Remote<'t> {
     _topology: &'t Topology,
 }
 
+#[doc(hidden)]
 pub trait GetAddrs {
     fn addrs(&self) -> Vec<Addr>;
 }

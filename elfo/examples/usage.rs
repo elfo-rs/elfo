@@ -55,7 +55,7 @@ fn summators() -> Schema {
                     Outcome::Unicast(*group)
                 }
                 Terminate => Outcome::Broadcast,
-                _ => Outcome::Discard,
+                _ => Outcome::Default,
             })
         }))
         .exec(summator)
@@ -73,16 +73,10 @@ async fn summator(mut ctx: Context<(), u32>) -> Result<()> {
             (Summarize { .. }, token) => {
                 let _ = ctx.respond(token, Report(sum));
             }
-            //(SubscribeToOrderUpdates { account_id }, token) => {}
-            // Summarize::Response => {}
             (ValidateConfig { config, .. }, token) => {
-                let config = ctx.unpack_config(&config);
+                let _config = ctx.unpack_config(&config);
                 let _ = ctx.respond(token, Err("oops".into()));
             }
-            // BeforeConfigUpdate(value) => {
-            // ctx.parse_config(value);
-            // }
-            // AfterConfigUpdate(value) => {}
             Terminate => break,
             _ => {}
         });
@@ -97,19 +91,20 @@ async fn main() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    let topology = elfo::Topology::default();
+    let topology = elfo::Topology::empty();
 
     let producers = topology.local("producers");
     let summators = topology.local("summators");
-    // let informers = topology.remote("informers");
+    let configurers = topology.local("system.configurers");
 
     producers.route_all_to(&summators);
 
-    // producers.route_to(&summators, |envelope| ...);
-    // (&producers + &summators).route_all_to(&informers);
+    producers.mount(self::producers());
+    summators.mount(self::summators());
 
-    summators.mount(self::summators(), None::<Report>).await;
-    producers.mount(self::producers(), Some(Report(2))).await;
+    let config_path = "elfo/examples/config.toml";
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+    configurers.mount(elfo::actors::configurers(&topology, config_path).expect("invalid config"));
+
+    elfo::start(topology).await;
 }
