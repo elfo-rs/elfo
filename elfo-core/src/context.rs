@@ -195,6 +195,16 @@ impl<C, K> Context<C, K> {
         config.get().expect("must already be checked")
     }
 
+    pub fn pruned(&self) -> Context {
+        Context {
+            book: self.book.clone(),
+            addr: self.addr,
+            demux: self.demux.clone(),
+            config: Arc::new(()),
+            key: (),
+        }
+    }
+
     pub(crate) fn book(&self) -> &AddressBook {
         &self.book
     }
