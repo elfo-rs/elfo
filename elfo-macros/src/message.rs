@@ -116,13 +116,23 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         mod #mod_name {
             use super::*;
 
+            use std::fmt;
+
             use #crate_::_priv::{MESSAGE_LIST, MessageVTable, smallbox::{smallbox}, AnyMessage, linkme};
             use #crate_::message;
 
             #request_wrapper
 
+            fn cast_ref(message: &AnyMessage) -> &#name {
+                message.downcast_ref::<#name>().expect("invalid vtable")
+            }
+
             fn clone(message: &AnyMessage) -> AnyMessage {
-                smallbox!(message.downcast_ref::<#name>().expect("invalid vtable").clone())
+                smallbox!(Clone::clone(cast_ref(message)))
+            }
+
+            fn debug(message: &AnyMessage, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt::Debug::fmt(cast_ref(message), f)
             }
 
             #[linkme::distributed_slice(MESSAGE_LIST)]
@@ -130,6 +140,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
             static VTABLE: MessageVTable = MessageVTable {
                 ltid: #ltid,
                 clone,
+                debug,
             };
         }
 

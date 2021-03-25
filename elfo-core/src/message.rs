@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, fmt};
 
 use fxhash::FxHashMap;
 use linkme::distributed_slice;
@@ -24,6 +24,7 @@ pub type AnyMessage = SmallBox<dyn Any + Send, [u8; 64]>;
 pub struct MessageVTable {
     pub ltid: LocalTypeId,
     pub clone: fn(&AnyMessage) -> AnyMessage,
+    pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
 }
 
 #[distributed_slice]
