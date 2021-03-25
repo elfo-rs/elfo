@@ -5,6 +5,7 @@ use elfo::{
     prelude::*,
     routers::{MapRouter, Outcome},
 };
+use serde::{Deserialize, Serialize};
 
 #[message]
 struct AddNum {
@@ -22,25 +23,34 @@ struct Report(u32);
 #[message]
 struct Terminate;
 
+#[derive(Serialize, Deserialize)]
+struct Config {
+    count: u32,
+}
+
 fn producers() -> Schema {
-    ActorGroup::new().exec(move |ctx| async move {
-        // Send some numbers.
-        for i in 0..50 {
-            let msg = AddNum {
-                group: i % 3,
-                num: i,
-            };
-            let _ = ctx.send(msg).await;
-        }
+    ActorGroup::new()
+        .config::<Config>()
+        .exec(move |ctx| async move {
+            let count = ctx.config().count;
 
-        // Ask every group.
-        for &group in &[0, 1, 2] {
-            let _ = ctx.request(Summarize { group }).resolve().await;
-        }
+            // Send some numbers.
+            for i in 0..count {
+                let msg = AddNum {
+                    group: i % 3,
+                    num: i,
+                };
+                let _ = ctx.send(msg).await;
+            }
 
-        // Terminate everything.
-        let _ = ctx.send(Terminate).await;
-    })
+            // Ask every group.
+            for &group in &[0, 1, 2] {
+                let _ = ctx.request(Summarize { group }).resolve().await;
+            }
+
+            // Terminate everything.
+            let _ = ctx.send(Terminate).await;
+        })
 }
 
 fn summators() -> Schema {
