@@ -2,11 +2,12 @@ use std::{any::Any, fmt};
 
 use fxhash::FxHashMap;
 use linkme::distributed_slice;
+use serde::{Deserialize, Serialize};
 use smallbox::{smallbox, SmallBox};
 
 pub type LocalTypeId = u32;
 
-pub trait Message: fmt::Debug + Any + Send {
+pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deserialize<'de> {
     #[doc(hidden)]
     const _LTID: LocalTypeId;
 }

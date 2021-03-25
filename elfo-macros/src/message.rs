@@ -1,8 +1,10 @@
 use std::time::UNIX_EPOCH;
 
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
+    parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
     parse_macro_input, parse_quote, DeriveInput, Ident, Path, Token, Type,
 };
@@ -11,6 +13,7 @@ use syn::{
 struct MessageArgs {
     ret: Option<Type>,
     crate_: Path,
+    not: Vec<String>,
 }
 
 impl Parse for MessageArgs {
@@ -20,12 +23,13 @@ impl Parse for MessageArgs {
         let mut args = MessageArgs {
             ret: None,
             crate_: parse_quote!(::elfo),
+            not: Vec::new(),
         };
 
         // `#[message]`
-        // `#[message(ret(A))]`
-        // `#[message(ret(A), crate = some)]`
-        // `#[message(crate = some::path)]`
+        // `#[message(ret = A)]`
+        // `#[message(elfo = some)]`
+        // `#[message(not(Debug))]`
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
 
@@ -38,6 +42,15 @@ impl Parse for MessageArgs {
                 "elfo" => {
                     let _: Token![=] = input.parse()?;
                     args.crate_ = input.parse()?;
+                }
+                "not" => {
+                    let content;
+                    parenthesized!(content in input);
+                    args.not = content
+                        .parse_terminated::<_, Token![,]>(Ident::parse)?
+                        .iter()
+                        .map(|ident| ident.to_string())
+                        .collect();
                 }
                 attr => panic!("invalid attribute: {}", attr),
             }
@@ -57,6 +70,16 @@ fn gen_ltid() -> u32 {
     elapsed.as_nanos() as u32
 }
 
+fn gen_derive_attr(blacklist: &[String], name: &str) -> impl ToTokens {
+    let ident = Ident::new(name, Span::call_site());
+
+    if blacklist.iter().all(|x| x != name) {
+        quote! { #[derive(#ident)] }
+    } else {
+        quote! {}
+    }
+}
+
 pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as MessageArgs);
 
@@ -68,7 +91,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let serde_crate = format!("{}::_priv::serde", args.crate_.to_token_stream());
     let crate_ = args.crate_;
 
-    let derive_request = if let Some(ret) = &args.ret {
+    let impl_request = if let Some(ret) = &args.ret {
         quote! {
             impl #crate_::Request for #name {
                 type Response = #ret;
@@ -81,8 +104,15 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let request_wrapper = if let Some(ret) = &args.ret {
         quote! {
-            #[message(elfo = #crate_)] // `message` is imported in the module.
+            #[message(not(Debug), elfo = #crate_)] // `message` is imported in the module.
             pub struct Wrapper(#ret);
+
+            impl fmt::Debug for Wrapper {
+                #[inline]
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    self.0.fmt(f)
+                }
+            }
 
             impl From<#ret> for Wrapper {
                 #[inline]
@@ -102,8 +132,13 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    let derive_debug = gen_derive_attr(&args.not, "Debug");
+    let derive_clone = gen_derive_attr(&args.not, "Clone");
+    // TODO: `Serialize`, `Deserialize`
+
     TokenStream::from(quote! {
-        #[derive(Debug, Clone)]
+        #derive_debug
+        #derive_clone
         #[derive(#crate_::_priv::serde::Serialize, #crate_::_priv::serde::Deserialize)]
         #[serde(crate = #serde_crate)]
         #input
@@ -144,6 +179,6 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
             };
         }
 
-        #derive_request
+        #impl_request
     })
 }
