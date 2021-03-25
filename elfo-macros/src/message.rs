@@ -128,7 +128,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
             }
 
             fn clone(message: &AnyMessage) -> AnyMessage {
-                smallbox!(Clone::clone(cast_ref(message)))
+                AnyMessage::new(Clone::clone(cast_ref(message)))
             }
 
             fn debug(message: &AnyMessage, f: &mut fmt::Formatter<'_>) -> fmt::Result {
