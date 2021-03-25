@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use elfo::{
+    actors::configurers,
     messages::ValidateConfig,
     prelude::*,
     routers::{MapRouter, Outcome},
@@ -95,7 +96,7 @@ async fn main() {
 
     let producers = topology.local("producers");
     let summators = topology.local("summators");
-    let configurers = topology.local("system.configurers");
+    let configurers = topology.local("system.configurers").entrypoint();
 
     producers.route_all_to(&summators);
 
@@ -104,7 +105,7 @@ async fn main() {
 
     let config_path = "elfo/examples/config.toml";
 
-    configurers.mount(elfo::actors::configurers(&topology, config_path).expect("invalid config"));
+    configurers.mount(self::configurers(&topology, config_path).expect("invalid config"));
 
     elfo::start(topology).await;
 }

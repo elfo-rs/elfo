@@ -24,12 +24,15 @@ struct Inner {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ActorGroup {
     pub addr: Addr,
     pub name: String,
+    pub is_entrypoint: bool,
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Connection {
     pub from: Addr,
     pub to: Addr,
@@ -51,6 +54,7 @@ impl Topology {
         inner.groups.push(ActorGroup {
             addr: entry.addr(),
             name: name.clone(),
+            is_entrypoint: false,
         });
 
         Local {
@@ -91,6 +95,17 @@ pub struct Local<'t> {
 }
 
 impl<'t> Local<'t> {
+    pub fn entrypoint(self) -> Self {
+        let mut inner = self.topology.inner.write();
+        let group = inner
+            .groups
+            .iter_mut()
+            .find(|group| group.addr == self.entry.addr())
+            .expect("just created");
+        group.is_entrypoint = true;
+        self
+    }
+
     pub fn route_to(
         &self,
         dest: &impl GetAddrs,

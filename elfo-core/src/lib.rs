@@ -12,6 +12,7 @@ pub use crate::{
     local::Local,
     message::{Message, Request},
     request_table::ResponseToken,
+    start::{start, try_start},
     topology::Topology,
 };
 
@@ -44,6 +45,7 @@ mod mailbox;
 mod message;
 mod object;
 mod request_table;
+mod start;
 mod supervisor;
 mod topology;
 mod utils;
@@ -62,30 +64,4 @@ pub mod _priv {
 
 pub mod actors {
     pub use crate::configurer::configurers;
-}
-
-// TODO: should it return `Result` instead of panicking?
-pub async fn start(topology: Topology) {
-    let entry = topology.book.vacant_entry();
-    let addr = entry.addr();
-    entry.insert(object::Object::new_actor(addr));
-
-    let root = Context::new(topology.book.clone(), demux::Demux::default()).with_addr(addr);
-
-    // XXX
-    if let Some(group) = topology
-        .actor_groups()
-        .find(|group| group.name.contains("configurer"))
-    {
-        let config = Default::default();
-        root.request(messages::UpdateConfig { config })
-            .from(group.addr)
-            .resolve()
-            .await
-            .expect("initial message cannot be delivered")
-            .expect("entrypoint failed");
-    }
-
-    // TODO: handle SIGTERM and SIGINT.
-    let () = futures::future::pending().await;
 }
