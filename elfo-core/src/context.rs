@@ -23,7 +23,6 @@ pub struct Context<C = (), K = ()> {
     demux: Demux,
     config: Arc<C>,
     key: K,
-    is_started: bool,
 }
 
 assert_impl_all!(Context: Send);
@@ -157,15 +156,10 @@ impl<C, K> Context<C, K> {
     where
         C: 'static,
     {
-        if !self.is_started {
-            self.is_started = true;
-            self.set_status(ActorStatus::NORMAL);
-        }
-
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
-        let envelope = ward!(actor.mailbox().recv().await, {
+        let envelope = ward!(actor.recv().await, {
             trace!("mailbox closed");
             return None;
         });
@@ -193,14 +187,9 @@ impl<C, K> Context<C, K> {
     where
         C: 'static,
     {
-        if !self.is_started {
-            self.is_started = true;
-            self.set_status(ActorStatus::NORMAL);
-        }
-
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
         let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
-        let envelope = match actor.mailbox().try_recv() {
+        let envelope = match actor.try_recv() {
             Ok(envelope) => envelope,
             Err(err) => {
                 if err.is_closed() {
@@ -243,7 +232,6 @@ impl<C, K> Context<C, K> {
             demux: self.demux.clone(),
             config: Arc::new(()),
             key: (),
-            is_started: self.is_started,
         }
     }
 
@@ -258,7 +246,6 @@ impl<C, K> Context<C, K> {
             demux: self.demux,
             config,
             key: self.key,
-            is_started: self.is_started,
         }
     }
 
@@ -274,7 +261,6 @@ impl<C, K> Context<C, K> {
             demux: self.demux,
             config: self.config,
             key,
-            is_started: self.is_started,
         }
     }
 }
@@ -287,7 +273,6 @@ impl Context<(), ()> {
             demux,
             config: Arc::new(()),
             key: (),
-            is_started: false,
         }
     }
 }
@@ -300,7 +285,6 @@ impl<C, K: Clone> Clone for Context<C, K> {
             demux: self.demux.clone(),
             config: self.config.clone(),
             key: self.key.clone(),
-            is_started: self.is_started,
         }
     }
 }

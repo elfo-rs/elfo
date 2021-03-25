@@ -46,7 +46,7 @@ impl Object {
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>> {
         match &self.kind {
-            ObjectKind::Actor(handle) => handle.mailbox().send(envelope).await,
+            ObjectKind::Actor(handle) => handle.send(envelope).await,
             ObjectKind::Group(handle) => match (handle.router)(envelope) {
                 RouteReport::Done => Ok(()),
                 RouteReport::Wait(addr, envelope) => match ctx.book().get_owned(addr) {
@@ -54,7 +54,6 @@ impl Object {
                         object
                             .as_actor()
                             .expect("supervisor stores only actors")
-                            .mailbox()
                             .send(envelope)
                             .await
                     }
@@ -73,7 +72,6 @@ impl Object {
                                     object
                                         .as_actor()
                                         .expect("supervisor stores only actors")
-                                        .mailbox()
                                         .send(envelope)
                                         .await
                                 }
@@ -97,7 +95,7 @@ impl Object {
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
         match &self.kind {
-            ObjectKind::Actor(handle) => handle.mailbox().try_send(envelope),
+            ObjectKind::Actor(handle) => handle.try_send(envelope),
             ObjectKind::Group(handle) => match (handle.router)(envelope) {
                 RouteReport::Done => Ok(()),
                 RouteReport::Wait(_, envelope) => Err(TrySendError::Full(envelope)),

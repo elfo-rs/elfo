@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 use crate::{
-    addr::Addr, envelope::Envelope, errors::TrySendError, mailbox::Mailbox,
+    addr::Addr,
+    envelope::Envelope,
+    errors::{SendError, TryRecvError, TrySendError},
+    mailbox::Mailbox,
     request_table::RequestTable,
 };
 
@@ -78,11 +81,30 @@ impl Actor {
         if self.is_restarting() {
             return Err(TrySendError::Closed(envelope));
         }
-        self.mailbox().try_send(envelope)
+        self.mailbox.try_send(envelope)
     }
 
-    pub(crate) fn mailbox(&self) -> &Mailbox {
-        &self.mailbox
+    pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
+        if self.is_restarting() {
+            return Err(SendError(envelope));
+        }
+        self.mailbox.send(envelope).await
+    }
+
+    pub(crate) async fn recv(&self) -> Option<Envelope> {
+        if self.is_initializing() {
+            self.set_status(ActorStatus::NORMAL);
+        }
+
+        self.mailbox.recv().await
+    }
+
+    pub(crate) fn try_recv(&self) -> Result<Envelope, TryRecvError> {
+        if self.is_initializing() {
+            self.set_status(ActorStatus::NORMAL);
+        }
+
+        self.mailbox.try_recv()
     }
 
     pub(crate) fn request_table(&self) -> &RequestTable {
@@ -108,5 +130,12 @@ impl Actor {
 
     pub(crate) fn is_restarting(&self) -> bool {
         matches!(self.control.read().status.kind, ActorStatusKind::Restarting)
+    }
+
+    pub(crate) fn is_initializing(&self) -> bool {
+        matches!(
+            self.control.read().status.kind,
+            ActorStatusKind::Initializing
+        )
     }
 }
