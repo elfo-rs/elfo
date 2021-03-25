@@ -1,3 +1,4 @@
+use derive_more::From;
 use futures::future::join_all;
 use smallbox::SmallBox;
 
@@ -21,25 +22,17 @@ assert_eq_size!(Object, [u8; 256]);
 pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object>;
 pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object>;
 
-enum ObjectKind {
+#[derive(From)]
+pub(crate) enum ObjectKind {
     Actor(Actor),
-    Group(GroupHandle),
+    Group(Group),
 }
 
 impl Object {
-    pub(crate) fn new_actor(addr: Addr) -> Self {
+    pub(crate) fn new(addr: Addr, kind: impl Into<ObjectKind>) -> Self {
         Self {
             addr,
-            kind: ObjectKind::Actor(Actor::new(addr)),
-        }
-    }
-
-    pub(crate) fn new_group(addr: Addr, router: GroupRouter) -> Self {
-        let handle = GroupHandle { router };
-
-        Self {
-            addr,
-            kind: ObjectKind::Group(handle),
+            kind: kind.into(),
         }
     }
 
@@ -125,8 +118,14 @@ impl Object {
     }
 }
 
-struct GroupHandle {
+pub(crate) struct Group {
     router: GroupRouter,
+}
+
+impl Group {
+    pub(crate) fn new(router: GroupRouter) -> Self {
+        Group { router }
+    }
 }
 
 pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 220]>;

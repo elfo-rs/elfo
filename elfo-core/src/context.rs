@@ -5,6 +5,7 @@ use tracing::{info, trace};
 use elfo_macros::msg_internal as msg;
 
 use crate::{
+    actor::ActorStatus,
     addr::Addr,
     address_book::AddressBook,
     config::AnyConfig,
@@ -22,6 +23,7 @@ pub struct Context<C = (), K = ()> {
     demux: Demux,
     config: Arc<C>,
     key: K,
+    is_started: bool,
 }
 
 assert_impl_all!(Context: Send);
@@ -40,6 +42,12 @@ impl<C, K> Context<C, K> {
     #[inline]
     pub fn key(&self) -> &K {
         &self.key
+    }
+
+    pub fn set_status(&self, status: ActorStatus) {
+        let object = ward!(self.book.get_owned(self.addr));
+        let actor = ward!(object.as_actor());
+        actor.set_status(status);
     }
 
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
@@ -149,6 +157,11 @@ impl<C, K> Context<C, K> {
     where
         C: 'static,
     {
+        if !self.is_started {
+            self.is_started = true;
+            self.set_status(ActorStatus::NORMAL);
+        }
+
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
@@ -180,6 +193,11 @@ impl<C, K> Context<C, K> {
     where
         C: 'static,
     {
+        if !self.is_started {
+            self.is_started = true;
+            self.set_status(ActorStatus::NORMAL);
+        }
+
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
         let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
         let envelope = match actor.mailbox().try_recv() {
@@ -225,6 +243,7 @@ impl<C, K> Context<C, K> {
             demux: self.demux.clone(),
             config: Arc::new(()),
             key: (),
+            is_started: self.is_started,
         }
     }
 
@@ -239,6 +258,7 @@ impl<C, K> Context<C, K> {
             demux: self.demux,
             config,
             key: self.key,
+            is_started: self.is_started,
         }
     }
 
@@ -254,6 +274,7 @@ impl<C, K> Context<C, K> {
             demux: self.demux,
             config: self.config,
             key,
+            is_started: self.is_started,
         }
     }
 }
@@ -266,6 +287,7 @@ impl Context<(), ()> {
             demux,
             config: Arc::new(()),
             key: (),
+            is_started: false,
         }
     }
 }
@@ -278,6 +300,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             demux: self.demux.clone(),
             config: self.config.clone(),
             key: self.key.clone(),
+            is_started: self.is_started,
         }
     }
 }

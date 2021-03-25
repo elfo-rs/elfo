@@ -4,7 +4,11 @@ use serde::Deserialize;
 use smallbox::smallbox;
 
 use crate::{
-    context::Context, exec::ExecResult, object::Object, routers::Router, supervisor::Supervisor,
+    context::Context,
+    exec::ExecResult,
+    object::{Group, Object},
+    routers::Router,
+    supervisor::Supervisor,
 };
 
 #[derive(Debug)]
@@ -60,7 +64,8 @@ impl<R, C> ActorGroup<R, C> {
         let run = move |ctx: Context, name: String| {
             let addr = ctx.addr();
             let sv = Supervisor::new(ctx, name, exec, self.router);
-            Object::new_group(addr, smallbox!(move |envelope| { sv.handle(envelope) }))
+            let router = smallbox!(move |envelope| { sv.handle(envelope) });
+            Object::new(addr, Group::new(router))
         };
 
         Schema { run: Box::new(run) }

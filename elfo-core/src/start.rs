@@ -1,5 +1,5 @@
 use crate::{
-    context::Context, demux::Demux, errors::StartError, messages, object::Object,
+    actor::Actor, context::Context, demux::Demux, errors::StartError, messages, object::Object,
     topology::Topology,
 };
 
@@ -37,7 +37,7 @@ pub async fn start(topology: Topology) {
 pub async fn try_start(topology: Topology) -> Result<()> {
     let entry = topology.book.vacant_entry();
     let addr = entry.addr();
-    entry.insert(Object::new_actor(addr));
+    entry.insert(Object::new(addr, Actor::new(addr)));
 
     let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
 

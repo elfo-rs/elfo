@@ -5,6 +5,7 @@
 extern crate static_assertions;
 
 pub use crate::{
+    actor::ActorStatus,
     addr::Addr,
     context::{Context, RequestBuilder},
     envelope::Envelope,

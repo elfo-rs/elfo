@@ -13,7 +13,7 @@ use tracing::{error, error_span, info, Instrument, Span};
 use elfo_macros::{message, msg_internal as msg};
 
 use crate::{
-    actor::ActorStatus,
+    actor::{Actor, ActorStatus},
     addr::Addr,
     context::Context,
     envelope::Envelope,
@@ -80,7 +80,7 @@ where
                     return RouteReport::Done;
                 });
                 let actor = object.as_actor().expect("invalid command");
-                actor.set_status(ActorStatus::Restarting, None);
+                actor.set_status(ActorStatus::RESTARTING);
                 RouteReport::Done
             }
             ActorRestarted { key } => {
@@ -283,7 +283,7 @@ where
         drop(_entered);
         tokio::spawn(fut.instrument(span));
 
-        entry.insert(Object::new_actor(addr));
+        entry.insert(Object::new(addr, Actor::new(addr)));
 
         self.context.book().get_owned(addr).expect("just created")
     }
