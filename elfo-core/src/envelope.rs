@@ -1,19 +1,16 @@
-use smallbox::smallbox;
-
 use crate::{
     addr::Addr,
     address_book::AddressBook,
-    message::{with_vtable, AnyMessage, LocalTypeId, Message},
+    message::{AnyMessage, Message},
     request_table::ResponseToken,
     trace_id::TraceId,
 };
 
 // TODO: use granular messages instead of `SmallBox`.
-#[derive(Debug)] // TODO: skip extra fields
+#[derive(Debug)]
 pub struct Envelope<M = AnyMessage> {
     trace_id: TraceId,
     kind: MessageKind,
-    ltid: LocalTypeId,
     message: M,
 }
 
@@ -27,12 +24,17 @@ pub(crate) enum MessageKind {
     RequestAll(ResponseToken<()>),
 }
 
+impl<M> Envelope<M> {
+    pub fn message(&self) -> &M {
+        &self.message
+    }
+}
+
 impl<M: Message> Envelope<M> {
     pub(crate) fn new(message: M, kind: MessageKind) -> Self {
         Self {
             trace_id: TraceId::new(1).unwrap(), // TODO: load trace_id.
             kind,
-            ltid: M::_LTID,
             message,
         }
     }
@@ -50,8 +52,7 @@ impl<M: Message> Envelope<M> {
         Envelope {
             trace_id: self.trace_id,
             kind: self.kind,
-            ltid: self.ltid,
-            message: smallbox!(self.message),
+            message: AnyMessage::new(self.message),
         }
     }
 
@@ -72,8 +73,7 @@ impl Envelope {
         Envelope {
             trace_id: self.trace_id,
             kind: self.kind,
-            ltid: self.ltid,
-            message: message.into_inner(),
+            message,
         }
     }
 
@@ -94,9 +94,12 @@ impl Envelope {
                     MessageKind::RequestAll(token)
                 }
             },
-            ltid: self.ltid,
-            message: with_vtable(self.ltid, |vtable| (vtable.clone)(&self.message)),
+            message: self.message.clone(),
         })
+    }
+
+    pub(crate) fn set_message<M: Message>(&mut self, message: M) {
+        self.message = AnyMessage::new(message);
     }
 }
 
@@ -135,25 +138,23 @@ impl EnvelopeBorrowed for Envelope {
 }
 
 pub trait AnyMessageOwned {
-    fn downcast2<T: 'static>(self) -> T;
+    fn downcast2<M: Message>(self) -> M;
 }
 
 pub trait AnyMessageBorrowed {
-    fn downcast2<T: 'static>(&self) -> &T;
+    fn downcast2<M: Message>(&self) -> &M;
 }
 
 impl AnyMessageOwned for AnyMessage {
     #[inline]
-    fn downcast2<T: 'static>(self) -> T {
-        // TODO: replace `unwrap()` after impl of dynamic `Debug`.
-        self.downcast::<T>().unwrap().into_inner()
+    fn downcast2<M: Message>(self) -> M {
+        self.downcast::<M>().expect("cannot downcast")
     }
 }
 
 impl AnyMessageBorrowed for AnyMessage {
     #[inline]
-    fn downcast2<T: 'static>(&self) -> &T {
-        // TODO: replace `unwrap()` after impl of dynamic `Debug`.
-        self.downcast_ref::<T>().unwrap()
+    fn downcast2<M: Message>(&self) -> &M {
+        self.downcast_ref::<M>().expect("cannot downcast")
     }
 }

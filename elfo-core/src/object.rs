@@ -1,6 +1,5 @@
 use futures::future::join_all;
 use smallbox::SmallBox;
-use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use crate::{
     addr::Addr,
@@ -29,11 +28,10 @@ enum ObjectKind {
 }
 
 impl Object {
-    pub(crate) fn new_actor(addr: Addr, task: JoinHandle<()>) -> Self {
+    pub(crate) fn new_actor(addr: Addr) -> Self {
         let handle = ActorHandle {
             mailbox: Mailbox::new(),
             request_table: RequestTable::new(addr),
-            task: AsyncMutex::new(task),
         };
 
         Self {
@@ -136,7 +134,6 @@ impl Object {
 pub(crate) struct ActorHandle {
     pub(crate) mailbox: Mailbox,
     pub(crate) request_table: RequestTable,
-    task: AsyncMutex<JoinHandle<()>>,
 }
 
 struct GroupHandle {

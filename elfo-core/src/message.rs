@@ -1,29 +1,77 @@
-use std::any::Any;
+use std::{any::Any, fmt};
 
 use fxhash::FxHashMap;
 use linkme::distributed_slice;
-use smallbox::SmallBox;
+use smallbox::{smallbox, SmallBox};
 
 pub type LocalTypeId = u32;
 
-pub trait Message: Any + Send {
+pub trait Message: fmt::Debug + Any + Send {
     #[doc(hidden)]
     const _LTID: LocalTypeId;
 }
 
 pub trait Request: Message {
-    type Response;
+    type Response: fmt::Debug;
 
     #[doc(hidden)]
     type Wrapper: Message + Into<Self::Response> + From<Self::Response>;
 }
 
-pub type AnyMessage = SmallBox<dyn Any + Send, [u8; 72]>;
+pub struct AnyMessage {
+    ltid: LocalTypeId,
+    data: SmallBox<dyn Any + Send, [u8; 64]>,
+}
+
+impl AnyMessage {
+    pub fn new<M: Message>(message: M) -> Self {
+        AnyMessage {
+            ltid: M::_LTID,
+            data: smallbox!(message),
+        }
+    }
+
+    pub fn is<T: 'static>(&self) -> bool {
+        self.data.is::<T>()
+    }
+
+    pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
+        self.data.downcast_ref()
+    }
+
+    pub fn downcast<M: Message>(self) -> Result<M, AnyMessage> {
+        if M::_LTID != self.ltid {
+            return Err(self);
+        }
+
+        Ok(self
+            .data
+            .downcast::<M>()
+            .expect("cannot downcast")
+            .into_inner())
+    }
+}
+
+impl Clone for AnyMessage {
+    #[inline]
+    fn clone(&self) -> Self {
+        with_vtable(self.ltid, |vtable| (vtable.clone)(self))
+    }
+}
+
+impl fmt::Debug for AnyMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        with_vtable(self.ltid, |vtable| (vtable.debug)(self, f))
+    }
+}
+
+// Message Virtual Table.
 
 #[derive(Clone)]
 pub struct MessageVTable {
     pub ltid: LocalTypeId,
     pub clone: fn(&AnyMessage) -> AnyMessage,
+    pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
 }
 
 #[distributed_slice]
@@ -39,6 +87,6 @@ thread_local! {
     };
 }
 
-pub(crate) fn with_vtable<R>(ltid: LocalTypeId, f: impl FnOnce(&MessageVTable) -> R) -> R {
+fn with_vtable<R>(ltid: LocalTypeId, f: impl FnOnce(&MessageVTable) -> R) -> R {
     MESSAGE_BY_LTID.with(|map| f(map.get(&ltid).expect("invalid LTID")))
 }

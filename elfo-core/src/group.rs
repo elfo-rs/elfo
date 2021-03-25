@@ -1,5 +1,6 @@
 use std::{fmt::Display, future::Future, hash::Hash, marker::PhantomData};
 
+use serde::Deserialize;
 use smallbox::smallbox;
 
 use crate::{
@@ -25,7 +26,7 @@ impl ActorGroup<(), ()> {
 impl<R, C> ActorGroup<R, C> {
     pub fn config<C1>(self) -> ActorGroup<R, C1>
     where
-        C1: Send + Sync + 'static,
+        C1: for<'de> Deserialize<'de> + Send + Sync + 'static,
     {
         ActorGroup {
             router: self.router,
@@ -35,7 +36,7 @@ impl<R, C> ActorGroup<R, C> {
 
     pub fn router<R1>(self, router: R1) -> ActorGroup<R1, C>
     where
-        R1: Router,
+        R1: Router<C>,
         R1::Key: Clone + Hash + Eq + Send + Sync, // TODO: why is `Sync` required?
     {
         ActorGroup {
@@ -46,18 +47,17 @@ impl<R, C> ActorGroup<R, C> {
 
     pub fn exec<X, O, ER>(self, exec: X) -> Schema
     where
-        R: Router,
+        R: Router<C>,
         R::Key: Clone + Hash + Eq + Display + Send + Sync, // TODO: why is `Sync` required?
         X: Fn(Context<C, R::Key>) -> O + Send + Sync + 'static,
         O: Future<Output = ER> + Send + 'static,
         ER: ExecResult,
         // TODO
-        C: Send + Sync + 'static,
+        C: for<'de> Deserialize<'de> + Send + Sync + 'static,
         /* X: Exec<Context<C, R::Key>>,
          * as Future>::Output: ExecResult, */
     {
         let run = move |ctx: Context, name: String| {
-            let ctx = ctx.with_config::<C>();
             let addr = ctx.addr();
             let sv = Supervisor::new(ctx, name, exec, self.router);
             Object::new_group(addr, smallbox!(move |envelope| { sv.handle(envelope) }))

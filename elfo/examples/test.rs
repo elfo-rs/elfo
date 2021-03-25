@@ -1,11 +1,11 @@
 use elfo::{prelude::*, Envelope};
 
 #[message(ret = Num)]
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct Num(pub u32);
 
 #[message]
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct Num2 {
     pub inner: u32,
 }

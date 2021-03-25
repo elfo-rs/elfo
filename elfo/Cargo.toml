@@ -9,6 +9,7 @@ elfo-core = { path = "../elfo-core" }
 elfo-macros = { path = "../elfo-macros" }
 
 [dev-dependencies]
+anyhow = "1.0.38"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1.25"
 tracing-subscriber = "0.2.15"

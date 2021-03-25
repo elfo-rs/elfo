@@ -2,10 +2,10 @@ use std::{fmt, marker::PhantomData};
 
 use futures_intrusive::sync::GenericManualResetEvent;
 use parking_lot::{Mutex, RawMutex};
-use slotmap::{new_key_type, SlotMap};
+use slotmap::{new_key_type, Key, SlotMap};
 use smallvec::SmallVec;
 
-use crate::{addr::Addr, envelope::Envelope};
+use crate::{addr::Addr, address_book::AddressBook, envelope::Envelope};
 
 pub(crate) struct RequestTable {
     owner: Addr,
@@ -36,31 +36,26 @@ impl RequestTable {
         }
     }
 
-    pub(crate) fn new_request(&self) -> ResponseToken<()> {
+    pub(crate) fn new_request(&self, book: AddressBook) -> ResponseToken<()> {
         let mut requests = self.requests.lock();
         let request_id = requests.insert(RequestInfo {
             remainder: 1,
             data: Data::new(),
         });
-        ResponseToken::new(self.owner, request_id)
+        ResponseToken::new(self.owner, request_id, book)
     }
 
     pub(crate) fn clone_token(&self, token: &ResponseToken<()>) -> Option<ResponseToken<()>> {
         debug_assert_eq!(token.sender, self.owner);
         let mut requests = self.requests.lock();
         requests.get_mut(token.request_id)?.remainder += 1;
-        Some(ResponseToken::new(token.sender, token.request_id))
+        let book = token.book.clone();
+        Some(ResponseToken::new(token.sender, token.request_id, book))
     }
 
-    pub(crate) fn respond(&self, token: ResponseToken<()>, envelope: Envelope) {
-        debug_assert_eq!(token.sender, self.owner);
-        let mut requests = self.requests.lock();
-        let request = requests.get_mut(token.request_id).expect("unknown request");
-        request.data.push(Some(envelope));
-        request.remainder -= 1;
-        if request.remainder == 0 {
-            self.notifier.set();
-        }
+    pub(crate) fn respond(&self, mut token: ResponseToken<()>, envelope: Envelope) {
+        self.resolve(token.sender, token.request_id, Some(envelope));
+        token.forget();
     }
 
     pub(crate) async fn wait(&self, request_id: RequestId) -> Data {
@@ -86,47 +81,79 @@ impl RequestTable {
             tokio::task::yield_now().await;
         }
     }
+
+    fn resolve(&self, sender: Addr, request_id: RequestId, envelope: Option<Envelope>) {
+        // TODO: should we have another strategy for panics?
+        debug_assert_eq!(sender, self.owner);
+        let mut requests = self.requests.lock();
+        let request = requests.get_mut(request_id).expect("unknown request");
+        request.data.push(envelope);
+        request.remainder -= 1;
+        if request.remainder == 0 {
+            self.notifier.set();
+        }
+    }
 }
 
 #[must_use]
 pub struct ResponseToken<T> {
     pub(crate) sender: Addr,
     pub(crate) request_id: RequestId,
+    book: AddressBook,
     marker: PhantomData<T>,
 }
 
 impl ResponseToken<()> {
-    pub(crate) fn new(sender: Addr, request_id: RequestId) -> Self {
+    pub(crate) fn new(sender: Addr, request_id: RequestId, book: AddressBook) -> Self {
         Self {
             sender,
             request_id,
+            book,
             marker: PhantomData,
         }
     }
 
-    pub(crate) fn into_typed<T>(self) -> ResponseToken<T> {
-        ResponseToken {
+    pub(crate) fn into_typed<T>(mut self) -> ResponseToken<T> {
+        let token = ResponseToken {
             sender: self.sender,
             request_id: self.request_id,
+            book: self.book.clone(),
             marker: PhantomData,
-        }
+        };
+        self.forget();
+        token
     }
 }
 
 impl<R> ResponseToken<R> {
-    pub(crate) fn into_untyped(self) -> ResponseToken<()> {
-        ResponseToken {
+    pub(crate) fn into_untyped(mut self) -> ResponseToken<()> {
+        let token = ResponseToken {
             sender: self.sender,
             request_id: self.request_id,
+            book: self.book.clone(),
             marker: PhantomData,
-        }
+        };
+        self.forget();
+        token
+    }
+
+    fn forget(&mut self) {
+        self.request_id = RequestId::null();
     }
 }
 
 impl<T> Drop for ResponseToken<T> {
     fn drop(&mut self) {
-        // TODO: drop without responding.
-        // TODO: detect panics.
+        // We use the special value of `RequestId` to reduce memory usage.
+        if self.request_id.is_null() {
+            return;
+        }
+
+        let object = ward!(self.book.get(self.sender));
+        let actor = ward!(object.as_actor());
+        actor
+            .request_table
+            .resolve(self.sender, self.request_id, None);
     }
 }
 
@@ -147,7 +174,7 @@ mod tests {
     use crate::{assert_msg_eq, envelope::MessageKind};
 
     #[message(elfo = crate)]
-    #[derive(Debug, PartialEq)]
+    #[derive(PartialEq)]
     struct Num(u32);
 
     fn envelope(addr: Addr, num: Num) -> Envelope {
@@ -158,9 +185,10 @@ mod tests {
     async fn one_request_one_response() {
         let addr = Addr::from_bits(1);
         let table = Arc::new(RequestTable::new(addr));
+        let book = AddressBook::new();
 
         for _ in 0..3 {
-            let token = table.new_request();
+            let token = table.new_request(book.clone());
             let request_id = token.request_id;
 
             let table1 = table.clone();
@@ -179,7 +207,7 @@ mod tests {
     async fn one_request_many_response() {
         let addr = Addr::from_bits(1);
         let table = Arc::new(RequestTable::new(addr));
-        let token = table.new_request();
+        let token = table.new_request(AddressBook::new());
         let request_id = token.request_id;
 
         let n = 5;

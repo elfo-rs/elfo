@@ -1,6 +1,15 @@
 use derive_more::{Display, Error};
 
 #[derive(Debug, Display, Error)]
+#[non_exhaustive]
+pub enum StartError {
+    /// Configs must be valid at the start-up.
+    #[display(fmt = "invalid config")]
+    InvalidConfig,
+    Other(#[error(not(source))] String),
+}
+
+#[derive(Debug, Display, Error)]
 #[display(fmt = "mailbox closed")]
 pub struct SendError<T>(#[error(not(source))] pub T);
 

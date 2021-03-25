@@ -1,8 +1,10 @@
+use anyhow::{anyhow, Result};
 use elfo::{
+    actors::configurers,
+    messages::ValidateConfig,
     prelude::*,
     routers::{MapRouter, Outcome},
 };
-use tracing::info;
 
 #[message]
 struct AddNum {
@@ -29,14 +31,11 @@ fn producers() -> Schema {
                 num: i,
             };
             let _ = ctx.send(msg).await;
-            info!(%i, "sent");
         }
 
         // Ask every group.
         for &group in &[0, 1, 2] {
-            if let Ok(report) = ctx.request(Summarize { group }).resolve().await {
-                info!(group, sum = report.0, "asked");
-            }
+            let _ = ctx.request(Summarize { group }).resolve().await;
         }
 
         // Terminate everything.
@@ -53,54 +52,56 @@ fn summators() -> Schema {
                     Outcome::Unicast(*group)
                 }
                 Terminate => Outcome::Broadcast,
-                _ => Outcome::Discard,
+                _ => Outcome::Default,
             })
         }))
-        .exec(|ctx| async move {
-            let mut sum = 0;
+        .exec(summator)
+}
 
-            while let Some(envelope) = ctx.recv().await {
-                msg!(match envelope {
-                    msg @ AddNum { .. } => {
-                        info!(num = msg.num, "got");
-                        sum += msg.num;
-                    }
-                    (Summarize { .. }, token) => {
-                        let _ = ctx.respond(token, Report(sum));
-                    }
-                    Terminate => break,
-                    _ => {}
-                });
+async fn summator(mut ctx: Context<(), u32>) -> Result<()> {
+    let mut sum = 0;
+
+    while let Some(envelope) = ctx.recv().await {
+        msg!(match envelope {
+            msg @ AddNum { .. } => {
+                sum += msg.num;
             }
+            (Summarize { .. }, token) => {
+                let _ = ctx.respond(token, Report(sum));
+            }
+            (ValidateConfig { config, .. }, token) => {
+                let _config = ctx.unpack_config(&config);
+                let _ = ctx.respond(token, Err("oops".into()));
+            }
+            Terminate => break,
+            _ => {}
+        });
+    }
 
-            Err("some error")
-        })
+    Err(anyhow!("oops"))
 }
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
+        .with_target(false)
         .init();
 
-    let topology = elfo::Topology::default();
+    let topology = elfo::Topology::empty();
 
     let producers = topology.local("producers");
     let summators = topology.local("summators");
-    // let informers = topology.remote("informers");
+    let configurers = topology.local("system.configurers").entrypoint();
 
-    // producers.route_to(&summators, |e| {
-    // msg!(match e {
-    // AddNum { .. } | Summarize { .. } | Terminate => true,
-    //_ => false,
-    //});
+    producers.route_all_to(&summators);
 
-    producers.route_to(&summators, |_e| true);
+    producers.mount(self::producers());
+    summators.mount(self::summators());
 
-    // (&producers + &summators).route_all_to(&informers);
+    let config_path = "elfo/examples/config.toml";
 
-    summators.mount(self::summators(), None::<Report>).await;
-    producers.mount(self::producers(), Some(Report(2))).await;
+    configurers.mount(self::configurers(&topology, config_path).expect("invalid config"));
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+    elfo::start(topology).await;
 }

@@ -1,21 +1,27 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
+
+use tracing::{info, trace};
+
+use elfo_macros::msg_internal as msg;
 
 use crate::{
     addr::Addr,
     address_book::AddressBook,
+    config::AnyConfig,
     demux::Demux,
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     message::{Message, Request},
+    messages,
     request_table::ResponseToken,
 };
 
 pub struct Context<C = (), K = ()> {
-    addr: Addr,
     book: AddressBook,
-    key: K,
+    addr: Addr,
     demux: Demux,
-    _config: PhantomData<C>,
+    config: Arc<C>,
+    key: K,
 }
 
 assert_impl_all!(Context: Send);
@@ -28,7 +34,7 @@ impl<C, K> Context<C, K> {
 
     #[inline]
     pub fn config(&self) -> &C {
-        todo!()
+        &self.config
     }
 
     #[inline]
@@ -38,6 +44,7 @@ impl<C, K> Context<C, K> {
 
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::Regular { sender: self.addr };
+        trace!(?message, ">");
         self.do_send(message, kind).await
     }
 
@@ -98,6 +105,7 @@ impl<C, K> Context<C, K> {
     ) -> Result<(), SendError<M>> {
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(SendError(message)));
+        trace!(?message, to = %recipient, ">");
         let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
@@ -111,6 +119,7 @@ impl<C, K> Context<C, K> {
     ) -> Result<(), TrySendError<M>> {
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(TrySendError::Closed(message)));
+        trace!(?message, to = %recipient, ">");
         let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
 
         object.try_send(envelope.upcast()).map_err(|err| match err {
@@ -126,6 +135,7 @@ impl<C, K> Context<C, K> {
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, message: R::Response) {
         let message = R::Wrapper::from(message);
         let sender = token.sender;
+        trace!(?message, to = %sender, ">");
         let envelope = Envelope::new(message, MessageKind::Regular { sender }).upcast();
         let object = ward!(self.book.get(token.sender));
         let actor = ward!(object.as_actor());
@@ -133,34 +143,100 @@ impl<C, K> Context<C, K> {
     }
 
     #[inline]
-    pub async fn recv(&self) -> Option<Envelope> {
+    pub async fn recv(&mut self) -> Option<Envelope>
+    where
+        C: 'static,
+    {
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
-        actor.mailbox.recv().await
+        let envelope = ward!(actor.mailbox.recv().await, {
+            trace!("mailbox closed");
+            return None;
+        });
+
+        let envelope = msg!(match envelope {
+            (messages::UpdateConfig { config }, token) => {
+                self.config = config.get().cloned().expect("must be decoded");
+                info!("config updated");
+                let message = messages::ConfigUpdated {};
+                let kind = MessageKind::Regular { sender: self.addr };
+                let envelope = Envelope::new(message.clone(), kind).upcast();
+                self.respond(token, Ok(message));
+                envelope
+            }
+            envelope => envelope,
+        });
+
+        trace!(message = ?envelope.message(), "<");
+
+        Some(envelope)
     }
 
     #[inline]
-    pub fn try_recv(&self) -> Result<Envelope, TryRecvError> {
+    pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
+    where
+        C: 'static,
+    {
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
-        object
-            .as_actor()
-            .ok_or(TryRecvError::Closed)?
-            .mailbox
-            .try_recv()
+        let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
+        let envelope = match actor.mailbox.try_recv() {
+            Ok(envelope) => envelope,
+            Err(err) => {
+                if err.is_closed() {
+                    trace!("mailbox closed");
+                }
+                return Err(err);
+            }
+        };
+
+        let envelope = msg!(match envelope {
+            (messages::UpdateConfig { config }, token) => {
+                self.config = config.get().cloned().expect("must be decoded");
+                info!("config updated");
+                let message = messages::ConfigUpdated {};
+                let kind = MessageKind::Regular { sender: self.addr };
+                let envelope = Envelope::new(message.clone(), kind).upcast();
+                self.respond(token, Ok(message));
+                envelope
+            }
+            envelope => envelope,
+        });
+
+        trace!(message = ?envelope.message(), "<");
+
+        Ok(envelope)
+    }
+
+    /// XXX: mb `BoundEnvelope<C>`?
+    pub fn unpack_config<'c>(&self, config: &'c AnyConfig) -> &'c C
+    where
+        C: for<'de> serde::Deserialize<'de> + 'static,
+    {
+        config.get().expect("must already be checked")
+    }
+
+    pub fn pruned(&self) -> Context {
+        Context {
+            book: self.book.clone(),
+            addr: self.addr,
+            demux: self.demux.clone(),
+            config: Arc::new(()),
+            key: (),
+        }
     }
 
     pub(crate) fn book(&self) -> &AddressBook {
         &self.book
     }
 
-    pub(crate) fn with_config<C1>(self) -> Context<C1, K> {
+    pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K> {
         Context {
-            addr: self.addr,
             book: self.book,
-            key: self.key,
+            addr: self.addr,
             demux: self.demux,
-            _config: PhantomData,
+            config,
+            key: self.key,
         }
     }
 
@@ -171,11 +247,11 @@ impl<C, K> Context<C, K> {
 
     pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1> {
         Context {
-            addr: self.addr,
             book: self.book,
-            key,
+            addr: self.addr,
             demux: self.demux,
-            _config: PhantomData,
+            config: self.config,
+            key,
         }
     }
 }
@@ -183,11 +259,11 @@ impl<C, K> Context<C, K> {
 impl Context<(), ()> {
     pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
         Self {
-            addr: Addr::NULL,
             book,
-            key: (),
+            addr: Addr::NULL,
             demux,
-            _config: PhantomData,
+            config: Arc::new(()),
+            key: (),
         }
     }
 }
@@ -195,15 +271,16 @@ impl Context<(), ()> {
 impl<C, K: Clone> Clone for Context<C, K> {
     fn clone(&self) -> Self {
         Self {
-            addr: self.addr,
             book: self.book.clone(),
-            key: self.key.clone(),
-            _config: PhantomData,
+            addr: self.addr,
             demux: self.demux.clone(),
+            config: self.config.clone(),
+            key: self.key.clone(),
         }
     }
 }
 
+#[must_use]
 pub struct RequestBuilder<'c, C, K, R, M> {
     context: &'c Context<C, K>,
     request: R,
@@ -244,47 +321,52 @@ impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
 }
 
 // TODO: add `pub async fn id() { ... }`
-impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
+impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor.request_table.new_request();
+        let token = actor.request_table.new_request(self.context.book.clone());
         let request_id = token.request_id;
         let message_kind = MessageKind::RequestAny(token);
 
         if let Some(recipient) = self.from {
+            trace!(message = ?self.request, to = %recipient, ">");
             let rec_entry = self.context.book.get_owned(recipient);
             let rec_object = ward!(rec_entry, return Err(RequestError::Closed(self.request)));
             let envelope = Envelope::new(self.request, message_kind);
             let result = rec_object.send(self.context, envelope.upcast()).await;
             result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
         } else {
+            trace!(message = ?self.request, ">");
             let fut = self.context.do_send(self.request, message_kind).await;
             fut.map_err(|err| RequestError::Closed(err.0))?;
         }
 
         let mut data = actor.request_table.wait(request_id).await;
         if let Some(Some(envelope)) = data.pop() {
-            Ok(envelope.do_downcast::<R::Wrapper>().into_message().into())
+            let message = envelope.do_downcast::<R::Wrapper>().into_message().into();
+            trace!(?message, "<");
+            Ok(message)
         } else {
             Err(RequestError::Ignored)
         }
     }
 }
 
-impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, All> {
+impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError<R>>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor.request_table.new_request();
+        let token = actor.request_table.new_request(self.context.book.clone());
         let request_id = token.request_id;
         let message_kind = MessageKind::RequestAll(token);
 
         if let Some(recipient) = self.from {
+            trace!(message = ?self.request, to = %recipient, ">");
             let rec_entry = self.context.book.get_owned(recipient);
             let rec_object = ward!(
                 rec_entry,
@@ -295,8 +377,12 @@ impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, All> {
                 let msg = err.0.do_downcast().into_message();
                 return vec![Err(RequestError::Closed(msg))];
             }
-        } else if let Err(err) = self.context.do_send(self.request, message_kind).await {
-            return vec![Err(RequestError::Closed(err.0))];
+        } else {
+            trace!(message = ?self.request, ">");
+
+            if let Err(err) = self.context.do_send(self.request, message_kind).await {
+                return vec![Err(RequestError::Closed(err.0))];
+            }
         }
 
         actor
@@ -307,6 +393,11 @@ impl<'c, C, K, R: Request> RequestBuilder<'c, C, K, R, All> {
             .map(|opt| match opt {
                 Some(envelope) => Ok(envelope.do_downcast::<R::Wrapper>().into_message().into()),
                 None => Err(RequestError::Ignored),
+            })
+            .inspect(|res| {
+                if let Ok(message) = res {
+                    trace!(?message, "<");
+                }
             })
             .collect()
     }

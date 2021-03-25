@@ -1,9 +1,8 @@
 #![warn(rust_2018_idioms, unreachable_pub)]
+// TODO: add `missing_docs`.
 
 #[macro_use]
 extern crate static_assertions;
-
-// TODO: missing_docs
 
 pub use crate::{
     addr::Addr,
@@ -13,6 +12,7 @@ pub use crate::{
     local::Local,
     message::{Message, Request},
     request_table::ResponseToken,
+    start::{start, try_start},
     topology::Topology,
 };
 
@@ -26,11 +26,14 @@ macro_rules! ward {
 }
 
 pub mod errors;
+pub mod messages;
 pub mod routers;
 pub mod trace_id;
 
 mod addr;
 mod address_book;
+mod config;
+mod configurer;
 mod context;
 mod demux;
 mod envelope;
@@ -42,8 +45,10 @@ mod mailbox;
 mod message;
 mod object;
 mod request_table;
+mod start;
 mod supervisor;
 mod topology;
+mod utils;
 
 #[doc(hidden)]
 pub mod _priv {
@@ -55,4 +60,8 @@ pub mod _priv {
     pub use serde;
     pub use smallbox;
     pub use static_assertions::assert_impl_all;
+}
+
+pub mod actors {
+    pub use crate::configurer::configurers;
 }

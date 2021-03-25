@@ -9,7 +9,6 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct AddressBook {
-    // TODO: remove an extra reference.
     slab: Arc<Slab<Object>>,
 }
 
