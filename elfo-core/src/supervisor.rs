@@ -5,7 +5,7 @@ use futures::FutureExt;
 use fxhash::FxBuildHasher;
 use parking_lot::RwLock;
 use serde::Deserialize;
-use tracing::{debug, error, error_span, Instrument, Span};
+use tracing::{error, error_span, info, Instrument, Span};
 
 use elfo_macros::msg_internal as msg;
 
@@ -236,7 +236,7 @@ where
         // TODO: protect against panics (for `fn(..) -> impl Future`).
         let fut = self.exec.exec(ctx);
         let fut = async move {
-            debug!("started");
+            info!(%addr, "started");
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             let _res = match fut.await {
                 Ok(Ok(())) => ActorResult::Completed,

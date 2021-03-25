@@ -5,7 +5,6 @@ use elfo::{
     prelude::*,
     routers::{MapRouter, Outcome},
 };
-use tracing::info;
 
 #[message]
 struct AddNum {
@@ -32,14 +31,11 @@ fn producers() -> Schema {
                 num: i,
             };
             let _ = ctx.send(msg).await;
-            info!(%i, "sent");
         }
 
         // Ask every group.
         for &group in &[0, 1, 2] {
-            if let Ok(report) = ctx.request(Summarize { group }).resolve().await {
-                info!(group, sum = report.0, "asked");
-            }
+            let _ = ctx.request(Summarize { group }).resolve().await;
         }
 
         // Terminate everything.
@@ -68,7 +64,6 @@ async fn summator(mut ctx: Context<(), u32>) -> Result<()> {
     while let Some(envelope) = ctx.recv().await {
         msg!(match envelope {
             msg @ AddNum { .. } => {
-                info!(num = msg.num, "got");
                 sum += msg.num;
             }
             (Summarize { .. }, token) => {
@@ -90,6 +85,7 @@ async fn summator(mut ctx: Context<(), u32>) -> Result<()> {
 async fn main() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
+        .with_target(false)
         .init();
 
     let topology = elfo::Topology::empty();

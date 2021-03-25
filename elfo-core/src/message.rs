@@ -6,13 +6,13 @@ use smallbox::{smallbox, SmallBox};
 
 pub type LocalTypeId = u32;
 
-pub trait Message: Any + Send {
+pub trait Message: fmt::Debug + Any + Send {
     #[doc(hidden)]
     const _LTID: LocalTypeId;
 }
 
 pub trait Request: Message {
-    type Response;
+    type Response: fmt::Debug;
 
     #[doc(hidden)]
     type Wrapper: Message + Into<Self::Response> + From<Self::Response>;

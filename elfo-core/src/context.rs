@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use tracing::info;
+use tracing::{info, trace};
 
 use elfo_macros::msg_internal as msg;
 
@@ -44,6 +44,7 @@ impl<C, K> Context<C, K> {
 
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::Regular { sender: self.addr };
+        trace!(?message, ">");
         self.do_send(message, kind).await
     }
 
@@ -104,6 +105,7 @@ impl<C, K> Context<C, K> {
     ) -> Result<(), SendError<M>> {
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(SendError(message)));
+        trace!(?message, to = %recipient, ">");
         let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
@@ -117,6 +119,7 @@ impl<C, K> Context<C, K> {
     ) -> Result<(), TrySendError<M>> {
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(TrySendError::Closed(message)));
+        trace!(?message, to = %recipient, ">");
         let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
 
         object.try_send(envelope.upcast()).map_err(|err| match err {
@@ -132,6 +135,7 @@ impl<C, K> Context<C, K> {
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, message: R::Response) {
         let message = R::Wrapper::from(message);
         let sender = token.sender;
+        trace!(?message, to = %sender, ">");
         let envelope = Envelope::new(message, MessageKind::Regular { sender }).upcast();
         let object = ward!(self.book.get(token.sender));
         let actor = ward!(object.as_actor());
@@ -146,8 +150,12 @@ impl<C, K> Context<C, K> {
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
+        let envelope = ward!(actor.mailbox.recv().await, {
+            trace!("mailbox closed");
+            return None;
+        });
 
-        msg!(match actor.mailbox.recv().await? {
+        let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
                 self.config = config.get().cloned().expect("must be decoded");
                 info!("config updated");
@@ -155,10 +163,14 @@ impl<C, K> Context<C, K> {
                 let kind = MessageKind::Regular { sender: self.addr };
                 let envelope = Envelope::new(message.clone(), kind).upcast();
                 self.respond(token, Ok(message));
-                Some(envelope)
+                envelope
             }
-            envelope => Some(envelope),
-        })
+            envelope => envelope,
+        });
+
+        trace!(message = ?envelope.message(), "<");
+
+        Some(envelope)
     }
 
     #[inline]
@@ -167,13 +179,18 @@ impl<C, K> Context<C, K> {
         C: 'static,
     {
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
-        let envelope = object
-            .as_actor()
-            .ok_or(TryRecvError::Closed)?
-            .mailbox
-            .try_recv()?;
+        let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
+        let envelope = match actor.mailbox.try_recv() {
+            Ok(envelope) => envelope,
+            Err(err) => {
+                if err.is_closed() {
+                    trace!("mailbox closed");
+                }
+                return Err(err);
+            }
+        };
 
-        msg!(match envelope {
+        let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
                 self.config = config.get().cloned().expect("must be decoded");
                 info!("config updated");
@@ -181,10 +198,14 @@ impl<C, K> Context<C, K> {
                 let kind = MessageKind::Regular { sender: self.addr };
                 let envelope = Envelope::new(message.clone(), kind).upcast();
                 self.respond(token, Ok(message));
-                Ok(envelope)
+                envelope
             }
-            envelope => Ok(envelope),
-        })
+            envelope => envelope,
+        });
+
+        trace!(message = ?envelope.message(), "<");
+
+        Ok(envelope)
     }
 
     /// XXX: mb `BoundEnvelope<C>`?
@@ -311,19 +332,23 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
         let message_kind = MessageKind::RequestAny(token);
 
         if let Some(recipient) = self.from {
+            trace!(message = ?self.request, to = %recipient, ">");
             let rec_entry = self.context.book.get_owned(recipient);
             let rec_object = ward!(rec_entry, return Err(RequestError::Closed(self.request)));
             let envelope = Envelope::new(self.request, message_kind);
             let result = rec_object.send(self.context, envelope.upcast()).await;
             result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
         } else {
+            trace!(message = ?self.request, ">");
             let fut = self.context.do_send(self.request, message_kind).await;
             fut.map_err(|err| RequestError::Closed(err.0))?;
         }
 
         let mut data = actor.request_table.wait(request_id).await;
         if let Some(Some(envelope)) = data.pop() {
-            Ok(envelope.do_downcast::<R::Wrapper>().into_message().into())
+            let message = envelope.do_downcast::<R::Wrapper>().into_message().into();
+            trace!(?message, "<");
+            Ok(message)
         } else {
             Err(RequestError::Ignored)
         }
@@ -341,6 +366,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
         let message_kind = MessageKind::RequestAll(token);
 
         if let Some(recipient) = self.from {
+            trace!(message = ?self.request, to = %recipient, ">");
             let rec_entry = self.context.book.get_owned(recipient);
             let rec_object = ward!(
                 rec_entry,
@@ -351,8 +377,12 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
                 let msg = err.0.do_downcast().into_message();
                 return vec![Err(RequestError::Closed(msg))];
             }
-        } else if let Err(err) = self.context.do_send(self.request, message_kind).await {
-            return vec![Err(RequestError::Closed(err.0))];
+        } else {
+            trace!(message = ?self.request, ">");
+
+            if let Err(err) = self.context.do_send(self.request, message_kind).await {
+                return vec![Err(RequestError::Closed(err.0))];
+            }
         }
 
         actor
@@ -363,6 +393,11 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
             .map(|opt| match opt {
                 Some(envelope) => Ok(envelope.do_downcast::<R::Wrapper>().into_message().into()),
                 None => Err(RequestError::Ignored),
+            })
+            .inspect(|res| {
+                if let Ok(message) = res {
+                    trace!(?message, "<");
+                }
             })
             .collect()
     }

@@ -24,6 +24,12 @@ pub(crate) enum MessageKind {
     RequestAll(ResponseToken<()>),
 }
 
+impl<M> Envelope<M> {
+    pub fn message(&self) -> &M {
+        &self.message
+    }
+}
+
 impl<M: Message> Envelope<M> {
     pub(crate) fn new(message: M, kind: MessageKind) -> Self {
         Self {
