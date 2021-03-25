@@ -1,5 +1,6 @@
 use std::{
     any::{Any, TypeId},
+    fmt,
     sync::Arc,
 };
 
@@ -8,7 +9,7 @@ use serde_value::{Value, ValueDeserializer};
 
 use crate::local::Local;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AnyConfig {
     raw: Arc<Value>,
     // Actually, we store `Arc<Arc<C>>` here.
@@ -50,5 +51,13 @@ impl AnyConfig {
 impl Default for AnyConfig {
     fn default() -> Self {
         Self::new(Value::Map(Default::default()))
+    }
+}
+
+impl fmt::Debug for AnyConfig {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Configs can contain credentials, so we should never print unknown configs.
+        f.write_str("..")
     }
 }
