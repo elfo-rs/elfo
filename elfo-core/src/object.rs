@@ -2,12 +2,11 @@ use futures::future::join_all;
 use smallbox::SmallBox;
 
 use crate::{
+    actor::Actor,
     addr::Addr,
     context::Context,
     envelope::Envelope,
     errors::{SendError, TrySendError},
-    mailbox::Mailbox,
-    request_table::RequestTable,
     supervisor::RouteReport,
 };
 
@@ -23,20 +22,15 @@ pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object>;
 pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object>;
 
 enum ObjectKind {
-    Actor(ActorHandle),
+    Actor(Actor),
     Group(GroupHandle),
 }
 
 impl Object {
     pub(crate) fn new_actor(addr: Addr) -> Self {
-        let handle = ActorHandle {
-            mailbox: Mailbox::new(),
-            request_table: RequestTable::new(addr),
-        };
-
         Self {
             addr,
-            kind: ObjectKind::Actor(handle),
+            kind: ObjectKind::Actor(Actor::new(addr)),
         }
     }
 
@@ -59,7 +53,7 @@ impl Object {
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>> {
         match &self.kind {
-            ObjectKind::Actor(handle) => handle.mailbox.send(envelope).await,
+            ObjectKind::Actor(handle) => handle.mailbox().send(envelope).await,
             ObjectKind::Group(handle) => match (handle.router)(envelope) {
                 RouteReport::Done => Ok(()),
                 RouteReport::Wait(addr, envelope) => match ctx.book().get_owned(addr) {
@@ -67,7 +61,7 @@ impl Object {
                         object
                             .as_actor()
                             .expect("supervisor stores only actors")
-                            .mailbox
+                            .mailbox()
                             .send(envelope)
                             .await
                     }
@@ -86,7 +80,7 @@ impl Object {
                                     object
                                         .as_actor()
                                         .expect("supervisor stores only actors")
-                                        .mailbox
+                                        .mailbox()
                                         .send(envelope)
                                         .await
                                 }
@@ -110,7 +104,7 @@ impl Object {
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
         match &self.kind {
-            ObjectKind::Actor(handle) => handle.mailbox.try_send(envelope),
+            ObjectKind::Actor(handle) => handle.mailbox().try_send(envelope),
             ObjectKind::Group(handle) => match (handle.router)(envelope) {
                 RouteReport::Done => Ok(()),
                 RouteReport::Wait(_, envelope) => Err(TrySendError::Full(envelope)),
@@ -123,17 +117,12 @@ impl Object {
         }
     }
 
-    pub(crate) fn as_actor(&self) -> Option<&ActorHandle> {
+    pub(crate) fn as_actor(&self) -> Option<&Actor> {
         match &self.kind {
-            ObjectKind::Actor(handle) => Some(&handle),
+            ObjectKind::Actor(actor) => Some(&actor),
             ObjectKind::Group(_) => None,
         }
     }
-}
-
-pub(crate) struct ActorHandle {
-    pub(crate) mailbox: Mailbox,
-    pub(crate) request_table: RequestTable,
 }
 
 struct GroupHandle {

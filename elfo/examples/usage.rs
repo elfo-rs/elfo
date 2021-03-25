@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::bail;
 use elfo::{
     actors::configurers,
     messages::ValidateConfig,
@@ -6,6 +6,10 @@ use elfo::{
     routers::{MapRouter, Outcome},
 };
 use serde::{Deserialize, Serialize};
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//              protocol
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #[message]
 struct AddNum {
@@ -17,11 +21,13 @@ struct AddNum {
 struct Summarize {
     group: u32,
 }
+
 #[message]
 struct Report(u32);
 
-#[message]
-struct Terminate;
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//              producer
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -48,27 +54,27 @@ fn producers() -> Schema {
                 let _ = ctx.request(Summarize { group }).resolve().await;
             }
 
-            // Terminate everything.
-            let _ = ctx.send(Terminate).await;
+            bail!("suicide");
         })
 }
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//              summator
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 fn summators() -> Schema {
     ActorGroup::new()
         .router(MapRouter::new(|envelope| {
             msg!(match envelope {
                 AddNum { group, .. } => Outcome::Unicast(*group),
-                Summarize { group, .. } => {
-                    Outcome::Unicast(*group)
-                }
-                Terminate => Outcome::Broadcast,
+                Summarize { group, .. } => Outcome::Unicast(*group),
                 _ => Outcome::Default,
             })
         }))
         .exec(summator)
 }
 
-async fn summator(mut ctx: Context<(), u32>) -> Result<()> {
+async fn summator(mut ctx: Context<(), u32>) {
     let mut sum = 0;
 
     while let Some(envelope) = ctx.recv().await {
@@ -83,13 +89,14 @@ async fn summator(mut ctx: Context<(), u32>) -> Result<()> {
                 let _config = ctx.unpack_config(&config);
                 let _ = ctx.respond(token, Err("oops".into()));
             }
-            Terminate => break,
             _ => {}
         });
     }
-
-    Err(anyhow!("oops"))
 }
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//                setup
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #[tokio::main]
 async fn main() {

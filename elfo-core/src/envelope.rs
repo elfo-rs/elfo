@@ -85,12 +85,12 @@ impl Envelope {
                 MessageKind::Regular { sender } => MessageKind::Regular { sender: *sender },
                 MessageKind::RequestAny(token) => {
                     let object = book.get(token.sender)?;
-                    let token = object.as_actor()?.request_table.clone_token(token)?;
+                    let token = object.as_actor()?.request_table().clone_token(token)?;
                     MessageKind::RequestAny(token)
                 }
                 MessageKind::RequestAll(token) => {
                     let object = book.get(token.sender)?;
-                    let token = object.as_actor()?.request_table.clone_token(token)?;
+                    let token = object.as_actor()?.request_table().clone_token(token)?;
                     MessageKind::RequestAll(token)
                 }
             },

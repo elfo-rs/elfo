@@ -30,6 +30,7 @@ pub mod messages;
 pub mod routers;
 pub mod trace_id;
 
+mod actor;
 mod addr;
 mod address_book;
 mod config;

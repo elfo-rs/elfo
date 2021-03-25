@@ -139,7 +139,9 @@ impl<C, K> Context<C, K> {
         let envelope = Envelope::new(message, MessageKind::Regular { sender }).upcast();
         let object = ward!(self.book.get(token.sender));
         let actor = ward!(object.as_actor());
-        actor.request_table.respond(token.into_untyped(), envelope);
+        actor
+            .request_table()
+            .respond(token.into_untyped(), envelope);
     }
 
     #[inline]
@@ -150,7 +152,7 @@ impl<C, K> Context<C, K> {
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
-        let envelope = ward!(actor.mailbox.recv().await, {
+        let envelope = ward!(actor.mailbox().recv().await, {
             trace!("mailbox closed");
             return None;
         });
@@ -180,7 +182,7 @@ impl<C, K> Context<C, K> {
     {
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
         let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
-        let envelope = match actor.mailbox.try_recv() {
+        let envelope = match actor.mailbox().try_recv() {
             Ok(envelope) => envelope,
             Err(err) => {
                 if err.is_closed() {
@@ -327,7 +329,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
         let this = self.context.addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor.request_table.new_request(self.context.book.clone());
+        let token = actor.request_table().new_request(self.context.book.clone());
         let request_id = token.request_id;
         let message_kind = MessageKind::RequestAny(token);
 
@@ -344,7 +346,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
             fut.map_err(|err| RequestError::Closed(err.0))?;
         }
 
-        let mut data = actor.request_table.wait(request_id).await;
+        let mut data = actor.request_table().wait(request_id).await;
         if let Some(Some(envelope)) = data.pop() {
             let message = envelope.do_downcast::<R::Wrapper>().into_message().into();
             trace!(?message, "<");
@@ -361,7 +363,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
         let this = self.context.addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor.request_table.new_request(self.context.book.clone());
+        let token = actor.request_table().new_request(self.context.book.clone());
         let request_id = token.request_id;
         let message_kind = MessageKind::RequestAll(token);
 
@@ -386,7 +388,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
         }
 
         actor
-            .request_table
+            .request_table()
             .wait(request_id)
             .await
             .into_iter()

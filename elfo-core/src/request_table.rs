@@ -152,7 +152,7 @@ impl<T> Drop for ResponseToken<T> {
         let object = ward!(self.book.get(self.sender));
         let actor = ward!(object.as_actor());
         actor
-            .request_table
+            .request_table()
             .resolve(self.sender, self.request_id, None);
     }
 }
