@@ -1,10 +1,12 @@
 use std::{
     any::{Any, TypeId},
     fmt,
+    ops::Deref,
     sync::Arc,
 };
 
-use serde::{de::value::Error as DeError, Deserialize, Serialize};
+use derive_more::From;
+use serde::{de::value::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 use serde_value::{Value, ValueDeserializer};
 
 use crate::local::Local;
@@ -59,5 +61,54 @@ impl fmt::Debug for AnyConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Configs can contain credentials, so we should never print unknown configs.
         f.write_str("..")
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default, From)]
+pub struct Secret<T>(T);
+
+impl<T> Secret<T> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> Deref for Secret<T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> fmt::Debug for Secret<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<secret>")
+    }
+}
+
+impl<T> fmt::Display for Secret<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<secret>")
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Secret<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        T::deserialize(deserializer).map(Self)
+    }
+}
+
+impl<T: Serialize> Serialize for Secret<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // TODO: it should depend on the context (network or dumping).
+        serializer.serialize_str("<secret>")
     }
 }

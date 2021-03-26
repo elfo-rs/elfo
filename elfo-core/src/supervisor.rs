@@ -266,7 +266,7 @@ where
                 Err(panic) => error!(%addr, error = %panic_to_string(&panic), "panicked"),
             };
 
-            let key = Local(Arc::new(key) as Arc<dyn Any + Send + Sync>);
+            let key = Local::from(Arc::new(key) as Arc<dyn Any + Send + Sync>);
             let message = ActorBlocked { key: key.clone() };
             sv_ctx
                 .try_send_to(sv_ctx.addr(), message)

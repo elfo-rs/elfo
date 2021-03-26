@@ -15,8 +15,8 @@ use serde::{
 /// `Local<T>` implements `Serialize` and `Deserialize` for any `T`. Meanwhile,
 /// it can be serialized (but w/o useful information), it cannot be deserialized
 /// (it returns an error on attempts).
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Default, From)]
-pub struct Local<T>(pub T);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, From)]
+pub struct Local<T>(T);
 
 impl<T> Local<T> {
     #[inline]
