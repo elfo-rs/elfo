@@ -1,11 +1,15 @@
 use anyhow::bail;
+
+// Just adds `ActorGroup`, `Context`, `Schema` and macros.
+use elfo::prelude::*;
+use serde::{Deserialize, Serialize};
+
 use elfo::{
     actors::configurers,
+    config::Secret,
     messages::ValidateConfig,
-    prelude::*,
     routers::{MapRouter, Outcome},
 };
-use serde::{Deserialize, Serialize};
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //              protocol
@@ -32,6 +36,9 @@ struct Report(u32);
 #[derive(Serialize, Deserialize)]
 struct Config {
     count: u32,
+    // Wrap credentials to hide them in logs and dumps.
+    #[serde(default)]
+    password: Secret<String>,
 }
 
 fn producers() -> Schema {
