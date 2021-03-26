@@ -48,8 +48,8 @@ impl fmt::Display for ActorStatus {
 impl ActorStatus {
     pub const ALARMING: ActorStatus = ActorStatus::new(ActorStatusKind::Alarming);
     pub(crate) const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
-    pub(crate) const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
-    pub const RESTARTING: ActorStatus = ActorStatus::new(ActorStatusKind::Restarting);
+    pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
+    pub(crate) const RESTARTING: ActorStatus = ActorStatus::new(ActorStatusKind::Restarting);
 
     const fn new(kind: ActorStatusKind) -> Self {
         Self {
