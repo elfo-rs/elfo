@@ -147,6 +147,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
             const _LTID: #crate_::_priv::LocalTypeId = #ltid;
         }
 
+        #[doc(hidden)]
         #[allow(non_snake_case)]
         mod #mod_name {
             use super::*;
@@ -177,6 +178,11 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 clone,
                 debug,
             };
+
+            // See [https://github.com/rust-lang/rust/issues/47384](rust#47384).
+            #[doc(hidden)]
+            pub fn touch() {}
+            impl #name { #[doc(hidden)] pub fn _elfo_touch() { #mod_name::touch(); } }
         }
 
         #impl_request
