@@ -8,3 +8,12 @@ use derive_more::Deref;
     repr(align(64))
 )]
 pub(crate) struct CachePadded<T>(pub(crate) T);
+
+/// Returns the contents of a `Option<T>`'s `Some(T)`, otherwise it returns
+/// early from the function. Can alternatively have an `else` branch, or an
+/// alternative "early return" statement, like `break` or `continue` for loops.
+macro_rules! ward {
+    ($o:expr) => (ward!($o, else { return; }));
+    ($o:expr, else $body:block) => { if let Some(x) = $o { x } else { $body }; };
+    ($o:expr, $early:stmt) => (ward!($o, else { $early }));
+}
