@@ -91,3 +91,7 @@ thread_local! {
 fn with_vtable<R>(ltid: LocalTypeId, f: impl FnOnce(&MessageVTable) -> R) -> R {
     MESSAGE_BY_LTID.with(|map| f(map.get(&ltid).expect("invalid LTID")))
 }
+
+pub(crate) fn init() {
+    MESSAGE_BY_LTID.with(|_| ());
+}

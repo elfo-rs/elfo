@@ -1,6 +1,6 @@
 use crate::{
-    actor::Actor, context::Context, demux::Demux, errors::StartError, messages, object::Object,
-    topology::Topology,
+    actor::Actor, context::Context, demux::Demux, errors::StartError, message, messages,
+    object::Object, topology::Topology,
 };
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
@@ -35,6 +35,8 @@ pub async fn start(topology: Topology) {
 }
 
 pub async fn try_start(topology: Topology) -> Result<()> {
+    message::init();
+
     let entry = topology.book.vacant_entry();
     let addr = entry.addr();
     entry.insert(Object::new(addr, Actor::new(addr)));
