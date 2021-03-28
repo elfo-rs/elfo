@@ -108,6 +108,7 @@ where
                     control.config = config.get().cloned();
                     self.router
                         .update(&control.config.as_ref().expect("just saved"));
+                    info!(config = ?control.config, "config updated");
                     drop(control);
                     let outcome = self.router.route(&envelope);
 
