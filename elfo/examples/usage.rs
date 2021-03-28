@@ -33,7 +33,7 @@ struct Report(u32);
 //              producer
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Config {
     count: u32,
     // Wrap credentials to hide them in logs and dumps.

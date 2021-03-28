@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{fmt::Display, hash::Hash, marker::PhantomData, sync::Arc};
 
 use arc_swap::ArcSwap;
 
@@ -33,6 +33,7 @@ impl<C, R, K> Router<C> for MapRouter<C, (), (), R>
 where
     C: Send + Sync + 'static,
     R: Fn(&Envelope) -> Outcome<K> + Send + Sync + 'static,
+    K: Clone + Hash + Eq + Display + Send + Sync,
 {
     type Key = K;
 
@@ -67,6 +68,7 @@ where
     S: Send + Sync + 'static,
     R: Fn(&Envelope, &S) -> Outcome<K> + Send + Sync + 'static,
     P: Fn(&C, &S) -> S + Send + Sync + 'static,
+    K: Clone + Hash + Eq + Display + Send + Sync,
 {
     type Key = K;
 

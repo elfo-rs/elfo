@@ -1,3 +1,5 @@
+use std::{fmt::Display, hash::Hash};
+
 use crate::envelope::Envelope;
 
 pub use self::map::MapRouter;
@@ -5,7 +7,7 @@ pub use self::map::MapRouter;
 mod map;
 
 pub trait Router<C>: Send + Sync + 'static {
-    type Key;
+    type Key: Clone + Hash + Eq + Display + Send + Sync; // TODO: why is `Sync` required?
 
     fn update(&self, _config: &C) {}
     fn route(&self, envelope: &Envelope) -> Outcome<Self::Key>;

@@ -11,6 +11,11 @@ use serde_value::{Value, ValueDeserializer};
 
 use crate::local::Local;
 
+pub trait Config: for<'de> Deserialize<'de> + Send + Sync + fmt::Debug + 'static {}
+impl<C> Config for C where C: for<'de> Deserialize<'de> + Send + Sync + fmt::Debug + 'static {}
+
+assert_impl_all!((): Config);
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AnyConfig {
     raw: Arc<Value>,
@@ -30,10 +35,7 @@ impl AnyConfig {
         self.decoded.as_ref().and_then(|local| local.downcast_ref())
     }
 
-    pub(crate) fn decode<C>(&self) -> Result<AnyConfig, String>
-    where
-        C: for<'de> Deserialize<'de> + Send + Sync + 'static,
-    {
+    pub(crate) fn decode<C: Config>(&self) -> Result<AnyConfig, String> {
         // Handle the special case of default config.
         let decoded = if TypeId::of::<C>() == TypeId::of::<()>() {
             Arc::new(Arc::new(())) as Arc<_>
