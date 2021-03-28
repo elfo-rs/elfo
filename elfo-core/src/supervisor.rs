@@ -1,13 +1,9 @@
-use std::{
-    any::Any, fmt::Display, future::Future, hash::Hash, panic::AssertUnwindSafe, sync::Arc,
-    time::Duration,
-};
+use std::{any::Any, future::Future, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
 use parking_lot::RwLock;
-use serde::Deserialize;
 use tracing::{error, error_span, info, Instrument, Span};
 
 use elfo_macros::{message, msg_internal as msg};
@@ -15,6 +11,7 @@ use elfo_macros::{message, msg_internal as msg};
 use crate::{
     actor::{Actor, ActorStatus},
     addr::Addr,
+    config::Config,
     context::Context,
     envelope::Envelope,
     errors::TrySendError,
@@ -53,10 +50,9 @@ struct ActorRestarted {
 impl<R, C, X> Supervisor<R, C, X>
 where
     R: Router<C>,
-    R::Key: Clone + Hash + Eq + Display + Send + Sync,
     X: Exec<Context<C, R::Key>>,
     <X::Output as Future>::Output: ExecResult,
-    C: for<'de> Deserialize<'de> + Send + Sync + 'static,
+    C: Config,
 {
     pub(crate) fn new(ctx: Context, name: String, exec: X, router: R) -> Self {
         let control = ControlBlock { config: None };
@@ -112,6 +108,7 @@ where
                     control.config = config.get().cloned();
                     self.router
                         .update(&control.config.as_ref().expect("just saved"));
+                    info!(config = ?control.config, "config updated");
                     drop(control);
                     let outcome = self.router.route(&envelope);
 
