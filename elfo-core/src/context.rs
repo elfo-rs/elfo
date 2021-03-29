@@ -231,7 +231,7 @@ impl<C, K> Context<C, K> {
             addr: self.addr,
             demux: self.demux.clone(),
             config: Arc::new(()),
-            key: (),
+            key: Default::default(),
         }
     }
 
