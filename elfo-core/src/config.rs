@@ -16,7 +16,7 @@ impl<C> Config for C where C: for<'de> Deserialize<'de> + Send + Sync + fmt::Deb
 
 assert_impl_all!((): Config);
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct AnyConfig {
     raw: Arc<Value>,
     // Actually, we store `Arc<Arc<C>>` here.
@@ -24,7 +24,7 @@ pub struct AnyConfig {
 }
 
 impl AnyConfig {
-    pub fn new(value: Value) -> Self {
+    pub(crate) fn new(value: Value) -> Self {
         Self {
             raw: Arc::new(value),
             decoded: None,
@@ -59,10 +59,21 @@ impl Default for AnyConfig {
 }
 
 impl fmt::Debug for AnyConfig {
-    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Configs can contain credentials, so we should never print unknown configs.
         f.write_str("..")
+    }
+}
+
+impl<'de> Deserialize<'de> for AnyConfig {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Value::deserialize(deserializer).map(Self::new)
+    }
+}
+
+impl Serialize for AnyConfig {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.raw.serialize(serializer)
     }
 }
 
@@ -97,19 +108,13 @@ impl<T> fmt::Display for Secret<T> {
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Secret<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         T::deserialize(deserializer).map(Self)
     }
 }
 
 impl<T: Serialize> Serialize for Secret<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         // TODO: it should depend on the context (network or dumping).
         serializer.serialize_str("<secret>")
     }

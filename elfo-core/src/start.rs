@@ -35,6 +35,15 @@ pub async fn start(topology: Topology) {
 }
 
 pub async fn try_start(topology: Topology) -> Result<()> {
+    do_start(topology).await?;
+
+    // TODO: graceful termination based on topology.
+    let () = futures::future::pending().await;
+    Ok(())
+}
+
+#[doc(hidden)]
+pub async fn do_start(topology: Topology) -> Result<()> {
     message::init();
 
     let entry = topology.book.vacant_entry();
@@ -42,10 +51,7 @@ pub async fn try_start(topology: Topology) -> Result<()> {
     entry.insert(Object::new(addr, Actor::new(addr)));
 
     let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
-
     send_configs(&ctx, &topology).await?;
 
-    // TODO: graceful termination based on topology.
-    let () = futures::future::pending().await;
     Ok(())
 }

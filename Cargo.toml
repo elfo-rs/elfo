@@ -3,4 +3,5 @@ members = [
     "elfo",
     "elfo-core",
     "elfo-macros",
+    "elfo-test",
 ]

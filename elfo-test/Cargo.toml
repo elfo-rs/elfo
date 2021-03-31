@@ -1,0 +1,15 @@
+[package]
+name = "elfo-test"
+version = "0.1.0"
+authors = ["Paul Loyd <pavelko95@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+elfo-macros = { path = "../elfo-macros" }
+elfo-core = { path = "../elfo-core" }
+
+tokio = "1"
+serde = { version = "1.0.120", features = ["derive", "rc"] }
+serde-value = "0.7.0"
+futures-intrusive = "0.4.0"
+futures = "0.3.12"

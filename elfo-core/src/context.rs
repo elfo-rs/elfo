@@ -15,9 +15,10 @@ use crate::{
     message::{Message, Request},
     messages,
     request_table::ResponseToken,
+    routers::Singleton,
 };
 
-pub struct Context<C = (), K = ()> {
+pub struct Context<C = (), K = Singleton> {
     book: AddressBook,
     addr: Addr,
     demux: Demux,
@@ -231,7 +232,7 @@ impl<C, K> Context<C, K> {
             addr: self.addr,
             demux: self.demux.clone(),
             config: Arc::new(()),
-            key: (),
+            key: Singleton,
         }
     }
 
@@ -265,14 +266,14 @@ impl<C, K> Context<C, K> {
     }
 }
 
-impl Context<(), ()> {
+impl Context<()> {
     pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
         Self {
             book,
             addr: Addr::NULL,
             demux,
             config: Arc::new(()),
-            key: (),
+            key: Singleton,
         }
     }
 }

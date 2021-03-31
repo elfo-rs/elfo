@@ -1,4 +1,7 @@
-use std::{fmt::Display, hash::Hash};
+use std::{
+    fmt::{self, Display},
+    hash::Hash,
+};
 
 use crate::envelope::Envelope;
 
@@ -47,11 +50,20 @@ impl<T> Outcome<T> {
 }
 
 impl<C> Router<C> for () {
-    // TODO
-    type Key = u32;
+    type Key = Singleton;
 
     #[inline]
     fn route(&self, _: &Envelope) -> Outcome<Self::Key> {
-        Outcome::Unicast(0)
+        Outcome::Unicast(Singleton)
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Singleton;
+
+impl fmt::Display for Singleton {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("_")
     }
 }
