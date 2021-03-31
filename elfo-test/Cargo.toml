@@ -8,6 +8,7 @@ edition = "2018"
 elfo-macros = { path = "../elfo-macros" }
 elfo-core = { path = "../elfo-core" }
 
+tokio = "1"
 serde = { version = "1.0.120", features = ["derive", "rc"] }
 serde-value = "0.7.0"
 futures-intrusive = "0.4.0"

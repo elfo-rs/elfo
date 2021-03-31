@@ -1,18 +1,26 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::{Duration, Instant as StdInstant},
+};
 
 use futures_intrusive::channel::shared;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
+use tokio::task;
 
 use elfo_core::{
     ActorGroup, Context, Envelope, Message, Request, ResponseToken, Schema, Topology,
     _priv::do_start,
 };
 
+const MAX_WAIT_TIME: Duration = Duration::from_millis(100);
+
 pub struct Proxy {
     context: Context,
 }
 
+// TODO: add `#[track_caller]` after https://github.com/rust-lang/rust/issues/78840.
 impl Proxy {
     pub async fn send<M: Message>(&self, message: M) {
         let res = self.context.send(message).await;
@@ -29,7 +37,24 @@ impl Proxy {
     }
 
     pub async fn recv(&mut self) -> Envelope {
-        self.context.recv().await.expect("closed mailbox")
+        // We are forced to use `std::time::Instant` instead of `tokio::time::Instant`
+        // because we don't want to use mocked time by tokio here.
+        let start = StdInstant::now();
+
+        while {
+            if let Some(envelope) = self.try_recv() {
+                return envelope;
+            }
+
+            task::yield_now().await;
+            start.elapsed() < MAX_WAIT_TIME
+        } {}
+
+        panic!("too long");
+    }
+
+    pub fn try_recv(&mut self) -> Option<Envelope> {
+        self.context.try_recv().ok()
     }
 }
 
