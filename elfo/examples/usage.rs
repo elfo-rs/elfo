@@ -96,7 +96,6 @@ async fn summator(mut ctx: Context<(), u32>) {
                 let _config = ctx.unpack_config(&config);
                 let _ = ctx.respond(token, Err("oops".into()));
             }
-            _ => {}
         });
     }
 }

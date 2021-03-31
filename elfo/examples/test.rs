@@ -29,7 +29,6 @@ async fn summator(mut ctx: Context<Config>) {
             (Summarize, token) => {
                 ctx.respond(token, sum);
             }
-            _ => {}
         })
     }
 }
