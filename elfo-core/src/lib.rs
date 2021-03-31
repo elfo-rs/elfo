@@ -25,11 +25,12 @@ pub mod errors;
 pub mod messages;
 pub mod routers;
 pub mod trace_id;
+// TODO: move out?
+pub mod configurers;
 
 mod actor;
 mod addr;
 mod address_book;
-mod configurer;
 mod context;
 mod demux;
 mod envelope;
@@ -55,8 +56,4 @@ pub mod _priv {
     pub use serde;
     pub use smallbox;
     pub use static_assertions::assert_impl_all;
-}
-
-pub mod actors {
-    pub use crate::configurer::configurers;
 }

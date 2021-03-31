@@ -124,8 +124,7 @@ async fn main() {
     summators.mount(self::summators());
 
     let config_path = "elfo/examples/config.toml";
-
-    configurers.mount(self::configurers(&topology, config_path).expect("invalid config"));
+    configurers.mount(self::configurers::from_path(&topology, config_path));
 
     elfo::start(topology).await;
 }
