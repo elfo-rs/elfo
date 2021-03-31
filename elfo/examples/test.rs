@@ -5,6 +5,7 @@ use serde::Deserialize;
 struct Increment;
 
 #[message]
+#[derive(PartialEq)]
 struct Added(u32);
 
 #[message(ret = u32)]
@@ -53,8 +54,7 @@ async fn it_works() {
 
     // How to check actors' output.
     assert_msg!(proxy.recv().await, Added(15u32..=35)); // Note: rhs is a pattern.
-
-    // FIXME: assert_msg_eq!(proxy.recv(), Added(20));
+    assert_msg_eq!(proxy.recv().await, Added(20));
 
     // How to check request-response.
     assert_eq!(proxy.request(Summarize).await, 40);
