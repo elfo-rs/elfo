@@ -9,13 +9,15 @@ use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tracing::{error, info};
 
+use elfo_macros::msg_internal as msg;
+
 use crate::{
     addr::Addr,
     config::AnyConfig,
     context::Context,
     errors::RequestError,
     group::{ActorGroup, Schema},
-    messages::UpdateConfig,
+    messages::{ConfigUpdated, UpdateConfig},
     topology::Topology,
 };
 
@@ -38,8 +40,9 @@ enum ConfigSource {
     Fixture(Result<Value, String>),
 }
 
-async fn configurer(ctx: Context, topology: Topology, source: ConfigSource) {
+async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) {
     let mut signal = Signal::new();
+    let mut request = ctx.recv().await;
 
     loop {
         let just_started = signal.recv().await;
@@ -49,6 +52,12 @@ async fn configurer(ctx: Context, topology: Topology, source: ConfigSource) {
         if !is_ok && just_started {
             // TODO: provide API for this?
             std::process::exit(42);
+        }
+
+        if let Some(request) = request.take() {
+            msg!(match request {
+                (UpdateConfig { .. }, token) => ctx.respond(token, Ok(ConfigUpdated {})),
+            })
         }
     }
 }

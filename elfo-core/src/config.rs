@@ -1,6 +1,6 @@
 use std::{
     any::{Any, TypeId},
-    fmt,
+    fmt, iter,
     ops::Deref,
     sync::Arc,
 };
@@ -49,6 +49,18 @@ impl AnyConfig {
             raw: self.raw.clone(),
             decoded: Some(Local::from(decoded)),
         })
+    }
+
+    pub(crate) fn groups(&self) -> impl Iterator<Item = &str> + '_ {
+        iter::once(&self.raw)
+            .filter_map(|value| match value.deref() {
+                Value::Map(map) => Some(map.keys().filter_map(|key| match key {
+                    Value::String(k) => Some(k.as_str()),
+                    _ => None,
+                })),
+                _ => None,
+            })
+            .flatten()
     }
 }
 

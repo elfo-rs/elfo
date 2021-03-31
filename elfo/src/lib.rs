@@ -10,3 +10,6 @@ pub mod prelude {
 pub mod actors {
     pub use elfo_core::configurers;
 }
+
+#[cfg(feature = "test-util")]
+pub use elfo_test as test;

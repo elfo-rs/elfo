@@ -4,9 +4,17 @@ version = "0.1.0"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
 
+[[test]]
+name = "test"
+path = "examples/test.rs"
+
+[features]
+test-util = ["elfo-test"]
+
 [dependencies]
 elfo-core = { path = "../elfo-core" }
 elfo-macros = { path = "../elfo-macros" }
+elfo-test = { path = "../elfo-test", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.38"
@@ -14,3 +22,4 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1.25"
 tracing-subscriber = "0.2.15"
 serde = { version = "1.0.120", features = ["derive"] }
+toml = "0.5.8"
