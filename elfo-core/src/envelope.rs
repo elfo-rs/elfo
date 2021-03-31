@@ -28,6 +28,15 @@ impl<M> Envelope<M> {
     pub fn message(&self) -> &M {
         &self.message
     }
+
+    #[inline]
+    pub fn sender(&self) -> Addr {
+        match &self.kind {
+            MessageKind::Regular { sender } => *sender,
+            MessageKind::RequestAny(token) => token.sender,
+            MessageKind::RequestAll(token) => token.sender,
+        }
+    }
 }
 
 impl<M: Message> Envelope<M> {
@@ -36,15 +45,6 @@ impl<M: Message> Envelope<M> {
             trace_id: TraceId::new(1).unwrap(), // TODO: load trace_id.
             kind,
             message,
-        }
-    }
-
-    #[inline]
-    pub fn sender(&self) -> Addr {
-        match &self.kind {
-            MessageKind::Regular { sender } => *sender,
-            MessageKind::RequestAny(token) => token.sender,
-            MessageKind::RequestAll(token) => token.sender,
         }
     }
 
