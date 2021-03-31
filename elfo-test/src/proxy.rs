@@ -18,6 +18,7 @@ const MAX_WAIT_TIME: Duration = Duration::from_millis(100);
 
 pub struct Proxy {
     context: Context,
+    non_exhaustive: bool,
 }
 
 // TODO: add `#[track_caller]` after https://github.com/rust-lang/rust/issues/78840.
@@ -55,6 +56,23 @@ impl Proxy {
 
     pub fn try_recv(&mut self) -> Option<Envelope> {
         self.context.try_recv().ok()
+    }
+
+    pub fn non_exhaustive(&mut self) {
+        self.non_exhaustive = true;
+    }
+}
+
+impl Drop for Proxy {
+    fn drop(&mut self) {
+        if !self.non_exhaustive {
+            if let Some(envelope) = self.try_recv() {
+                panic!(
+                    "test ended, but not all messages has been consumed: {:?}",
+                    envelope
+                );
+            }
+        }
     }
 }
 
@@ -97,6 +115,8 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
 
     do_start(topology).await.expect("cannot start");
 
-    let context = rx.receive().await.expect("cannot receive tester's context");
-    Proxy { context }
+    Proxy {
+        context: rx.receive().await.expect("cannot receive tester's context"),
+        non_exhaustive: false,
+    }
 }

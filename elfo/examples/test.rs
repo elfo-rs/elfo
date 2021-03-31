@@ -59,7 +59,9 @@ async fn it_works() {
     // How to check request-response.
     assert_eq!(proxy.request(Summarize).await, 40);
 
-    // TODO: check that there are no more messages.
+    // By default, the proxy checks that there are no more unfetched messages
+    // (in `impl Drop`). It's possible to alter this behavior.
+    proxy.non_exhaustive();
 }
 
 fn main() {
