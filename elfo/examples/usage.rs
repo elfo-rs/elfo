@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::bail;
 
 // Just adds `ActorGroup`, `Context`, `Schema` and macros.
@@ -9,6 +11,7 @@ use elfo::{
     config::Secret,
     messages::ValidateConfig,
     routers::{MapRouter, Outcome},
+    time::Interval,
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -81,8 +84,16 @@ fn summators() -> Schema {
         .exec(summator)
 }
 
-async fn summator(mut ctx: Context<(), u32>) {
+#[message]
+struct TimerTick;
+
+async fn summator(ctx: Context<(), u32>) {
     let mut sum = 0;
+
+    let interval = Interval::new(|| TimerTick);
+    interval.set_period(Duration::from_secs(2));
+
+    let mut ctx = ctx.with(&interval);
 
     while let Some(envelope) = ctx.recv().await {
         msg!(match envelope {
@@ -96,6 +107,7 @@ async fn summator(mut ctx: Context<(), u32>) {
                 let _config = ctx.unpack_config(&config);
                 let _ = ctx.respond(token, Err("oops".into()));
             }
+            TimerTick => tracing::info!("hello!"),
         });
     }
 }
