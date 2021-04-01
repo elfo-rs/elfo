@@ -7,7 +7,7 @@ use crate::envelope::Envelope;
 // TODO: seal it.
 /// Note that implementations must be fused.
 #[allow(unreachable_pub)]
-pub trait Source {
+pub trait Source: sealed::Sealed {
     fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>>;
 
     // TODO: try_recv.
@@ -49,4 +49,13 @@ where
             },
         }
     }
+}
+
+mod sealed {
+    use super::*;
+    pub trait Sealed {}
+    impl<S: Sealed> Sealed for &S {}
+    impl Sealed for () {}
+    impl<L, R> Sealed for Combined<L, R> {}
+    impl<F> Sealed for crate::time::Interval<F> {}
 }

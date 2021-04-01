@@ -22,7 +22,8 @@ use crate::{
     routers::Singleton,
 };
 
-pub(crate) use self::source::{Combined, Source};
+use self::source::Combined;
+pub(crate) use self::source::Source;
 
 mod source;
 
