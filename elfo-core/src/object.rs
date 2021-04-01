@@ -40,9 +40,9 @@ impl Object {
         self.addr
     }
 
-    pub(crate) async fn send<C, K>(
+    pub(crate) async fn send<C, K, S>(
         &self,
-        ctx: &Context<C, K>,
+        ctx: &Context<C, K, S>,
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>> {
         match &self.kind {

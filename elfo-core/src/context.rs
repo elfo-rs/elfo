@@ -1,5 +1,9 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use futures::{
+    future::{poll_fn, FutureExt},
+    pin_mut, select_biased,
+};
 use tracing::{info, trace};
 
 use elfo_macros::msg_internal as msg;
@@ -18,17 +22,22 @@ use crate::{
     routers::Singleton,
 };
 
-pub struct Context<C = (), K = Singleton> {
+pub(crate) use self::source::{Combined, Source};
+
+mod source;
+
+pub struct Context<C = (), K = Singleton, S = ()> {
     book: AddressBook,
     addr: Addr,
     demux: Demux,
     config: Arc<C>,
     key: K,
+    source: S,
 }
 
 assert_impl_all!(Context: Send);
 
-impl<C, K> Context<C, K> {
+impl<C, K, S> Context<C, K, S> {
     #[inline]
     pub fn addr(&self) -> Addr {
         self.addr
@@ -44,6 +53,17 @@ impl<C, K> Context<C, K> {
         &self.key
     }
 
+    pub fn with<S1>(self, source: S1) -> Context<C, K, Combined<S, S1>> {
+        Context {
+            book: self.book,
+            addr: self.addr,
+            demux: self.demux,
+            config: self.config,
+            key: self.key,
+            source: Combined::new(self.source, source),
+        }
+    }
+
     pub fn set_status(&self, status: ActorStatus) {
         let object = ward!(self.book.get_owned(self.addr));
         let actor = ward!(object.as_actor());
@@ -57,7 +77,7 @@ impl<C, K> Context<C, K> {
     }
 
     #[inline]
-    pub fn request<R: Request>(&self, request: R) -> RequestBuilder<'_, C, K, R, Any> {
+    pub fn request<R: Request>(&self, request: R) -> RequestBuilder<'_, C, K, S, R, Any> {
         RequestBuilder::new(self, request)
     }
 
@@ -156,14 +176,36 @@ impl<C, K> Context<C, K> {
     pub async fn recv(&mut self) -> Option<Envelope>
     where
         C: 'static,
+        S: Source,
     {
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
-        let envelope = ward!(actor.recv().await, {
-            trace!("mailbox closed");
-            return None;
-        });
+
+        // TODO: remove `fuse`.
+        let mailbox_fut = actor.recv().fuse();
+        let source_fut = poll_fn(|cx| self.source.poll_recv(cx)).fuse();
+
+        pin_mut!(mailbox_fut);
+        pin_mut!(source_fut);
+
+        let envelope = select_biased! {
+            envelope = mailbox_fut => match envelope {
+                Some(envelope) => envelope,
+                None => {
+                    trace!("mailbox closed");
+                    return None;
+                }
+            },
+            envelope = source_fut => match envelope {
+                Some(envelope) => envelope,
+                None => {
+                    // TODO: rerun select?
+                    trace!("some of sources was closed");
+                    return None;
+                }
+            },
+        };
 
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
@@ -200,6 +242,8 @@ impl<C, K> Context<C, K> {
             }
         };
 
+        // TODO: poll the sources.
+
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
                 self.config = config.get().cloned().expect("must be decoded");
@@ -233,6 +277,7 @@ impl<C, K> Context<C, K> {
             demux: self.demux.clone(),
             config: Arc::new(()),
             key: Singleton,
+            source: (),
         }
     }
 
@@ -240,13 +285,14 @@ impl<C, K> Context<C, K> {
         &self.book
     }
 
-    pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K> {
+    pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K, S> {
         Context {
             book: self.book,
             addr: self.addr,
             demux: self.demux,
             config,
             key: self.key,
+            source: self.source,
         }
     }
 
@@ -255,18 +301,19 @@ impl<C, K> Context<C, K> {
         self
     }
 
-    pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1> {
+    pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1, S> {
         Context {
             book: self.book,
             addr: self.addr,
             demux: self.demux,
             config: self.config,
             key,
+            source: self.source,
         }
     }
 }
 
-impl Context<()> {
+impl Context {
     pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
         Self {
             book,
@@ -274,6 +321,7 @@ impl Context<()> {
             demux,
             config: Arc::new(()),
             key: Singleton,
+            source: (),
         }
     }
 }
@@ -286,13 +334,14 @@ impl<C, K: Clone> Clone for Context<C, K> {
             demux: self.demux.clone(),
             config: self.config.clone(),
             key: self.key.clone(),
+            source: (),
         }
     }
 }
 
 #[must_use]
-pub struct RequestBuilder<'c, C, K, R, M> {
-    context: &'c Context<C, K>,
+pub struct RequestBuilder<'c, C, K, S, R, M> {
+    context: &'c Context<C, K, S>,
     request: R,
     from: Option<Addr>,
     marker: PhantomData<M>,
@@ -301,8 +350,8 @@ pub struct RequestBuilder<'c, C, K, R, M> {
 pub struct Any;
 pub struct All;
 
-impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
-    fn new(context: &'c Context<C, K>, request: R) -> Self {
+impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
+    fn new(context: &'c Context<C, K, S>, request: R) -> Self {
         Self {
             context,
             request,
@@ -312,7 +361,7 @@ impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
     }
 
     #[inline]
-    pub fn all(self) -> RequestBuilder<'c, C, K, R, All> {
+    pub fn all(self) -> RequestBuilder<'c, C, K, S, R, All> {
         RequestBuilder {
             context: self.context,
             request: self.request,
@@ -322,7 +371,7 @@ impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
     }
 }
 
-impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
+impl<'c, C, K, S, R, M> RequestBuilder<'c, C, K, S, R, M> {
     #[inline]
     pub fn from(mut self, addr: Addr) -> Self {
         self.from = Some(addr);
@@ -331,7 +380,7 @@ impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
 }
 
 // TODO: add `pub async fn id() { ... }`
-impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
+impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.addr;
@@ -365,7 +414,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     }
 }
 
-impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
+impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError<R>>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.addr;
