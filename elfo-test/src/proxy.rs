@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     sync::Arc,
+    thread,
     time::{Duration, Instant as StdInstant},
 };
 
@@ -65,7 +66,7 @@ impl Proxy {
 
 impl Drop for Proxy {
     fn drop(&mut self) {
-        if !self.non_exhaustive {
+        if !self.non_exhaustive && !thread::panicking() {
             if let Some(envelope) = self.try_recv() {
                 panic!(
                     "test ended, but not all messages has been consumed: {:?}",
