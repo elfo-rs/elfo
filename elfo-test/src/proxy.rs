@@ -96,6 +96,7 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
     let _ = tracing_subscriber::fmt()
         .with_target(false)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_test_writer()
         .try_init();
 
     let config = Value::deserialize(config).expect("invalid config");
