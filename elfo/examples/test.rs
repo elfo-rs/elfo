@@ -46,6 +46,9 @@ async fn it_works() {
         step = 20
     };
 
+    // ... or provide the default one.
+    let _config = elfo::config::AnyConfig::default();
+
     // Wrap the actor group to take control over it.
     let mut proxy = elfo::test::proxy(summators(), config).await;
 

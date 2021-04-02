@@ -1,12 +1,12 @@
 use std::{
     any::{Any, TypeId},
-    fmt,
+    fmt, mem,
     ops::Deref,
     sync::Arc,
 };
 
 use derive_more::From;
-use serde::{de::value::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, de::value::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 use serde_value::{Value, ValueDeserializer};
 
 use crate::local::Local;
@@ -50,6 +50,10 @@ impl AnyConfig {
             decoded: Some(Local::from(decoded)),
         })
     }
+
+    pub(crate) fn into_value(mut self) -> Value {
+        mem::replace(Arc::make_mut(&mut self.raw), Value::Unit)
+    }
 }
 
 impl Default for AnyConfig {
@@ -74,6 +78,41 @@ impl<'de> Deserialize<'de> for AnyConfig {
 impl Serialize for AnyConfig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.raw.serialize(serializer)
+    }
+}
+
+impl<'de> Deserializer<'de> for AnyConfig {
+    type Error = serde_value::DeserializerError;
+
+    serde::forward_to_deserialize_any! {
+        bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string unit
+        seq bytes byte_buf map unit_struct
+        tuple_struct struct tuple ignored_any identifier
+    }
+
+    fn deserialize_any<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
+        self.into_value().deserialize_any(visitor)
+    }
+
+    fn deserialize_option<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
+        self.into_value().deserialize_option(visitor)
+    }
+
+    fn deserialize_enum<V: de::Visitor<'de>>(
+        self,
+        name: &'static str,
+        variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        self.into_value().deserialize_enum(name, variants, visitor)
+    }
+
+    fn deserialize_newtype_struct<V: de::Visitor<'de>>(
+        self,
+        name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        self.into_value().deserialize_newtype_struct(name, visitor)
     }
 }
 
