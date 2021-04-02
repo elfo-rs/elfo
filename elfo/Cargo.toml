@@ -9,7 +9,7 @@ name = "test"
 path = "examples/test.rs"
 
 [features]
-test-util = ["elfo-test"]
+test-util = ["elfo-test", "elfo-core/test-util"]
 
 [dependencies]
 elfo-core = { path = "../elfo-core" }
