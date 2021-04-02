@@ -17,7 +17,7 @@ use crate::{
     context::Context,
     errors::RequestError,
     group::{ActorGroup, Schema},
-    messages::{ConfigUpdated, UpdateConfig},
+    messages::{ConfigRejected, ConfigUpdated, UpdateConfig},
     topology::Topology,
 };
 
@@ -45,18 +45,22 @@ async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) 
     let mut request = ctx.recv().await;
 
     loop {
-        let just_started = signal.recv().await;
-
-        let is_ok = update_configs(&ctx, &topology, &source, just_started).await;
-
-        if !is_ok && just_started {
-            // TODO: provide API for this?
-            std::process::exit(42);
+        if request.is_none() {
+            signal.recv().await;
         }
+
+        let just_started = request.is_some();
+        let is_ok = update_configs(&ctx, &topology, &source, just_started).await;
 
         if let Some(request) = request.take() {
             msg!(match request {
-                (UpdateConfig { .. }, token) => ctx.respond(token, Ok(ConfigUpdated {})),
+                (UpdateConfig { .. }, token) if is_ok => ctx.respond(token, Ok(ConfigUpdated {})),
+                (UpdateConfig { .. }, token) => ctx.respond(
+                    token,
+                    Err(ConfigRejected {
+                        reason: "invalid configuration".into(),
+                    })
+                ),
             })
         }
     }
@@ -140,23 +144,16 @@ fn match_configs(topology: &Topology, config: Value) -> Vec<(Addr, AnyConfig)> {
         .collect()
 }
 
+// TODO: reimpl `signal` using `Source` trait.
 // TODO: handle SIGHUP (unix only).
-struct Signal {
-    just_started: bool,
-}
+struct Signal {}
 
 impl Signal {
     fn new() -> Self {
-        Self { just_started: true }
+        Self {}
     }
 
-    async fn recv(&mut self) -> bool {
-        if !self.just_started {
-            let () = future::pending().await;
-        }
-
-        let ret = self.just_started;
-        self.just_started = false;
-        ret
+    async fn recv(&mut self) {
+        let () = future::pending().await;
     }
 }
