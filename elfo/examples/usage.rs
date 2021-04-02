@@ -11,12 +11,6 @@ mod protocol {
         pub num: u32,
     }
 
-    #[message]
-    pub struct AddNum2 {
-        pub group: u32,
-        pub num: u32,
-    }
-
     #[message(ret = Report)]
     pub struct Summarize {
         pub group: u32,
