@@ -1,8 +1,10 @@
 [package]
 name = "elfo-test"
 version = "0.1.0"
+description = "Test utils"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
 elfo-macros = { version = "0.1", path = "../elfo-macros" }

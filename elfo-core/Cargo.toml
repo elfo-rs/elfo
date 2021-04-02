@@ -1,8 +1,10 @@
 [package]
 name = "elfo-core"
 version = "0.1.0"
+description = "The core of the system"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
+license = "MIT"
 
 [features]
 test-util = ["tokio/test-util"]

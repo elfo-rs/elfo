@@ -1,8 +1,10 @@
 [package]
 name = "elfo-macros"
 version = "0.1.0"
+description = "Macros for matching and deriving messages"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
+license = "MIT"
 
 [lib]
 proc-macro = true
