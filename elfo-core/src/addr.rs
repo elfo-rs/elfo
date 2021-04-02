@@ -2,7 +2,7 @@ use std::fmt;
 
 // TODO: improve `Debug` and `Display` instances.
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub struct Addr(usize);
 
 impl fmt::Display for Addr {
