@@ -122,7 +122,7 @@ async fn update_configs(
 
 fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
     let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
-    Ok(toml::from_str(&content).map_err(|err| err.to_string())?)
+    toml::from_str(&content).map_err(|err| err.to_string())
 }
 
 fn match_configs(topology: &Topology, config: Value) -> Vec<(Addr, AnyConfig)> {
