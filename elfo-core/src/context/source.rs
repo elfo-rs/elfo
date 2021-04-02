@@ -23,7 +23,8 @@ impl<S: Source> Source for &S {
 impl Source for () {
     #[inline]
     fn poll_recv(&self, _cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
-        Poll::Ready(None)
+        // TODO: reconsider this.
+        Poll::Pending
     }
 }
 
