@@ -1,120 +1,138 @@
-use std::time::Duration;
-
-use anyhow::bail;
-
-// Just adds `ActorGroup`, `Context`, `Schema` and macros.
-use elfo::prelude::*;
-use serde::{Deserialize, Serialize};
-
-use elfo::{
-    actors::configurers,
-    config::Secret,
-    messages::ValidateConfig,
-    routers::{MapRouter, Outcome},
-    time::Interval,
-};
-
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //              protocol
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-#[message]
-struct AddNum {
-    group: u32,
-    num: u32,
-}
+mod protocol {
+    use elfo::prelude::*;
 
-#[message]
-struct AddNum2 {
-    group: u32,
-    num: u32,
-}
+    #[message]
+    pub struct AddNum {
+        pub group: u32,
+        pub num: u32,
+    }
 
-#[message(ret = Report)]
-struct Summarize {
-    group: u32,
-}
+    #[message]
+    pub struct AddNum2 {
+        pub group: u32,
+        pub num: u32,
+    }
 
-#[message]
-struct Report(u32);
+    #[message(ret = Report)]
+    pub struct Summarize {
+        pub group: u32,
+    }
+
+    #[message]
+    pub struct Report(pub u32);
+}
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //              producer
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Config {
-    count: u32,
-    // Wrap credentials to hide them in logs and dumps.
-    #[serde(default)]
-    password: Secret<String>,
-}
+mod producer {
+    use anyhow::bail;
+    use elfo::{config::Secret, prelude::*};
+    use serde::{Deserialize, Serialize};
 
-fn producers() -> Schema {
-    ActorGroup::new()
-        .config::<Config>()
-        .exec(move |ctx| async move {
-            let count = ctx.config().count;
+    use crate::protocol::*;
 
-            // Send some numbers.
-            for i in 0..count {
-                let msg = AddNum {
-                    group: i % 3,
-                    num: i,
-                };
-                let _ = ctx.send(msg).await;
-            }
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Config {
+        count: u32,
+        // Wrap credentials to hide them in logs and dumps.
+        #[serde(default)]
+        password: Secret<String>,
+    }
 
-            // Ask every group.
-            for &group in &[0, 1, 2] {
-                let _ = ctx.request(Summarize { group }).resolve().await;
-            }
+    pub fn new() -> Schema {
+        ActorGroup::new()
+            .config::<Config>()
+            .exec(move |ctx| async move {
+                let count = ctx.config().count;
 
-            bail!("suicide");
-        })
+                // Send some numbers.
+                for i in 0..count {
+                    let msg = AddNum {
+                        group: i % 3,
+                        num: i,
+                    };
+                    let _ = ctx.send(msg).await;
+                }
+
+                // Ask every group.
+                for &group in &[0, 1, 2] {
+                    let _ = ctx.request(Summarize { group }).resolve().await;
+                }
+
+                bail!("suicide");
+            })
+    }
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //              summator
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-fn summators() -> Schema {
-    ActorGroup::new()
-        .router(MapRouter::new(|envelope| {
+mod summator {
+    use std::time::Duration;
+
+    use elfo::{
+        messages::ValidateConfig,
+        prelude::*,
+        routers::{MapRouter, Outcome},
+        time::Interval,
+    };
+    use serde::{Deserialize, Serialize};
+
+    use crate::protocol::*;
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Config {
+        #[serde(with = "humantime_serde")]
+        interval: Duration,
+    }
+
+    pub fn new() -> Schema {
+        ActorGroup::new()
+            .config::<Config>()
+            .router(MapRouter::new(|envelope| {
+                msg!(match envelope {
+                    AddNum { group, .. } => Outcome::Unicast(*group),
+                    Summarize { group, .. } => Outcome::Unicast(*group),
+                    _ => Outcome::Default,
+                })
+            }))
+            .exec(summator)
+    }
+
+    #[message]
+    struct TimerTick;
+
+    async fn summator(ctx: Context<Config, u32>) {
+        let mut sum = 0;
+
+        let interval = Interval::new(|| TimerTick);
+
+        let mut ctx = ctx.with(&interval);
+
+        while let Some(envelope) = ctx.recv().await {
+            interval.set_period(ctx.config().interval);
+
             msg!(match envelope {
-                AddNum { group, .. } => Outcome::Unicast(*group),
-                Summarize { group, .. } => Outcome::Unicast(*group),
-                _ => Outcome::Default,
-            })
-        }))
-        .exec(summator)
-}
-
-#[message]
-struct TimerTick;
-
-async fn summator(ctx: Context<(), u32>) {
-    let mut sum = 0;
-
-    let interval = Interval::new(|| TimerTick);
-    interval.set_period(Duration::from_secs(2));
-
-    let mut ctx = ctx.with(&interval);
-
-    while let Some(envelope) = ctx.recv().await {
-        msg!(match envelope {
-            msg @ AddNum { .. } => {
-                sum += msg.num;
-            }
-            (Summarize { .. }, token) => {
-                let _ = ctx.respond(token, Report(sum));
-            }
-            (ValidateConfig { config, .. }, token) => {
-                let _config = ctx.unpack_config(&config);
-                let _ = ctx.respond(token, Err("oops".into()));
-            }
-            TimerTick => tracing::info!("hello!"),
-        });
+                msg @ AddNum { .. } => {
+                    sum += msg.num;
+                }
+                (Summarize { .. }, token) => {
+                    let _ = ctx.respond(token, Report(sum));
+                }
+                (ValidateConfig { config, .. }, token) => {
+                    let _config = ctx.unpack_config(&config);
+                    let _ = ctx.respond(token, Err("oops".into()));
+                }
+                TimerTick => tracing::info!("hello!"),
+            });
+        }
     }
 }
 
@@ -137,11 +155,11 @@ async fn main() {
 
     producers.route_all_to(&summators);
 
-    producers.mount(self::producers());
-    summators.mount(self::summators());
+    producers.mount(producer::new());
+    summators.mount(summator::new());
 
     let config_path = "elfo/examples/config.toml";
-    configurers.mount(self::configurers::from_path(&topology, config_path));
+    configurers.mount(elfo::actors::configurers::from_path(&topology, config_path));
 
     elfo::start(topology).await;
 }

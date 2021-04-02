@@ -1,2 +1,5 @@
 [producers]
 count = 10
+
+[summators]
+interval = "2s"
