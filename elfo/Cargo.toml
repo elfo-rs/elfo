@@ -12,9 +12,9 @@ path = "examples/test.rs"
 test-util = ["elfo-test", "elfo-core/test-util"]
 
 [dependencies]
-elfo-core = { path = "../elfo-core" }
-elfo-macros = { path = "../elfo-macros" }
-elfo-test = { path = "../elfo-test", optional = true }
+elfo-core = { version = "0.1", path = "../elfo-core" }
+elfo-macros = { version = "0.1", path = "../elfo-macros" }
+elfo-test = { version = "0.1", path = "../elfo-test", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.38"
