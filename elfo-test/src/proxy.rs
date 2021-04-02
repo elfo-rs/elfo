@@ -92,6 +92,11 @@ fn testers(tx: shared::OneshotSender<Context>) -> Schema {
 }
 
 pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> Proxy {
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
     let config = Value::deserialize(config).expect("invalid config");
     let mut map = BTreeMap::new();
     map.insert(Value::String("subject".into()), config);
