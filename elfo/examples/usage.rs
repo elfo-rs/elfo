@@ -159,7 +159,7 @@ async fn main() {
     summators.mount(summator::new());
 
     let config_path = "elfo/examples/config.toml";
-    configurers.mount(elfo::actors::configurers::from_path(&topology, config_path));
+    configurers.mount(elfo::actors::configurer::from_path(&topology, config_path));
 
     elfo::start(topology).await;
 }

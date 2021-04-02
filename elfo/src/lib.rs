@@ -8,7 +8,7 @@ pub mod prelude {
 }
 
 pub mod actors {
-    pub use elfo_core::configurers;
+    pub use elfo_core::configurer;
 }
 
 #[cfg(feature = "test-util")]
