@@ -24,6 +24,12 @@ struct AddNum {
     num: u32,
 }
 
+#[message]
+struct AddNum2 {
+    group: u32,
+    num: u32,
+}
+
 #[message(ret = Report)]
 struct Summarize {
     group: u32,
