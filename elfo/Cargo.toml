@@ -6,7 +6,7 @@ keywords = ["actor", "distributed", "tokio"]
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 repository = "https://github.com/loyd/elfo"
 license = "MIT"
-readme = "README.md"
+readme = "../README.md"
 edition = "2018"
 
 [[test]]
