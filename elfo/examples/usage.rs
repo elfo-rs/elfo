@@ -192,7 +192,7 @@ async fn main() {
     // Actors can use `topology` as extended service locator.
     // Usually it should be used for utilities only.
     let config_path = "elfo/examples/config.toml";
-    configurers.mount(elfo::actors::configurer::from_path(&topology, config_path));
+    configurers.mount(elfo::configurer::from_path(&topology, config_path));
 
     // Run actors.
     elfo::start(topology).await;

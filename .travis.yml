@@ -6,7 +6,9 @@ before_script:
     - rustup component add rustfmt
 script:
     - cargo clippy --version
+    - cargo clippy --all-targets -- -D warnings -D rust_2018_idioms
     - cargo clippy --all-targets --all-features -- -D warnings -D rust_2018_idioms
     - cargo fmt --version
     - cargo fmt -- --check
+    - RUST_LOG=elfo cargo test --all-targets
     - RUST_LOG=elfo cargo test --all-targets --all-features
