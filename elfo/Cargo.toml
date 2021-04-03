@@ -4,8 +4,10 @@ version = "0.1.1"
 description = "Your next actor system"
 keywords = ["actor", "distributed", "tokio"]
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
-edition = "2018"
+repository = "https://github.com/loyd/elfo"
 license = "MIT"
+readme = "README.md"
+edition = "2018"
 
 [[test]]
 name = "test"
