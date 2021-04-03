@@ -24,7 +24,7 @@ pub struct AnyConfig {
 }
 
 impl AnyConfig {
-    pub(crate) fn new(value: Value) -> Self {
+    pub fn new(value: Value) -> Self {
         Self {
             raw: Arc::new(value),
             decoded: None,

@@ -11,8 +11,8 @@ pub fn msg(input: TokenStream) -> TokenStream {
 
 // TODO: is it enough to have only one `msg!` instead?
 #[proc_macro]
-pub fn msg_internal(input: TokenStream) -> TokenStream {
-    msg::msg_impl(input, parse_quote!(crate))
+pub fn msg_raw(input: TokenStream) -> TokenStream {
+    msg::msg_impl(input, parse_quote!(elfo))
 }
 
 #[proc_macro_attribute]

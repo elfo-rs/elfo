@@ -6,7 +6,8 @@ use futures::{
 };
 use tracing::{info, trace};
 
-use elfo_macros::msg_internal as msg;
+use crate as elfo;
+use elfo_macros::msg_raw as msg;
 
 use crate::{
     actor::ActorStatus,

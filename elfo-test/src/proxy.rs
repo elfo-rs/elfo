@@ -114,7 +114,7 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
 
     // TODO: capture log messages.
     // TODO: capture metrics.
-    configurers.mount(elfo_core::configurer::fixture(&topology, config));
+    configurers.mount(elfo_configurer::fixture(&topology, config));
     subject.mount(schema);
 
     let (tx, rx) = shared::oneshot_channel();

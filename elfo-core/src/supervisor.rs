@@ -6,7 +6,8 @@ use fxhash::FxBuildHasher;
 use parking_lot::RwLock;
 use tracing::{error, error_span, info, Instrument, Span};
 
-use elfo_macros::{message, msg_internal as msg};
+use crate as elfo;
+use elfo_macros::{message, msg_raw as msg};
 
 use crate::{
     actor::{Actor, ActorStatus},

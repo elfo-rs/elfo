@@ -9,16 +9,14 @@ use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tracing::{error, info};
 
-use elfo_macros::msg_internal as msg;
+use elfo_core as elfo;
+use elfo_macros::msg_raw as msg;
 
-use crate::{
-    addr::Addr,
+use elfo::{
     config::AnyConfig,
-    context::Context,
     errors::RequestError,
-    group::{ActorGroup, Schema},
     messages::{ConfigRejected, ConfigUpdated, UpdateConfig},
-    topology::Topology,
+    ActorGroup, Addr, Context, Schema, Topology,
 };
 
 pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Schema {

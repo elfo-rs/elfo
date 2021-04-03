@@ -27,8 +27,6 @@ pub mod messages;
 pub mod routers;
 pub mod time;
 pub mod trace_id;
-// TODO: move out?
-pub mod configurer;
 
 mod actor;
 mod addr;
