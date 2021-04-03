@@ -3,6 +3,7 @@
 pub use elfo_core::*;
 pub use elfo_macros::{message, msg};
 
+#[cfg(feature = "elfo-configurer")]
 pub use elfo_configurer as configurer;
 
 pub mod prelude {
@@ -11,6 +12,7 @@ pub mod prelude {
 
 #[deprecated(since = "0.1.1")]
 pub mod actors {
+    #[cfg(feature = "elfo-configurer")]
     pub use super::configurer;
 }
 

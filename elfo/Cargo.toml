@@ -14,6 +14,7 @@ name = "test"
 path = "examples/test.rs"
 
 [features]
+full = ["elfo-configurer"]
 test-util = ["elfo-test", "elfo-core/test-util"]
 
 [dependencies]
