@@ -261,7 +261,7 @@ where
             match fut.await {
                 Ok(Ok(())) => return info!(%addr, "finished"),
                 Ok(Err(err)) => error!(%addr, error = %err, "failed"),
-                Err(panic) => error!(%addr, error = %panic_to_string(&panic), "panicked"),
+                Err(panic) => error!(%addr, error = %panic_to_string(panic), "panicked"),
             };
 
             let key = Local::from(Arc::new(key) as Arc<dyn Any + Send + Sync>);
@@ -287,7 +287,7 @@ where
     }
 }
 
-fn panic_to_string(payload: &dyn Any) -> String {
+fn panic_to_string(payload: Box<dyn Any>) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         (*message).to_string()
     } else if let Some(message) = payload.downcast_ref::<String>() {
