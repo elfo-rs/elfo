@@ -113,15 +113,23 @@ impl Actor {
 
     pub(crate) fn set_status(&self, status: ActorStatus) {
         let mut control = self.control.write();
-        let details = status.details.as_deref().unwrap_or("");
-        if matches!(
+
+        let is_good_kind = matches!(
             status.kind,
             ActorStatusKind::Normal | ActorStatusKind::Initializing
-        ) {
-            info!(status = ?status.kind, %details, "status changed");
+        );
+
+        if let Some(details) = status.details.as_deref() {
+            if is_good_kind {
+                info!(status = ?status.kind, %details, "status changed");
+            } else {
+                error!(status = ?status.kind, %details, "status changed");
+            }
+        } else if is_good_kind {
+            info!(status = ?status.kind, "status changed");
         } else {
-            error!(status = ?status.kind, %details, "status changed");
-        }
+            error!(status = ?status.kind, "status changed");
+        };
 
         control.status = status;
 
