@@ -58,7 +58,7 @@ impl ActorStatus {
         }
     }
 
-    pub fn with_details(&self, details: &dyn fmt::Display) -> Self {
+    pub fn with_details(&self, details: impl fmt::Display) -> Self {
         ActorStatus {
             kind: self.kind.clone(),
             details: Some(format!("{}", details)),
