@@ -377,6 +377,8 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
         }
     }
 
+    // TODO
+    #[allow(unused)]
     pub(crate) fn forgotten(self) -> RequestBuilder<'c, C, K, S, R, Forgotten> {
         RequestBuilder {
             context: self.context,

@@ -85,7 +85,6 @@ fn testers(tx: shared::OneshotSender<Context>) -> Schema {
         async move {
             // Actually starts actor.
             let _ = ctx.recv().await;
-
             let _ = tx.send(ctx);
             futures::future::pending::<()>().await;
         }

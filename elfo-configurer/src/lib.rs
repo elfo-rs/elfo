@@ -51,7 +51,9 @@ async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) 
 
         if let Some(request) = request.take() {
             msg!(match request {
-                (Ping { .. }, token) if is_ok => ctx.respond(token, ()),
+                (Ping { .. }, token) if is_ok => {
+                    ctx.respond(token, ())
+                }
                 (Ping { .. }, token) => {
                     let _ = token;
                 }
@@ -92,6 +94,12 @@ async fn update_configs(ctx: &Context, topology: &Topology, source: &ConfigSourc
         return false;
     }
 
+    if !ping(ctx, &config_list).await {
+        error!("ping failed");
+        ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent configs"));
+        return false;
+    }
+
     ctx.set_status(ActorStatus::NORMAL);
     true
 }
@@ -122,6 +130,28 @@ where
         })
         // TODO: provide more info.
         .inspect(|reason| error!(%reason, "invalid config"));
+
+    errors.count() == 0
+}
+
+async fn ping(ctx: &Context, config_list: &[(Addr, AnyConfig)]) -> bool {
+    let futures = config_list
+        .iter()
+        .cloned()
+        .map(|(addr, _)| ctx.request(Ping).from(addr).all().resolve())
+        .collect::<Vec<_>>();
+
+    // TODO: use `try_join_all`.
+    let errors = future::join_all(futures)
+        .await
+        .into_iter()
+        .flatten()
+        .filter_map(|result| match result {
+            Ok(()) | Err(RequestError::Ignored) => None,
+            Err(RequestError::Closed(_)) => Some(String::from("some group is closed")),
+        })
+        // TODO: provide more info.
+        .inspect(|reason| error!(%reason, "ping failed"));
 
     errors.count() == 0
 }

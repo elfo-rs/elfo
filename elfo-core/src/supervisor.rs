@@ -48,6 +48,19 @@ struct ActorRestarted {
     key: Local<Arc<dyn Any + Send + Sync>>,
 }
 
+macro_rules! get_or_spawn {
+    ($this:ident, $key:expr) => {{
+        let key = $key;
+        ward!($this.objects.get(&key), {
+            $this
+                .objects
+                .entry(key.clone())
+                .or_insert_with(|| $this.spawn(key))
+                .downgrade()
+        })
+    }};
+}
+
 impl<R, C, X> Supervisor<R, C, X>
 where
     R: Router<C>,
@@ -149,13 +162,7 @@ where
         // TODO: avoid copy & paste.
         match outcome {
             Outcome::Unicast(key) => {
-                let object = ward!(self.objects.get(&key), {
-                    self.objects
-                        .entry(key.clone())
-                        .or_insert_with(|| self.spawn(key))
-                        .downgrade()
-                });
-
+                let object = get_or_spawn!(self, key);
                 let actor = object.as_actor().expect("supervisor stores only actors");
                 match actor.try_send(envelope) {
                     Ok(()) => RouteReport::Done,
@@ -169,17 +176,12 @@ where
 
                 // TODO: avoid the loop in `try_send` case.
                 for key in list {
-                    let object = ward!(self.objects.get(&key), {
-                        self.objects
-                            .entry(key.clone())
-                            .or_insert_with(|| self.spawn(key))
-                            .downgrade()
-                    });
+                    let object = get_or_spawn!(self, key);
 
                     // TODO: we shouldn't clone `envelope` for the last object in a sequence.
                     let envelope = ward!(
                         envelope.duplicate(self.context.book()),
-                        continue // A requester has died, but Multicast is more insistent.
+                        continue // A requester has died, but `Multicast` is more insistent.
                     );
 
                     let actor = object.as_actor().expect("supervisor stores only actors");
@@ -266,13 +268,6 @@ where
         let fut = self.exec.exec(ctx);
 
         let fut = async move {
-            let _ = sv_ctx
-                .request(messages::Ping)
-                .from(addr)
-                .forgotten()
-                .resolve()
-                .await;
-
             info!(%addr, "started");
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             match fut.await {
@@ -305,11 +300,11 @@ where
     fn spawn_by_outcome(&self, outcome: Outcome<R::Key>) {
         match outcome {
             Outcome::Unicast(key) => {
-                self.spawn(key);
+                get_or_spawn!(self, key);
             }
             Outcome::Multicast(keys) => {
                 for key in keys {
-                    self.spawn(key);
+                    get_or_spawn!(self, key);
                 }
             }
             Outcome::Broadcast | Outcome::Discard | Outcome::Default => {}
