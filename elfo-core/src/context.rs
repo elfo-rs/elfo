@@ -163,6 +163,10 @@ impl<C, K, S> Context<C, K, S> {
     }
 
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, message: R::Response) {
+        if token.is_forgotten() {
+            return;
+        }
+
         let message = R::Wrapper::from(message);
         let sender = token.sender;
         trace!(?message, to = %sender, ">");
@@ -215,8 +219,8 @@ impl<C, K, S> Context<C, K, S> {
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
                 let kind = MessageKind::Regular { sender: self.addr };
-                let envelope = Envelope::new(message.clone(), kind).upcast();
-                self.respond(token, Ok(message));
+                let envelope = Envelope::new(message, kind).upcast();
+                self.respond(token, Ok(()));
                 envelope
             }
             envelope => envelope,
@@ -252,8 +256,8 @@ impl<C, K, S> Context<C, K, S> {
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
                 let kind = MessageKind::Regular { sender: self.addr };
-                let envelope = Envelope::new(message.clone(), kind).upcast();
-                self.respond(token, Ok(message));
+                let envelope = Envelope::new(message, kind).upcast();
+                self.respond(token, Ok(()));
                 envelope
             }
             envelope => envelope,
@@ -351,6 +355,7 @@ pub struct RequestBuilder<'c, C, K, S, R, M> {
 
 pub struct Any;
 pub struct All;
+pub(crate) struct Forgotten;
 
 impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
     fn new(context: &'c Context<C, K, S>, request: R) -> Self {
@@ -364,6 +369,15 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
 
     #[inline]
     pub fn all(self) -> RequestBuilder<'c, C, K, S, R, All> {
+        RequestBuilder {
+            context: self.context,
+            request: self.request,
+            from: self.from,
+            marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn forgotten(self) -> RequestBuilder<'c, C, K, S, R, Forgotten> {
         RequestBuilder {
             context: self.context,
             request: self.request,
@@ -461,5 +475,27 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
                 }
             })
             .collect()
+    }
+}
+
+impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Forgotten> {
+    pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
+        let token = ResponseToken::forgotten(self.context.book.clone());
+        let message_kind = MessageKind::RequestAny(token);
+
+        if let Some(recipient) = self.from {
+            trace!(message = ?self.request, to = %recipient, ">");
+            let rec_entry = self.context.book.get_owned(recipient);
+            let rec_object = ward!(rec_entry, return Err(RequestError::Closed(self.request)));
+            let envelope = Envelope::new(self.request, message_kind);
+            let result = rec_object.send(self.context, envelope.upcast()).await;
+            result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
+        } else {
+            trace!(message = ?self.request, ">");
+            let fut = self.context.do_send(self.request, message_kind).await;
+            fut.map_err(|err| RequestError::Closed(err.0))?;
+        }
+
+        Err(RequestError::Ignored)
     }
 }

@@ -126,6 +126,15 @@ impl ResponseToken<()> {
 }
 
 impl<R> ResponseToken<R> {
+    pub(crate) fn forgotten(book: AddressBook) -> Self {
+        Self {
+            sender: Addr::NULL,
+            request_id: RequestId::null(),
+            book,
+            marker: PhantomData,
+        }
+    }
+
     pub(crate) fn into_untyped(mut self) -> ResponseToken<()> {
         let token = ResponseToken {
             sender: self.sender,
@@ -135,6 +144,10 @@ impl<R> ResponseToken<R> {
         };
         self.forget();
         token
+    }
+
+    pub(crate) fn is_forgotten(&self) -> bool {
+        self.request_id == RequestId::null()
     }
 
     fn forget(&mut self) {

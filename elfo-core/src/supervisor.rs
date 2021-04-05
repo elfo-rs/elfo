@@ -87,10 +87,15 @@ where
             }
             messages::ValidateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
-                    let outcome = self.router.route(&envelope);
-                    let mut envelope = envelope;
-                    envelope.set_message(messages::ValidateConfig { config });
-                    self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+                    let is_first_update = self.control.write().config.is_none();
+                    if !is_first_update {
+                        let outcome = self.router.route(&envelope);
+                        let mut envelope = envelope;
+                        envelope.set_message(messages::ValidateConfig { config });
+                        self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+                    } else {
+                        RouteReport::Done
+                    }
                 }
                 Err(reason) => {
                     msg!(match envelope {
@@ -106,16 +111,21 @@ where
             messages::UpdateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
                     let mut control = self.control.write();
+                    let is_first_update = control.config.is_none();
                     control.config = config.get().cloned();
                     self.router
                         .update(&control.config.as_ref().expect("just saved"));
-                    info!(config = ?control.config.as_ref().unwrap(), "config updated");
+                    info!(config = ?control.config.as_ref().unwrap(), "router updated");
                     drop(control);
                     let outcome = self.router.route(&envelope);
-
-                    let mut envelope = envelope;
-                    envelope.set_message(messages::UpdateConfig { config });
-                    self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+                    if !is_first_update {
+                        let mut envelope = envelope;
+                        envelope.set_message(messages::UpdateConfig { config });
+                        self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+                    } else {
+                        self.spawn_by_outcome(outcome);
+                        RouteReport::Done
+                    }
                 }
                 Err(reason) => {
                     msg!(match envelope {
@@ -256,6 +266,13 @@ where
         let fut = self.exec.exec(ctx);
 
         let fut = async move {
+            let _ = sv_ctx
+                .request(messages::Ping)
+                .from(addr)
+                .forgotten()
+                .resolve()
+                .await;
+
             info!(%addr, "started");
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             match fut.await {
@@ -279,11 +296,24 @@ where
         };
 
         drop(_entered);
-        tokio::spawn(fut.instrument(span));
 
         entry.insert(Object::new(addr, Actor::new(addr)));
-
+        tokio::spawn(fut.instrument(span));
         self.context.book().get_owned(addr).expect("just created")
+    }
+
+    fn spawn_by_outcome(&self, outcome: Outcome<R::Key>) {
+        match outcome {
+            Outcome::Unicast(key) => {
+                self.spawn(key);
+            }
+            Outcome::Multicast(keys) => {
+                for key in keys {
+                    self.spawn(key);
+                }
+            }
+            Outcome::Broadcast | Outcome::Discard | Outcome::Default => {}
+        }
     }
 }
 

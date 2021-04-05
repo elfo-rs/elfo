@@ -1,24 +1,39 @@
+use futures::TryFutureExt;
+
 use crate::{
-    actor::Actor, context::Context, demux::Demux, errors::StartError, message, messages,
-    object::Object, topology::Topology,
+    actor::Actor,
+    context::Context,
+    demux::Demux,
+    errors::{RequestError, StartError},
+    message,
+    messages::{Ping, UpdateConfig},
+    object::Object,
+    topology::Topology,
 };
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
 
-async fn send_configs(ctx: &Context, topology: &Topology) -> Result<()> {
+async fn send_configs_to_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
     let futures = topology
         .actor_groups()
         .filter(|group| group.is_entrypoint)
         .map(|group| {
             let config = Default::default();
-            ctx.request(messages::UpdateConfig { config })
+            ctx.request(UpdateConfig { config })
                 .from(group.addr)
                 .resolve()
+                .or_else(|err| async move {
+                    match err {
+                        RequestError::Ignored => Ok(Ok(())),
+                        _ => Err(StartError::Other(
+                            "initial messages cannot be delivered".into(),
+                        )),
+                    }
+                })
         });
 
     let error_count = futures::future::try_join_all(futures)
-        .await
-        .map_err(|_| StartError::Other("initial messages cannot be delivered".into()))?
+        .await?
         .into_iter()
         .filter_map(Result::err)
         .count();
@@ -28,6 +43,19 @@ async fn send_configs(ctx: &Context, topology: &Topology) -> Result<()> {
     } else {
         Err(StartError::InvalidConfig)
     }
+}
+
+async fn start_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
+    let futures = topology
+        .actor_groups()
+        .filter(|group| group.is_entrypoint)
+        .map(|group| ctx.request(Ping).from(group.addr).resolve());
+
+    futures::future::try_join_all(futures)
+        .await
+        .map_err(|_| StartError::Other("entrypoint cannot started".into()))?;
+
+    Ok(())
 }
 
 pub async fn start(topology: Topology) {
@@ -51,7 +79,8 @@ pub async fn do_start(topology: Topology) -> Result<()> {
     entry.insert(Object::new(addr, Actor::new(addr)));
 
     let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
-    send_configs(&ctx, &topology).await?;
+    send_configs_to_entrypoints(&ctx, &topology).await?;
+    start_entrypoints(&ctx, &topology).await?;
 
     Ok(())
 }

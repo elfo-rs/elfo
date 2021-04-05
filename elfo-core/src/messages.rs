@@ -6,13 +6,16 @@ use elfo_macros::message;
 
 use crate::config::AnyConfig;
 
+#[message(ret = (), elfo = crate)]
+pub struct Ping;
+
 #[message(ret = Result<(), ConfigRejected>, elfo = crate)]
 #[derive(Constructor)]
 pub struct ValidateConfig {
     pub config: AnyConfig,
 }
 
-#[message(ret = Result<ConfigUpdated, ConfigRejected>, elfo = crate)]
+#[message(ret = Result<(), ConfigRejected>, elfo = crate)]
 #[derive(Constructor)]
 pub struct UpdateConfig {
     pub config: AnyConfig,

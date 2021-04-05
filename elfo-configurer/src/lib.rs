@@ -7,7 +7,7 @@ use futures::future;
 use fxhash::FxHashMap;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
-use tracing::{error, info};
+use tracing::error;
 
 use elfo_core as elfo;
 use elfo_macros::msg_raw as msg;
@@ -15,8 +15,8 @@ use elfo_macros::msg_raw as msg;
 use elfo::{
     config::AnyConfig,
     errors::RequestError,
-    messages::{ConfigRejected, ConfigUpdated, UpdateConfig},
-    ActorGroup, Addr, Context, Schema, Topology,
+    messages::{ConfigRejected, Ping, UpdateConfig, ValidateConfig},
+    ActorGroup, ActorStatus, Addr, Context, Request, Schema, Topology,
 };
 
 pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Schema {
@@ -47,29 +47,20 @@ async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) 
             signal.recv().await;
         }
 
-        let just_started = request.is_some();
-        let is_ok = update_configs(&ctx, &topology, &source, just_started).await;
+        let is_ok = update_configs(&ctx, &topology, &source).await;
 
         if let Some(request) = request.take() {
             msg!(match request {
-                (UpdateConfig { .. }, token) if is_ok => ctx.respond(token, Ok(ConfigUpdated {})),
-                (UpdateConfig { .. }, token) => ctx.respond(
-                    token,
-                    Err(ConfigRejected {
-                        reason: "invalid configuration".into(),
-                    })
-                ),
+                (Ping { .. }, token) if is_ok => ctx.respond(token, ()),
+                (Ping { .. }, token) => {
+                    let _ = token;
+                }
             })
         }
     }
 }
 
-async fn update_configs(
-    ctx: &Context,
-    topology: &Topology,
-    source: &ConfigSource,
-    skip_validation: bool,
-) -> bool {
+async fn update_configs(ctx: &Context, topology: &Topology, source: &ConfigSource) -> bool {
     let config = match &source {
         ConfigSource::File(path) => load_raw_config(path),
         ConfigSource::Fixture(value) => value.clone(),
@@ -85,24 +76,41 @@ async fn update_configs(
 
     let config_list = match_configs(&topology, config);
 
-    if !skip_validation {
-        info!("config validation");
-        // TODO: send `ValidateConfig`.
+    ctx.set_status(ActorStatus::NORMAL.with_details("config validation"));
+
+    if !request_all(ctx, &config_list, |config| ValidateConfig { config }).await {
+        error!("config validation failed");
+        ctx.set_status(ActorStatus::NORMAL);
+        return false;
     }
 
-    info!("sending config updates");
+    ctx.set_status(ActorStatus::NORMAL.with_details("config updating"));
 
+    if !request_all(ctx, &config_list, |config| UpdateConfig { config }).await {
+        error!("config updating failed");
+        ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent configs"));
+        return false;
+    }
+
+    ctx.set_status(ActorStatus::NORMAL);
+    true
+}
+
+async fn request_all<R>(
+    ctx: &Context,
+    config_list: &[(Addr, AnyConfig)],
+    make_msg: impl Fn(AnyConfig) -> R,
+) -> bool
+where
+    R: Request<Response = Result<(), ConfigRejected>>,
+{
     let futures = config_list
         .iter()
         .cloned()
-        .map(|(addr, config)| {
-            ctx.request(UpdateConfig { config })
-                .from(addr)
-                .all()
-                .resolve()
-        })
+        .map(|(addr, config)| ctx.request(make_msg(config)).from(addr).all().resolve())
         .collect::<Vec<_>>();
 
+    // TODO: use `try_join_all`.
     let errors = future::join_all(futures)
         .await
         .into_iter()
