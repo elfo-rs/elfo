@@ -1,3 +1,7 @@
+// Let's build a simple application with three actor groups:
+// * *producers* send some numbers to *aggregators*
+// * *reporters* ask summaries from *aggregators*
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //              protocol
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -6,6 +10,8 @@
 // Dependencies between actors should be avoided.
 mod protocol {
     use elfo::prelude::*;
+
+    use serde::{Deserialize, Serialize};
 
     // It's just a regular message.
     // `message` derives
@@ -19,14 +25,17 @@ mod protocol {
     }
 
     // Messages with specified `ret` are requests.
-    #[message(ret = Report)]
+    #[message(ret = Summary)]
     pub struct Summarize {
-        pub group: u32,
+        pub group_filter: Option<u32>, // `None` for all.
     }
 
-    // Actually, responses don't have to implement `Message`.
-    #[message]
-    pub struct Report(pub u32);
+    // Responses don't have to implement `Message`.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Summary {
+        pub group: u32,
+        pub sum: u32,
+    }
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -43,7 +52,8 @@ mod producer {
 
     #[derive(Debug, Serialize, Deserialize)]
     struct Config {
-        count: u32,
+        group_count: u32,
+        item_count: u32,
         // Wrap credentials to hide them in logs and dumps.
         #[serde(default)]
         password: Secret<String>,
@@ -55,47 +65,96 @@ mod producer {
         ActorGroup::new()
             .config::<Config>()
             .exec(move |ctx| async move {
-                let count = ctx.config().count;
+                // Use `ctx.config()` to get an actual version of the config.
+                let item_count = ctx.config().item_count;
+                let group_count = ctx.config().group_count;
 
                 // Send some numbers.
-                for i in 0..count {
-                    let msg = AddNum {
-                        group: i % 3,
-                        num: i,
-                    };
+                for num in 0..item_count {
+                    let group = num % group_count;
 
                     // `send().await` returns when the message is placed in a mailbox.
                     // ... or returns an error if all destinations are closed and cannot be
                     // restarted right now.
-                    let _ = ctx.send(msg).await;
+                    let _ = ctx.send(AddNum { group, num }).await;
                 }
 
-                // Ask every group.
-                for &group in &[0, 1, 2] {
-                    // `request(..).resolve().await` returns the result
-                    // ... or with error, if something went wrong.
-                    // `request(..).id().await` can be used to get a response via the mailbox.
-                    let _ = ctx.request(Summarize { group }).resolve().await;
-                }
-
-                // The supervisor will restart failed actor with back off mechanism.
+                // The supervisor will restart failed actors with back off mechanism.
                 bail!("suicide");
             })
     }
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//              summator
+//              aggregator
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 // A more actor group that has sharding.
-mod summator {
+mod aggregator {
+    use elfo::{
+        prelude::*,
+        routers::{MapRouter, Outcome},
+    };
+
+    use crate::protocol::*;
+
+    pub fn new() -> Schema {
+        ActorGroup::new()
+            // Routers are called on a sending side, potentially from many threads.
+            // Usually, routers extract some sharding key from messages.
+            //
+            // See `MapRouter::with_state` for more complex routers with a state
+            // (potentially depending on the config).
+            .router(MapRouter::new(|envelope| {
+                msg!(match envelope {
+                    // `Unicast` is for sending to only one specific actor.
+                    // A new actor will be spawned if there is no actor for this key (`group`).
+                    AddNum { group, .. } => Outcome::Unicast(*group),
+                    // `Broadcast` is for sending to all already spawned actors.
+                    Summarize { group_filter, .. } => group_filter
+                        .map(Outcome::Unicast)
+                        .unwrap_or(Outcome::Broadcast),
+                    // Also there are other variants: `Multicast`, `Discard` and this one.
+                    _ => Outcome::Default,
+                })
+            }))
+            .exec(aggregator)
+    }
+
+    async fn aggregator(mut ctx: Context<(), u32>) {
+        // Define some shard-specific state.
+        let mut sum = 0;
+        // Get a sharding key.
+        let group = *ctx.key();
+
+        // The main actor loop: receive a message, handle it, repeat.
+        // Returns `None` and breaks the loop if actor's mailbox is closed
+        // (usually when the system terminates).
+        while let Some(envelope) = ctx.recv().await {
+            msg!(match envelope {
+                msg @ AddNum { .. } => {
+                    sum += msg.num;
+                }
+                (Summarize { .. }, token) => {
+                    let _ = ctx.respond(token, Summary { group, sum });
+                }
+            });
+        }
+
+        // Some work to perform a graceful termination.
+    }
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//               reporter
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+mod reporter {
     use std::time::Duration;
 
     use elfo::{
-        messages::ValidateConfig,
+        messages::{ConfigUpdated, ValidateConfig},
         prelude::*,
-        routers::{MapRouter, Outcome},
         time::Interval,
     };
     use serde::{Deserialize, Serialize};
@@ -108,50 +167,24 @@ mod summator {
         interval: Duration,
     }
 
-    pub fn new() -> Schema {
-        ActorGroup::new()
-            .config::<Config>()
-            // Routers are called on a sending side, potentially from many threads.
-            // Usually, routers extract some sharding key from messages.
-            //
-            // See `MapRouter::with_state` for more complex routers with a state
-            // (potentially depending on the config).
-            .router(MapRouter::new(|envelope| {
-                msg!(match envelope {
-                    AddNum { group, .. } => Outcome::Unicast(*group),
-                    Summarize { group, .. } => Outcome::Unicast(*group),
-                    _ => Outcome::Default,
-                })
-            }))
-            .exec(summator)
-    }
-
     // Sometimes it's useful to define private messages.
     #[message]
     struct TimerTick;
 
-    async fn summator(ctx: Context<Config, u32>) {
-        // Define some state.
-        let mut sum = 0;
+    pub fn new() -> Schema {
+        ActorGroup::new().config::<Config>().exec(reporter)
+    }
 
+    async fn reporter(ctx: Context<Config>) {
         let interval = Interval::new(|| TimerTick);
 
         // It's possible to attach additional sources to handle everything the same way.
         let mut ctx = ctx.with(&interval);
 
-        // The main actor loop: receive a message, handle it, repeat.
-        // Returns `None` and breaks the loop if actor's mailbox is closed
-        // (usually when the system terminates).
         while let Some(envelope) = ctx.recv().await {
             interval.set_period(ctx.config().interval);
 
             msg!(match envelope {
-                msg @ AddNum { .. } => {
-                    sum += msg.num;
-                }
-                (Summarize { .. }, token) => {
-                    let _ = ctx.respond(token, Report(sum));
-                }
                 (ValidateConfig { config, .. }, token) => {
                     // You can additionally validate a config against dynamic data.
                     // If all actors pass or ignore the validation step,
@@ -159,10 +192,56 @@ mod summator {
                     let _config = ctx.unpack_config(&config);
                     let _ = ctx.respond(token, Err("oops".into()));
                 }
-                TimerTick => tracing::info!("hello!"),
+                ConfigUpdated { .. } => {
+                    // Sometimes config updates require more complex actions,
+                    // e.g. reopen connections. Do it here.
+                }
+                TimerTick => {
+                    // `request(..).resolve().await` returns the result
+                    // ... or with error, if something went wrong.
+                    // In the future, `request(..).id().await` will be able to be used
+                    // in order to get a response via the mailbox.
+                    let req = Summarize { group_filter: None };
+                    for summary in ctx.request(req).all().resolve().await {
+                        tracing::info!(?summary, "summary");
+                    }
+                }
             });
         }
     }
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//               topology
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// Topology definition with actor groups and connections between them.
+fn topology() -> elfo::Topology {
+    let topology = elfo::Topology::empty();
+
+    // Define actor groups.
+    let producers = topology.local("producers");
+    let aggregators = topology.local("aggregators");
+    let reporters = topology.local("reporters");
+    let configurers = topology.local("system.configurers").entrypoint();
+
+    // Define links between actor groups.
+    // Producers send raw data to aggregators.
+    producers.route_all_to(&aggregators);
+    // Reporters ask aggregators for a summary.
+    reporters.route_all_to(&aggregators);
+
+    // Mount specific implementations.
+    producers.mount(producer::new());
+    aggregators.mount(aggregator::new());
+    reporters.mount(reporter::new());
+
+    // Actors can use `topology` as an extended service locator.
+    // Usually it should be used for utilities only.
+    let config_path = "elfo/examples/config.toml";
+    configurers.mount(elfo::configurer::from_path(&topology, config_path));
+
+    topology
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -171,29 +250,15 @@ mod summator {
 
 #[tokio::main]
 async fn main() {
+    // Set up logging.
+    // In the future, `elfo` will provide a logger actor group
+    // in order to support runtime control.
     tracing_subscriber::fmt()
+        // In the future, `elfo` will implement inexpensive dumping subsystem and tools for
+        // regression testing and tracing. Use `RUST_LOG=elfo` or this line in dev.
         .with_max_level(tracing::Level::TRACE)
         .with_target(false)
         .init();
 
-    // Let's define our topology with actor groups and connections between them.
-    let topology = elfo::Topology::empty();
-
-    let producers = topology.local("producers");
-    let summators = topology.local("summators");
-    let configurers = topology.local("system.configurers").entrypoint();
-
-    // Define links between actor groups.
-    producers.route_all_to(&summators);
-
-    producers.mount(producer::new());
-    summators.mount(summator::new());
-
-    // Actors can use `topology` as extended service locator.
-    // Usually it should be used for utilities only.
-    let config_path = "elfo/examples/config.toml";
-    configurers.mount(elfo::configurer::from_path(&topology, config_path));
-
-    // Run actors.
-    elfo::start(topology).await;
+    elfo::start(topology()).await;
 }

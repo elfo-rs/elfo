@@ -39,7 +39,7 @@ pub fn summators() -> Schema {
 
 #[tokio::test]
 async fn it_works() {
-    // Fistly, you can provide `RUST_LOG=elfo` to see all messages for failed cases.
+    // Note: `RUST_LOG=elfo` can be provided to see all messages in failed cases.
 
     // Define a config (usually using `toml!` or `json!`).
     let config = toml::toml! {

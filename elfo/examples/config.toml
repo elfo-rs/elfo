@@ -1,5 +1,6 @@
 [producers]
-count = 10
+group_count = 3
+item_count = 10
 
-[summators]
+[reporters]
 interval = "2s"
