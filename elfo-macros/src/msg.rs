@@ -35,11 +35,11 @@ fn is_type_ident(ident: &Ident) -> bool {
         .map_or(false, char::is_uppercase)
 }
 
-fn extract_kind(pat: &Pat, is_top_level: bool) -> Result<GroupKind, &'static str> {
+fn extract_kind(pat: &Pat) -> Result<GroupKind, &'static str> {
     match pat {
         Pat::Box(_) => Err("box patterns are forbidden"),
         Pat::Ident(pat) => match pat.subpat.as_ref() {
-            Some(sp) => extract_kind(&sp.1, false),
+            Some(sp) => extract_kind(&sp.1),
             None if is_type_ident(&pat.ident) => {
                 Ok(GroupKind::Regular(Path::from(pat.ident.clone())))
             }
@@ -50,15 +50,15 @@ fn extract_kind(pat: &Pat, is_top_level: bool) -> Result<GroupKind, &'static str
         Pat::Or(pat) => pat
             .cases
             .iter()
-            .find_map(|pat| extract_kind(pat, false).ok())
+            .find_map(|pat| extract_kind(pat).ok())
             .ok_or("cannot determine the message's type"),
         Pat::Path(pat) => Ok(GroupKind::Regular(pat.path.clone())),
         Pat::Range(_) => Err("range patterns are forbidden"),
-        Pat::Reference(pat) => extract_kind(&pat.pat, false),
+        Pat::Reference(pat) => extract_kind(&pat.pat),
         Pat::Rest(_) => Err("rest patterns are forbidden"),
         Pat::Slice(_) => Err("slice patterns are forbidden"),
         Pat::Struct(pat) => Ok(GroupKind::Regular(pat.path.clone())),
-        Pat::Tuple(pat) if is_top_level => {
+        Pat::Tuple(pat) => {
             assert_eq!(pat.elems.len(), 2, "invalid request pattern");
 
             match pat.elems.last().unwrap() {
@@ -66,12 +66,11 @@ fn extract_kind(pat: &Pat, is_top_level: bool) -> Result<GroupKind, &'static str
                 _ => panic!("the token must be used"),
             }
 
-            match extract_kind(pat.elems.first().unwrap(), false)? {
+            match extract_kind(pat.elems.first().unwrap())? {
                 GroupKind::Regular(path) => Ok(GroupKind::Request(path)),
                 _ => Err("cannot determine the request's type"),
             }
         }
-        Pat::Tuple(_) => Err("tuple patterns are forbidden"),
         Pat::TupleStruct(pat) => Ok(GroupKind::Regular(pat.path.clone())),
         Pat::Type(_) => Err("type ascription patterns are forbidden"),
         Pat::Wild(_) => Ok(GroupKind::Wild),
@@ -95,7 +94,7 @@ fn add_groups(groups: &mut Vec<MessageGroup>, arm: Arm) -> Result<(), &'static s
         let mut map = HashMap::new();
 
         for pat in &pat.cases {
-            let kind = extract_kind(pat, false)?;
+            let kind = extract_kind(pat)?;
             let new_arm = map.entry(kind).or_insert_with(|| {
                 let mut arm = arm.clone();
                 if let Pat::Or(pat) = &mut arm.pat {
@@ -113,7 +112,7 @@ fn add_groups(groups: &mut Vec<MessageGroup>, arm: Arm) -> Result<(), &'static s
             add(kind, arm);
         }
     } else {
-        add(extract_kind(&arm.pat, true)?, arm);
+        add(extract_kind(&arm.pat)?, arm);
     }
 
     Ok(())
