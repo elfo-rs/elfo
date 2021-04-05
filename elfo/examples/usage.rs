@@ -76,6 +76,7 @@ mod producer {
                     // `send().await` returns when the message is placed in a mailbox.
                     // ... or returns an error if all destinations are closed and cannot be
                     // restarted right now.
+                    // Note that `elfo` logs warnings on its own and with restricted rate.
                     let _ = ctx.send(AddNum { group, num }).await;
                 }
 
