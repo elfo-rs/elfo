@@ -182,6 +182,8 @@ mod reporter {
         let mut ctx = ctx.with(&interval);
 
         while let Some(envelope) = ctx.recv().await {
+            // The setters of sources are cheap usually,
+            // so it's possible to change it on each iteration.
             interval.set_period(ctx.config().interval);
 
             msg!(match envelope {
