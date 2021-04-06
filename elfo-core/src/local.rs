@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{fmt, ops::Deref};
 
 use derive_more::From;
 use serde::{
@@ -15,7 +15,7 @@ use serde::{
 /// `Local<T>` implements `Serialize` and `Deserialize` for any `T`. Meanwhile,
 /// it can be serialized (but w/o useful information), it cannot be deserialized
 /// (it returns an error on attempts).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, From)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, From)]
 pub struct Local<T>(T);
 
 impl<T> Local<T> {
@@ -31,6 +31,12 @@ impl<T> Deref for Local<T> {
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl<T> fmt::Debug for Local<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<local>")
     }
 }
 
