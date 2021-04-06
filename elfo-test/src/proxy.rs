@@ -11,7 +11,7 @@ use serde_value::Value;
 use tokio::task;
 
 use elfo_core::{
-    ActorGroup, Context, Envelope, Message, Request, ResponseToken, Schema, Topology,
+    ActorGroup, Addr, Context, Envelope, Message, Request, ResponseToken, Schema, Topology,
     _priv::do_start,
 };
 
@@ -26,6 +26,11 @@ pub struct Proxy {
 impl Proxy {
     pub async fn send<M: Message>(&self, message: M) {
         let res = self.context.send(message).await;
+        res.expect("cannot send message")
+    }
+
+    pub async fn send_to<M: Message>(&self, recipient: Addr, message: M) {
+        let res = self.context.send_to(recipient, message).await;
         res.expect("cannot send message")
     }
 
