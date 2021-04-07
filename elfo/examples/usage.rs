@@ -107,13 +107,21 @@ mod aggregator {
             // See `MapRouter::with_state` for more complex routers with a state
             // (potentially depending on the config).
             .router(MapRouter::new(|envelope| {
+                // `Envelope` is an abstract wrapper around message with some metadata.
+                // Envelopes with known types are represented as `Envelope<T>`.
+                //
+                // It's not possible to mix different types in one `match`, thus
+                // the special `msg!` macro should be used to beat it.
+                // Reuse `match` syntax allows us to be compatible with `rustfmt`.
                 msg!(match envelope {
                     // `Unicast` is for sending to only one specific actor.
                     // A new actor will be spawned if there is no actor for this key (`group`).
                     AddNum { group, .. } => Outcome::Unicast(*group),
                     // `Broadcast` is for sending to all already spawned actors.
                     Summarize { group_filter, .. } => group_filter
+                        // Summarize only data of a specific group.
                         .map(Outcome::Unicast)
+                        // Summarize all groups.
                         .unwrap_or(Outcome::Broadcast),
                     // Also there are other variants: `Multicast`, `Discard` and this one.
                     _ => Outcome::Default,
@@ -136,7 +144,11 @@ mod aggregator {
                 msg @ AddNum { .. } => {
                     sum += msg.num;
                 }
+                // It's a syntax for requests.
                 (Summarize { .. }, token) => {
+                    // Use `token` to respond. The token cannot be used twice.
+                    // If the token is dropped without responding,
+                    // the sending side will get `RequestError::Ignored`.
                     let _ = ctx.respond(token, Summary { group, sum });
                 }
             });
