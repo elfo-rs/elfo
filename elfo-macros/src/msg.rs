@@ -35,6 +35,29 @@ fn is_type_ident(ident: &Ident) -> bool {
         .map_or(false, char::is_uppercase)
 }
 
+fn extract_path_to_type(path: &Path) -> Path {
+    let mut ident_rev_it = path.segments.iter().rev();
+
+    // Handle enum variants:
+    // `some::Enum::Variant`
+    //        ^- must be uppercased
+    //
+    // Yep, it's crazy, but it seems to be a good assumption for now.
+    if let Some(prev) = ident_rev_it.nth(1) {
+        if is_type_ident(&prev.ident) {
+            let mut path = path.clone();
+            path.segments.pop().unwrap();
+
+            // Convert `Pair::Punctuated` to `Pair::End`.
+            let (last, _) = path.segments.pop().unwrap().into_tuple();
+            path.segments.push(last);
+            return path;
+        }
+    }
+
+    path.clone()
+}
+
 fn extract_kind(pat: &Pat) -> Result<GroupKind, &'static str> {
     match pat {
         Pat::Box(_) => Err("box patterns are forbidden"),
@@ -52,12 +75,12 @@ fn extract_kind(pat: &Pat) -> Result<GroupKind, &'static str> {
             .iter()
             .find_map(|pat| extract_kind(pat).ok())
             .ok_or("cannot determine the message's type"),
-        Pat::Path(pat) => Ok(GroupKind::Regular(pat.path.clone())),
+        Pat::Path(pat) => Ok(GroupKind::Regular(extract_path_to_type(&pat.path))),
         Pat::Range(_) => Err("range patterns are forbidden"),
         Pat::Reference(pat) => extract_kind(&pat.pat),
         Pat::Rest(_) => Err("rest patterns are forbidden"),
         Pat::Slice(_) => Err("slice patterns are forbidden"),
-        Pat::Struct(pat) => Ok(GroupKind::Regular(pat.path.clone())),
+        Pat::Struct(pat) => Ok(GroupKind::Regular(extract_path_to_type(&pat.path))),
         Pat::Tuple(pat) => {
             assert_eq!(pat.elems.len(), 2, "invalid request pattern");
 
@@ -71,7 +94,7 @@ fn extract_kind(pat: &Pat) -> Result<GroupKind, &'static str> {
                 _ => Err("cannot determine the request's type"),
             }
         }
-        Pat::TupleStruct(pat) => Ok(GroupKind::Regular(pat.path.clone())),
+        Pat::TupleStruct(pat) => Ok(GroupKind::Regular(extract_path_to_type(&pat.path))),
         Pat::Type(_) => Err("type ascription patterns are forbidden"),
         Pat::Wild(_) => Ok(GroupKind::Wild),
         _ => Err("unknown tokens"),
