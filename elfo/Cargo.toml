@@ -12,18 +12,23 @@ edition = "2018"
 [[test]]
 name = "test"
 path = "examples/test.rs"
-required-features = ["elfo-test", "elfo-configurer"]
+required-features = ["test-util"]
 
 [[example]]
 name = "usage"
 path = "examples/usage.rs"
-required-features = ["elfo-configurer"]
+required-features = ["full"]
 
 # TODO: ugly, duplicate.
 [[example]]
 name = "test"
 path = "examples/test.rs"
-required-features = ["elfo-test", "elfo-configurer"]
+required-features = ["test-util"]
+
+[[test]]
+name = "msg_macro"
+path = "tests/msg_macro.rs"
+required-features = ["test-util"]
 
 [features]
 full = ["elfo-configurer"]
