@@ -36,6 +36,8 @@ elfo-test = { version = "0.1", path = "../elfo-test", optional = true }
 elfo-configurer = { version = "0.1", path = "../elfo-configurer", optional = true }
 
 [dev-dependencies]
+elfo-test = { version = "0.1", path = "../elfo-test" }
+
 anyhow = "1.0.38"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1.25"
