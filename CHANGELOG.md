@@ -36,7 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/loyd/elfo/compare/elfo-0.1.2...HEAD
+[unreleased]: https://github.com/loyd/elfo/compare/elfo-0.1.3...HEAD
+[0.1.3]: https://github.com/loyd/elfo/compare/elfo-0.1.2...elfo-0.1.3
 [0.1.2]: https://github.com/loyd/elfo/compare/elfo-0.1.1...elfo-0.1.2
 [0.1.1]: https://github.com/loyd/elfo/compare/elfo-0.1.0...elfo-0.1.1
 [0.1.0]: https://github.com/loyd/elfo/releases/tag/elfo-0.1.0
