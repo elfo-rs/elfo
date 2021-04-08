@@ -49,21 +49,28 @@ fn sample() -> Schema {
 
                 // Tuple.
                 Tuple(a, _) if a == 0 => ctx.send(Type::Tuple(0)).await.unwrap(),
-                _t @ Tuple(..) => ctx.send(Type::Tuple(1)).await.unwrap(),
+                _t @ Tuple => ctx.send(Type::Tuple(1)).await.unwrap(),
                 (ReqTuple(a, _), token) if a == 0 => ctx.respond(token, Type::Tuple(2)),
-                (_t @ ReqTuple(..), token) => ctx.respond(token, Type::Tuple(3)),
+                (_t @ ReqTuple, token) => ctx.respond(token, Type::Tuple(3)),
 
                 // Struct.
                 Struct { a } if a == 0 => ctx.send(Type::Struct(0)).await.unwrap(),
-                _t @ Struct { .. } => ctx.send(Type::Struct(1)).await.unwrap(),
+                Struct => ctx.send(Type::Struct(1)).await.unwrap(),
                 (ReqStruct { a }, token) if a == 0 => ctx.respond(token, Type::Struct(2)),
-                (_t @ ReqStruct { .. }, token) => ctx.respond(token, Type::Struct(3)),
+                (_t @ ReqStruct, token) => ctx.respond(token, Type::Struct(3)),
 
                 // Enum.
-                Enum::A { .. } => ctx.send(Type::Enum(0)).await.unwrap(),
+                Enum::A { a } if a == 0 => ctx.send(Type::Enum(0)).await.unwrap(),
                 Enum::B => ctx.send(Type::Enum(1)).await.unwrap(),
                 (ReqEnum::A { a: _a }, token) => ctx.respond(token, Type::Enum(2)),
                 (_t @ ReqEnum::B, token) => ctx.respond(token, Type::Enum(3)),
+                e @ Enum => ctx
+                    .send(match e {
+                        Enum::A { .. } => Type::Enum(4),
+                        Enum::B => unreachable!(),
+                    })
+                    .await
+                    .unwrap(),
             });
         }
     })
@@ -108,4 +115,6 @@ async fn it_handles_enum() {
     assert_msg_eq!(proxy.recv().await, Type::Enum(1));
     assert_eq!(proxy.request(ReqEnum::A { a: 0 }).await, Type::Enum(2));
     assert_eq!(proxy.request(ReqEnum::B).await, Type::Enum(3));
+    proxy.send(Enum::A { a: 1 }).await;
+    assert_msg_eq!(proxy.recv().await, Type::Enum(4));
 }

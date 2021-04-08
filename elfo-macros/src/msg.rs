@@ -2,7 +2,7 @@ use std::{char, collections::HashMap};
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Arm, ExprMatch, Ident, Pat, PatIdent, Path};
+use syn::{parse_macro_input, Arm, ExprMatch, Ident, Pat, PatIdent, PatWild, Path};
 
 // TODO: use `proc-macro-error` instead of `panic!`.
 // TODO: use `proc-macro-crate`?
@@ -101,6 +101,59 @@ fn extract_kind(pat: &Pat) -> Result<GroupKind, &'static str> {
     }
 }
 
+fn is_likely_type(pat: &Pat) -> bool {
+    match pat {
+        Pat::Ident(i) if i.subpat.is_none() && is_type_ident(&i.ident) => true,
+        Pat::Path(p) if extract_path_to_type(&p.path) == p.path => true,
+        _ => false,
+    }
+}
+
+/// Detects `a @ A` and `a @ some::A` patterns.
+fn is_binding_with_type(ident: &PatIdent) -> bool {
+    ident
+        .subpat
+        .as_ref()
+        .map_or(false, |sp| is_likely_type(&*sp.1))
+}
+
+fn refine_arm(mut arm: Arm) -> Arm {
+    match &mut arm.pat {
+        // `e @ Enum`
+        // `s @ Struct` (~ `s @ Struct { .. }`)
+        Pat::Ident(ident) if is_binding_with_type(&ident) => {
+            ident.subpat = None;
+        }
+        // `(e @ SomeType, token)`
+        // `(SomeType, token)`
+        Pat::Tuple(pat) => {
+            assert_eq!(pat.elems.len(), 2, "invalid request pattern");
+
+            match pat.elems.first_mut() {
+                Some(Pat::Ident(ident)) if is_binding_with_type(&ident) => {
+                    ident.subpat = None;
+                }
+                Some(pat) if is_likely_type(&pat) => {
+                    *pat = Pat::Wild(PatWild {
+                        attrs: Vec::new(),
+                        underscore_token: Default::default(),
+                    });
+                }
+                _ => {}
+            }
+        }
+        // `SomeType => ...`
+        pat if is_likely_type(&pat) => {
+            *pat = Pat::Wild(PatWild {
+                attrs: Vec::new(),
+                underscore_token: Default::default(),
+            });
+        }
+        _ => {}
+    };
+    arm
+}
+
 fn add_groups(groups: &mut Vec<MessageGroup>, arm: Arm) -> Result<(), &'static str> {
     let mut add = |kind, arm: Arm| {
         // println!("group {:?} {:#?}", kind, arm.pat);
@@ -135,7 +188,7 @@ fn add_groups(groups: &mut Vec<MessageGroup>, arm: Arm) -> Result<(), &'static s
             add(kind, arm);
         }
     } else {
-        add(extract_kind(&arm.pat)?, arm);
+        add(extract_kind(&arm.pat)?, refine_arm(arm));
     }
 
     Ok(())

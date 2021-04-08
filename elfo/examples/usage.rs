@@ -141,11 +141,11 @@ mod aggregator {
         // (usually when the system terminates).
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
-                msg @ AddNum { .. } => {
+                msg @ AddNum => {
                     sum += msg.num;
                 }
                 // It's a syntax for requests.
-                (Summarize { .. }, token) => {
+                (Summarize, token) => {
                     // Use `token` to respond. The token cannot be used twice.
                     // If the token is dropped without responding,
                     // the sending side will get `RequestError::Ignored`.
@@ -207,7 +207,7 @@ mod reporter {
                     let _config = ctx.unpack_config(&config);
                     let _ = ctx.respond(token, Err("oops".into()));
                 }
-                ConfigUpdated { .. } => {
+                ConfigUpdated => {
                     // Sometimes config updates require more complex actions,
                     // e.g. reopen connections. Do it here.
                 }

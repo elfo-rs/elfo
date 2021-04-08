@@ -51,10 +51,10 @@ async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) 
 
         if let Some(request) = request.take() {
             msg!(match request {
-                (Ping { .. }, token) if is_ok => {
+                (Ping, token) if is_ok => {
                     ctx.respond(token, ())
                 }
-                (Ping { .. }, token) => {
+                (Ping, token) => {
                     let _ = token;
                 }
             })
