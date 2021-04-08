@@ -145,6 +145,7 @@ mod aggregator {
                     sum += msg.num;
                 }
                 // It's a syntax for requests.
+                // See more patterns in `elfo/tests/msg_macro.rs`.
                 (Summarize, token) => {
                     // Use `token` to respond. The token cannot be used twice.
                     // If the token is dropped without responding,
