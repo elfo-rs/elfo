@@ -1,6 +1,6 @@
 [package]
 name = "elfo-macros"
-version = "0.1.2"
+version = "0.1.3"
 description = "Macros for matching and deriving messages"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
