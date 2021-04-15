@@ -21,7 +21,7 @@ use crate::{
     messages,
     object::{Object, ObjectArc},
     routers::{Outcome, Router},
-    utils::CachePadded,
+    utils::{AlternateForm, CachePadded},
 };
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
@@ -272,7 +272,8 @@ where
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             match fut.await {
                 Ok(Ok(())) => return info!(%addr, "finished"),
-                Ok(Err(err)) => error!(%addr, error = %err, "failed"),
+                // Print errors in the alternate form because `anyhow` uses it to show causes.
+                Ok(Err(err)) => error!(%addr, error = %AlternateForm(err), "failed"),
                 Err(panic) => error!(%addr, error = %panic_to_string(panic), "panicked"),
             };
 

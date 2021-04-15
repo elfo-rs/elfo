@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Fixed
+- Print causes of `anyhow::Error`.
 
 ## [0.1.3] - 2021-04-08
 ### Added
