@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2021-04-15
+### Fixed
+- Actually print error chains.
+
 ## [0.1.4] - 2021-04-15
 ### Fixed
 - Print causes of `anyhow::Error`.
@@ -40,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/loyd/elfo/compare/elfo-0.1.4...HEAD
+[unreleased]: https://github.com/loyd/elfo/compare/elfo-0.1.5...HEAD
+[0.1.5]: https://github.com/loyd/elfo/compare/elfo-0.1.4...elfo-0.1.5
 [0.1.4]: https://github.com/loyd/elfo/compare/elfo-0.1.3...elfo-0.1.4
 [0.1.3]: https://github.com/loyd/elfo/compare/elfo-0.1.2...elfo-0.1.3
 [0.1.2]: https://github.com/loyd/elfo/compare/elfo-0.1.1...elfo-0.1.2

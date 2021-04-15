@@ -1,6 +1,6 @@
-use std::fmt;
+use std::{error::Error, fmt};
 
-use derive_more::Deref;
+use derive_more::{Constructor, Deref};
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Deref)]
 // Spatial prefetcher is now pulling two lines at a time, so we use `align(128)`.
@@ -20,17 +20,36 @@ macro_rules! ward {
     ($o:expr, $early:stmt) => (ward!($o, else { $early }));
 }
 
-pub(crate) struct AlternateForm<T>(pub(crate) T);
+#[derive(Constructor)]
+pub(crate) struct ErrorChain<'a>(&'a dyn Error);
 
-impl<T: fmt::Display> fmt::Display for AlternateForm<T> {
+impl fmt::Display for ErrorChain<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:#}", self.0)
+        write!(f, "{}", self.0)?;
+
+        let mut cursor = self.0;
+        while let Some(err) = cursor.source() {
+            write!(f, ": {}", err)?;
+            cursor = err;
+        }
+
+        Ok(())
     }
 }
 
 #[test]
-fn alternate_form() {
-    let cause = anyhow::anyhow!("inner");
-    let error = cause.context("outer");
-    assert_eq!(format!("{}", AlternateForm(error)), "outer: inner");
+fn trivial_error_chain() {
+    let error = anyhow::anyhow!("oops");
+    assert_eq!(format!("{}", ErrorChain(&*error)), "oops");
+}
+
+#[test]
+fn error_chain() {
+    let innermost = anyhow::anyhow!("innermost");
+    let inner = innermost.context("inner");
+    let outer = inner.context("outer");
+    assert_eq!(
+        format!("{}", ErrorChain(&*outer)),
+        "outer: inner: innermost"
+    );
 }

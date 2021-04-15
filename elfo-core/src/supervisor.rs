@@ -21,7 +21,7 @@ use crate::{
     messages,
     object::{Object, ObjectArc},
     routers::{Outcome, Router},
-    utils::{AlternateForm, CachePadded},
+    utils::{CachePadded, ErrorChain},
 };
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
@@ -273,7 +273,7 @@ where
             match fut.await {
                 Ok(Ok(())) => return info!(%addr, "finished"),
                 // Print errors in the alternate form because `anyhow` uses it to show causes.
-                Ok(Err(err)) => error!(%addr, error = %AlternateForm(err), "failed"),
+                Ok(Err(err)) => error!(%addr, error = %ErrorChain::new(&*err), "failed"),
                 Err(panic) => error!(%addr, error = %panic_to_string(panic), "panicked"),
             };
 
