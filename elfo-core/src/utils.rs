@@ -20,7 +20,7 @@ macro_rules! ward {
     ($o:expr, $early:stmt) => (ward!($o, else { $early }));
 }
 
-pub(crate) struct AlternateForm<T>(pub T);
+pub(crate) struct AlternateForm<T>(pub(crate) T);
 
 impl<T: fmt::Display> fmt::Display for AlternateForm<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
