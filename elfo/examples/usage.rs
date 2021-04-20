@@ -11,8 +11,6 @@
 mod protocol {
     use elfo::prelude::*;
 
-    use serde::{Deserialize, Serialize};
-
     // It's just a regular message.
     // `message` derives
     // * `Debug` for logging in dev env
@@ -31,7 +29,7 @@ mod protocol {
     }
 
     // Responses don't have to implement `Message`.
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[message(part)] // derives `Debug`, `Clone`, `Serialize` and `Deserialize`.
     pub struct Summary {
         pub group: u32,
         pub sum: u32,
