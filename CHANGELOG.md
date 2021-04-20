@@ -8,8 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `#[message]`: add the `part` attribute.
+
+### Changed
 - supervisor: log using a group's span.
 - configurer: print a group name with errors.
+- `assert_msg(_eq)!`: print unexpected messages.
 
 ## [0.1.5] - 2021-04-15
 ### Fixed
