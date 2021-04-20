@@ -12,6 +12,7 @@ use syn::{
 #[derive(Debug)]
 struct MessageArgs {
     ret: Option<Type>,
+    part: bool,
     crate_: Path,
     not: Vec<String>,
 }
@@ -22,11 +23,13 @@ impl Parse for MessageArgs {
 
         let mut args = MessageArgs {
             ret: None,
+            part: false,
             crate_: parse_quote!(::elfo),
             not: Vec::new(),
         };
 
         // `#[message]`
+        // `#[message(part)]`
         // `#[message(ret = A)]`
         // `#[message(elfo = some)]`
         // `#[message(not(Debug))]`
@@ -38,6 +41,7 @@ impl Parse for MessageArgs {
                     let _: Token![=] = input.parse()?;
                     args.ret = Some(input.parse()?);
                 }
+                "part" => args.part = true,
                 // TODO: call it `crate` like in linkme?
                 "elfo" => {
                     let _: Token![=] = input.parse()?;
@@ -92,6 +96,8 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let crate_ = args.crate_;
 
     let impl_request = if let Some(ret) = &args.ret {
+        assert!(!args.part, "`part` and `ret` attributes are incompatible");
+
         quote! {
             impl #crate_::Request for #name {
                 type Response = #ret;
@@ -136,55 +142,61 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let derive_clone = gen_derive_attr(&args.not, "Clone");
     // TODO: `Serialize`, `Deserialize`
 
+    let impl_message = if !args.part {
+        quote! {
+            impl #crate_::Message for #name {
+                const _LTID: #crate_::_priv::LocalTypeId = #ltid;
+            }
+
+            #[doc(hidden)]
+            #[allow(non_snake_case)]
+            mod #mod_name {
+                use super::*;
+
+                use std::fmt;
+
+                use #crate_::_priv::{MESSAGE_LIST, MessageVTable, smallbox::{smallbox}, AnyMessage, linkme};
+                use #crate_::message;
+
+                #request_wrapper
+
+                fn cast_ref(message: &AnyMessage) -> &#name {
+                    message.downcast_ref::<#name>().expect("invalid vtable")
+                }
+
+                fn clone(message: &AnyMessage) -> AnyMessage {
+                    AnyMessage::new(Clone::clone(cast_ref(message)))
+                }
+
+                fn debug(message: &AnyMessage, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    fmt::Debug::fmt(cast_ref(message), f)
+                }
+
+                #[linkme::distributed_slice(MESSAGE_LIST)]
+                #[linkme(crate = #crate_::_priv::linkme)]
+                static VTABLE: MessageVTable = MessageVTable {
+                    ltid: #ltid,
+                    clone,
+                    debug,
+                };
+
+                // See [https://github.com/rust-lang/rust/issues/47384](rust#47384).
+                #[doc(hidden)]
+                pub fn touch() {}
+                impl #name { #[doc(hidden)] pub fn _elfo_touch() { #mod_name::touch(); } }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     TokenStream::from(quote! {
         #derive_debug
         #derive_clone
         #[derive(#crate_::_priv::serde::Serialize, #crate_::_priv::serde::Deserialize)]
         #[serde(crate = #serde_crate)]
         #input
-
-        impl #crate_::Message for #name {
-            const _LTID: #crate_::_priv::LocalTypeId = #ltid;
-        }
-
-        #[doc(hidden)]
-        #[allow(non_snake_case)]
-        mod #mod_name {
-            use super::*;
-
-            use std::fmt;
-
-            use #crate_::_priv::{MESSAGE_LIST, MessageVTable, smallbox::{smallbox}, AnyMessage, linkme};
-            use #crate_::message;
-
-            #request_wrapper
-
-            fn cast_ref(message: &AnyMessage) -> &#name {
-                message.downcast_ref::<#name>().expect("invalid vtable")
-            }
-
-            fn clone(message: &AnyMessage) -> AnyMessage {
-                AnyMessage::new(Clone::clone(cast_ref(message)))
-            }
-
-            fn debug(message: &AnyMessage, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt::Debug::fmt(cast_ref(message), f)
-            }
-
-            #[linkme::distributed_slice(MESSAGE_LIST)]
-            #[linkme(crate = #crate_::_priv::linkme)]
-            static VTABLE: MessageVTable = MessageVTable {
-                ltid: #ltid,
-                clone,
-                debug,
-            };
-
-            // See [https://github.com/rust-lang/rust/issues/47384](rust#47384).
-            #[doc(hidden)]
-            pub fn touch() {}
-            impl #name { #[doc(hidden)] pub fn _elfo_touch() { #mod_name::touch(); } }
-        }
-
+        #impl_message
         #impl_request
     })
 }
