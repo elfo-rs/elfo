@@ -26,6 +26,7 @@ use crate::{
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
     name: String,
+    span: Span,
     context: Context,
     // TODO: replace with `crossbeam_utils::sync::ShardedLock`?
     objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
@@ -72,6 +73,7 @@ where
         let control = ControlBlock { config: None };
 
         Self {
+            span: error_span!(parent: Span::none(), "", group = %name),
             name,
             context: ctx,
             objects: DashMap::default(),
@@ -86,7 +88,8 @@ where
             ActorBlocked { key } => {
                 let key: &R::Key = key.downcast_ref().expect("invalid key");
                 let object = ward!(self.objects.get(key), {
-                    error!(%key, "blocking removed actor?!");
+                    self.span
+                        .in_scope(|| error!(%key, "blocking removed actor?!"));
                     return RouteReport::Done;
                 });
                 let actor = object.as_actor().expect("invalid command");
@@ -128,7 +131,9 @@ where
                     control.config = config.get().cloned();
                     self.router
                         .update(&control.config.as_ref().expect("just saved"));
-                    info!(config = ?control.config.as_ref().unwrap(), "router updated");
+                    self.span.in_scope(
+                        || info!(config = ?control.config.as_ref().unwrap(), "router updated"),
+                    );
                     drop(control);
                     let outcome = self.router.route(&envelope);
                     if !is_first_update {

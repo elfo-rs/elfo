@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use futures::future;
+use futures::{future, FutureExt};
 use fxhash::FxHashMap;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
@@ -36,6 +36,13 @@ pub fn from_path(topology: &Topology, path_to_config: impl AsRef<Path>) -> Schem
 enum ConfigSource {
     File(PathBuf),
     Fixture(Result<Value, String>),
+}
+
+#[derive(Clone)]
+struct ConfigWithMeta {
+    group_name: String,
+    addr: Addr,
+    config: AnyConfig,
 }
 
 async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) {
@@ -106,7 +113,7 @@ async fn update_configs(ctx: &Context, topology: &Topology, source: &ConfigSourc
 
 async fn request_all<R>(
     ctx: &Context,
-    config_list: &[(Addr, AnyConfig)],
+    config_list: &[ConfigWithMeta],
     make_msg: impl Fn(AnyConfig) -> R,
 ) -> bool
 where
@@ -115,30 +122,38 @@ where
     let futures = config_list
         .iter()
         .cloned()
-        .map(|(addr, config)| ctx.request(make_msg(config)).from(addr).all().resolve())
+        .map(|item| {
+            let group = item.group_name;
+            ctx.request(make_msg(item.config))
+                .from(item.addr)
+                .all()
+                .resolve()
+                .map(|res| (group, res))
+        })
         .collect::<Vec<_>>();
 
     // TODO: use `try_join_all`.
     let errors = future::join_all(futures)
         .await
         .into_iter()
+        .map(|(group, results)| results.into_iter().map(move |res| (group.clone(), res)))
         .flatten()
-        .filter_map(|result| match result {
+        .filter_map(|(group, result)| match result {
             Ok(Ok(_)) | Err(RequestError::Ignored) => None,
-            Ok(Err(reject)) => Some(reject.reason),
-            Err(RequestError::Closed(_)) => Some("some group is closed".into()),
+            Ok(Err(reject)) => Some((group, reject.reason)),
+            Err(RequestError::Closed(_)) => Some((group, "some group is closed".into())),
         })
         // TODO: provide more info.
-        .inspect(|reason| error!(%reason, "invalid config"));
+        .inspect(|(group, reason)| error!(%group, %reason, "invalid config"));
 
     errors.count() == 0
 }
 
-async fn ping(ctx: &Context, config_list: &[(Addr, AnyConfig)]) -> bool {
+async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
     let futures = config_list
         .iter()
         .cloned()
-        .map(|(addr, _)| ctx.request(Ping).from(addr).all().resolve())
+        .map(|item| ctx.request(Ping).from(item.addr).all().resolve())
         .collect::<Vec<_>>();
 
     // TODO: use `try_join_all`.
@@ -161,7 +176,7 @@ fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
     toml::from_str(&content).map_err(|err| err.to_string())
 }
 
-fn match_configs(topology: &Topology, config: Value) -> Vec<(Addr, AnyConfig)> {
+fn match_configs(topology: &Topology, config: Value) -> Vec<ConfigWithMeta> {
     let configs: FxHashMap<String, Value> = Deserialize::deserialize(config).unwrap_or_default();
 
     topology
@@ -170,12 +185,16 @@ fn match_configs(topology: &Topology, config: Value) -> Vec<(Addr, AnyConfig)> {
         .filter(|group| !group.is_entrypoint)
         .map(|group| {
             // TODO: handle "a.b.c" cases more carefully.
-            let group_config = configs
+            let config = configs
                 .get(&group.name)
                 .cloned()
                 .map_or_else(AnyConfig::default, AnyConfig::new);
 
-            (group.addr, group_config)
+            ConfigWithMeta {
+                group_name: group.name.clone(),
+                addr: group.addr,
+                config,
+            }
         })
         .collect()
 }
