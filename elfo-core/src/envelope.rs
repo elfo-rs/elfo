@@ -147,14 +147,22 @@ pub trait AnyMessageBorrowed {
 
 impl AnyMessageOwned for AnyMessage {
     #[inline]
+    #[track_caller]
     fn downcast2<M: Message>(self) -> M {
-        self.downcast::<M>().expect("cannot downcast")
+        match self.downcast::<M>() {
+            Ok(message) => message,
+            Err(message) => panic!("unexpected message: {:?}", message),
+        }
     }
 }
 
 impl AnyMessageBorrowed for AnyMessage {
     #[inline]
+    #[track_caller]
     fn downcast2<M: Message>(&self) -> &M {
-        self.downcast_ref::<M>().expect("cannot downcast")
+        ward!(
+            self.downcast_ref::<M>(),
+            panic!("unexpected message: {:?}", self)
+        )
     }
 }
