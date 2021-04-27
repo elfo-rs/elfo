@@ -1,6 +1,6 @@
 # elfo
 
-[![Build status](https://travis-ci.org/loyd/elfo.svg)](https://travis-ci.org/loyd/elfo)
+[![Build status](https://travis-ci.org/elfo-rs/elfo.svg)](https://travis-ci.org/elfo-rs/elfo)
 [![Crate info](https://img.shields.io/crates/v/elfo.svg)](https://crates.io/crates/elfo)
 [![Documentation](https://docs.rs/elfo/badge.svg)](https://docs.rs/elfo)
 
