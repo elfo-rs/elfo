@@ -6,3 +6,6 @@ members = [
     "elfo-test",
     "elfo-configurer",
 ]
+
+[profile.release]
+debug = true
