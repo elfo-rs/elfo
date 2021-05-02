@@ -30,6 +30,11 @@ name = "msg_macro"
 path = "tests/msg_macro.rs"
 required-features = ["test-util"]
 
+[[bench]]
+name = "round_trip"
+harness = false
+required-features = ["full"]
+
 [features]
 full = ["elfo-configurer"]
 test-util = ["elfo-test", "elfo-core/test-util"]
@@ -50,3 +55,4 @@ tracing-subscriber = "0.2.15"
 serde = { version = "1.0.120", features = ["derive"] }
 toml = "0.5.8"
 humantime-serde = "1"
+criterion = "0.3.4"
