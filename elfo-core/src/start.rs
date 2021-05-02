@@ -71,7 +71,7 @@ pub async fn try_start(topology: Topology) -> Result<()> {
 }
 
 #[doc(hidden)]
-pub async fn do_start(topology: Topology) -> Result<()> {
+pub async fn do_start(topology: Topology) -> Result<Context> {
     message::init();
 
     let entry = topology.book.vacant_entry();
@@ -82,5 +82,5 @@ pub async fn do_start(topology: Topology) -> Result<()> {
     send_configs_to_entrypoints(&ctx, &topology).await?;
     start_entrypoints(&ctx, &topology).await?;
 
-    Ok(())
+    Ok(ctx)
 }

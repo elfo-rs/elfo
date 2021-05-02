@@ -26,6 +26,7 @@ pub mod errors;
 pub mod messages;
 pub mod routers;
 pub mod time;
+pub mod topology;
 pub mod trace_id;
 
 mod actor;
@@ -44,7 +45,6 @@ mod object;
 mod request_table;
 mod start;
 mod supervisor;
-mod topology;
 
 #[doc(hidden)]
 pub mod _priv {
