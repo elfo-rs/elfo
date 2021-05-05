@@ -1,6 +1,6 @@
 # elfo
 
-[![Build status](https://travis-ci.org/elfo-rs/elfo.svg)](https://travis-ci.org/elfo-rs/elfo)
+[![Build status](https://travis-ci.org/elfo-rs/elfo.svg)](https://api.travis-ci.org/elfo-rs/elfo.svg?branch=master)
 [![Crate info](https://img.shields.io/crates/v/elfo.svg)](https://crates.io/crates/elfo)
 [![Documentation](https://docs.rs/elfo/badge.svg)](https://docs.rs/elfo)
 
@@ -34,3 +34,5 @@ elfo = { version = "0.1", features = ["test-util"] }
 ## Examples
 * [Basic usage](elfo/examples/usage.rs)
 * [Testing](elfo/examples/test.rs)
+
+Also check [The Actoromicon](http://actoromicon.rs/).
