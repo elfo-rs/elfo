@@ -1,6 +1,6 @@
 [package]
 name = "elfo"
-version = "0.1.7"
+version = "0.1.8"
 description = "Your next actor system"
 keywords = ["actor", "distributed", "tokio"]
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
