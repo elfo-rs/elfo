@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- `Proxy::set_addr()`
 
 ## [0.1.6] - 2021-04-20
 ### Added

@@ -64,6 +64,10 @@ impl Proxy {
         self.context.try_recv().ok()
     }
 
+    pub fn set_addr(&mut self, addr: Addr) {
+        self.context.set_addr(addr);
+    }
+
     pub fn non_exhaustive(&mut self) {
         self.non_exhaustive = true;
     }

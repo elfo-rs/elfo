@@ -45,6 +45,11 @@ impl<C, K, S> Context<C, K, S> {
         self.addr
     }
 
+    #[cfg(feature = "test-util")]
+    pub fn set_addr(&mut self, addr: Addr) {
+        self.addr = addr;
+    }
+
     #[inline]
     pub fn config(&self) -> &C {
         &self.config
