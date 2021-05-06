@@ -68,6 +68,26 @@ async fn it_works() {
     proxy.non_exhaustive();
 }
 
+#[tokio::test]
+async fn it_uses_subproxies() {
+    let config = toml::toml! { step = 20 };
+    let mut proxy = elfo::test::proxy(summators(), config).await;
+
+    // It's possible to get a subproxy with a different address.
+    // The main purpose is to test `send_to(..)` and `request(..).from(..)` calls.
+    // Subproxies inherit properties (`non_exhaustive` etc) from the original proxy.
+    // Note that API is likely to be changed in the future.
+    let mut subproxy = proxy.subproxy().await;
+    assert_eq!(subproxy.request(Summarize).await, 0);
+    assert!(proxy.try_recv().is_none());
+
+    // `send(..)` and `request(..)` without `from(..)` always send messages
+    // to the original proxy.
+    subproxy.send(Increment).await;
+    assert!(subproxy.try_recv().is_none());
+    assert_msg_eq!(proxy.recv().await, Added(20));
+}
+
 fn main() {
     panic!("run `cargo test`");
 }
