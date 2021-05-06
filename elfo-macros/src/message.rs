@@ -156,7 +156,6 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 use std::fmt;
 
                 use #crate_::_priv::{MESSAGE_LIST, MessageVTable, smallbox::{smallbox}, AnyMessage, linkme};
-                use #crate_::message;
 
                 #request_wrapper
 
