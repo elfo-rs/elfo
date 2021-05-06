@@ -45,6 +45,7 @@ impl<C, K, S> Context<C, K, S> {
         self.addr
     }
 
+    #[deprecated]
     #[cfg(feature = "test-util")]
     pub fn set_addr(&mut self, addr: Addr) {
         self.addr = addr;

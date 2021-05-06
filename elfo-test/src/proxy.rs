@@ -1,25 +1,29 @@
 use std::{
     collections::BTreeMap,
-    sync::Arc,
+    sync::atomic::{AtomicUsize, Ordering},
     thread,
     time::{Duration, Instant as StdInstant},
 };
 
-use futures_intrusive::channel::shared;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tokio::task;
 
 use elfo_core::{
-    ActorGroup, Addr, Context, Envelope, Message, Request, ResponseToken, Schema, Topology,
+    self as elfo, ActorGroup, Addr, Context, Envelope, Local, Message, Request, ResponseToken,
+    Schema,
     _priv::do_start,
+    routers::{MapRouter, Outcome},
+    topology::{GetAddrs, Topology},
 };
+use elfo_macros::{message, msg_raw as msg};
 
 const MAX_WAIT_TIME: Duration = Duration::from_millis(100);
 
 pub struct Proxy {
     context: Context,
     non_exhaustive: bool,
+    testers_addr: Addr,
 }
 
 // TODO: add `#[track_caller]` after https://github.com/rust-lang/rust/issues/78840.
@@ -64,12 +68,32 @@ impl Proxy {
         self.context.try_recv().ok()
     }
 
+    #[deprecated]
     pub fn set_addr(&mut self, addr: Addr) {
+        #[allow(deprecated)]
         self.context.set_addr(addr);
     }
 
     pub fn non_exhaustive(&mut self) {
         self.non_exhaustive = true;
+    }
+
+    /// Creates a subproxy with a different address.
+    /// The main purpose is to test `send_to(..)` and `request(..).from(..)`
+    /// calls. It's likely to be changed in the future.
+    pub async fn subproxy(&self) -> Proxy {
+        Proxy {
+            context: self
+                .context
+                .request(StealContext)
+                .from(self.testers_addr)
+                .resolve()
+                .await
+                .expect("cannot steal tester's context")
+                .into_inner(),
+            non_exhaustive: self.non_exhaustive,
+            testers_addr: self.testers_addr,
+        }
     }
 }
 
@@ -86,18 +110,29 @@ impl Drop for Proxy {
     }
 }
 
-fn testers(tx: shared::OneshotSender<Context>) -> Schema {
-    let tx = Arc::new(tx);
+#[message(ret = Local<Context>, elfo = elfo_core)]
+struct StealContext;
 
-    ActorGroup::new().exec(move |mut ctx| {
-        let tx = tx.clone();
-        async move {
-            // Actually starts actor.
-            let _ = ctx.recv().await;
-            let _ = tx.send(ctx);
-            futures::future::pending::<()>().await;
-        }
-    })
+fn testers() -> Schema {
+    let next_tester_key = AtomicUsize::new(0);
+
+    ActorGroup::new()
+        .router(MapRouter::new(move |envelope| {
+            msg!(match envelope {
+                StealContext => Outcome::Unicast(next_tester_key.fetch_add(1, Ordering::SeqCst)),
+                _ => Outcome::Unicast(0),
+            })
+        }))
+        .exec(move |mut ctx| async move {
+            while let Some(envelope) = ctx.recv().await {
+                msg!(match envelope {
+                    (StealContext, token) => {
+                        ctx.respond(token, Local::from(ctx.pruned()));
+                        futures::future::pending::<()>().await;
+                    }
+                });
+            }
+        })
 }
 
 pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> Proxy {
@@ -125,13 +160,21 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
     configurers.mount(elfo_configurer::fixture(&topology, config));
     subject.mount(schema);
 
-    let (tx, rx) = shared::oneshot_channel();
-    testers.mount(self::testers(tx));
+    assert_eq!(testers.addrs().len(), 1);
+    let testers_addr = testers.addrs()[0];
+    testers.mount(self::testers());
 
-    do_start(topology).await.expect("cannot start");
+    let root_ctx = do_start(topology).await.expect("cannot start");
 
     Proxy {
-        context: rx.receive().await.expect("cannot receive tester's context"),
+        context: root_ctx
+            .request(StealContext)
+            .from(testers_addr)
+            .resolve()
+            .await
+            .expect("cannot steal tester's context")
+            .into_inner(),
         non_exhaustive: false,
+        testers_addr,
     }
 }
