@@ -14,7 +14,7 @@ elfo-macros = { version = "0.1", path = "../elfo-macros" }
 elfo-utils = { version = "0.1", path = "../elfo-utils" }
 
 # TODO: replace `tokio` with `agnostik`.
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio = { version = "1.5", features = ["rt", "sync", "time"] }
 sharded-slab = "0.1.1"
 futures-intrusive = "0.4.0"
 parking_lot = "0.11.1"

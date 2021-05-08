@@ -28,6 +28,11 @@ pub(crate) enum ObjectKind {
     Group(Group),
 }
 
+pub struct ObjectMeta {
+    pub group: String,
+    pub key: Option<String>,
+}
+
 impl Object {
     pub(crate) fn new(addr: Addr, kind: impl Into<ObjectKind>) -> Self {
         Self {
