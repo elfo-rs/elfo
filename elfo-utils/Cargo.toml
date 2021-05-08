@@ -1,0 +1,13 @@
+[package]
+name = "elfo-utils"
+version = "0.1.0"
+description = "Utils"
+authors = ["Paul Loyd <pavelko95@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+derive_more = "0.99.11"
+
+[dev-dependencies]
+anyhow = "1.0.40"

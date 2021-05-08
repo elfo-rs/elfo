@@ -3,6 +3,8 @@
 
 #[macro_use]
 extern crate static_assertions;
+#[macro_use]
+extern crate elfo_utils;
 
 pub use crate::{
     actor::ActorStatus,
@@ -17,9 +19,6 @@ pub use crate::{
     start::{start, try_start},
     topology::Topology,
 };
-
-#[macro_use]
-mod utils;
 
 pub mod config;
 pub mod errors;

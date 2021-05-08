@@ -11,6 +11,7 @@ test-util = ["tokio/test-util"]
 
 [dependencies]
 elfo-macros = { version = "0.1", path = "../elfo-macros" }
+elfo-utils = { version = "0.1", path = "../elfo-utils" }
 
 # TODO: replace `tokio` with `agnostik`.
 tokio = { version = "1", features = ["rt", "sync", "time"] }

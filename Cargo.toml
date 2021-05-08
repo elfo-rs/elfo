@@ -2,6 +2,7 @@
 members = [
     "elfo",
     "elfo-core",
+    "elfo-utils",
     "elfo-macros",
     "elfo-test",
     "elfo-configurer",
