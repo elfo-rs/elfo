@@ -262,6 +262,7 @@ where
             .context
             .clone()
             .with_addr(addr)
+            .with_group(self.context.addr())
             .with_key(key.clone())
             .with_config(config);
 

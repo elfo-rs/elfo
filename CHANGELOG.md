@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - configurer: nested config paths support.
   E.g. local topology name `gates.web` corresponds to the following TOML section: `[gates.web]`.
+- `Context::group()` to get a group's address.
 
 ## [0.1.8] - 2021-05-06
 ### Added

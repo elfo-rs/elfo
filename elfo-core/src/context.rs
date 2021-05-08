@@ -31,6 +31,7 @@ mod source;
 pub struct Context<C = (), K = Singleton, S = ()> {
     book: AddressBook,
     addr: Addr,
+    group: Addr,
     demux: Demux,
     config: Arc<C>,
     key: K,
@@ -43,6 +44,11 @@ impl<C, K, S> Context<C, K, S> {
     #[inline]
     pub fn addr(&self) -> Addr {
         self.addr
+    }
+
+    #[inline]
+    pub fn group(&self) -> Addr {
+        self.group
     }
 
     #[deprecated]
@@ -65,6 +71,7 @@ impl<C, K, S> Context<C, K, S> {
         Context {
             book: self.book,
             addr: self.addr,
+            group: self.group,
             demux: self.demux,
             config: self.config,
             key: self.key,
@@ -286,6 +293,7 @@ impl<C, K, S> Context<C, K, S> {
         Context {
             book: self.book.clone(),
             addr: self.addr,
+            group: self.group,
             demux: self.demux.clone(),
             config: Arc::new(()),
             key: Singleton,
@@ -301,6 +309,7 @@ impl<C, K, S> Context<C, K, S> {
         Context {
             book: self.book,
             addr: self.addr,
+            group: self.group,
             demux: self.demux,
             config,
             key: self.key,
@@ -313,10 +322,16 @@ impl<C, K, S> Context<C, K, S> {
         self
     }
 
+    pub(crate) fn with_group(mut self, group: Addr) -> Self {
+        self.group = group;
+        self
+    }
+
     pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1, S> {
         Context {
             book: self.book,
             addr: self.addr,
+            group: self.group,
             demux: self.demux,
             config: self.config,
             key,
@@ -330,6 +345,7 @@ impl Context {
         Self {
             book,
             addr: Addr::NULL,
+            group: Addr::NULL,
             demux,
             config: Arc::new(()),
             key: Singleton,
@@ -343,6 +359,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
         Self {
             book: self.book.clone(),
             addr: self.addr,
+            group: self.group,
             demux: self.demux.clone(),
             config: self.config.clone(),
             key: self.key.clone(),
