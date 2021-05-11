@@ -1,10 +1,14 @@
 use std::{
     collections::BTreeMap,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     thread,
     time::{Duration, Instant as StdInstant},
 };
 
+use futures_intrusive::channel::shared;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tokio::task;
@@ -13,8 +17,9 @@ use elfo_core::{
     self as elfo, ActorGroup, Addr, Context, Envelope, Local, Message, Request, ResponseToken,
     Schema,
     _priv::do_start,
+    assert_msg,
     routers::{MapRouter, Outcome},
-    topology::{GetAddrs, Topology},
+    topology::Topology,
 };
 use elfo_macros::{message, msg_raw as msg};
 
@@ -23,7 +28,6 @@ const MAX_WAIT_TIME: Duration = Duration::from_millis(100);
 pub struct Proxy {
     context: Context,
     non_exhaustive: bool,
-    testers_addr: Addr,
 }
 
 // TODO: add `#[track_caller]` after https://github.com/rust-lang/rust/issues/78840.
@@ -86,13 +90,12 @@ impl Proxy {
             context: self
                 .context
                 .request(StealContext)
-                .from(self.testers_addr)
+                .from(self.context.group())
                 .resolve()
                 .await
                 .expect("cannot steal tester's context")
                 .into_inner(),
             non_exhaustive: self.non_exhaustive,
-            testers_addr: self.testers_addr,
         }
     }
 }
@@ -113,8 +116,9 @@ impl Drop for Proxy {
 #[message(ret = Local<Context>, elfo = elfo_core)]
 struct StealContext;
 
-fn testers() -> Schema {
-    let next_tester_key = AtomicUsize::new(0);
+fn testers(tx: shared::OneshotSender<Context>) -> Schema {
+    let tx = Arc::new(tx);
+    let next_tester_key = AtomicUsize::new(1);
 
     ActorGroup::new()
         .router(MapRouter::new(move |envelope| {
@@ -123,14 +127,24 @@ fn testers() -> Schema {
                 _ => Outcome::Unicast(0),
             })
         }))
-        .exec(move |mut ctx| async move {
-            while let Some(envelope) = ctx.recv().await {
-                msg!(match envelope {
-                    (StealContext, token) => {
-                        ctx.respond(token, Local::from(ctx.pruned()));
-                        futures::future::pending::<()>().await;
+        .exec(move |mut ctx| {
+            let tx = tx.clone();
+
+            async move {
+                if *ctx.key() == 0 {
+                    assert_msg!(ctx.recv().await.unwrap(), elfo_core::messages::Ping);
+                    let _ = tx.send(ctx.pruned());
+                } else {
+                    while let Some(envelope) = ctx.recv().await {
+                        msg!(match envelope {
+                            (StealContext, token) => {
+                                ctx.respond(token, Local::from(ctx.pruned()));
+                            }
+                        });
                     }
-                });
+                }
+
+                futures::future::pending::<()>().await;
             }
         })
 }
@@ -160,21 +174,36 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
     configurers.mount(elfo_configurer::fixture(&topology, config));
     subject.mount(schema);
 
-    assert_eq!(testers.addrs().len(), 1);
-    let testers_addr = testers.addrs()[0];
-    testers.mount(self::testers());
-
-    let root_ctx = do_start(topology).await.expect("cannot start");
+    let (tx, rx) = shared::oneshot_channel();
+    testers.mount(self::testers(tx));
+    do_start(topology).await.expect("cannot start");
 
     Proxy {
-        context: root_ctx
-            .request(StealContext)
-            .from(testers_addr)
-            .resolve()
-            .await
-            .expect("cannot steal tester's context")
-            .into_inner(),
+        context: rx.receive().await.unwrap(),
         non_exhaustive: false,
-        testers_addr,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use elfo_core::{assert_msg_eq, config::AnyConfig};
+    #[message(elfo = elfo_core)]
+    #[derive(PartialEq)]
+    struct SomeMessage;
+
+    #[tokio::test]
+    async fn it_handles_race_at_startup() {
+        let mut proxy = super::proxy(
+            ActorGroup::new().exec(|mut ctx| async move {
+                ctx.recv().await; // TODO: hide it?
+                ctx.send(SomeMessage).await.unwrap();
+            }),
+            AnyConfig::default(),
+        )
+        .await;
+
+        assert_msg_eq!(proxy.recv().await, SomeMessage);
     }
 }
