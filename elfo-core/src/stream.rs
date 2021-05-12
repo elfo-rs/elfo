@@ -22,17 +22,14 @@ enum StreamState<S> {
 }
 
 impl<S> Stream<S> {
-    #[inline]
     pub fn new(stream: S) -> Self {
         Stream(Mutex::new(StreamState::Active(Box::pin(stream))))
     }
 
-    #[inline]
     pub fn set(&self, stream: S) {
         *self.0.lock() = StreamState::Active(Box::pin(stream));
     }
 
-    #[inline]
     pub fn replace(&self, stream: S) -> Option<S>
     where
         S: Unpin,
@@ -44,7 +41,6 @@ impl<S> Stream<S> {
         }
     }
 
-    #[inline]
     pub fn close(&self) -> bool {
         !matches!(
             mem::replace(&mut *self.0.lock(), StreamState::Closed),
