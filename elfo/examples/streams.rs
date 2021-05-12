@@ -1,3 +1,5 @@
+#![cfg(feature = "full")]
+
 use elfo::{config::AnyConfig, prelude::*, stream};
 
 #[message]
