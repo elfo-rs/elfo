@@ -101,11 +101,12 @@ async fn update_configs(ctx: &Context, topology: &Topology, source: &ConfigSourc
         return false;
     }
 
-    if !ping(ctx, &config_list).await {
-        error!("ping failed");
-        ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent configs"));
-        return false;
-    }
+    // TODO: make `Ping` automatically handled.
+    // if !ping(ctx, &config_list).await {
+    // error!("ping failed");
+    // ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent
+    // configs")); return false;
+    // }
 
     ctx.set_status(ActorStatus::NORMAL);
     true
@@ -149,6 +150,7 @@ where
     errors.count() == 0
 }
 
+#[allow(dead_code)]
 async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
     let futures = config_list
         .iter()

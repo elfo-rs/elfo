@@ -18,7 +18,6 @@ use elfo_core::{
     self as elfo, ActorGroup, Addr, Context, Envelope, Local, Message, Request, ResponseToken,
     Schema,
     _priv::do_start,
-    assert_msg,
     routers::{MapRouter, Outcome},
     topology::Topology,
 };
@@ -133,7 +132,6 @@ fn testers(tx: shared::OneshotSender<Context>) -> Schema {
 
             async move {
                 if *ctx.key() == 0 {
-                    assert_msg!(ctx.recv().await.unwrap(), elfo_core::messages::Ping);
                     let _ = tx.send(ctx.pruned());
                 } else {
                     let envelope = ctx.recv().await.unwrap();
@@ -208,8 +206,7 @@ mod tests {
     #[tokio::test]
     async fn it_handles_race_at_startup() {
         let mut proxy = super::proxy(
-            ActorGroup::new().exec(|mut ctx| async move {
-                ctx.recv().await; // TODO: hide it?
+            ActorGroup::new().exec(|ctx| async move {
                 ctx.send(SomeMessage).await.unwrap();
             }),
             AnyConfig::default(),

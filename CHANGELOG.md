@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `Proxy::subproxy`.
 
+### Changed
+- configurer: do not send `Ping`s.
+
 ## [0.1.9] - 2021-05-12
 ### Added
 - configurer: nested config paths support.
