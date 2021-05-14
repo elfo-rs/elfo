@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    future,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -23,7 +24,7 @@ use elfo_core::{
 };
 use elfo_macros::{message, msg_raw as msg};
 
-const MAX_WAIT_TIME: Duration = Duration::from_millis(100);
+const MAX_WAIT_TIME: Duration = Duration::from_millis(150);
 
 pub struct Proxy {
     context: Context,
@@ -135,16 +136,16 @@ fn testers(tx: shared::OneshotSender<Context>) -> Schema {
                     assert_msg!(ctx.recv().await.unwrap(), elfo_core::messages::Ping);
                     let _ = tx.send(ctx.pruned());
                 } else {
-                    while let Some(envelope) = ctx.recv().await {
-                        msg!(match envelope {
-                            (StealContext, token) => {
-                                ctx.respond(token, Local::from(ctx.pruned()));
-                            }
-                        });
-                    }
+                    let envelope = ctx.recv().await.unwrap();
+                    msg!(match envelope {
+                        (StealContext, token) => {
+                            ctx.respond(token, Local::from(ctx.pruned()));
+                        }
+                        envelope => panic!("unexpected message: {:?}", envelope),
+                    });
                 }
 
-                futures::future::pending::<()>().await;
+                future::pending::<()>().await;
             }
         })
 }
@@ -188,10 +189,21 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
 mod tests {
     use super::*;
 
+    use elfo_core as elfo;
     use elfo_core::{assert_msg_eq, config::AnyConfig};
+    use elfo_macros::msg_raw as msg;
+
     #[message(elfo = elfo_core)]
     #[derive(PartialEq)]
     struct SomeMessage;
+
+    #[message(elfo = elfo_core, ret = u32)]
+    #[derive(PartialEq)]
+    struct SomeRequest;
+
+    #[message(elfo = elfo_core)]
+    #[derive(PartialEq)]
+    struct SomeMessage2;
 
     #[tokio::test]
     async fn it_handles_race_at_startup() {
@@ -205,5 +217,38 @@ mod tests {
         .await;
 
         assert_msg_eq!(proxy.recv().await, SomeMessage);
+    }
+
+    async fn sample() -> Proxy {
+        super::proxy(
+            ActorGroup::new().exec(|mut ctx| async move {
+                while let Some(envelope) = ctx.recv().await {
+                    let addr = envelope.sender();
+                    msg!(match envelope {
+                        SomeMessage => ctx.send_to(addr, SomeMessage2).await.unwrap(),
+                        (SomeRequest, token) => ctx.respond(token, 42),
+                    });
+                }
+            }),
+            AnyConfig::default(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn main_proxy_works() {
+        let mut proxy = sample().await;
+        assert_eq!(proxy.request(SomeRequest).await, 42);
+        proxy.send(SomeMessage).await;
+        assert_msg_eq!(proxy.recv().await, SomeMessage2);
+    }
+
+    #[tokio::test]
+    async fn subproxy_works() {
+        let proxy = sample().await;
+        let mut subproxy = proxy.subproxy().await;
+        assert_eq!(subproxy.request(SomeRequest).await, 42);
+        subproxy.send(SomeMessage).await;
+        assert_msg_eq!(subproxy.recv().await, SomeMessage2);
     }
 }
