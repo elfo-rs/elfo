@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Fixed
+- `Proxy::subproxy`.
 
 ## [0.1.9] - 2021-05-12
 ### Added
@@ -18,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.8] - 2021-05-06
 ### Added
-- `Proxy::subproxy()`
+- `Proxy::subproxy()`.
 
 ### Changed
 - Deprecate `Proxy::set_addr()`.
