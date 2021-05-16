@@ -49,6 +49,7 @@ elfo-configurer = { version = "0.1", path = "../elfo-configurer", optional = tru
 elfo-test = { version = "0.1", path = "../elfo-test" }
 
 anyhow = "1.0.38"
+futures = "0.3.12"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1.25"
 tracing-subscriber = "0.2.15"

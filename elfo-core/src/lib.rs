@@ -24,6 +24,7 @@ pub mod config;
 pub mod errors;
 pub mod messages;
 pub mod routers;
+pub mod stream;
 pub mod time;
 pub mod topology;
 pub mod trace_id;
