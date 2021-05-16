@@ -1,6 +1,7 @@
 #![cfg(feature = "full")]
 
-use elfo::{config::AnyConfig, prelude::*, stream};
+use elfo::{config::AnyConfig, prelude::*, stream::Stream};
+use futures::stream;
 
 #[message]
 struct SomeMessage(u32);
@@ -10,8 +11,7 @@ struct EndOfMessages;
 
 fn samples() -> Schema {
     ActorGroup::new().exec(|ctx| async move {
-        let stream1 =
-            stream::Stream::new(futures::stream::iter(vec![SomeMessage(0), SomeMessage(1)]));
+        let stream1 = Stream::new(stream::iter(vec![SomeMessage(0), SomeMessage(1)]));
 
         let mut ctx = ctx.with(stream1);
 
