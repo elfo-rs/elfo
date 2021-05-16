@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- `stream::Stream`: a wrapper to attach streams to a actor context.
 
 ## [0.1.10] - 2021-05-14
 ### Fixed
