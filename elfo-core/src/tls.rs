@@ -15,6 +15,11 @@ pub fn trace_id() -> TraceId {
     TRACE_ID.with(Cell::get)
 }
 
+/// Returns the current trace id if inside the actor system.
+pub fn try_trace_id() -> Option<TraceId> {
+    TRACE_ID.try_with(Cell::get).ok()
+}
+
 /// Replaces the current trace id with the provided one.
 ///
 /// # Panics
@@ -29,6 +34,11 @@ pub fn set_trace_id(trace_id: TraceId) {
 /// This function will panic if called ouside actors.
 pub fn meta() -> Arc<ObjectMeta> {
     META.with(Arc::clone)
+}
+
+/// Returns the current object's meta if inside the actor system.
+pub fn try_meta() -> Option<Arc<ObjectMeta>> {
+    META.try_with(Arc::clone).ok()
 }
 
 pub(crate) async fn scope<F: Future>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: F) -> F::Output {
