@@ -87,7 +87,7 @@ impl<C, K, S> Context<C, K, S> {
 
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::Regular { sender: self.addr };
-        trace!(?message, ">");
+        trace!("> {:?}", message);
         self.do_send(message, kind).await
     }
 
@@ -148,7 +148,7 @@ impl<C, K, S> Context<C, K, S> {
     ) -> Result<(), SendError<M>> {
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(SendError(message)));
-        trace!(?message, to = %recipient, ">");
+        trace!(to = %recipient, "> {:?}", message);
         let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
@@ -162,7 +162,7 @@ impl<C, K, S> Context<C, K, S> {
     ) -> Result<(), TrySendError<M>> {
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(TrySendError::Closed(message)));
-        trace!(?message, to = %recipient, ">");
+        trace!(to = %recipient, "> {:?}", message);
         let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
 
         object.try_send(envelope.upcast()).map_err(|err| match err {
@@ -182,7 +182,7 @@ impl<C, K, S> Context<C, K, S> {
 
         let message = R::Wrapper::from(message);
         let sender = token.sender;
-        trace!(?message, to = %sender, ">");
+        trace!(to = %sender, "> {:?}", message);
         let envelope = Envelope::new(message, MessageKind::Regular { sender }).upcast();
         let object = ward!(self.book.get(token.sender));
         let actor = ward!(object.as_actor());
@@ -239,7 +239,7 @@ impl<C, K, S> Context<C, K, S> {
             envelope => envelope,
         });
 
-        trace!(message = ?envelope.message(), "<");
+        trace!("< {:?}", envelope.message());
 
         Some(envelope)
     }
@@ -276,7 +276,7 @@ impl<C, K, S> Context<C, K, S> {
             envelope => envelope,
         });
 
-        trace!(message = ?envelope.message(), "<");
+        trace!("< {:?}", envelope.message());
 
         Ok(envelope)
     }
