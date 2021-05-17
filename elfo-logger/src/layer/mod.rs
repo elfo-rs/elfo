@@ -62,7 +62,7 @@ impl<S: Subscriber> Layer<S> for PrintLayer {
 
         let event = PreparedEvent {
             timestamp: now(),
-            level: event.metadata().level().clone(),
+            level: *event.metadata().level(),
             trace_id: tls::try_trace_id(),
             object: tls::try_meta(),
             span_id: event.parent().or_else(|| current_span.id()).cloned(),

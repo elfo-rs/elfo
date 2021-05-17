@@ -10,6 +10,8 @@ pub(crate) struct Logger {
 }
 
 impl Logger {
+    // TODO: rename it?
+    #[allow(clippy::new_ret_no_self)]
     pub(crate) fn new(shared: Arc<Shared>) -> Schema {
         ActorGroup::new()
             .config::<Config>()
