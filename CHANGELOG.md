@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `stream::Stream`: a wrapper to attach streams to a actor context.
+- logger: a actor group to log everything.
+
+### Changed
+- configurer: update system configs before user ones.
 
 ## [0.1.10] - 2021-05-14
 ### Fixed
