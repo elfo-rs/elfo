@@ -1,10 +1,6 @@
-use std::{
-    fmt::{self, Write as _},
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use elfo_core::{trace_id::TraceId, ActorGroup, Context, Schema, _priv::ObjectMeta};
-use elfo_macros::{message, msg_raw as msg};
+use elfo_core::{ActorGroup, Context, Schema};
 
 use crate::{config::Config, formatters::Formatter, theme, PreparedEvent, Shared};
 
@@ -38,8 +34,8 @@ impl Logger {
                     // TODO: support files.
                     print!("{}", buffer);
                 },
-                envelope = self.ctx.recv() => {
-                    // TODO
+                _envelope = self.ctx.recv() => {
+                    // TODO: logger API.
                 }
             }
         }
@@ -53,7 +49,7 @@ impl Logger {
             .expect("unknown string");
         self.shared.pool.clear(event.payload_id);
 
-        // <timestamp> <level> [<trace_id>] <object> - <message>\t<fields>,
+        // <timestamp> <level> [<trace_id>] <object> - <message>\t<fields>
 
         T::Timestamp::fmt(out, &event.timestamp);
         out.push(' ');
@@ -63,7 +59,7 @@ impl Logger {
         out.push_str("] ");
         T::ObjectMeta::fmt(out, &event.object);
         out.push_str(" - ");
-        out.push_str(&payload);
+        T::Payload::fmt(out, &payload);
 
         // Add ancestors' fields.
         let mut span_id = event.span_id;

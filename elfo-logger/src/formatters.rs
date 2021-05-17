@@ -1,16 +1,10 @@
-use std::{
-    fmt::{self, Display, Write},
-    hash::Hash,
-    marker::PhantomData,
-    sync::Arc,
-    time::SystemTime,
-};
+use std::{fmt::Write, hash::Hash, marker::PhantomData, sync::Arc, time::SystemTime};
 
 use tracing::Level;
 
 use elfo_core::{_priv::ObjectMeta, trace_id::TraceId};
 
-pub(crate) trait Formatter<T> {
+pub(crate) trait Formatter<T: ?Sized> {
     fn fmt(dest: &mut String, v: &T);
 }
 
@@ -81,22 +75,53 @@ impl Formatter<Arc<ObjectMeta>> for Arc<ObjectMeta> {
     }
 }
 
-// TODO: Payload
+// Payload
 
-struct PayloadFormatter<'a>(&'a str);
+pub(crate) struct Payload;
 
-impl fmt::Display for PayloadFormatter<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: what about `\t`?
-        for (idx, chunk) in self.0.split('\n').enumerate() {
+impl Formatter<str> for Payload {
+    fn fmt(out: &mut String, v: &str) {
+        // TODO: escape \t.
+        for (idx, chunk) in v.split('\n').enumerate() {
             if idx > 0 {
-                f.write_str("\\n")?;
+                out.push_str("\\n");
             }
 
-            f.write_str(chunk)?;
+            out.push_str(chunk);
         }
+    }
+}
 
-        Ok(())
+// ColoredPayload
+
+pub(crate) struct ColoredPayload;
+
+impl Formatter<str> for ColoredPayload {
+    fn fmt(out: &mut String, v: &str) {
+        // TODO: escape \t.
+        for (idx, chunk) in v.split('\n').enumerate() {
+            if idx > 0 {
+                out.push_str("\\n");
+            }
+
+            // <message>\t<key>=<value>\t<key>=<value>
+            for section in chunk.split('\t') {
+                // TODO: replace with `split_once()`.
+                let mut iter = section.split('=');
+                let key = iter.next();
+                let value = iter.next();
+
+                if let (Some(key), Some(value)) = (key, value) {
+                    out.push_str("\t\x1b[1m");
+                    out.push_str(key);
+                    out.push_str("\x1b[22m=");
+                    out.push_str(value);
+                } else {
+                    // It's the message section.
+                    out.push_str(section);
+                }
+            }
+        }
     }
 }
 
