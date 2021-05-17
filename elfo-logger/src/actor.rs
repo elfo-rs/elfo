@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use tokio::{fs::OpenOptions, io::AsyncWriteExt};
+
 use elfo_core::{ActorGroup, Context, Schema};
 
 use crate::{
@@ -31,6 +33,25 @@ impl Logger {
 
         let use_colors = self.ctx.config().sink == Sink::Stdout && atty::is(atty::Stream::Stdout);
 
+        let config = self.ctx.config();
+        let mut file = if config.sink == Sink::File {
+            // TODO: rely on deserialize instead.
+            let path = config
+                .path
+                .as_ref()
+                .expect("the config path must be provided");
+            Some(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .await
+                    .expect("cannot open the config file"),
+            )
+        } else {
+            None
+        };
+
         // Note that we don't use `elfo::stream::Stream` here intentionally
         // to avoid cyclic dependences (`Context::recv()` logs all messages).
         loop {
@@ -45,11 +66,16 @@ impl Logger {
                         self.format_event::<theme::PlainTheme>(&mut buffer, event);
                     }
 
-                    // TODO: support files.
-                    print!("{}", buffer);
+                    if let Some(file) = file.as_mut() {
+                        // TODO: what about performance here?
+                        file.write_all(buffer.as_ref()).await.expect("cannot write to the config file");
+                    } else {
+                        print!("{}", buffer);
+                    }
                 },
                 _envelope = self.ctx.recv() => {
                     // TODO: logger API.
+                    // TODO: handle SIGHUP.
                 }
             }
         }
