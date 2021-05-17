@@ -14,6 +14,7 @@ elfo-utils = { version = "0.1", path = "../elfo-utils" }
 derive_more = "0.99.11"
 futures-intrusive = "0.4.0"
 tokio = "1.5"
+atty = "0.2.14"
 serde = { version = "1.0.120", features = ["derive"] }
 parking_lot = "0.11.1"
 sharded-slab = "0.1.1"

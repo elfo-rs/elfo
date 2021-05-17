@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use elfo_core::{ActorGroup, Context, Schema};
 
-use crate::{config::Config, formatters::Formatter, theme, PreparedEvent, Shared};
+use crate::{
+    config::{Config, Sink},
+    formatters::Formatter,
+    theme, PreparedEvent, Shared,
+};
 
 pub(crate) struct Logger {
     ctx: Context<Config>,
@@ -25,6 +29,8 @@ impl Logger {
     async fn main(mut self) {
         let mut buffer = String::with_capacity(1024);
 
+        let use_colors = self.ctx.config().sink == Sink::Stdout && atty::is(atty::Stream::Stdout);
+
         // Note that we don't use `elfo::stream::Stream` here intentionally
         // to avoid cyclic dependences (`Context::recv()` logs all messages).
         loop {
@@ -32,7 +38,13 @@ impl Logger {
                 event = self.shared.channel.receive() => {
                     let event = event.expect("channel cannot close");
                     buffer.clear();
-                    self.format_event::<theme::ColoredTheme>(&mut buffer, event);
+
+                    if use_colors {
+                        self.format_event::<theme::ColoredTheme>(&mut buffer, event);
+                    } else {
+                        self.format_event::<theme::PlainTheme>(&mut buffer, event);
+                    }
+
                     // TODO: support files.
                     print!("{}", buffer);
                 },
