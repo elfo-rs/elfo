@@ -3,12 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use tracing::Level;
-
 use elfo_core::{trace_id::TraceId, ActorGroup, Context, Schema, _priv::ObjectMeta};
 use elfo_macros::{message, msg_raw as msg};
 
-use crate::{config::Config, PreparedEvent, Shared};
+use crate::{config::Config, formatters::Formatter, theme, PreparedEvent, Shared};
 
 pub(crate) struct Logger {
     ctx: Context<Config>,
@@ -36,7 +34,7 @@ impl Logger {
                 event = self.shared.channel.receive() => {
                     let event = event.expect("channel cannot close");
                     buffer.clear();
-                    self.format_event(event, &mut buffer);
+                    self.format_event::<theme::ColoredTheme>(&mut buffer, event);
                     // TODO: support files.
                     print!("{}", buffer);
                 },
@@ -47,7 +45,7 @@ impl Logger {
         }
     }
 
-    pub(super) fn format_event(&self, event: PreparedEvent, buffer: &mut String) {
+    pub(super) fn format_event<T: theme::Theme>(&self, out: &mut String, event: PreparedEvent) {
         let payload = self
             .shared
             .pool
@@ -55,15 +53,17 @@ impl Logger {
             .expect("unknown string");
         self.shared.pool.clear(event.payload_id);
 
-        let _ = write!(
-            buffer,
-            "{timestamp} {level} [{trace_id}] {object} - {payload}",
-            timestamp = humantime::format_rfc3339_nanos(event.timestamp),
-            level = LevelFormatter(event.level),
-            trace_id = TraceIdFormatter(event.trace_id),
-            object = ObjectFormatter(&event.object),
-            payload = PayloadFormatter(&payload),
-        );
+        // <timestamp> <level> [<trace_id>] <object> - <message>\t<fields>,
+
+        T::Timestamp::fmt(out, &event.timestamp);
+        out.push(' ');
+        T::Level::fmt(out, &event.level);
+        out.push_str(" [");
+        T::TraceId::fmt(out, &event.trace_id);
+        out.push_str("] ");
+        T::ObjectMeta::fmt(out, &event.object);
+        out.push_str(" - ");
+        out.push_str(&payload);
 
         // Add ancestors' fields.
         let mut span_id = event.span_id;
@@ -74,70 +74,9 @@ impl Logger {
                 .pool
                 .get(data.payload_id)
                 .expect("unknown string");
-            let _ = write!(buffer, "{}", PayloadFormatter(&payload));
+            out.push_str(&payload);
         }
 
-        let _ = writeln!(buffer);
-    }
-}
-
-struct LevelFormatter(Level);
-
-impl fmt::Display for LevelFormatter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let str = match self.0 {
-            Level::ERROR => "ERROR",
-            Level::WARN => "WARN ",
-            Level::INFO => "INFO ",
-            Level::DEBUG => "DEBUG",
-            Level::TRACE => "TRACE",
-        };
-
-        f.write_str(str)
-    }
-}
-
-struct TraceIdFormatter(Option<TraceId>);
-
-impl fmt::Display for TraceIdFormatter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(trace_id) = self.0 {
-            fmt::Display::fmt(&trace_id, f)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-struct ObjectFormatter<'a>(&'a Option<Arc<ObjectMeta>>);
-
-impl fmt::Display for ObjectFormatter<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(meta) = self.0 {
-            if let Some(key) = meta.key.as_ref() {
-                f.write_fmt(format_args!("{}.{}", meta.group, key))
-            } else {
-                f.write_str(&meta.group)
-            }
-        } else {
-            Ok(())
-        }
-    }
-}
-
-struct PayloadFormatter<'a>(&'a str);
-
-impl fmt::Display for PayloadFormatter<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: what about `\t`?
-        for (idx, chunk) in self.0.split('\n').enumerate() {
-            if idx > 0 {
-                f.write_str("\\n")?;
-            }
-
-            f.write_str(chunk)?;
-        }
-
-        Ok(())
+        out.push('\n');
     }
 }

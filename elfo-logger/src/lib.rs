@@ -20,7 +20,9 @@ use crate::{actor::Logger, layer::PrintLayer};
 
 mod actor;
 mod config;
+mod formatters;
 mod layer;
+mod theme;
 
 const CHANNEL_CAPACITY: usize = 128 * 1024;
 
