@@ -56,7 +56,8 @@ async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) 
             signal.recv().await;
         }
 
-        let is_ok = update_configs(&ctx, &topology, &source).await;
+        let is_ok = update_configs(&ctx, &topology, &source, TopologyFilter::System).await
+            & update_configs(&ctx, &topology, &source, TopologyFilter::User).await;
 
         if let Some(request) = request.take() {
             msg!(match request {
@@ -71,7 +72,17 @@ async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) 
     }
 }
 
-async fn update_configs(ctx: &Context, topology: &Topology, source: &ConfigSource) -> bool {
+enum TopologyFilter {
+    System,
+    User,
+}
+
+async fn update_configs(
+    ctx: &Context,
+    topology: &Topology,
+    source: &ConfigSource,
+    filter: TopologyFilter,
+) -> bool {
     let config = match &source {
         ConfigSource::File(path) => load_raw_config(path),
         ConfigSource::Fixture(value) => value.clone(),
@@ -85,7 +96,7 @@ async fn update_configs(ctx: &Context, topology: &Topology, source: &ConfigSourc
         }
     };
 
-    let config_list = match_configs(&topology, config);
+    let config_list = match_configs(&topology, config, filter);
 
     ctx.set_status(ActorStatus::NORMAL.with_details("config validation"));
 
@@ -180,13 +191,21 @@ fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
     toml::from_str(&content).map_err(|err| err.to_string())
 }
 
-fn match_configs(topology: &Topology, config: Value) -> Vec<ConfigWithMeta> {
+fn match_configs(
+    topology: &Topology,
+    config: Value,
+    filter: TopologyFilter,
+) -> Vec<ConfigWithMeta> {
     let configs: FxHashMap<String, Value> = Deserialize::deserialize(config).unwrap_or_default();
 
     topology
         .actor_groups()
         // Entrypoints' configs are updated only at startup.
         .filter(|group| !group.is_entrypoint)
+        .filter(|group| match filter {
+            TopologyFilter::System => group.name.starts_with("system."),
+            TopologyFilter::User => !group.name.starts_with("system."),
+        })
         .map(|group| ConfigWithMeta {
             group_name: group.name.clone(),
             addr: group.addr,
