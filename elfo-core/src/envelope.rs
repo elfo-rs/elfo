@@ -42,7 +42,7 @@ impl<M> Envelope<M> {
 impl<M: Message> Envelope<M> {
     pub(crate) fn new(message: M, kind: MessageKind) -> Self {
         Self {
-            trace_id: TraceId::new(1).unwrap(), // TODO: load trace_id.
+            trace_id: TraceId::new(249280325320399346).unwrap(), // TODO: load trace_id.
             kind,
             message,
         }

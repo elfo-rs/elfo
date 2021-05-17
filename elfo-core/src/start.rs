@@ -1,3 +1,8 @@
+use std::{
+    future::{self, Future},
+    sync::Arc,
+};
+
 use futures::TryFutureExt;
 
 use crate::{
@@ -7,8 +12,10 @@ use crate::{
     errors::{RequestError, StartError},
     message,
     messages::{Ping, UpdateConfig},
-    object::Object,
+    object::{Object, ObjectMeta},
+    tls,
     topology::Topology,
+    trace_id::TraceId,
 };
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
@@ -63,24 +70,34 @@ pub async fn start(topology: Topology) {
 }
 
 pub async fn try_start(topology: Topology) -> Result<()> {
-    do_start(topology).await?;
+    do_start(topology, |_| future::ready(())).await?;
 
     // TODO: graceful termination based on topology.
-    let () = futures::future::pending().await;
+    let () = future::pending().await;
     Ok(())
 }
 
 #[doc(hidden)]
-pub async fn do_start(topology: Topology) -> Result<Context> {
+pub async fn do_start<F: Future>(
+    topology: Topology,
+    f: impl FnOnce(Context) -> F,
+) -> Result<F::Output> {
     message::init();
 
     let entry = topology.book.vacant_entry();
     let addr = entry.addr();
     entry.insert(Object::new(addr, Actor::new(addr)));
 
-    let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
-    send_configs_to_entrypoints(&ctx, &topology).await?;
-    start_entrypoints(&ctx, &topology).await?;
-
-    Ok(ctx)
+    let meta = ObjectMeta {
+        group: "starter".into(),
+        key: None,
+    };
+    let initial_trace_id = TraceId::new(1).unwrap(); // TODO: set initial trace ids.
+    tls::scope(Arc::new(meta), initial_trace_id, async move {
+        let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
+        send_configs_to_entrypoints(&ctx, &topology).await?;
+        start_entrypoints(&ctx, &topology).await?;
+        Ok(f(ctx).await)
+    })
+    .await
 }

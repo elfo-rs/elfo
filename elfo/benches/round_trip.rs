@@ -103,17 +103,19 @@ async fn run(producer_count: u32, consumer_count: u32, iter_count: u32) -> Durat
     consumers.mount(make_consumers(consumer_count));
     configurers.mount(elfo::configurer::fixture(&topology, AnyConfig::default()));
 
-    let ctx = elfo::_priv::do_start(topology).await.unwrap();
-
-    ctx.request(Summarize)
-        .from(producers_addr)
-        .all()
-        .resolve()
-        .await
-        .into_iter()
-        .map(|spent| spent.unwrap_or_else(|_| Duration::new(0, 0))) // FIXME: should be error.
-        .max()
-        .unwrap()
+    elfo::_priv::do_start(topology, |ctx| async move {
+        ctx.request(Summarize)
+            .from(producers_addr)
+            .all()
+            .resolve()
+            .await
+            .into_iter()
+            .map(|spent| spent.unwrap_or_else(|_| Duration::new(0, 0))) // FIXME: should be error.
+            .max()
+            .unwrap()
+    })
+    .await
+    .unwrap()
 }
 
 fn round_trip(c: &mut Criterion) {

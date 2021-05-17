@@ -6,6 +6,7 @@ members = [
     "elfo-macros",
     "elfo-test",
     "elfo-configurer",
+    "elfo-logger",
 ]
 
 [profile.release]

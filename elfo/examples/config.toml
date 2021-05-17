@@ -1,3 +1,7 @@
+[system.loggers]
+#sink = "File"
+#path = "example.log"
+
 [producers]
 group_count = 3
 item_count = 10

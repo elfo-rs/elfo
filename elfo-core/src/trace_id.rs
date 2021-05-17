@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 // TODO: improve `Debug` and `Display` instances.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[derive(Serialize, Deserialize, Into, From, Display)]
 #[display(fmt = "{}", _0)]
 pub struct TraceId(NonZeroU64);

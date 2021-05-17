@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
 use parking_lot::RwLock;
-use tracing::{error, error_span, info, Instrument, Span};
+use tracing::{error, info};
 
 use crate as elfo;
 use elfo_macros::{message, msg_raw as msg};
@@ -20,13 +20,14 @@ use crate::{
     exec::{Exec, ExecResult},
     local::Local,
     messages,
-    object::{Object, ObjectArc},
+    object::{Object, ObjectArc, ObjectMeta},
     routers::{Outcome, Router},
+    tls,
+    trace_id::TraceId,
 };
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
-    name: String,
-    span: Span,
+    meta: Arc<ObjectMeta>,
     context: Context,
     // TODO: replace with `crossbeam_utils::sync::ShardedLock`?
     objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
@@ -69,12 +70,11 @@ where
     <X::Output as Future>::Output: ExecResult,
     C: Config,
 {
-    pub(crate) fn new(ctx: Context, name: String, exec: X, router: R) -> Self {
+    pub(crate) fn new(ctx: Context, group: String, exec: X, router: R) -> Self {
         let control = ControlBlock { config: None };
 
         Self {
-            span: error_span!(parent: Span::none(), "", group = %name),
-            name,
+            meta: Arc::new(ObjectMeta { group, key: None }),
             context: ctx,
             objects: DashMap::default(),
             router,
@@ -83,13 +83,16 @@ where
         }
     }
 
+    fn in_scope(&self, f: impl FnOnce()) {
+        tls::sync_scope(self.meta.clone(), tls::trace_id(), f);
+    }
+
     pub(crate) fn handle(&self, envelope: Envelope) -> RouteReport {
         msg!(match &envelope {
             ActorBlocked { key } => {
                 let key: &R::Key = key.downcast_ref().expect("invalid key");
                 let object = ward!(self.objects.get(key), {
-                    self.span
-                        .in_scope(|| error!(%key, "blocking removed actor?!"));
+                    self.in_scope(|| error!(%key, "blocking removed actor?!"));
                     return RouteReport::Done;
                 });
                 let actor = object.as_actor().expect("invalid command");
@@ -131,7 +134,7 @@ where
                     control.config = config.get().cloned();
                     self.router
                         .update(&control.config.as_ref().expect("just saved"));
-                    self.span.in_scope(
+                    self.in_scope(
                         || info!(config = ?control.config.as_ref().unwrap(), "router updated"),
                     );
                     drop(control);
@@ -251,9 +254,10 @@ where
         let entry = self.context.book().vacant_entry();
         let addr = entry.addr();
 
-        let full_name = format!("{}.{}", self.name, key);
-        let span = error_span!(parent: Span::none(), "", actor = %full_name);
-        let _entered = span.enter();
+        let meta = Arc::new(ObjectMeta {
+            group: self.meta.group.clone(),
+            key: Some(key.to_string()),
+        });
 
         let control = self.control.read();
         let config = control.config.as_ref().cloned().expect("config is unset");
@@ -278,7 +282,6 @@ where
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             match fut.await {
                 Ok(Ok(())) => return info!(%addr, "finished"),
-                // Print errors in the alternate form because `anyhow` uses it to show causes.
                 Ok(Err(err)) => error!(%addr, error = %ErrorChain(&*err), "failed"),
                 Err(panic) => error!(%addr, error = %panic_to_string(panic), "panicked"),
             };
@@ -297,10 +300,9 @@ where
                 .expect("cannot restart");
         };
 
-        drop(_entered);
-
         entry.insert(Object::new(addr, Actor::new(addr)));
-        tokio::spawn(fut.instrument(span));
+        let initial_trace_id = TraceId::new(1).unwrap(); // TODO: set initial trace ids.
+        tokio::spawn(tls::scope(meta, initial_trace_id, fut));
         self.context.book().get_owned(addr).expect("just created")
     }
 

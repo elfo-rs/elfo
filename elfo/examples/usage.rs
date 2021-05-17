@@ -233,10 +233,18 @@ mod reporter {
 fn topology() -> elfo::Topology {
     let topology = elfo::Topology::empty();
 
+    // Set up logging (based on the `tracing` crate).
+    // `elfo` provides a logger actor group to support runtime control.
+    // You can use `RUST_LOG=elfo` in dev to see messages between actors.
+    // In the future, `elfo` will implement inexpensive dumping subsystem and tools
+    // for regression testing & tracing.
+    let logger = elfo::logger::init();
+
     // Define actor groups.
     let producers = topology.local("producers");
     let aggregators = topology.local("aggregators");
     let reporters = topology.local("reporters");
+    let loggers = topology.local("system.loggers");
     let configurers = topology.local("system.configurers").entrypoint();
 
     // Define links between actor groups.
@@ -249,6 +257,7 @@ fn topology() -> elfo::Topology {
     producers.mount(producer::new());
     aggregators.mount(aggregator::new());
     reporters.mount(reporter::new());
+    loggers.mount(logger);
 
     // Actors can use `topology` as an extended service locator.
     // Usually it should be used for utilities only.
@@ -264,15 +273,5 @@ fn topology() -> elfo::Topology {
 
 #[tokio::main]
 async fn main() {
-    // Set up logging.
-    // In the future, `elfo` will provide a logger actor group
-    // in order to support runtime control.
-    tracing_subscriber::fmt()
-        // In the future, `elfo` will implement inexpensive dumping subsystem and tools for
-        // regression testing and tracing. Use `RUST_LOG=elfo` or this line in dev.
-        .with_max_level(tracing::Level::TRACE)
-        .with_target(false)
-        .init();
-
     elfo::start(topology()).await;
 }
