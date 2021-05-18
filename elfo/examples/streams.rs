@@ -1,5 +1,3 @@
-#![cfg(feature = "full")]
-
 use elfo::{config::AnyConfig, prelude::*, stream::Stream};
 use futures::stream;
 

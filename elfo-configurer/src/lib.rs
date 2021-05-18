@@ -56,8 +56,9 @@ async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) 
             signal.recv().await;
         }
 
-        let is_ok = update_configs(&ctx, &topology, &source, TopologyFilter::System).await
-            & update_configs(&ctx, &topology, &source, TopologyFilter::User).await;
+        let system_updated = update_configs(&ctx, &topology, &source, TopologyFilter::System).await;
+        let user_udpated = update_configs(&ctx, &topology, &source, TopologyFilter::User).await;
+        let is_ok = system_updated && user_udpated;
 
         if let Some(request) = request.take() {
             msg!(match request {

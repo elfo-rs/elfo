@@ -19,6 +19,11 @@ name = "usage"
 path = "examples/usage.rs"
 required-features = ["full"]
 
+[[example]]
+name = "streams"
+path = "examples/streams.rs"
+required-features = ["full"]
+
 # TODO: ugly, duplicate.
 [[example]]
 name = "test"
