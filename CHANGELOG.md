@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2021-05-18
+### Fixed
+- Set last versions of subcrates.
+
 ## [0.1.11] - 2021-05-18
 ### Added
 - logger: a actor group to log everything.
@@ -89,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.11...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.12...HEAD
+[0.1.12]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.11...elfo-0.1.12
 [0.1.11]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.10...elfo-0.1.11
 [0.1.10]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.9...elfo-0.1.10
 [0.1.9]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.8...elfo-0.1.9
