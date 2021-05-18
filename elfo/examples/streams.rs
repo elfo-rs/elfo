@@ -23,16 +23,15 @@ fn samples() -> Schema {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
-        .with_target(false)
-        .init();
-
     let topology = elfo::Topology::empty();
+    let logger = elfo::logger::init();
+
     let samples = topology.local("samples");
+    let loggers = topology.local("loggers");
     let configurers = topology.local("system.configurers").entrypoint();
 
     samples.mount(self::samples());
+    loggers.mount(logger);
     configurers.mount(elfo::configurer::fixture(&topology, AnyConfig::default()));
 
     elfo::start(topology).await;

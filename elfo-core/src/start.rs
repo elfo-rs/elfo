@@ -15,7 +15,7 @@ use crate::{
     object::{Object, ObjectMeta},
     tls,
     topology::Topology,
-    trace_id::TraceId,
+    trace_id,
 };
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
@@ -92,7 +92,7 @@ pub async fn do_start<F: Future>(
         group: "starter".into(),
         key: None,
     };
-    let initial_trace_id = TraceId::new(1).unwrap(); // TODO: set initial trace ids.
+    let initial_trace_id = trace_id::generate();
     tls::scope(Arc::new(meta), initial_trace_id, async move {
         let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
         send_configs_to_entrypoints(&ctx, &topology).await?;
