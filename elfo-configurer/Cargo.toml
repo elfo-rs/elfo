@@ -1,6 +1,6 @@
 [package]
 name = "elfo-configurer"
-version = "0.1.4"
+version = "0.1.5"
 description = "Loads and distributes configs across the elfo system"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
