@@ -25,7 +25,7 @@
 To use `elfo`, add this to your `Cargo.toml`:
 ```toml
 [dependencies]
-elfo = "0.1"
+elfo = { version = "0.1", features = ["full"] }
 
 [dev-dependencies]
 elfo = { version = "0.1", features = ["test-util"] }
