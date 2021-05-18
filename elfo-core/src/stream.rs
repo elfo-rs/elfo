@@ -12,9 +12,13 @@ use crate::{
     context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
-    trace_id,
+    trace_id::{self, TraceId},
 };
 
+/// A wrapper around `futures::Stream` implementing `Source` trait.
+///
+/// Stream items must be messages or pairs `(Option<trace_id>, message)`,
+/// if `trace_id` is generate
 pub struct Stream<S>(Mutex<StreamState<S>>);
 
 enum StreamState<S> {
@@ -53,7 +57,7 @@ impl<S> Stream<S> {
 impl<S> Source for Stream<S>
 where
     S: FutStream,
-    S::Item: Message,
+    S::Item: TracedItem,
 {
     fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
         let mut state = self.0.lock();
@@ -65,8 +69,8 @@ where
 
         match stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(message)) => {
+                let (trace_id, message) = message.unify();
                 let kind = MessageKind::Regular { sender: Addr::NULL };
-                let trace_id = trace_id::generate();
                 let envelope = Envelope::with_trace_id(message, kind, trace_id).upcast();
                 Poll::Ready(Some(envelope))
             }
@@ -76,5 +80,28 @@ where
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+pub trait TracedItem {
+    type Message: Message;
+    fn unify(self) -> (TraceId, Self::Message);
+}
+
+impl<M: Message> TracedItem for M {
+    type Message = M;
+
+    #[inline]
+    fn unify(self) -> (TraceId, M) {
+        (trace_id::generate(), self)
+    }
+}
+
+impl<M: Message> TracedItem for (TraceId, M) {
+    type Message = M;
+
+    #[inline]
+    fn unify(self) -> (TraceId, M) {
+        self
     }
 }
