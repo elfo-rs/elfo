@@ -1,6 +1,4 @@
-use std::{
-    any::Any, convert::TryFrom, future::Future, panic::AssertUnwindSafe, sync::Arc, time::Duration,
-};
+use std::{any::Any, future::Future, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
 use futures::FutureExt;
@@ -24,8 +22,7 @@ use crate::{
     messages,
     object::{Object, ObjectArc, ObjectMeta},
     routers::{Outcome, Router},
-    tls,
-    trace_id::TraceId,
+    tls, trace_id,
 };
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
@@ -303,7 +300,7 @@ where
         };
 
         entry.insert(Object::new(addr, Actor::new(addr)));
-        let initial_trace_id = TraceId::try_from(1).unwrap(); // TODO: set initial trace ids.
+        let initial_trace_id = trace_id::generate();
         tokio::spawn(tls::scope(meta, initial_trace_id, fut));
         self.context.book().get_owned(addr).expect("just created")
     }

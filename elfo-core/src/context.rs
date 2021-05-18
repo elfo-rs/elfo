@@ -21,6 +21,7 @@ use crate::{
     messages,
     request_table::ResponseToken,
     routers::Singleton,
+    tls,
 };
 
 use self::source::Combined;
@@ -208,6 +209,7 @@ impl<C, K, S> Context<C, K, S> {
         pin_mut!(mailbox_fut);
         pin_mut!(source_fut);
 
+        // TODO: reset trace_id for these logs?
         let envelope = select_biased! {
             envelope = mailbox_fut => match envelope {
                 Some(envelope) => envelope,
@@ -225,6 +227,8 @@ impl<C, K, S> Context<C, K, S> {
                 }
             },
         };
+
+        tls::set_trace_id(envelope.trace_id());
 
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
@@ -255,11 +259,14 @@ impl<C, K, S> Context<C, K, S> {
             Ok(envelope) => envelope,
             Err(err) => {
                 if err.is_closed() {
+                    // TODO: reset trace_id for this log?
                     trace!("mailbox closed");
                 }
                 return Err(err);
             }
         };
+
+        tls::set_trace_id(envelope.trace_id());
 
         // TODO: poll the sources.
 

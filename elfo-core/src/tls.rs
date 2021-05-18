@@ -41,11 +41,11 @@ pub fn try_meta() -> Option<Arc<ObjectMeta>> {
     META.try_with(Arc::clone).ok()
 }
 
-pub(crate) async fn scope<F: Future>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: F) -> F::Output {
+pub async fn scope<F: Future>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: F) -> F::Output {
     META.scope(meta, TRACE_ID.scope(Cell::new(trace_id), f))
         .await
 }
 
-pub(crate) fn sync_scope<R>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: impl FnOnce() -> R) -> R {
+pub fn sync_scope<R>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: impl FnOnce() -> R) -> R {
     META.sync_scope(meta, || TRACE_ID.sync_scope(Cell::new(trace_id), f))
 }

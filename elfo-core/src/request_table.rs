@@ -184,14 +184,21 @@ mod tests {
 
     use elfo_macros::message;
 
-    use crate::{assert_msg_eq, envelope::MessageKind};
+    use crate::{assert_msg_eq, envelope::MessageKind, object::ObjectMeta, tls, trace_id};
 
     #[message(elfo = crate)]
     #[derive(PartialEq)]
     struct Num(u32);
 
     fn envelope(addr: Addr, num: Num) -> Envelope {
-        Envelope::new(num, MessageKind::Regular { sender: addr }).upcast()
+        tls::sync_scope(
+            Arc::new(ObjectMeta {
+                group: "test".into(),
+                key: None,
+            }),
+            trace_id::generate(),
+            || Envelope::new(num, MessageKind::Regular { sender: addr }).upcast(),
+        )
     }
 
     #[tokio::test]

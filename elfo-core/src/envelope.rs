@@ -3,6 +3,7 @@ use crate::{
     address_book::AddressBook,
     message::{AnyMessage, Message},
     request_table::ResponseToken,
+    tls,
     trace_id::TraceId,
 };
 
@@ -25,6 +26,12 @@ pub(crate) enum MessageKind {
 }
 
 impl<M> Envelope<M> {
+    #[inline]
+    pub fn trace_id(&self) -> TraceId {
+        self.trace_id
+    }
+
+    #[inline]
     pub fn message(&self) -> &M {
         &self.message
     }
@@ -42,7 +49,7 @@ impl<M> Envelope<M> {
 impl<M: Message> Envelope<M> {
     pub(crate) fn new(message: M, kind: MessageKind) -> Self {
         Self {
-            trace_id: TraceId::new(249280325320399346).unwrap(), // TODO: load trace_id.
+            trace_id: tls::trace_id(),
             kind,
             message,
         }
