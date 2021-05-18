@@ -109,7 +109,6 @@ mod time {
 #[test]
 fn it_works() {
     let sec = 1 << 38;
-    let chunk = 1 << 10;
     let st = u64::from(generate());
 
     time::advance(500);
@@ -122,7 +121,7 @@ fn it_works() {
     assert_eq!(u64::from(generate()), st + 2 * sec + 4);
 
     std::thread::spawn(move || {
-        assert_eq!(u64::from(generate()), st + 2 * sec + chunk);
+        is_divisible_by_chunk(u64::from(generate()) - (st + 2 * sec));
     })
     .join()
     .unwrap();
@@ -131,5 +130,9 @@ fn it_works() {
         assert_eq!(u64::from(generate()), st + 2 * sec + i);
     }
 
-    assert_eq!(u64::from(generate()), st + 2 * sec + 2 * chunk);
+    is_divisible_by_chunk(u64::from(generate()) - (st + 2 * sec));
+
+    fn is_divisible_by_chunk(diff: u64) {
+        assert_eq!((diff / (1 << 10)) * (1 << 10), diff);
+    }
 }
