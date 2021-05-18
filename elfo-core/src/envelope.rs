@@ -48,8 +48,12 @@ impl<M> Envelope<M> {
 
 impl<M: Message> Envelope<M> {
     pub(crate) fn new(message: M, kind: MessageKind) -> Self {
+        Self::with_trace_id(message, kind, tls::trace_id())
+    }
+
+    pub(crate) fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
         Self {
-            trace_id: tls::trace_id(),
+            trace_id,
             kind,
             message,
         }
