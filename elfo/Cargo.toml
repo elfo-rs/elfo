@@ -47,7 +47,7 @@ test-util = ["elfo-test", "elfo-core/test-util"]
 [dependencies]
 elfo-core = { version = "0.1.10", path = "../elfo-core" }
 elfo-macros = { version = "0.1.6", path = "../elfo-macros" }
-elfo-test = { version = "0.1.8", path = "../elfo-test", optional = true }
+elfo-test = { version = "0.1.9", path = "../elfo-test", optional = true }
 elfo-configurer = { version = "0.1.5", path = "../elfo-configurer", optional = true }
 elfo-logger = { version = "0.1.0", path = "../elfo-logger", optional = true }
 
