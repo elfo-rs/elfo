@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Added
+- `Proxy::addr()`
+
 ## [0.1.12] - 2021-05-18
 ### Fixed
 - Set last versions of subcrates.
