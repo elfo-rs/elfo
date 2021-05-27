@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2021-05-27
 ## Added
 - `Proxy::addr()`
 
@@ -96,7 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.12...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.13...HEAD
+[0.1.13]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.12...elfo-0.1.13
 [0.1.12]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.11...elfo-0.1.12
 [0.1.11]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.10...elfo-0.1.11
 [0.1.10]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.9...elfo-0.1.10
