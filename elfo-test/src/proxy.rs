@@ -34,7 +34,7 @@ pub struct Proxy {
 
 // TODO: add `#[track_caller]` after https://github.com/rust-lang/rust/issues/78840.
 impl Proxy {
-    pub fn addr(self) -> Addr {
+    pub fn addr(&self) -> Addr {
         self.context.addr()
     }
 
