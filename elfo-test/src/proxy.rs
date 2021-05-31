@@ -143,7 +143,7 @@ impl Drop for Proxy {
             tls::sync_scope(self.meta.clone(), trace_id::generate(), || {
                 if let Some(envelope) = self.try_recv() {
                     panic!(
-                        "test ended, but not all messages has been consumed: {:?}",
+                        "test ended, but not all messages have been consumed: {:?}",
                         envelope
                     );
                 }

@@ -148,7 +148,7 @@ mod aggregator {
                     // Use `token` to respond. The token cannot be used twice.
                     // If the token is dropped without responding,
                     // the sending side will get `RequestError::Ignored`.
-                    let _ = ctx.respond(token, Summary { group, sum });
+                    ctx.respond(token, Summary { group, sum });
                 }
             });
         }
