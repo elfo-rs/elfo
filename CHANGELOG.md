@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Requests that require only one response return the first _successful_ instead of the last one.
+
 ## [0.1.14] - 2021-05-27
 ## Added
 - `Proxy::addr()`

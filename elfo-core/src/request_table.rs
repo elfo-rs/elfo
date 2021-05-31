@@ -21,6 +21,7 @@ type Data = SmallVec<[Option<Envelope>; 1]>;
 struct RequestInfo {
     remainder: usize,
     data: Data,
+    collect_all: bool,
 }
 
 new_key_type! {
@@ -36,11 +37,12 @@ impl RequestTable {
         }
     }
 
-    pub(crate) fn new_request(&self, book: AddressBook) -> ResponseToken<()> {
+    pub(crate) fn new_request(&self, book: AddressBook, collect_all: bool) -> ResponseToken<()> {
         let mut requests = self.requests.lock();
         let request_id = requests.insert(RequestInfo {
             remainder: 1,
             data: Data::new(),
+            collect_all,
         });
         ResponseToken::new(self.owner, request_id, book)
     }
@@ -87,7 +89,24 @@ impl RequestTable {
         debug_assert_eq!(sender, self.owner);
         let mut requests = self.requests.lock();
         let request = requests.get_mut(request_id).expect("unknown request");
-        request.data.push(envelope);
+
+        // Extra responses (in `any` case).
+        if request.remainder == 0 {
+            debug_assert!(!request.collect_all);
+            return;
+        }
+
+        if !request.collect_all {
+            if envelope.is_some() {
+                request.data.push(envelope);
+                request.remainder = 0;
+                self.notifier.set();
+                return;
+            }
+        } else {
+            request.data.push(envelope);
+        }
+
         request.remainder -= 1;
         if request.remainder == 0 {
             self.notifier.set();
@@ -208,7 +227,7 @@ mod tests {
         let book = AddressBook::new();
 
         for _ in 0..3 {
-            let token = table.new_request(book.clone());
+            let token = table.new_request(book.clone(), true);
             let request_id = token.request_id;
 
             let table1 = table.clone();
@@ -223,11 +242,10 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn one_request_many_response() {
+    async fn one_request_many_response(collect_all: bool, ignore: bool) {
         let addr = Addr::from_bits(1);
         let table = Arc::new(RequestTable::new(addr));
-        let token = table.new_request(AddressBook::new());
+        let token = table.new_request(AddressBook::new(), collect_all);
         let request_id = token.request_id;
 
         let n = 5;
@@ -235,18 +253,60 @@ mod tests {
             let table1 = table.clone();
             let token = table.clone_token(&token).unwrap();
             tokio::spawn(async move {
-                table1.respond(token, envelope(addr, Num(i)));
+                if !ignore {
+                    table1.respond(token, envelope(addr, Num(i)));
+                } else {
+                    // TODO: test a real `Drop`.
+                    table1.resolve(addr, request_id, None);
+                }
             });
         }
 
-        table.respond(token, envelope(addr, Num(0)));
+        if !ignore {
+            table.respond(token, envelope(addr, Num(0)));
+        } else {
+            // TODO: test a real `Drop`.
+            table.resolve(addr, request_id, None);
+        }
 
         let mut data = table.wait(request_id).await;
-        assert_eq!(data.len(), n as usize);
+
+        let expected_len = if ignore {
+            0
+        } else if collect_all {
+            n as usize
+        } else {
+            1
+        };
+        assert_eq!(data.len(), expected_len);
 
         for (i, envelope) in data.drain(..).enumerate() {
-            assert_msg_eq!(envelope.unwrap(), Num(i as u32));
+            if ignore {
+                assert!(envelope.is_none());
+            } else {
+                assert_msg_eq!(envelope.unwrap(), Num(i as u32));
+            }
         }
+    }
+
+    #[tokio::test]
+    async fn one_request_many_response_all() {
+        one_request_many_response(true, false).await;
+    }
+
+    #[tokio::test]
+    async fn one_request_many_response_all_ignored() {
+        one_request_many_response(false, true).await;
+    }
+
+    #[tokio::test]
+    async fn one_request_many_response_any() {
+        one_request_many_response(false, false).await;
+    }
+
+    #[tokio::test]
+    async fn one_request_many_response_any_ignored() {
+        one_request_many_response(false, true).await;
     }
 
     // TODO: check many requests.
