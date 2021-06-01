@@ -1,4 +1,4 @@
-use std::{fmt::Debug, future::Future, marker::PhantomData};
+use std::{fmt::Debug, future::Future, marker::PhantomData, sync::Arc};
 
 use smallbox::smallbox;
 
@@ -52,7 +52,7 @@ impl<R, C> ActorGroup<R, C> {
     {
         let run = move |ctx: Context, name: String| {
             let addr = ctx.addr();
-            let sv = Supervisor::new(ctx, name, exec, self.router);
+            let sv = Arc::new(Supervisor::new(ctx, name, exec, self.router));
             let router = smallbox!(move |envelope| { sv.handle(envelope) });
             Object::new(addr, Group::new(router))
         };

@@ -33,7 +33,8 @@ enum ActorStatusKind {
     Normal,
     Initializing,
     Alarming,
-    Restarting,
+    Failed,
+    Terminated,
 }
 
 impl fmt::Display for ActorStatus {
@@ -47,9 +48,10 @@ impl fmt::Display for ActorStatus {
 
 impl ActorStatus {
     pub const ALARMING: ActorStatus = ActorStatus::new(ActorStatusKind::Alarming);
-    pub(crate) const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
+    pub(crate) const FAILED: ActorStatus = ActorStatus::new(ActorStatusKind::Failed);
+    pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
     pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
-    pub(crate) const RESTARTING: ActorStatus = ActorStatus::new(ActorStatusKind::Restarting);
+    pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
 
     const fn new(kind: ActorStatusKind) -> Self {
         Self {
@@ -63,6 +65,10 @@ impl ActorStatus {
             kind: self.kind.clone(),
             details: Some(format!("{}", details)),
         }
+    }
+
+    pub(crate) fn is_failed(&self) -> bool {
+        self.kind == ActorStatusKind::Failed
     }
 }
 
@@ -78,14 +84,14 @@ impl Actor {
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        if self.is_restarting() {
+        if self.is_closed() {
             return Err(TrySendError::Closed(envelope));
         }
         self.mailbox.try_send(envelope)
     }
 
     pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
-        if self.is_restarting() {
+        if self.is_closed() {
             return Err(SendError(envelope));
         }
         self.mailbox.send(envelope).await
@@ -116,7 +122,7 @@ impl Actor {
 
         let is_good_kind = matches!(
             status.kind,
-            ActorStatusKind::Normal | ActorStatusKind::Initializing
+            ActorStatusKind::Normal | ActorStatusKind::Initializing | ActorStatusKind::Terminated
         );
 
         if let Some(details) = status.details.as_deref() {
@@ -136,8 +142,11 @@ impl Actor {
         // TODO: use `sdnotify` to provide a detailed status to systemd.
     }
 
-    pub(crate) fn is_restarting(&self) -> bool {
-        matches!(self.control.read().status.kind, ActorStatusKind::Restarting)
+    pub(crate) fn is_closed(&self) -> bool {
+        matches!(
+            self.control.read().status.kind,
+            ActorStatusKind::Failed | ActorStatusKind::Terminated
+        )
     }
 
     pub(crate) fn is_initializing(&self) -> bool {
