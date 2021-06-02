@@ -36,3 +36,7 @@ arc-swap = "1.2.0"
 anyhow = "1.0.40"
 tokio = { version = "1", features = ["full"] }
 tracing-subscriber = "0.2.15"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

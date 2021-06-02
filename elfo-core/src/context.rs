@@ -54,6 +54,7 @@ impl<C, K, S> Context<C, K, S> {
 
     #[deprecated]
     #[cfg(feature = "test-util")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "test-util")))]
     pub fn set_addr(&mut self, addr: Addr) {
         self.addr = addr;
     }

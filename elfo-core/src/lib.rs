@@ -1,5 +1,5 @@
-#![warn(rust_2018_idioms, unreachable_pub)]
-// TODO: add `missing_docs`.
+#![warn(rust_2018_idioms, unreachable_pub)] // TODO: add `missing_docs`.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[macro_use]
 extern crate static_assertions;

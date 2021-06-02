@@ -63,3 +63,7 @@ serde = { version = "1.0.120", features = ["derive"] }
 toml = "0.5.8"
 humantime-serde = "1"
 criterion = "0.3.4"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
