@@ -4,10 +4,10 @@ use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
 use parking_lot::RwLock;
-use tracing::{error, info};
+use tracing::info;
 
 use crate as elfo;
-use elfo_macros::{message, msg_raw as msg};
+use elfo_macros::msg_raw as msg;
 use elfo_utils::{CachePadded, ErrorChain};
 
 use crate::{
@@ -18,7 +18,6 @@ use crate::{
     envelope::Envelope,
     errors::TrySendError,
     exec::{Exec, ExecResult},
-    local::Local,
     messages,
     object::{Object, ObjectArc, ObjectMeta},
     routers::{Outcome, Router},
@@ -37,16 +36,6 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
 
 struct ControlBlock<C> {
     config: Option<Arc<C>>,
-}
-
-#[message(elfo = crate)]
-struct ActorBlocked {
-    key: Local<Arc<dyn Any + Send + Sync>>,
-}
-
-#[message(elfo = crate)]
-struct ActorRestarted {
-    key: Local<Arc<dyn Any + Send + Sync>>,
 }
 
 macro_rules! get_or_spawn {
@@ -86,23 +75,8 @@ where
         tls::sync_scope(self.meta.clone(), tls::trace_id(), f);
     }
 
-    pub(crate) fn handle(&self, envelope: Envelope) -> RouteReport {
+    pub(crate) fn handle(self: &Arc<Self>, envelope: Envelope) -> RouteReport {
         msg!(match &envelope {
-            ActorBlocked { key } => {
-                let key: &R::Key = key.downcast_ref().expect("invalid key");
-                let object = ward!(self.objects.get(key), {
-                    self.in_scope(|| error!(%key, "blocking removed actor?!"));
-                    return RouteReport::Done;
-                });
-                let actor = object.as_actor().expect("invalid command");
-                actor.set_status(ActorStatus::RESTARTING);
-                RouteReport::Done
-            }
-            ActorRestarted { key } => {
-                let key: &R::Key = key.downcast_ref().expect("invalid key");
-                self.objects.insert(key.clone(), self.spawn(key.clone()));
-                RouteReport::Done
-            }
             messages::ValidateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
                     let is_first_update = self.control.write().config.is_none();
@@ -165,7 +139,11 @@ where
         })
     }
 
-    pub(crate) fn do_handle(&self, envelope: Envelope, outcome: Outcome<R::Key>) -> RouteReport {
+    pub(crate) fn do_handle(
+        self: &Arc<Self>,
+        envelope: Envelope,
+        outcome: Outcome<R::Key>,
+    ) -> RouteReport {
         // TODO: avoid copy & paste.
         match outcome {
             Outcome::Unicast(key) => {
@@ -249,7 +227,7 @@ where
         }
     }
 
-    fn spawn(&self, key: R::Key) -> ObjectArc {
+    fn spawn(self: &Arc<Self>, key: R::Key) -> ObjectArc {
         let entry = self.context.book().vacant_entry();
         let addr = entry.addr();
 
@@ -271,32 +249,41 @@ where
 
         drop(control);
 
-        let sv_ctx = self.context.pruned();
+        let sv = self.clone();
 
         // TODO: protect against panics (for `fn(..) -> impl Future`).
         let fut = self.exec.exec(ctx);
 
+        // TODO: move to `harness.rs`.
         let fut = async move {
             info!(%addr, "started");
+
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
-            match fut.await {
-                Ok(Ok(())) => return info!(%addr, "finished"),
-                Ok(Err(err)) => error!(%addr, error = %ErrorChain(&*err), "failed"),
-                Err(panic) => error!(%addr, error = %panic_to_string(panic), "panicked"),
+            let new_status = match fut.await {
+                Ok(Ok(())) => ActorStatus::TERMINATED,
+                Ok(Err(err)) => ActorStatus::FAILED.with_details(ErrorChain(&*err)),
+                Err(panic) => ActorStatus::FAILED.with_details(panic_to_string(panic)),
             };
 
-            let key = Local::from(Arc::new(key) as Arc<dyn Any + Send + Sync>);
-            let message = ActorBlocked { key: key.clone() };
-            sv_ctx
-                .try_send_to(sv_ctx.addr(), message)
-                .expect("cannot block");
+            let need_to_restart = new_status.is_failed();
 
-            // TODO: use `backoff`.
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            sv.objects
+                .get(&key)
+                .expect("where is the current actor?")
+                .as_actor()
+                .expect("a supervisor stores only actors")
+                .set_status(new_status);
 
-            sv_ctx
-                .try_send_to(sv_ctx.addr(), ActorRestarted { key })
-                .expect("cannot restart");
+            if need_to_restart {
+                // TODO: use `backoff`.
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                sv.objects.insert(key.clone(), sv.spawn(key))
+            } else {
+                sv.objects.remove(&key).map(|(_, v)| v)
+            }
+            .expect("where is the current actor?");
+
+            sv.context.book().remove(addr);
         };
 
         entry.insert(Object::new(addr, Actor::new(addr)));
@@ -305,7 +292,7 @@ where
         self.context.book().get_owned(addr).expect("just created")
     }
 
-    fn spawn_by_outcome(&self, outcome: Outcome<R::Key>) {
+    fn spawn_by_outcome(self: &Arc<Self>, outcome: Outcome<R::Key>) {
         match outcome {
             Outcome::Unicast(key) => {
                 get_or_spawn!(self, key);
@@ -322,11 +309,11 @@ where
 
 fn panic_to_string(payload: Box<dyn Any>) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
-        (*message).to_string()
+        format!("panic: {}", message)
     } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
+        format!("panic: {}", message)
     } else {
-        "(unsupported payload)".to_string()
+        "panic: <unsupported payload>".to_string()
     }
 }
 

@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Fixed
+- Terminate/restart actors more accurately.
 
 ## [0.1.15] - 2021-05-31
 ### Fixed

@@ -18,7 +18,7 @@ use crate::{
 /// A wrapper around `futures::Stream` implementing `Source` trait.
 ///
 /// Stream items must be messages or pairs `(Option<trace_id>, message)`,
-/// if `trace_id` is generate
+/// if `trace_id` is generated.
 pub struct Stream<S>(Mutex<StreamState<S>>);
 
 enum StreamState<S> {

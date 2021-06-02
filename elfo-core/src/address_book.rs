@@ -35,6 +35,10 @@ impl AddressBook {
             .map(VacantEntry)
             .expect("too many actors")
     }
+
+    pub(crate) fn remove(&self, addr: Addr) {
+        self.slab.remove(addr.into_bits());
+    }
 }
 
 pub(crate) struct VacantEntry<'b>(slab::VacantEntry<'b, Object>);
