@@ -21,9 +21,9 @@ async fn it_restarts_explicitly() {
     });
 
     let mut proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
-    proxy.send(Terminate).await;
-    assert_msg!(proxy.recv().await, Terminated);
 
-    proxy.send(Terminate).await;
-    assert_msg!(proxy.recv().await, Terminated);
+    for _ in 1..5 {
+        proxy.send(Terminate).await;
+        assert_msg!(proxy.recv().await, Terminated);
+    }
 }

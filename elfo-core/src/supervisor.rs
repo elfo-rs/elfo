@@ -265,25 +265,25 @@ where
                 Err(panic) => ActorStatus::FAILED.with_details(panic_to_string(panic)),
             };
 
-            let (key1, object) = sv
-                .objects
-                .remove(&key)
-                .expect("where is the current actor?");
-            let actor = object.as_actor().expect("a supervisor stores only actors");
-            sv.context.book().remove(addr);
-
             let need_to_restart = new_status.is_failed();
 
-            actor.set_status(new_status);
+            sv.objects
+                .get(&key)
+                .expect("where is the current actor?")
+                .as_actor()
+                .expect("a supervisor stores only actors")
+                .set_status(new_status);
 
-            if !need_to_restart {
-                return;
+            if need_to_restart {
+                // TODO: use `backoff`.
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                sv.objects.insert(key.clone(), sv.spawn(key))
+            } else {
+                sv.objects.remove(&key).map(|(_, v)| v)
             }
+            .expect("where is the current actor?");
 
-            // TODO: use `backoff`.
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            let obj = sv.spawn(key);
-            sv.objects.insert(key1, obj);
+            sv.context.book().remove(addr);
         };
 
         entry.insert(Object::new(addr, Actor::new(addr)));
