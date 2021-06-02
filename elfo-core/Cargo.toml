@@ -1,6 +1,6 @@
 [package]
 name = "elfo-core"
-version = "0.1.11"
+version = "0.1.12"
 description = "The core of the system"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"

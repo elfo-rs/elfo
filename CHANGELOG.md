@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.16] - 2021-06-02
 ### Fixed
 - Terminate/restart actors more accurately.
 
@@ -103,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.15...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.16...HEAD
+[0.1.16]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.15...elfo-0.1.16
 [0.1.15]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.14...elfo-0.1.15
 [0.1.14]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.12...elfo-0.1.14
 [0.1.12]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.11...elfo-0.1.12

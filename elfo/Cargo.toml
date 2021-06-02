@@ -1,6 +1,6 @@
 [package]
 name = "elfo"
-version = "0.1.15"
+version = "0.1.16"
 description = "Your next actor system"
 keywords = ["actor", "distributed", "tokio"]
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
@@ -45,7 +45,7 @@ full = ["elfo-configurer", "elfo-logger"]
 test-util = ["elfo-test", "elfo-core/test-util"]
 
 [dependencies]
-elfo-core = { version = "0.1.11", path = "../elfo-core" }
+elfo-core = { version = "0.1.12", path = "../elfo-core" }
 elfo-macros = { version = "0.1.6", path = "../elfo-macros" }
 elfo-test = { version = "0.1.9", path = "../elfo-test", optional = true }
 elfo-configurer = { version = "0.1.5", path = "../elfo-configurer", optional = true }
