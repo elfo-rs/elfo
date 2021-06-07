@@ -25,6 +25,7 @@ use elfo_core::{
 use elfo_macros::{message, msg_raw as msg};
 
 const MAX_WAIT_TIME: Duration = Duration::from_millis(150);
+const SYNC_YIELD_COUNT: usize = 32;
 
 pub struct Proxy {
     context: Context,
@@ -95,6 +96,16 @@ impl Proxy {
         tls::sync_scope(self.meta.clone(), trace_id::generate(), || {
             self.context.try_recv().ok()
         })
+    }
+
+    /// Waits until the testable actor handles all previously sent messages.
+    ///
+    /// Now it's implemented as multiple calls `yield_now()`,
+    /// but the implementation can be changed in the future.
+    pub async fn sync(&mut self) {
+        for _ in 0..SYNC_YIELD_COUNT {
+            task::yield_now().await;
+        }
     }
 
     #[deprecated]

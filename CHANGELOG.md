@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- `Proxy::sync()`: waits until the testable actor handles all previously sent messages.
 
 ## [0.1.16] - 2021-06-02
 ### Added

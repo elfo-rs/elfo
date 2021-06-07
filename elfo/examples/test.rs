@@ -56,6 +56,10 @@ async fn it_works() {
     proxy.send(Increment).await;
     proxy.send(Increment).await;
 
+    // It's possible to wait until the actor handles sent messages.
+    // But usually it isn't required.
+    proxy.sync().await;
+
     // How to check actors' output.
     assert_msg!(proxy.recv().await, Added(15u32..=35)); // Note: rhs is a pattern.
     assert_msg_eq!(proxy.recv().await, Added(20));
