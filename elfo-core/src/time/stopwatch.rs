@@ -77,3 +77,50 @@ where
         Poll::Pending
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "test-util")]
+mod tests {
+    use super::*;
+
+    use futures::{future::poll_fn, poll};
+
+    use elfo_macros::message;
+
+    use crate::time;
+
+    #[message(elfo = crate)]
+    struct Timeout;
+
+    #[tokio::test]
+    async fn it_works() {
+        time::pause();
+
+        let sw = Stopwatch::new(|| Timeout);
+        println!("{:?}", tokio::time::Instant::now());
+
+        for _ in 0..=5 {
+            // Before scheduling.
+            let res = poll!(poll_fn(|cx| sw.poll_recv(cx)));
+            assert!(res.is_pending());
+
+            sw.schedule_after(Duration::from_secs(10));
+            let res = poll!(poll_fn(|cx| sw.poll_recv(cx)));
+            assert!(res.is_pending());
+
+            // Some time passed, but not enough yet.
+            time::advance(Duration::from_secs(9)).await;
+            let res = poll!(poll_fn(|cx| sw.poll_recv(cx)));
+            assert!(res.is_pending());
+
+            // Time passed.
+            time::advance(Duration::from_millis(1001)).await;
+            let res = poll!(poll_fn(|cx| sw.poll_recv(cx)));
+            assert!(res.is_ready());
+
+            // Fired only once.
+            let res = poll!(poll_fn(|cx| sw.poll_recv(cx)));
+            assert!(res.is_pending());
+        }
+    }
+}
