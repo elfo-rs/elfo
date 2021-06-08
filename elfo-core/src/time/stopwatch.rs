@@ -17,7 +17,7 @@ use crate::{
 
 /// `Source` that produces a message after a scheduled duration.
 ///
-/// Do nothing until scheduled.
+/// Does nothing until scheduled.
 pub struct Stopwatch<F> {
     message_factory: F,
     state: Mutex<State>,
