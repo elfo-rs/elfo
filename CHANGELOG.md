@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `Proxy::sync()`: waits until the testable actor handles all previously sent messages.
 - Expose `time::{pause, resume, advance}` under the `test-util` feature.
+- `time::Stopwatch`.
 
 ## [0.1.16] - 2021-06-02
 ### Added
