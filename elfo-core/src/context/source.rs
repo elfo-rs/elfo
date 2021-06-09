@@ -59,5 +59,6 @@ mod sealed {
     impl Sealed for () {}
     impl<L, R> Sealed for Combined<L, R> {}
     impl<F> Sealed for crate::time::Interval<F> {}
+    impl<F> Sealed for crate::time::Stopwatch<F> {}
     impl<S> Sealed for crate::stream::Stream<S> {}
 }
