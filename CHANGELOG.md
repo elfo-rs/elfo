@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `time::Stopwatch`.
 - `message(transparent)`.
 
+### Fixed
+- Do not panic in case of late `resolve()` calls for `Any` requests.
+
 ## [0.1.16] - 2021-06-02
 ### Added
 - docs: show features on docs.rs.
