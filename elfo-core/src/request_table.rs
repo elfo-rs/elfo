@@ -88,7 +88,10 @@ impl RequestTable {
         // TODO: should we have another strategy for panics?
         debug_assert_eq!(sender, self.owner);
         let mut requests = self.requests.lock();
-        let request = requests.get_mut(request_id).expect("unknown request");
+
+        // `None` here means the request was with `collect_all = false` and
+        // the response has been recieved already.
+        let request = ward!(requests.get_mut(request_id));
 
         // Extra responses (in `any` case).
         if request.remainder == 0 {
@@ -311,4 +314,23 @@ mod tests {
 
     // TODO: check many requests.
     // TODO: check `Drop`.
+
+    #[tokio::test]
+    async fn late_resolve() {
+        let addr = Addr::from_bits(1);
+        let table = Arc::new(RequestTable::new(addr));
+        let book = AddressBook::new();
+
+        let token = table.new_request(book.clone(), false);
+        let token1 = table.clone_token(&token).unwrap();
+        let request_id = token.request_id;
+
+        let table1 = table.clone();
+        tokio::spawn(async move {
+            table1.respond(token, envelope(addr, Num(42)));
+        });
+
+        let _data = table.wait(request_id).await;
+        table.respond(token1, envelope(addr, Num(43)));
+    }
 }
