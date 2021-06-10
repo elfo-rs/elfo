@@ -9,6 +9,7 @@
 // All actor crates depend on one or more protocols.
 // Dependencies between actors should be avoided.
 mod protocol {
+    use derive_more::{Display, From};
     use elfo::prelude::*;
 
     // It's just a regular message.
@@ -18,22 +19,36 @@ mod protocol {
     // * `Message` and `Request` to restrict contracts
     #[message]
     pub struct AddNum {
-        pub group: u32,
+        pub group: GroupId,
         pub num: u32,
     }
 
     // Messages with specified `ret` are requests.
     #[message(ret = Summary)]
     pub struct Summarize {
-        pub group_filter: Option<u32>, // `None` for all.
+        pub group_filter: GroupFilter,
+    }
+
+    // Parts of messages can be marked with `message(part)`
+    // to derive `Debug`, `Clone`, `Serialize` and `Deserialize`.
+    #[message(part)]
+    pub enum GroupFilter {
+        All,
+        ById(GroupId),
     }
 
     // Responses don't have to implement `Message`.
-    #[message(part)] // derives `Debug`, `Clone`, `Serialize` and `Deserialize`.
+    #[message(part)]
     pub struct Summary {
-        pub group: u32,
+        pub group: GroupId,
         pub sum: u32,
     }
+
+    // Wrappers can be marked as `transparent`, that adds `serde(transparent)`
+    // and implements `Debug` without printing the wrapper's name.
+    #[message(part, transparent)]
+    #[derive(Copy, PartialEq, Eq, Hash, From, Display)]
+    pub struct GroupId(u32);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -69,7 +84,7 @@ mod producer {
 
                 // Send some numbers.
                 for num in 0..item_count {
-                    let group = num % group_count;
+                    let group = GroupId::from(num % group_count);
 
                     // `send().await` returns when the message is placed in a mailbox.
                     // ... or returns an error if all destinations are closed and cannot be
@@ -116,11 +131,14 @@ mod aggregator {
                     // A new actor will be spawned if there is no actor for this key (`group`).
                     AddNum { group, .. } => Outcome::Unicast(*group),
                     // `Broadcast` is for sending to all already spawned actors.
-                    Summarize { group_filter, .. } => group_filter
-                        // Summarize only data of a specific group.
-                        .map(Outcome::Unicast)
-                        // Summarize all groups.
-                        .unwrap_or(Outcome::Broadcast),
+                    Summarize {
+                        group_filter: GroupFilter::All,
+                        ..
+                    } => Outcome::Broadcast,
+                    Summarize {
+                        group_filter: GroupFilter::ById(id),
+                        ..
+                    } => Outcome::Unicast(*id),
                     // Also there are other variants: `Multicast`, `Discard` and this one.
                     _ => Outcome::Default,
                 })
@@ -128,7 +146,7 @@ mod aggregator {
             .exec(aggregator)
     }
 
-    async fn aggregator(mut ctx: Context<(), u32>) {
+    async fn aggregator(mut ctx: Context<(), GroupId>) {
         // Define some shard-specific state.
         let mut sum = 0;
         // Get a sharding key.
@@ -215,7 +233,9 @@ mod reporter {
                     // ... or with error, if something went wrong.
                     // In the future, `request(..).id().await` will be able to be used
                     // in order to get a response via the mailbox.
-                    let req = Summarize { group_filter: None };
+                    let req = Summarize {
+                        group_filter: GroupFilter::All,
+                    };
                     for summary in ctx.request(req).all().resolve().await {
                         tracing::info!(?summary, "summary");
                     }

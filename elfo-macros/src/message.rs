@@ -1,7 +1,7 @@
 use std::time::UNIX_EPOCH;
 
 use proc_macro::TokenStream;
-use proc_macro2::Span;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
     parenthesized,
@@ -13,6 +13,7 @@ use syn::{
 struct MessageArgs {
     ret: Option<Type>,
     part: bool,
+    transparent: bool,
     crate_: Path,
     not: Vec<String>,
 }
@@ -24,12 +25,14 @@ impl Parse for MessageArgs {
         let mut args = MessageArgs {
             ret: None,
             part: false,
+            transparent: false,
             crate_: parse_quote!(::elfo),
             not: Vec::new(),
         };
 
         // `#[message]`
         // `#[message(part)]`
+        // `#[message(part, transparent)]`
         // `#[message(ret = A)]`
         // `#[message(elfo = some)]`
         // `#[message(not(Debug))]`
@@ -42,6 +45,7 @@ impl Parse for MessageArgs {
                     args.ret = Some(input.parse()?);
                 }
                 "part" => args.part = true,
+                "transparent" => args.transparent = true,
                 // TODO: call it `crate` like in linkme?
                 "elfo" => {
                     let _: Token![=] = input.parse()?;
@@ -74,14 +78,14 @@ fn gen_ltid() -> u32 {
     elapsed.as_nanos() as u32
 }
 
-fn gen_derive_attr(blacklist: &[String], name: &str) -> impl ToTokens {
-    let ident = Ident::new(name, Span::call_site());
-
-    if blacklist.iter().all(|x| x != name) {
-        quote! { #[derive(#ident)] }
+fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream2) -> TokenStream2 {
+    let tokens = if blacklist.iter().all(|x| x != name) {
+        quote! { #[derive(#path)] }
     } else {
         quote! {}
-    }
+    };
+
+    tokens.into_token_stream()
 }
 
 pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -94,6 +98,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let ltid = gen_ltid();
     let serde_crate = format!("{}::_priv::serde", args.crate_.to_token_stream());
     let crate_ = args.crate_;
+    let internal = quote![#crate_::_priv];
 
     let impl_request = if let Some(ret) = &args.ret {
         assert!(!args.part, "`part` and `ret` attributes are incompatible");
@@ -138,14 +143,32 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    let derive_debug = gen_derive_attr(&args.not, "Debug");
-    let derive_clone = gen_derive_attr(&args.not, "Clone");
-    // TODO: `Serialize`, `Deserialize`
+    let derive_debug = gen_derive_attr(&args.not, "Debug", quote![Debug]);
+    let derive_clone = gen_derive_attr(&args.not, "Clone", quote![Clone]);
+    let derive_serialize =
+        gen_derive_attr(&args.not, "Serialize", quote![#internal::serde::Serialize]);
+    let derive_deserialize = gen_derive_attr(
+        &args.not,
+        "Deserialize",
+        quote![#internal::serde::Deserialize],
+    );
+
+    let serde_crate_attr = if !derive_serialize.is_empty() || !derive_deserialize.is_empty() {
+        quote! { #[serde(crate = #serde_crate)] }
+    } else {
+        quote! {}
+    };
+
+    let serde_transparent_attr = if args.transparent {
+        quote! { #[serde(transparent)] }
+    } else {
+        quote! {}
+    };
 
     let impl_message = if !args.part {
         quote! {
             impl #crate_::Message for #name {
-                const _LTID: #crate_::_priv::LocalTypeId = #ltid;
+                const _LTID: #internal::LocalTypeId = #ltid;
             }
 
             #[doc(hidden)]
@@ -155,7 +178,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
                 use std::fmt;
 
-                use #crate_::_priv::{MESSAGE_LIST, MessageVTable, smallbox::{smallbox}, AnyMessage, linkme};
+                use #internal::{MESSAGE_LIST, MessageVTable, smallbox::{smallbox}, AnyMessage, linkme};
 
                 #request_wrapper
 
@@ -172,7 +195,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 }
 
                 #[linkme::distributed_slice(MESSAGE_LIST)]
-                #[linkme(crate = #crate_::_priv::linkme)]
+                #[linkme(crate = #internal::linkme)]
                 static VTABLE: MessageVTable = MessageVTable {
                     ltid: #ltid,
                     clone,
@@ -192,8 +215,10 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
         #derive_debug
         #derive_clone
-        #[derive(#crate_::_priv::serde::Serialize, #crate_::_priv::serde::Deserialize)]
-        #[serde(crate = #serde_crate)]
+        #derive_serialize
+        #derive_deserialize
+        #serde_crate_attr
+        #serde_transparent_attr
         #input
         #impl_message
         #impl_request
