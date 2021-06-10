@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.17] - 2021-06-10
 ### Added
 - `Proxy::sync()`: waits until the testable actor handles all previously sent messages.
 - Expose `time::{pause, resume, advance}` under the `test-util` feature.
@@ -116,7 +118,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.16...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.17...HEAD
+[0.1.17]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.16...elfo-0.1.17
 [0.1.16]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.15...elfo-0.1.16
 [0.1.15]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.14...elfo-0.1.15
 [0.1.14]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.12...elfo-0.1.14

@@ -1,6 +1,6 @@
 [package]
 name = "elfo-test"
-version = "0.1.10"
+version = "0.1.11"
 description = "Test utils"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
