@@ -6,7 +6,7 @@ use quote::{format_ident, quote, ToTokens};
 use syn::{
     parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
-    parse_macro_input, parse_quote, DeriveInput, Ident, Path, Token, Type,
+    parse_macro_input, parse_quote, Data, DeriveInput, Ident, Path, Token, Type,
 };
 
 #[derive(Debug)]
@@ -88,12 +88,44 @@ fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream2) -> Toke
     tokens.into_token_stream()
 }
 
+// TODO: add `T: Debug` for type arguments.
+fn gen_impl_debug(input: &DeriveInput) -> TokenStream2 {
+    let name = &input.ident;
+    let field = match &input.data {
+        Data::Struct(data) => {
+            assert_eq!(
+                data.fields.len(),
+                1,
+                "`transparent` is applicable only for structs with one field"
+            );
+            data.fields.iter().next().unwrap()
+        }
+        Data::Enum(_) => panic!("`transparent` is applicable for structs only"),
+        Data::Union(_) => panic!("`transparent` is applicable for structs only"),
+    };
+
+    let propagate_fmt = if let Some(ident) = field.ident.as_ref() {
+        quote! { self.#ident.fmt(f) }
+    } else {
+        quote! { self.0.fmt(f) }
+    };
+
+    quote! {
+        impl ::std::fmt::Debug for #name {
+            #[inline]
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                #propagate_fmt
+            }
+        }
+    }
+}
+
 pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as MessageArgs);
 
     // TODO: what about parsing into something cheaper?
     let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident.clone();
+    let name = &input.ident;
     let mod_name = format_ident!("_elfo_{}", name);
     let ltid = gen_ltid();
     let serde_crate = format!("{}::_priv::serde", args.crate_.to_token_stream());
@@ -143,7 +175,11 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    let derive_debug = gen_derive_attr(&args.not, "Debug", quote![Debug]);
+    let derive_debug = if !args.transparent {
+        gen_derive_attr(&args.not, "Debug", quote![Debug])
+    } else {
+        Default::default()
+    };
     let derive_clone = gen_derive_attr(&args.not, "Clone", quote![Clone]);
     let derive_serialize =
         gen_derive_attr(&args.not, "Serialize", quote![#internal::serde::Serialize]);
@@ -161,6 +197,12 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let serde_transparent_attr = if args.transparent {
         quote! { #[serde(transparent)] }
+    } else {
+        quote! {}
+    };
+
+    let impl_debug = if args.transparent && args.not.iter().all(|x| x != "Debug") {
+        gen_impl_debug(&input)
     } else {
         quote! {}
     };
@@ -222,5 +264,6 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         #input
         #impl_message
         #impl_request
+        #impl_debug
     })
 }
