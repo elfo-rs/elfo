@@ -17,8 +17,9 @@ use tokio::task;
 use elfo_core::{
     self as elfo, ActorGroup, Addr, Context, Envelope, Local, Message, Request, ResponseToken,
     Schema,
-    _priv::{do_start, tls, ObjectMeta},
+    _priv::{do_start, ObjectMeta},
     routers::{MapRouter, Outcome},
+    tls,
     topology::Topology,
     trace_id,
 };

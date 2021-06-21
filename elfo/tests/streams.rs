@@ -2,7 +2,7 @@
 
 use std::convert::TryFrom;
 
-use elfo::{_priv::tls, config::AnyConfig, prelude::*, stream, trace_id::TraceId};
+use elfo::{config::AnyConfig, prelude::*, stream, tls, trace_id::TraceId};
 
 #[message]
 #[derive(PartialEq)]

@@ -26,6 +26,7 @@ pub mod messages;
 pub mod routers;
 pub mod stream;
 pub mod time;
+pub mod tls;
 pub mod topology;
 pub mod trace_id;
 
@@ -45,14 +46,9 @@ mod object;
 mod request_table;
 mod start;
 mod supervisor;
-mod tls;
 
 #[doc(hidden)]
 pub mod _priv {
-    pub mod tls {
-        pub use crate::tls::*;
-    }
-
     pub use crate::{
         envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
         message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},

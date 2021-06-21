@@ -3,7 +3,7 @@ use std::{sync::Arc, time::SystemTime};
 use tracing::{span, Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
-use elfo_core::_priv::tls;
+use elfo_core::tls;
 
 use self::visitor::Visitor;
 use crate::{PreparedEvent, Shared, SpanData, StringId};

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Expose the `tls` module to work with the task-local storage.
+
 ## [0.1.17] - 2021-06-10
 ### Added
 - `Proxy::sync()`: waits until the testable actor handles all previously sent messages.
