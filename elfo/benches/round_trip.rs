@@ -1,7 +1,10 @@
-use std::time::{Duration, Instant};
+use std::{
+    iter,
+    time::{Duration, Instant},
+};
 
 use anyhow::ensure;
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use tokio::runtime::Runtime;
 
 use elfo::{
@@ -35,20 +38,29 @@ struct Response {
 #[message(ret = Duration)]
 struct Summarize;
 
-fn make_producers(count: u32, iter_count: u32) -> Schema {
+#[derive(Clone, Copy)]
+enum Mode {
+    OnlyToOne,
+    RoundRobin,
+}
+
+fn make_producers(count: u32, mode: Mode, iter_count: u32) -> Schema {
     ActorGroup::new()
         .router(MapRouter::new(move |envelope| {
             msg!(match envelope {
-                UpdateConfig => Outcome::Multicast((0..count).collect()),
-                Summarize => Outcome::Broadcast,
+                Summarize => Outcome::Multicast((0..count).collect()),
                 _ => Outcome::Default,
             })
         }))
         .exec(move |mut ctx| async move {
             let start_at = Instant::now();
-            let i = *ctx.key();
+            let key = *ctx.key();
 
-            for value in i..(iter_count + i) {
+            for i in 0..iter_count {
+                let value = match mode {
+                    Mode::OnlyToOne => key,
+                    Mode::RoundRobin => i + key,
+                };
                 let res = ctx.request(Request { value }).resolve().await.unwrap();
                 ensure!(res.value == value);
             }
@@ -89,7 +101,7 @@ fn make_consumers(count: u32) -> Schema {
         })
 }
 
-async fn run(producer_count: u32, consumer_count: u32, iter_count: u32) -> Duration {
+async fn run(producer_count: u32, consumer_count: u32, mode: Mode, iter_count: u32) -> Duration {
     let topology = Topology::empty();
     let producers = topology.local("producers");
     let consumers = topology.local("consumers");
@@ -99,7 +111,7 @@ async fn run(producer_count: u32, consumer_count: u32, iter_count: u32) -> Durat
 
     let producers_addr = producers.addrs()[0];
 
-    producers.mount(make_producers(producer_count, iter_count));
+    producers.mount(make_producers(producer_count, mode, iter_count));
     consumers.mount(make_consumers(consumer_count));
     configurers.mount(elfo::configurer::fixture(&topology, AnyConfig::default()));
 
@@ -118,36 +130,37 @@ async fn run(producer_count: u32, consumer_count: u32, iter_count: u32) -> Durat
     .unwrap()
 }
 
-fn round_trip(c: &mut Criterion) {
-    let mut group = c.benchmark_group("round_trip");
+fn one_to_one(c: &mut Criterion) {
+    let mut group = c.benchmark_group("one_to_one");
 
-    let space = vec![(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)];
-
-    for (p, c) in space {
-        group.throughput(Throughput::Elements(p as u64));
-        group.bench_function(format!("{}/{}", p, c), |b| {
+    for n in 1..=12 {
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::new("many_instances", n), &n, |b, &n| {
             b.iter_custom(|iter_count| {
-                // let mut h = Vec::new();
-                // for _ in 0..p {
-                // h.push(std::thread::spawn(move || {
-                // let rt = Runtime::new().unwrap();
-                // rt.block_on(run(1, 1, iter_count as u32))
-                //}));
-                //}
+                let mut h = Vec::new();
+                for _ in 0..n {
+                    h.push(std::thread::spawn(move || {
+                        let rt = Runtime::new().unwrap();
+                        rt.block_on(run(1, 1, Mode::OnlyToOne, iter_count as u32))
+                    }));
+                }
 
-                // let mut max = Duration::new(0, 0);
-                // for i in h {
-                // max = max.max(i.join().unwrap());
-                //}
-                // max
-
+                let mut max = Duration::new(0, 0);
+                for i in h {
+                    max = max.max(i.join().unwrap());
+                }
+                max
+            })
+        });
+        group.bench_with_input(BenchmarkId::new("one_instance", n), &n, |b, &n| {
+            b.iter_custom(|iter_count| {
                 let rt = Runtime::new().unwrap();
-                rt.block_on(run(p, c, iter_count as u32))
+                rt.block_on(run(n, n, Mode::OnlyToOne, iter_count as u32))
             })
         });
     }
     group.finish();
 }
 
-criterion_group!(benches, round_trip);
+criterion_group!(benches, one_to_one);
 criterion_main!(benches);
