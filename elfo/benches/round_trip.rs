@@ -1,7 +1,4 @@
-use std::{
-    iter,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use anyhow::ensure;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -162,5 +159,20 @@ fn one_to_one(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, one_to_one);
+fn all_to_all(c: &mut Criterion) {
+    let mut group = c.benchmark_group("all_to_all");
+
+    for n in 1..=12 {
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::new("one_instance", n), &n, |b, &n| {
+            b.iter_custom(|iter_count| {
+                let rt = Runtime::new().unwrap();
+                rt.block_on(run(n, n, Mode::RoundRobin, iter_count as u32))
+            })
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, one_to_one, all_to_all);
 criterion_main!(benches);
