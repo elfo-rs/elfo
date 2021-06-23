@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Expose the `tls` module to work with the task-local storage.
+- Mailboxes are now based on a growing queue instead of the fixed one.
+- Increase the maximum size of mailboxes up to 100k messages.
 
 ## [0.1.17] - 2021-06-10
 ### Added

@@ -12,7 +12,7 @@
 * Multiple protocols: actors (so-called gates) can handle messages from different protocols
 * Multiple patterns of communication: regular messages, request-response (*TODO: subscriptions*)
 * Config updating and distribution
-* Messages aren't boxed, so it's possible to use `elfo` in latency bound tasks
+* Appropriate for both low latency and high throughput tasks
 * Tracing: all messages have `trace_id` that spread across the system
 * Efficient inspecting *TODO*
 * Efficient dumping *TODO*

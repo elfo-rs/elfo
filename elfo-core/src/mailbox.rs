@@ -1,5 +1,5 @@
 use futures_intrusive::{
-    buffer::FixedHeapBuf,
+    buffer::GrowingHeapBuf,
     channel::{self, GenericChannel},
 };
 use parking_lot::RawMutex;
@@ -10,16 +10,15 @@ use crate::{
 };
 
 // TODO: make mailboxes bounded by time instead of size.
-const LIMIT: usize = 128;
+const LIMIT: usize = 100_000;
 
 pub(crate) struct Mailbox {
-    queue: GenericChannel<RawMutex, Envelope, FixedHeapBuf<Envelope>>,
+    queue: GenericChannel<RawMutex, Envelope, GrowingHeapBuf<Envelope>>,
 }
 
 impl Mailbox {
     pub(crate) fn new() -> Self {
         Self {
-            // TODO: restrict the size.
             queue: GenericChannel::with_capacity(LIMIT),
         }
     }
