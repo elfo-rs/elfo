@@ -1,5 +1,5 @@
 use futures_intrusive::{
-    buffer::FixedHeapBuf,
+    buffer::GrowingHeapBuf,
     channel::{self, GenericChannel},
 };
 use parking_lot::RawMutex;
@@ -13,7 +13,7 @@ use crate::{
 const LIMIT: usize = 128;
 
 pub(crate) struct Mailbox {
-    queue: GenericChannel<RawMutex, Envelope, FixedHeapBuf<Envelope>>,
+    queue: GenericChannel<RawMutex, Envelope, GrowingHeapBuf<Envelope>>,
 }
 
 impl Mailbox {
