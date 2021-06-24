@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `signal::Signal` in order to work with signals.
+
+### Fixed
+- `assert_msg!`: fix false positive warnings about `unreachable pattern`.
+
 ## [0.1.18] - 2021-06-23
 ### Changed
 - Expose the `tls` module to work with the task-local storage.

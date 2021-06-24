@@ -5,6 +5,8 @@ macro_rules! assert_msg {
 
         let envelope = &$envelope;
         let msg = envelope.unpack_regular().downcast2();
+
+        #[allow(unreachable_patterns)]
         match &msg {
             &$pat => {}
             _ => panic!(
