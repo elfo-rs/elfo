@@ -24,6 +24,7 @@ pub mod config;
 pub mod errors;
 pub mod messages;
 pub mod routers;
+pub mod signal;
 pub mod stream;
 pub mod time;
 pub mod tls;

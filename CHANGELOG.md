@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `signal::Signal` in order to work with signals.
+
 ### Fixed
 - `assert_msg!`: fix false positive warnings about `unreachable pattern`.
 

@@ -4,7 +4,6 @@ use derive_more::Constructor;
 
 use crate::envelope::Envelope;
 
-// TODO: seal it.
 /// Note that implementations must be fused.
 #[allow(unreachable_pub)]
 pub trait Source: sealed::Sealed {
@@ -61,4 +60,5 @@ mod sealed {
     impl<F> Sealed for crate::time::Interval<F> {}
     impl<F> Sealed for crate::time::Stopwatch<F> {}
     impl<S> Sealed for crate::stream::Stream<S> {}
+    impl<F> Sealed for crate::signal::Signal<F> {}
 }
