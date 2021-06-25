@@ -46,6 +46,7 @@ struct ConfigWithMeta {
     group_name: String,
     addr: Addr,
     config: AnyConfig,
+    hash: u64,
 }
 
 #[message(elfo = elfo_core)]
@@ -55,6 +56,8 @@ struct Configurer {
     ctx: Context,
     topology: Topology,
     source: ConfigSource,
+    /// Stores hashes of configs per group.
+    versions: FxHashMap<String, u64>,
 }
 
 impl Configurer {
@@ -63,10 +66,11 @@ impl Configurer {
             ctx,
             topology,
             source,
+            versions: FxHashMap::default(),
         }
     }
 
-    async fn main(self) {
+    async fn main(mut self) {
         let signal = Signal::new(SignalKind::Hangup, || ReloadConfigs);
         let mut ctx = self.ctx.clone().with(&signal);
         let can_start = self.load_and_update_configs().await;
@@ -82,7 +86,7 @@ impl Configurer {
         }
     }
 
-    async fn load_and_update_configs(&self) -> bool {
+    async fn load_and_update_configs(&mut self) -> bool {
         let config = match &self.source {
             ConfigSource::File(path) => load_raw_config(path),
             ConfigSource::Fixture(value) => value.clone(),
@@ -101,9 +105,17 @@ impl Configurer {
         system_updated && user_udpated
     }
 
-    async fn update_configs(&self, config: &Value, filter: TopologyFilter) -> bool {
-        let config_list = match_configs(&self.topology, config.clone(), filter);
+    async fn update_configs(&mut self, config: &Value, filter: TopologyFilter) -> bool {
+        let mut config_list = match_configs(&self.topology, config.clone(), filter);
 
+        // Filter up-to-date configs.
+        config_list.retain(|c| {
+            self.versions
+                .get(&c.group_name)
+                .map_or(true, |v| c.hash != *v)
+        });
+
+        // Validation.
         let status = ActorStatus::NORMAL.with_details("config validation");
         self.ctx.set_status(status);
 
@@ -116,6 +128,7 @@ impl Configurer {
             return false;
         }
 
+        // Updating.
         let status = ActorStatus::NORMAL.with_details("config updating");
         self.ctx.set_status(status);
 
@@ -137,6 +150,11 @@ impl Configurer {
         // }
 
         self.ctx.set_status(ActorStatus::NORMAL);
+
+        // Update versions.
+        self.versions
+            .extend(config_list.into_iter().map(|c| (c.group_name, c.hash)));
+
         true
     }
 
@@ -229,11 +247,15 @@ fn match_configs(
             TopologyFilter::System => group.name.starts_with("system."),
             TopologyFilter::User => !group.name.starts_with("system."),
         })
-        .map(|group| ConfigWithMeta {
-            group_name: group.name.clone(),
-            addr: group.addr,
-            config: get_config(&configs, &group.name)
-                .map_or_else(AnyConfig::default, AnyConfig::new),
+        .map(|group| {
+            let config = get_config(&configs, &group.name);
+
+            ConfigWithMeta {
+                group_name: group.name.clone(),
+                addr: group.addr,
+                hash: fxhash::hash64(&config),
+                config: config.map_or_else(AnyConfig::default, AnyConfig::new),
+            }
         })
         .collect()
 }
