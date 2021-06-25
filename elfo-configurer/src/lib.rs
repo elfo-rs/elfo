@@ -49,8 +49,10 @@ struct ConfigWithMeta {
     hash: u64,
 }
 
+/// Reload configs and send changed ones.
+#[non_exhaustive] // i'm going to add `force` mode.
 #[message(elfo = elfo_core)]
-pub struct ReloadConfigs;
+pub struct ReloadConfigs {}
 
 struct Configurer {
     ctx: Context,
@@ -71,7 +73,7 @@ impl Configurer {
     }
 
     async fn main(mut self) {
-        let signal = Signal::new(SignalKind::Hangup, || ReloadConfigs);
+        let signal = Signal::new(SignalKind::Hangup, || ReloadConfigs {});
         let mut ctx = self.ctx.clone().with(&signal);
         let can_start = self.load_and_update_configs().await;
 
