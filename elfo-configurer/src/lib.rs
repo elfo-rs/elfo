@@ -12,12 +12,13 @@ use serde_value::Value;
 use tracing::error;
 
 use elfo_core as elfo;
-use elfo_macros::msg_raw as msg;
+use elfo_macros::{message, msg_raw as msg};
 
 use elfo::{
     config::AnyConfig,
     errors::RequestError,
     messages::{ConfigRejected, Ping, UpdateConfig, ValidateConfig},
+    signal::{Signal, SignalKind},
     ActorGroup, ActorStatus, Addr, Context, Request, Schema, Topology,
 };
 
@@ -25,13 +26,13 @@ pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> 
     let config = Value::deserialize(config).map_err(|err| err.to_string());
     let source = ConfigSource::Fixture(config);
     let topology = topology.clone();
-    ActorGroup::new().exec(move |ctx| configurer(ctx, topology.clone(), source.clone()))
+    ActorGroup::new().exec(move |ctx| Configurer::new(ctx, topology.clone(), source.clone()).main())
 }
 
 pub fn from_path(topology: &Topology, path_to_config: impl AsRef<Path>) -> Schema {
     let source = ConfigSource::File(path_to_config.as_ref().to_path_buf());
     let topology = topology.clone();
-    ActorGroup::new().exec(move |ctx| configurer(ctx, topology.clone(), source.clone()))
+    ActorGroup::new().exec(move |ctx| Configurer::new(ctx, topology.clone(), source.clone()).main())
 }
 
 #[derive(Clone)]
@@ -45,123 +46,162 @@ struct ConfigWithMeta {
     group_name: String,
     addr: Addr,
     config: AnyConfig,
+    hash: u64,
 }
 
-async fn configurer(mut ctx: Context, topology: Topology, source: ConfigSource) {
-    let mut signal = Signal::new();
-    let mut request = ctx.recv().await;
+#[message(elfo = elfo_core)]
+pub struct ReloadConfigs;
 
-    loop {
-        if request.is_none() {
-            signal.recv().await;
+struct Configurer {
+    ctx: Context,
+    topology: Topology,
+    source: ConfigSource,
+    /// Stores hashes of configs per group.
+    versions: FxHashMap<String, u64>,
+}
+
+impl Configurer {
+    fn new(ctx: Context, topology: Topology, source: ConfigSource) -> Self {
+        Self {
+            ctx,
+            topology,
+            source,
+            versions: FxHashMap::default(),
         }
+    }
 
-        let system_updated = update_configs(&ctx, &topology, &source, TopologyFilter::System).await;
-        let user_udpated = update_configs(&ctx, &topology, &source, TopologyFilter::User).await;
-        let is_ok = system_updated && user_udpated;
+    async fn main(mut self) {
+        let signal = Signal::new(SignalKind::Hangup, || ReloadConfigs);
+        let mut ctx = self.ctx.clone().with(&signal);
+        let can_start = self.load_and_update_configs().await;
 
-        if let Some(request) = request.take() {
-            msg!(match request {
-                (Ping, token) if is_ok => {
-                    ctx.respond(token, ())
-                }
-                (Ping, token) => {
-                    let _ = token;
+        while let Some(envelope) = ctx.recv().await {
+            msg!(match envelope {
+                (Ping, token) if can_start => ctx.respond(token, ()),
+                (Ping, token) => drop(token),
+                ReloadConfigs => {
+                    self.load_and_update_configs().await;
                 }
             })
         }
+    }
+
+    async fn load_and_update_configs(&mut self) -> bool {
+        let config = match &self.source {
+            ConfigSource::File(path) => load_raw_config(path),
+            ConfigSource::Fixture(value) => value.clone(),
+        };
+
+        let config = match config {
+            Ok(config) => config,
+            Err(reason) => {
+                error!(%reason, "invalid config");
+                return false;
+            }
+        };
+
+        let system_updated = self.update_configs(&config, TopologyFilter::System).await;
+        let user_udpated = self.update_configs(&config, TopologyFilter::User).await;
+        system_updated && user_udpated
+    }
+
+    async fn update_configs(&mut self, config: &Value, filter: TopologyFilter) -> bool {
+        let mut config_list = match_configs(&self.topology, config.clone(), filter);
+
+        // Filter up-to-date configs.
+        config_list.retain(|c| {
+            self.versions
+                .get(&c.group_name)
+                .map_or(true, |v| c.hash != *v)
+        });
+
+        // Validation.
+        let status = ActorStatus::NORMAL.with_details("config validation");
+        self.ctx.set_status(status);
+
+        if !self
+            .request_all(&config_list, |config| ValidateConfig { config })
+            .await
+        {
+            error!("config validation failed");
+            self.ctx.set_status(ActorStatus::NORMAL);
+            return false;
+        }
+
+        // Updating.
+        let status = ActorStatus::NORMAL.with_details("config updating");
+        self.ctx.set_status(status);
+
+        if !self
+            .request_all(&config_list, |config| UpdateConfig { config })
+            .await
+        {
+            error!("config updating failed");
+            self.ctx
+                .set_status(ActorStatus::ALARMING.with_details("possibly incosistent configs"));
+            return false;
+        }
+
+        // TODO: make `Ping` automatically handled.
+        // if !ping(ctx, &config_list).await {
+        // error!("ping failed");
+        // ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent
+        // configs")); return false;
+        // }
+
+        self.ctx.set_status(ActorStatus::NORMAL);
+
+        // Update versions.
+        self.versions
+            .extend(config_list.into_iter().map(|c| (c.group_name, c.hash)));
+
+        true
+    }
+
+    async fn request_all<R>(
+        &self,
+        config_list: &[ConfigWithMeta],
+        make_msg: impl Fn(AnyConfig) -> R,
+    ) -> bool
+    where
+        R: Request<Response = Result<(), ConfigRejected>>,
+    {
+        let futures = config_list
+            .iter()
+            .cloned()
+            .map(|item| {
+                let group = item.group_name;
+                self.ctx
+                    .request(make_msg(item.config))
+                    .from(item.addr)
+                    .all()
+                    .resolve()
+                    .map(|res| (group, res))
+            })
+            .collect::<Vec<_>>();
+
+        // TODO: use `try_join_all`.
+        let errors = future::join_all(futures)
+            .await
+            .into_iter()
+            .map(|(group, results)| results.into_iter().map(move |res| (group.clone(), res)))
+            .flatten()
+            .filter_map(|(group, result)| match result {
+                Ok(Ok(_)) | Err(_) => None,
+                Ok(Err(reject)) => Some((group, reject.reason)),
+                /* TODO: it's meaningful, but doesn't work well with empty groups.
+                 * Err(RequestError::Closed(_)) => Some((group, "some group is closed".into())), */
+            })
+            // TODO: provide more info.
+            .inspect(|(group, reason)| error!(%group, %reason, "invalid config"));
+
+        errors.count() == 0
     }
 }
 
 enum TopologyFilter {
     System,
     User,
-}
-
-async fn update_configs(
-    ctx: &Context,
-    topology: &Topology,
-    source: &ConfigSource,
-    filter: TopologyFilter,
-) -> bool {
-    let config = match &source {
-        ConfigSource::File(path) => load_raw_config(path),
-        ConfigSource::Fixture(value) => value.clone(),
-    };
-
-    let config = match config {
-        Ok(config) => config,
-        Err(reason) => {
-            error!(%reason, "invalid config");
-            return false;
-        }
-    };
-
-    let config_list = match_configs(&topology, config, filter);
-
-    ctx.set_status(ActorStatus::NORMAL.with_details("config validation"));
-
-    if !request_all(ctx, &config_list, |config| ValidateConfig { config }).await {
-        error!("config validation failed");
-        ctx.set_status(ActorStatus::NORMAL);
-        return false;
-    }
-
-    ctx.set_status(ActorStatus::NORMAL.with_details("config updating"));
-
-    if !request_all(ctx, &config_list, |config| UpdateConfig { config }).await {
-        error!("config updating failed");
-        ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent configs"));
-        return false;
-    }
-
-    // TODO: make `Ping` automatically handled.
-    // if !ping(ctx, &config_list).await {
-    // error!("ping failed");
-    // ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent
-    // configs")); return false;
-    // }
-
-    ctx.set_status(ActorStatus::NORMAL);
-    true
-}
-
-async fn request_all<R>(
-    ctx: &Context,
-    config_list: &[ConfigWithMeta],
-    make_msg: impl Fn(AnyConfig) -> R,
-) -> bool
-where
-    R: Request<Response = Result<(), ConfigRejected>>,
-{
-    let futures = config_list
-        .iter()
-        .cloned()
-        .map(|item| {
-            let group = item.group_name;
-            ctx.request(make_msg(item.config))
-                .from(item.addr)
-                .all()
-                .resolve()
-                .map(|res| (group, res))
-        })
-        .collect::<Vec<_>>();
-
-    // TODO: use `try_join_all`.
-    let errors = future::join_all(futures)
-        .await
-        .into_iter()
-        .map(|(group, results)| results.into_iter().map(move |res| (group.clone(), res)))
-        .flatten()
-        .filter_map(|(group, result)| match result {
-            Ok(Ok(_)) | Err(RequestError::Ignored) => None,
-            Ok(Err(reject)) => Some((group, reject.reason)),
-            Err(RequestError::Closed(_)) => Some((group, "some group is closed".into())),
-        })
-        // TODO: provide more info.
-        .inspect(|(group, reason)| error!(%group, %reason, "invalid config"));
-
-    errors.count() == 0
 }
 
 #[allow(dead_code)]
@@ -207,11 +247,15 @@ fn match_configs(
             TopologyFilter::System => group.name.starts_with("system."),
             TopologyFilter::User => !group.name.starts_with("system."),
         })
-        .map(|group| ConfigWithMeta {
-            group_name: group.name.clone(),
-            addr: group.addr,
-            config: get_config(&configs, &group.name)
-                .map_or_else(AnyConfig::default, AnyConfig::new),
+        .map(|group| {
+            let config = get_config(&configs, &group.name);
+
+            ConfigWithMeta {
+                group_name: group.name.clone(),
+                addr: group.addr,
+                hash: fxhash::hash64(&config),
+                config: config.map_or_else(AnyConfig::default, AnyConfig::new),
+            }
         })
         .collect()
 }
@@ -227,20 +271,6 @@ fn get_config(configs: &FxHashMap<String, Value>, path: &str) -> Option<Value> {
         };
     }
     Some(node.clone())
-}
-
-// TODO: reimpl `signal` using `Source` trait.
-// TODO: handle SIGHUP (unix only).
-struct Signal {}
-
-impl Signal {
-    fn new() -> Self {
-        Self {}
-    }
-
-    async fn recv(&mut self) {
-        let () = future::pending().await;
-    }
 }
 
 #[cfg(test)]
