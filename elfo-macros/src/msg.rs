@@ -2,11 +2,14 @@ use std::{char, collections::HashMap};
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Arm, ExprMatch, Ident, Pat, PatIdent, PatWild, Path};
+use syn::{
+    parse_macro_input, spanned::Spanned, Arm, ExprMatch, Ident, Pat, PatIdent, PatWild, Path, Token,
+};
 
 // TODO: use `proc-macro-error` instead of `panic!`.
 // TODO: use `proc-macro-crate`?
 
+#[derive(Debug)]
 struct MessageGroup {
     kind: GroupKind,
     arms: Vec<Arm>,
@@ -136,7 +139,7 @@ fn refine_arm(mut arm: Arm) -> Arm {
                 Some(pat) if is_likely_type(&pat) => {
                     *pat = Pat::Wild(PatWild {
                         attrs: Vec::new(),
-                        underscore_token: Default::default(),
+                        underscore_token: Token![_](pat.span()),
                     });
                 }
                 _ => {}
@@ -146,7 +149,7 @@ fn refine_arm(mut arm: Arm) -> Arm {
         pat if is_likely_type(&pat) => {
             *pat = Pat::Wild(PatWild {
                 attrs: Vec::new(),
-                underscore_token: Default::default(),
+                underscore_token: Token![_](pat.span()),
             });
         }
         _ => {}
@@ -204,6 +207,8 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
     }
 
     let envelope_ident = quote! { _elfo_envelope };
+
+    // println!(">>> HERE {:#?}", groups);
 
     let groups = groups
         .iter()

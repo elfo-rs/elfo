@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - configurer: reload configs on SIGHUP.
 
 ### Fixed
-- `assert_msg!`: fix false positive warnings about `unreachable pattern`.
+- `assert_msg!`: fix false positive `unreachable_patterns` warnings.
+- `msg!`: fix lost `unreachable_patterns` warnings in some cases.
 
 ## [0.1.18] - 2021-06-23
 ### Changed
