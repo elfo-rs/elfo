@@ -244,7 +244,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     debug,
                 };
 
-                // See [https://github.com/rust-lang/rust/issues/47384](rust#47384).
+                // See [rust#47384](https://github.com/rust-lang/rust/issues/47384).
                 #[doc(hidden)]
                 pub fn touch() {}
                 impl #name { #[doc(hidden)] pub fn _elfo_touch() { #mod_name::touch(); } }
