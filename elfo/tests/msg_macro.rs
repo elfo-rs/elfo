@@ -42,6 +42,11 @@ enum Type {
 fn sample() -> Schema {
     ActorGroup::new().exec(|mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
+            msg!(match &envelope {
+                Unit | Tuple | Struct | ReqStruct => true,
+                _ => false,
+            });
+
             msg!(match envelope {
                 // Unit.
                 Unit => ctx.send(Type::Unit(0)).await.unwrap(),

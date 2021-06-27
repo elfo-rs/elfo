@@ -120,8 +120,8 @@ fn is_binding_with_type(ident: &PatIdent) -> bool {
         .map_or(false, |sp| is_likely_type(&*sp.1))
 }
 
-fn refine_arm(mut arm: Arm) -> Arm {
-    match &mut arm.pat {
+fn refine_pat(pat: &mut Pat) {
+    match pat {
         // `e @ Enum`
         // `s @ Struct` (~ `s @ Struct { .. }`)
         Pat::Ident(ident) if is_binding_with_type(&ident) => {
@@ -154,10 +154,9 @@ fn refine_arm(mut arm: Arm) -> Arm {
         }
         _ => {}
     };
-    arm
 }
 
-fn add_groups(groups: &mut Vec<MessageGroup>, arm: Arm) -> Result<(), &'static str> {
+fn add_groups(groups: &mut Vec<MessageGroup>, mut arm: Arm) -> Result<(), &'static str> {
     let mut add = |kind, arm: Arm| {
         // println!("group {:?} {:#?}", kind, arm.pat);
         match groups.iter_mut().find(|common| common.kind == kind) {
@@ -183,7 +182,9 @@ fn add_groups(groups: &mut Vec<MessageGroup>, arm: Arm) -> Result<(), &'static s
             });
 
             if let Pat::Or(new_pat) = &mut new_arm.pat {
-                new_pat.cases.push(pat.clone());
+                let mut old_pat = pat.clone();
+                refine_pat(&mut old_pat);
+                new_pat.cases.push(old_pat);
             }
         }
 
@@ -191,7 +192,9 @@ fn add_groups(groups: &mut Vec<MessageGroup>, arm: Arm) -> Result<(), &'static s
             add(kind, arm);
         }
     } else {
-        add(extract_kind(&arm.pat)?, refine_arm(arm));
+        let kind = extract_kind(&arm.pat)?;
+        refine_pat(&mut arm.pat);
+        add(kind, arm);
     }
 
     Ok(())
