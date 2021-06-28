@@ -106,12 +106,7 @@ impl Formatter<str> for ColoredPayload {
 
             // <message>\t<key>=<value>\t<key>=<value>
             for section in chunk.split('\t') {
-                // TODO: replace with `split_once()`.
-                let mut iter = section.split('=');
-                let key = iter.next();
-                let value = iter.next();
-
-                if let (Some(key), Some(value)) = (key, value) {
+                if let Some((key, value)) = section.split_once('=') {
                     out.push_str("\t\x1b[1m");
                     out.push_str(key);
                     out.push_str("\x1b[22m=");
