@@ -35,8 +35,12 @@ impl PrintLayer {
 
 impl<S: Subscriber> Layer<S> for PrintLayer {
     fn new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
-        let current_span = ctx.current_span();
-        let parent_id = attrs.parent().or_else(|| current_span.id()).cloned();
+        let parent_id = if attrs.is_root() {
+            None
+        } else {
+            let current_span = ctx.current_span();
+            attrs.parent().or_else(|| current_span.id()).cloned()
+        };
         let payload_id = ward!(self.prepare(false, |visitor| attrs.record(visitor)));
         let span = SpanData::new(parent_id, payload_id);
         self.shared.spans.insert(id.clone(), span);

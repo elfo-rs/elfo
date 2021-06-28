@@ -44,11 +44,18 @@ impl Visit for Visitor<'_> {
     }
 
     fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "message" && self.simplify_message {
+        let name = field.name();
+
+        // These fields are handled in the actor.
+        if name == "actor_group" || name == "actor_key" {
+            return;
+        }
+
+        if name == "message" && self.simplify_message {
             self.simplify_message = false;
             self.output.insert_str(0, value);
         } else {
-            let _ = write!(self.output, "\t{}={}", field.name(), value);
+            let _ = write!(self.output, "\t{}={}", name, value);
         }
     }
 

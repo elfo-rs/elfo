@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
 use parking_lot::RwLock;
-use tracing::info;
+use tracing::{error_span, info, Instrument, Span};
 
 use crate as elfo;
 use elfo_macros::msg_raw as msg;
@@ -26,6 +26,7 @@ use crate::{
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
     meta: Arc<ObjectMeta>,
+    span: Span,
     context: Context,
     // TODO: replace with `crossbeam_utils::sync::ShardedLock`?
     objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
@@ -62,6 +63,7 @@ where
         let control = ControlBlock { config: None };
 
         Self {
+            span: error_span!(parent: Span::none(), "", actor_group = group.as_str()),
             meta: Arc::new(ObjectMeta { group, key: None }),
             context: ctx,
             objects: DashMap::default(),
@@ -72,7 +74,7 @@ where
     }
 
     fn in_scope(&self, f: impl FnOnce()) {
-        tls::sync_scope(self.meta.clone(), tls::trace_id(), f);
+        tls::sync_scope(self.meta.clone(), tls::trace_id(), || self.span.in_scope(f));
     }
 
     pub(crate) fn handle(self: &Arc<Self>, envelope: Envelope) -> RouteReport {
@@ -231,9 +233,17 @@ where
         let entry = self.context.book().vacant_entry();
         let addr = entry.addr();
 
+        let key_str = key.to_string();
+        let span = error_span!(
+            parent: Span::none(),
+            "",
+            actor_group = self.meta.group.as_str(),
+            actor_key = key_str.as_str()
+        );
+
         let meta = Arc::new(ObjectMeta {
             group: self.meta.group.clone(),
-            key: Some(key.to_string()),
+            key: Some(key_str),
         });
 
         let control = self.control.read();
@@ -288,7 +298,7 @@ where
 
         entry.insert(Object::new(addr, Actor::new(addr)));
         let initial_trace_id = trace_id::generate();
-        tokio::spawn(tls::scope(meta, initial_trace_id, fut));
+        tokio::spawn(tls::scope(meta, initial_trace_id, fut.instrument(span)));
         self.context.book().get_owned(addr).expect("just created")
     }
 
