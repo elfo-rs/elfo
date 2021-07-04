@@ -29,3 +29,9 @@ fn transparent() {
     );
     assert_eq!(format!("{:?}", TransparentMessagePart(42)), "42");
 }
+
+#[test]
+fn name() {
+    assert_eq!(SimpleMessage::NAME, "SimpleMessage");
+    assert_eq!(SimpleRequest::NAME, "SimpleRequest");
+}

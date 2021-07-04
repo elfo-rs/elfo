@@ -10,6 +10,9 @@ pub type LocalTypeId = u32;
 pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deserialize<'de> {
     #[doc(hidden)]
     const _LTID: LocalTypeId;
+
+    /// Just a message's name.
+    const NAME: &'static str;
 }
 
 pub trait Request: Message {

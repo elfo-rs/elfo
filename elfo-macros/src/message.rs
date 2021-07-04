@@ -211,6 +211,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {
             impl #crate_::Message for #name {
                 const _LTID: #internal::LocalTypeId = #ltid;
+                const NAME: &'static str = stringify!(#name);
             }
 
             #[doc(hidden)]
