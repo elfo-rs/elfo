@@ -29,3 +29,19 @@ fn transparent() {
     );
     assert_eq!(format!("{:?}", TransparentMessagePart(42)), "42");
 }
+
+#[test]
+fn name() {
+    assert_eq!(SimpleMessage::NAME, "SimpleMessage");
+    assert_eq!(SimpleRequest::NAME, "SimpleRequest");
+
+    assert_eq!(elfo::messages::UpdateConfig::NAME, "UpdateConfig");
+}
+
+#[test]
+fn protocol() {
+    assert_eq!(SimpleMessage::PROTOCOL, "elfo");
+    assert_eq!(SimpleRequest::PROTOCOL, "elfo");
+
+    assert_eq!(elfo::messages::UpdateConfig::PROTOCOL, "elfo-core");
+}
