@@ -132,6 +132,8 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let crate_ = args.crate_;
     let internal = quote![#crate_::_priv];
 
+    let protocol = std::env::var("CARGO_PKG_NAME").expect("building without cargo?");
+
     let impl_request = if let Some(ret) = &args.ret {
         assert!(!args.part, "`part` and `ret` attributes are incompatible");
 
@@ -211,6 +213,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {
             impl #crate_::Message for #name {
                 const _LTID: #internal::LocalTypeId = #ltid;
+                const PROTOCOL: &'static str = #protocol;
                 const NAME: &'static str = stringify!(#name);
             }
 
