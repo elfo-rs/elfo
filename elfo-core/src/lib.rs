@@ -36,6 +36,7 @@ mod addr;
 mod address_book;
 mod context;
 mod demux;
+mod dumping;
 mod envelope;
 mod exec;
 mod group;
@@ -50,6 +51,10 @@ mod supervisor;
 
 #[doc(hidden)]
 pub mod _priv {
+    pub mod dumping {
+        pub use crate::dumping::*;
+    }
+
     pub use crate::{
         envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
         message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},

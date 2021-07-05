@@ -9,6 +9,7 @@ use crate::{
     actor::Actor,
     context::Context,
     demux::Demux,
+    dumping::Filter as DumperFilter,
     errors::{RequestError, StartError},
     message,
     messages::{Ping, UpdateConfig},
@@ -88,13 +89,15 @@ pub async fn do_start<F: Future>(
     let addr = entry.addr();
     entry.insert(Object::new(addr, Actor::new(addr)));
 
+    let dumper = topology.dumper.for_group(DumperFilter::All);
+
     let meta = ObjectMeta {
         group: "starter".into(),
-        key: None,
+        key: Some("_".into()), // Just like `Singleton`.
     };
     let initial_trace_id = trace_id::generate();
     tls::scope(Arc::new(meta), initial_trace_id, async move {
-        let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
+        let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
         send_configs_to_entrypoints(&ctx, &topology).await?;
         start_entrypoints(&ctx, &topology).await?;
         Ok(f(ctx).await)

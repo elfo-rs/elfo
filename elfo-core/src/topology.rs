@@ -6,7 +6,8 @@ use crate::{
     addr::Addr,
     address_book::{AddressBook, VacantEntry},
     context::Context,
-    demux::{Demux, Filter},
+    demux::{Demux, Filter as DemuxFilter},
+    dumping::{Dumper, Filter as DumperFilter},
     envelope::Envelope,
     group::Schema,
 };
@@ -14,6 +15,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Topology {
     pub(crate) book: AddressBook,
+    pub(crate) dumper: Dumper,
     inner: Arc<RwLock<Inner>>,
 }
 
@@ -42,6 +44,7 @@ impl Topology {
     pub fn empty() -> Self {
         Self {
             book: AddressBook::new(),
+            dumper: Dumper::default(),
             inner: Arc::new(RwLock::new(Inner::default())),
         }
     }
@@ -62,6 +65,7 @@ impl Topology {
             topology: self,
             entry,
             demux: RefCell::new(Demux::default()),
+            is_dumping_enabled: true,
         }
     }
 
@@ -92,6 +96,7 @@ pub struct Local<'t> {
     topology: &'t Topology,
     entry: VacantEntry<'t>,
     demux: RefCell<Demux>,
+    is_dumping_enabled: bool,
 }
 
 impl<'t> Local<'t> {
@@ -106,6 +111,11 @@ impl<'t> Local<'t> {
         self
     }
 
+    pub fn dumping(mut self, is_enabled: bool) -> Self {
+        self.is_dumping_enabled = is_enabled;
+        self
+    }
+
     pub fn route_to(
         &self,
         dest: &impl GetAddrs,
@@ -115,7 +125,7 @@ impl<'t> Local<'t> {
         for addr in dest.addrs() {
             self.demux
                 .borrow_mut()
-                .append(addr, Filter::Dynamic(filter.clone()));
+                .append(addr, DemuxFilter::Dynamic(filter.clone()));
         }
     }
 
@@ -127,7 +137,20 @@ impl<'t> Local<'t> {
     pub fn mount(self, schema: Schema) {
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
-        let ctx = Context::new(book, self.demux.into_inner()).with_addr(addr);
+
+        let dumper_filter = if self.is_dumping_enabled
+            && self
+                .topology
+                .actor_groups()
+                .any(|group| group.name == "system.dumpers")
+        {
+            DumperFilter::All
+        } else {
+            DumperFilter::Nothing
+        };
+
+        let dumper = self.topology.dumper.for_group(dumper_filter);
+        let ctx = Context::new(book, dumper, self.demux.into_inner()).with_addr(addr);
         let object = (schema.run)(ctx, self.name);
         self.entry.insert(object);
     }

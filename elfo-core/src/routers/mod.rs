@@ -64,6 +64,7 @@ pub struct Singleton;
 impl fmt::Display for Singleton {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // If this line is changed, change also a key in `start.rs` to be consistent.
         f.write_str("_")
     }
 }

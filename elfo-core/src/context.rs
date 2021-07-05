@@ -6,7 +6,7 @@ use futures::{
 };
 use tracing::{info, trace};
 
-use crate as elfo;
+use crate::{self as elfo};
 use elfo_macros::msg_raw as msg;
 
 use crate::{
@@ -15,6 +15,7 @@ use crate::{
     address_book::AddressBook,
     config::AnyConfig,
     demux::Demux,
+    dumping::Dumper,
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     message::{Message, Request},
@@ -31,6 +32,7 @@ mod source;
 
 pub struct Context<C = (), K = Singleton, S = ()> {
     book: AddressBook,
+    dumper: Dumper,
     addr: Addr,
     group: Addr,
     demux: Demux,
@@ -72,6 +74,7 @@ impl<C, K, S> Context<C, K, S> {
     pub fn with<S1>(self, source: S1) -> Context<C, K, Combined<S, S1>> {
         Context {
             book: self.book,
+            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -300,6 +303,7 @@ impl<C, K, S> Context<C, K, S> {
     pub fn pruned(&self) -> Context {
         Context {
             book: self.book.clone(),
+            dumper: self.dumper.clone(),
             addr: self.addr,
             group: self.group,
             demux: self.demux.clone(),
@@ -316,6 +320,7 @@ impl<C, K, S> Context<C, K, S> {
     pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K, S> {
         Context {
             book: self.book,
+            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -338,6 +343,7 @@ impl<C, K, S> Context<C, K, S> {
     pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1, S> {
         Context {
             book: self.book,
+            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -349,9 +355,10 @@ impl<C, K, S> Context<C, K, S> {
 }
 
 impl Context {
-    pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
+    pub(crate) fn new(book: AddressBook, dumper: Dumper, demux: Demux) -> Self {
         Self {
             book,
+            dumper,
             addr: Addr::NULL,
             group: Addr::NULL,
             demux,
@@ -366,6 +373,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
     fn clone(&self) -> Self {
         Self {
             book: self.book.clone(),
+            dumper: self.dumper.clone(),
             addr: self.addr,
             group: self.group,
             demux: self.demux.clone(),

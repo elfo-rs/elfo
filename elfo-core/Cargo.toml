@@ -8,6 +8,7 @@ license = "MIT"
 
 [features]
 test-util = ["tokio/test-util"]
+dumping = []
 
 [dependencies]
 elfo-macros = { version = "0.1", path = "../elfo-macros" }
@@ -32,6 +33,7 @@ smallvec = { version = "1.6.1", features = ["union"] }
 slotmap = "1.0.2"
 serde-value = "0.7.0"
 arc-swap = "1.2.0"
+erased-serde = "0.3.16"
 
 [dev-dependencies]
 anyhow = "1.0.40"
