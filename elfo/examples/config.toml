@@ -5,6 +5,9 @@
 #format.with_location = true
 #format.with_module = true
 
+[system.dumpers]
+path = "example.dump"
+
 [producers]
 group_count = 3
 item_count = 10

@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    mem,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -41,8 +42,8 @@ struct PerSystem {
 
 #[derive(Default)]
 struct PerGroup {
-    sequence_no_gen: SequenceNoGenerator,
-    filter: Filter,
+    sequence_no_gen: CachePadded<SequenceNoGenerator>,
+    filter: CachePadded<Filter>,
 }
 
 pub(crate) enum Filter {
@@ -60,14 +61,14 @@ impl Dumper {
     pub(crate) fn for_group(&self, filter: Filter) -> Self {
         let mut specific = self.clone();
         specific.per_group = Arc::new(PerGroup {
-            sequence_no_gen: SequenceNoGenerator::default(),
-            filter,
+            sequence_no_gen: CachePadded(SequenceNoGenerator::default()),
+            filter: CachePadded(filter),
         });
         specific
     }
 
     pub(crate) fn is_enabled(&self) -> bool {
-        !matches!(self.per_group.filter, Filter::Nothing)
+        !matches!(self.per_group.filter.0, Filter::Nothing)
     }
 
     pub(crate) fn dump(
@@ -95,5 +96,14 @@ impl Dumper {
         let shard_no = SHARD_NO.with(|shard_no| *shard_no);
         let mut queue = self.per_system.shards[shard_no].lock();
         queue.push_back(item);
+    }
+
+    pub(crate) fn replace(
+        &self,
+        shard_no: usize,
+        replacement: VecDeque<DumpItem>,
+    ) -> VecDeque<DumpItem> {
+        let mut queue = self.per_system.shards[shard_no % SHARD_COUNT].lock();
+        mem::replace(&mut *queue, replacement)
     }
 }

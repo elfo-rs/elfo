@@ -1,0 +1,18 @@
+[package]
+name = "elfo-dumper"
+version = "0.1.0"
+description = "Dumps messages on disk"
+authors = ["Paul Loyd <pavelko95@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+elfo-macros = { version = "0.1", path = "../elfo-macros" }
+elfo-core = { version = "0.1", path = "../elfo-core" }
+
+tokio = "1"
+serde = { version = "1.0.120", features = ["derive", "rc"] }
+serde-value = "0.7.0"
+futures = "0.3.12"
+tracing = "0.1.25"
+fxhash = "0.2.1"
