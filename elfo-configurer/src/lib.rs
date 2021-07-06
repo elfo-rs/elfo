@@ -50,8 +50,9 @@ struct ConfigWithMeta {
 }
 
 /// Reload configs and send changed ones.
-#[non_exhaustive] // i'm going to add `force` mode.
+#[non_exhaustive] // I'm going to add `force` mode.
 #[message(elfo = elfo_core)]
+#[derive(Default)]
 pub struct ReloadConfigs {}
 
 struct Configurer {
