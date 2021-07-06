@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - signal: add `signal::Signal` in order to work with signals.
 - configurer: reload configs on SIGHUP.
 - logger: get spans back in order to enable filtering by `RUST_LOG`.
+- logger: reopen a log file on SIGHUP and when the config is changed.
 - `Message::NAME` and `Message::PROTOCOL`.
 
 ### Fixed

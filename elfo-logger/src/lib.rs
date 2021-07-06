@@ -18,6 +18,8 @@ use elfo_core::{trace_id::TraceId, Schema, _priv::ObjectMeta};
 
 use crate::{actor::Logger, layer::PrintLayer};
 
+pub use crate::actor::ReopenLogFile;
+
 mod actor;
 mod config;
 mod formatters;

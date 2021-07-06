@@ -34,7 +34,6 @@ enum SignalInner {
     Empty,
 }
 
-///
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SignalKind {
     /// Completes when a “ctrl-c” notification is sent to the process.
