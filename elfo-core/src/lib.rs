@@ -53,6 +53,11 @@ mod supervisor;
 pub mod _priv {
     pub mod dumping {
         pub use crate::dumping::*;
+
+        #[inline]
+        pub fn of<C, K, S>(context: &crate::Context<C, K, S>) -> &Dumper {
+            context.dumper()
+        }
     }
 
     pub use crate::{

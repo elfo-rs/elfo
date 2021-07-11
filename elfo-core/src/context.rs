@@ -317,6 +317,10 @@ impl<C, K, S> Context<C, K, S> {
         &self.book
     }
 
+    pub(crate) fn dumper(&self) -> &Dumper {
+        &self.dumper
+    }
+
     pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K, S> {
         Context {
             book: self.book,

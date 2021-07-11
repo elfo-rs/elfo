@@ -1,11 +1,29 @@
 use std::{
-    num::NonZeroU64,
+    convert::TryFrom,
+    num::{NonZeroU64, TryFromIntError},
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use crate::time::Timestamp;
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SequenceNo(NonZeroU64);
+
+impl TryFrom<u64> for SequenceNo {
+    type Error = TryFromIntError;
+
+    #[inline]
+    fn try_from(raw: u64) -> Result<Self, Self::Error> {
+        NonZeroU64::try_from(raw).map(Self)
+    }
+}
+
+impl From<SequenceNo> for u64 {
+    #[inline]
+    fn from(sequence_no: SequenceNo) -> Self {
+        sequence_no.0.get()
+    }
+}
 
 pub(crate) struct SequenceNoGenerator {
     next_sequence_no: AtomicU64,

@@ -24,7 +24,7 @@ use elfo::{
 };
 
 #[message(elfo = elfo_core)]
-struct ReopenDumpFile;
+pub struct ReopenDumpFile;
 
 #[message(elfo = elfo_core)]
 struct DumpingTick;

@@ -25,12 +25,14 @@ assert_impl_all!(DumpItem: Send);
 assert_eq_size!(DumpItem, [u8; 256]);
 
 // Reexported in `elfo::_priv`.
+#[derive(Debug, PartialEq)]
 pub enum Direction {
     In,
     Out,
 }
 
 // Reexported in `elfo::_priv`.
+#[derive(Debug, PartialEq)]
 pub enum MessageKind {
     Regular,
     Request(u64),
