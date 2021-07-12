@@ -37,6 +37,11 @@ impl<M> Envelope<M> {
     }
 
     #[inline]
+    pub(crate) fn message_kind(&self) -> &MessageKind {
+        &self.kind
+    }
+
+    #[inline]
     pub fn sender(&self) -> Addr {
         match &self.kind {
             MessageKind::Regular { sender } => *sender,

@@ -15,7 +15,7 @@ use crate::{
     address_book::AddressBook,
     config::AnyConfig,
     demux::Demux,
-    dumping::Dumper,
+    dumping::{self, Direction, Dumper},
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     message::{Message, Request},
@@ -102,6 +102,10 @@ impl<C, K, S> Context<C, K, S> {
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
         trace!("> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper.dump_message(&message, &kind, Direction::Out);
+        }
+
         let envelope = Envelope::new(message, kind).upcast();
         let addrs = self.demux.filter(&envelope);
 
@@ -162,6 +166,10 @@ impl<C, K, S> Context<C, K, S> {
         kind: MessageKind,
     ) -> Result<(), SendError<M>> {
         trace!(to = %recipient, "> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper.dump_message(&message, &kind, Direction::Out);
+        }
+
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(SendError(message)));
         let envelope = Envelope::new(message, kind);
@@ -175,10 +183,16 @@ impl<C, K, S> Context<C, K, S> {
         recipient: Addr,
         message: M,
     ) -> Result<(), TrySendError<M>> {
+        let kind = MessageKind::Regular { sender: self.addr };
+
+        trace!(to = %recipient, "> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper.dump_message(&message, &kind, Direction::Out);
+        }
+
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(TrySendError::Closed(message)));
-        trace!(to = %recipient, "> {:?}", message);
-        let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
+        let envelope = Envelope::new(message, kind);
 
         object.try_send(envelope.upcast()).map_err(|err| match err {
             TrySendError::Full(envelope) => {
@@ -195,9 +209,15 @@ impl<C, K, S> Context<C, K, S> {
             return;
         }
 
-        let message = R::Wrapper::from(message);
         let sender = token.sender;
+
         trace!(to = %sender, "> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper
+                .dump_response::<R>(&message, token.request_id, Direction::Out);
+        }
+
+        let message = R::Wrapper::from(message);
         let envelope = Envelope::new(message, MessageKind::Regular { sender }).upcast();
         let object = ward!(self.book.get(token.sender));
         let actor = ward!(object.as_actor());
@@ -286,7 +306,20 @@ impl<C, K, S> Context<C, K, S> {
             envelope => envelope,
         });
 
-        trace!("< {:?}", envelope.message());
+        let message = envelope.message();
+        trace!("< {:?}", envelope);
+
+        if self.dumper.is_enabled() {
+            self.dumper.dump(
+                dumping::Direction::In,
+                "",
+                message.name(),
+                message.protocol(),
+                dumping::MessageKind::from_message_kind(envelope.message_kind()),
+                message.erase(),
+            )
+        }
+
         envelope
     }
 
@@ -465,8 +498,14 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
         if let Some(Some(envelope)) = data.pop() {
             let message = envelope.do_downcast::<R::Wrapper>().into_message().into();
             trace!("< {:?}", message);
+            if self.context.dumper.is_enabled() {
+                self.context
+                    .dumper
+                    .dump_response::<R>(&message, request_id, Direction::In);
+            }
             Ok(message)
         } else {
+            // TODO: dump.
             Err(RequestError::Ignored)
         }
     }
@@ -494,7 +533,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             return vec![Err(RequestError::Closed(err.0))];
         }
 
-        actor
+        let responses = actor
             .request_table()
             .wait(request_id)
             .await
@@ -508,7 +547,20 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
                     trace!("< {:?}", message);
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        if self.context.dumper.is_enabled() {
+            for response in &responses {
+                // TODO: dump errors.
+                if let Ok(res) = response {
+                    self.context
+                        .dumper
+                        .dump_response::<R>(&res, request_id, Direction::In);
+                }
+            }
+        }
+
+        responses
     }
 }
 

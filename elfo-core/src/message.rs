@@ -5,6 +5,8 @@ use linkme::distributed_slice;
 use serde::{Deserialize, Serialize};
 use smallbox::{smallbox, SmallBox};
 
+use crate::dumping;
+
 pub type LocalTypeId = u32;
 
 pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deserialize<'de> {
@@ -19,7 +21,7 @@ pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deseri
 }
 
 pub trait Request: Message {
-    type Response: fmt::Debug;
+    type Response: fmt::Debug + Clone + Send + Serialize;
 
     #[doc(hidden)]
     type Wrapper: Message + Into<Self::Response> + From<Self::Response>;
@@ -71,6 +73,12 @@ impl AnyMessage {
             .expect("cannot downcast")
             .into_inner())
     }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn erase(&self) -> dumping::ErasedMessage {
+        with_vtable(self.ltid, |vtable| (vtable.erase)(self))
+    }
 }
 
 impl Clone for AnyMessage {
@@ -91,10 +99,11 @@ impl fmt::Debug for AnyMessage {
 #[derive(Clone)]
 pub struct MessageVTable {
     pub ltid: LocalTypeId,
-    pub protocol: &'static str,
     pub name: &'static str,
+    pub protocol: &'static str,
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
+    pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
 }
 
 #[distributed_slice]

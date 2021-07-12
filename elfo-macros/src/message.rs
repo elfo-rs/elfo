@@ -224,7 +224,10 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
                 use std::fmt;
 
-                use #internal::{MESSAGE_LIST, MessageVTable, smallbox::{smallbox}, AnyMessage, linkme};
+                use #internal::{
+                    MESSAGE_LIST, MessageVTable, AnyMessage, dumping,
+                    smallbox::smallbox, linkme
+                };
 
                 #request_wrapper
 
@@ -240,14 +243,19 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     fmt::Debug::fmt(cast_ref(message), f)
                 }
 
+                fn erase(message: &AnyMessage) -> dumping::ErasedMessage {
+                    smallbox!(Clone::clone(cast_ref(message)))
+                }
+
                 #[linkme::distributed_slice(MESSAGE_LIST)]
                 #[linkme(crate = #internal::linkme)]
                 static VTABLE: MessageVTable = MessageVTable {
                     ltid: #ltid,
-                    protocol: #protocol,
                     name: stringify!(#name),
+                    protocol: #protocol,
                     clone,
                     debug,
+                    erase,
                 };
 
                 // See [rust#47384](https://github.com/rust-lang/rust/issues/47384).

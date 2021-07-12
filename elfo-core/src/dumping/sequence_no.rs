@@ -4,9 +4,11 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use serde::Serialize;
+
 use crate::time::Timestamp;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct SequenceNo(NonZeroU64);
 
 impl TryFrom<u64> for SequenceNo {

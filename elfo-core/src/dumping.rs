@@ -8,7 +8,6 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use serde::Serialize;
 use smallbox::smallbox;
 
 use elfo_utils::CachePadded;
@@ -17,7 +16,13 @@ use elfo_utils::CachePadded;
 pub use self::{dump_item::*, sequence_no::SequenceNo};
 
 use self::sequence_no::SequenceNoGenerator;
-use crate::{time::Timestamp, tls};
+use crate::{
+    envelope,
+    message::{Message, Request},
+    request_table::RequestId,
+    time::Timestamp,
+    tls,
+};
 
 mod dump_item;
 mod sequence_no;
@@ -72,6 +77,42 @@ impl Dumper {
         !matches!(self.per_group.filter.0, Filter::Nothing)
     }
 
+    #[inline(always)]
+    pub(crate) fn dump_message<M: Message>(
+        &self,
+        message: &M,
+        kind: &envelope::MessageKind,
+        direction: Direction,
+    ) {
+        self.dump(
+            direction,
+            "",
+            M::NAME,
+            M::PROTOCOL,
+            MessageKind::from_message_kind(&kind),
+            smallbox!(message.clone()),
+        );
+    }
+
+    #[inline(always)]
+    pub(crate) fn dump_response<R: Request>(
+        &self,
+        message: &R::Response,
+        request_id: RequestId,
+        direction: Direction,
+    ) {
+        use slotmap::Key;
+
+        self.dump(
+            direction,
+            "",
+            R::NAME,
+            R::PROTOCOL,
+            MessageKind::Response(request_id.data().as_ffi()),
+            smallbox!(message.clone()),
+        );
+    }
+
     pub fn dump(
         &self,
         direction: Direction,
@@ -79,7 +120,7 @@ impl Dumper {
         message_name: &'static str,
         message_protocol: &'static str,
         message_kind: MessageKind,
-        message: impl Serialize + Send + 'static,
+        message: ErasedMessage,
     ) {
         let item = DumpItem {
             meta: tls::meta(),
@@ -91,7 +132,7 @@ impl Dumper {
             message_name,
             message_protocol,
             message_kind,
-            message: smallbox!(message),
+            message,
         };
 
         let shard_no = SHARD_NO.with(|shard_no| *shard_no);
@@ -154,6 +195,8 @@ mod tests {
 
     use std::convert::TryFrom;
 
+    use smallbox::smallbox;
+
     use crate::{object::ObjectMeta, time, trace_id::TraceId};
 
     fn dump_msg(dumper: &Dumper, name: &'static str) {
@@ -163,7 +206,7 @@ mod tests {
             name,
             "proto",
             MessageKind::Regular,
-            42,
+            smallbox!(42),
         );
     }
 
