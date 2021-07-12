@@ -15,7 +15,7 @@
 * Appropriate for both low latency and high throughput tasks
 * Tracing: all messages have `trace_id` that spread across the system
 * Efficient inspecting *TODO*
-* Efficient dumping *TODO*
+* Efficient dumping
 * Seamless distribution across nodes *TODO*
 * Hot Actor Replacement *TODO*
 * Utils for simple testing
