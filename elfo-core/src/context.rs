@@ -92,7 +92,6 @@ impl<C, K, S> Context<C, K, S> {
 
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::Regular { sender: self.addr };
-        trace!("> {:?}", message);
         self.do_send(message, kind).await
     }
 
@@ -102,6 +101,7 @@ impl<C, K, S> Context<C, K, S> {
     }
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
+        trace!("> {:?}", message);
         let envelope = Envelope::new(message, kind).upcast();
         let addrs = self.demux.filter(&envelope);
 
@@ -151,10 +151,20 @@ impl<C, K, S> Context<C, K, S> {
         recipient: Addr,
         message: M,
     ) -> Result<(), SendError<M>> {
+        let kind = MessageKind::Regular { sender: self.addr };
+        self.do_send_to(recipient, message, kind).await
+    }
+
+    async fn do_send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+        kind: MessageKind,
+    ) -> Result<(), SendError<M>> {
+        trace!(to = %recipient, "> {:?}", message);
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(SendError(message)));
-        trace!(to = %recipient, "> {:?}", message);
-        let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
+        let envelope = Envelope::new(message, kind);
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
         result.map_err(|err| SendError(err.0.do_downcast().into_message()))
@@ -451,25 +461,22 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
             .request_table()
             .new_request(self.context.book.clone(), false);
         let request_id = token.request_id;
-        let message_kind = MessageKind::RequestAny(token);
+        let kind = MessageKind::RequestAny(token);
 
-        if let Some(recipient) = self.from {
-            trace!(message = ?self.request, to = %recipient, ">");
-            let rec_entry = self.context.book.get_owned(recipient);
-            let rec_object = ward!(rec_entry, return Err(RequestError::Closed(self.request)));
-            let envelope = Envelope::new(self.request, message_kind);
-            let result = rec_object.send(self.context, envelope.upcast()).await;
-            result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
+        let res = if let Some(recipient) = self.from {
+            self.context.do_send_to(recipient, self.request, kind).await
         } else {
-            trace!(message = ?self.request, ">");
-            let fut = self.context.do_send(self.request, message_kind).await;
-            fut.map_err(|err| RequestError::Closed(err.0))?;
+            self.context.do_send(self.request, kind).await
+        };
+
+        if let Err(err) = res {
+            return Err(RequestError::Closed(err.0));
         }
 
         let mut data = actor.request_table().wait(request_id).await;
         if let Some(Some(envelope)) = data.pop() {
             let message = envelope.do_downcast::<R::Wrapper>().into_message().into();
-            trace!(?message, "<");
+            trace!("< {:?}", message);
             Ok(message)
         } else {
             Err(RequestError::Ignored)
@@ -487,26 +494,16 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             .request_table()
             .new_request(self.context.book.clone(), true);
         let request_id = token.request_id;
-        let message_kind = MessageKind::RequestAll(token);
+        let kind = MessageKind::RequestAll(token);
 
-        if let Some(recipient) = self.from {
-            trace!(message = ?self.request, to = %recipient, ">");
-            let rec_entry = self.context.book.get_owned(recipient);
-            let rec_object = ward!(
-                rec_entry,
-                return vec![Err(RequestError::Closed(self.request))]
-            );
-            let envelope = Envelope::new(self.request, message_kind);
-            if let Err(err) = rec_object.send(self.context, envelope.upcast()).await {
-                let msg = err.0.do_downcast().into_message();
-                return vec![Err(RequestError::Closed(msg))];
-            }
+        let res = if let Some(recipient) = self.from {
+            self.context.do_send_to(recipient, self.request, kind).await
         } else {
-            trace!(message = ?self.request, ">");
+            self.context.do_send(self.request, kind).await
+        };
 
-            if let Err(err) = self.context.do_send(self.request, message_kind).await {
-                return vec![Err(RequestError::Closed(err.0))];
-            }
+        if let Err(err) = res {
+            return vec![Err(RequestError::Closed(err.0))];
         }
 
         actor
@@ -520,7 +517,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             })
             .inspect(|res| {
                 if let Ok(message) = res {
-                    trace!(?message, "<");
+                    trace!("< {:?}", message);
                 }
             })
             .collect()
@@ -530,19 +527,16 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
 impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Forgotten> {
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         let token = ResponseToken::forgotten(self.context.book.clone());
-        let message_kind = MessageKind::RequestAny(token);
+        let kind = MessageKind::RequestAny(token);
 
-        if let Some(recipient) = self.from {
-            trace!(message = ?self.request, to = %recipient, ">");
-            let rec_entry = self.context.book.get_owned(recipient);
-            let rec_object = ward!(rec_entry, return Err(RequestError::Closed(self.request)));
-            let envelope = Envelope::new(self.request, message_kind);
-            let result = rec_object.send(self.context, envelope.upcast()).await;
-            result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
+        let res = if let Some(recipient) = self.from {
+            self.context.do_send_to(recipient, self.request, kind).await
         } else {
-            trace!(message = ?self.request, ">");
-            let fut = self.context.do_send(self.request, message_kind).await;
-            fut.map_err(|err| RequestError::Closed(err.0))?;
+            self.context.do_send(self.request, kind).await
+        };
+
+        if let Err(err) = res {
+            return Err(RequestError::Closed(err.0));
         }
 
         Err(RequestError::Ignored)
