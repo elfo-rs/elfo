@@ -206,7 +206,6 @@ impl<C, K, S> Context<C, K, S> {
             .respond(token.into_untyped(), envelope);
     }
 
-    #[inline]
     pub async fn recv(&mut self) -> Option<Envelope>
     where
         C: 'static,
@@ -242,27 +241,9 @@ impl<C, K, S> Context<C, K, S> {
             },
         };
 
-        tls::set_trace_id(envelope.trace_id());
-
-        let envelope = msg!(match envelope {
-            (messages::UpdateConfig { config }, token) => {
-                self.config = config.get().cloned().expect("must be decoded");
-                info!("config updated");
-                let message = messages::ConfigUpdated {};
-                let kind = MessageKind::Regular { sender: self.addr };
-                let envelope = Envelope::new(message, kind).upcast();
-                self.respond(token, Ok(()));
-                envelope
-            }
-            envelope => envelope,
-        });
-
-        trace!("< {:?}", envelope.message());
-
-        Some(envelope)
+        Some(self.post_recv(envelope))
     }
 
-    #[inline]
     pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
     where
         C: 'static,
@@ -279,10 +260,18 @@ impl<C, K, S> Context<C, K, S> {
                 return Err(err);
             }
         };
-
-        tls::set_trace_id(envelope.trace_id());
+        drop(object);
 
         // TODO: poll the sources.
+
+        Ok(self.post_recv(envelope))
+    }
+
+    fn post_recv(&mut self, envelope: Envelope) -> Envelope
+    where
+        C: 'static,
+    {
+        tls::set_trace_id(envelope.trace_id());
 
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
@@ -298,8 +287,7 @@ impl<C, K, S> Context<C, K, S> {
         });
 
         trace!("< {:?}", envelope.message());
-
-        Ok(envelope)
+        envelope
     }
 
     /// XXX: mb `BoundEnvelope<C>`?
