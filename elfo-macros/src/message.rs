@@ -244,6 +244,8 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 #[linkme(crate = #internal::linkme)]
                 static VTABLE: MessageVTable = MessageVTable {
                     ltid: #ltid,
+                    protocol: #protocol,
+                    name: stringify!(#name),
                     clone,
                     debug,
                 };

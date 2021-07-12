@@ -31,6 +31,7 @@ pub struct AnyMessage {
 }
 
 impl AnyMessage {
+    #[inline]
     pub fn new<M: Message>(message: M) -> Self {
         AnyMessage {
             ltid: M::_LTID,
@@ -38,14 +39,27 @@ impl AnyMessage {
         }
     }
 
+    #[inline]
+    pub fn name(&self) -> &'static str {
+        with_vtable(self.ltid, |vtable| vtable.name)
+    }
+
+    #[inline]
+    pub fn protocol(&self) -> &'static str {
+        with_vtable(self.ltid, |vtable| vtable.protocol)
+    }
+
+    #[inline]
     pub fn is<T: 'static>(&self) -> bool {
         self.data.is::<T>()
     }
 
+    #[inline]
     pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
         self.data.downcast_ref()
     }
 
+    #[inline]
     pub fn downcast<M: Message>(self) -> Result<M, AnyMessage> {
         if M::_LTID != self.ltid {
             return Err(self);
@@ -77,6 +91,8 @@ impl fmt::Debug for AnyMessage {
 #[derive(Clone)]
 pub struct MessageVTable {
     pub ltid: LocalTypeId,
+    pub protocol: &'static str,
+    pub name: &'static str,
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
 }
