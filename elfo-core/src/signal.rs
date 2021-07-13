@@ -5,8 +5,9 @@ use std::{
 };
 
 use parking_lot::Mutex;
+use tokio::signal;
 #[cfg(unix)]
-use tokio::signal::{self, unix};
+use tokio::signal::unix;
 use tokio_util::sync::ReusableBoxFuture;
 
 use crate::{
@@ -132,6 +133,7 @@ where
 
                 assert!(inner.try_set(signal::ctrl_c()).is_ok());
             }
+            #[cfg(unix)]
             SignalInner::Unix(inner) => {
                 if !matches!(inner.poll_recv(cx), Poll::Ready(Some(()))) {
                     return Poll::Pending;
