@@ -49,11 +49,22 @@ struct ConfigWithMeta {
     hash: u64,
 }
 
-/// Reload configs and send changed ones.
-#[non_exhaustive] // I'm going to add `force` mode.
+/// The command to reload configs and send changed ones.
+/// By default, up-to-date configs isn't resent across the system.
+/// Use `ReloadConfigs::with_force(true)` to change this behavior.
+#[non_exhaustive]
 #[message(elfo = elfo_core)]
 #[derive(Default)]
-pub struct ReloadConfigs {}
+pub struct ReloadConfigs {
+    force: bool,
+}
+
+impl ReloadConfigs {
+    /// If enabled, all configs will be updated, including up-to-date ones.
+    pub fn with_force(self, force: bool) -> Self {
+        ReloadConfigs { force }
+    }
+}
 
 struct Configurer {
     ctx: Context,
@@ -74,22 +85,22 @@ impl Configurer {
     }
 
     async fn main(mut self) {
-        let signal = Signal::new(SignalKind::Hangup, || ReloadConfigs {});
+        let signal = Signal::new(SignalKind::Hangup, ReloadConfigs::default);
         let mut ctx = self.ctx.clone().with(&signal);
-        let can_start = self.load_and_update_configs().await;
+        let can_start = self.load_and_update_configs(true).await;
 
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 (Ping, token) if can_start => ctx.respond(token, ()),
                 (Ping, token) => drop(token),
-                ReloadConfigs => {
-                    self.load_and_update_configs().await;
+                ReloadConfigs { force } => {
+                    self.load_and_update_configs(force).await;
                 }
             })
         }
     }
 
-    async fn load_and_update_configs(&mut self) -> bool {
+    async fn load_and_update_configs(&mut self, force: bool) -> bool {
         let config = match &self.source {
             ConfigSource::File(path) => load_raw_config(path),
             ConfigSource::Fixture(value) => value.clone(),
@@ -103,20 +114,31 @@ impl Configurer {
             }
         };
 
-        let system_updated = self.update_configs(&config, TopologyFilter::System).await;
-        let user_udpated = self.update_configs(&config, TopologyFilter::User).await;
+        let system_updated = self
+            .update_configs(&config, TopologyFilter::System, force)
+            .await;
+        let user_udpated = self
+            .update_configs(&config, TopologyFilter::User, force)
+            .await;
         system_updated && user_udpated
     }
 
-    async fn update_configs(&mut self, config: &Value, filter: TopologyFilter) -> bool {
+    async fn update_configs(
+        &mut self,
+        config: &Value,
+        filter: TopologyFilter,
+        force: bool,
+    ) -> bool {
         let mut config_list = match_configs(&self.topology, config.clone(), filter);
 
-        // Filter up-to-date configs.
-        config_list.retain(|c| {
-            self.versions
-                .get(&c.group_name)
-                .map_or(true, |v| c.hash != *v)
-        });
+        // Filter up-to-date configs if needed.
+        if !force {
+            config_list.retain(|c| {
+                self.versions
+                    .get(&c.group_name)
+                    .map_or(true, |v| c.hash != *v)
+            });
+        }
 
         // Validation.
         let status = ActorStatus::NORMAL.with_details("config validation");
