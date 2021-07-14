@@ -64,7 +64,8 @@ impl Serialize for DumpItem {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let field_count = 11
             + self.meta.key.is_some() as usize
-            + !matches!(self.message_kind, MessageKind::Regular) as usize;
+            + !matches!(self.message_kind, MessageKind::Regular) as usize
+            + !self.class.is_empty() as usize;
 
         let mut s = serializer.serialize_struct("Dump", field_count)?;
         s.serialize_field("g", &self.meta.group)?;
@@ -78,7 +79,11 @@ impl Serialize for DumpItem {
         s.serialize_field("t", &self.trace_id)?;
         s.serialize_field("ts", &self.timestamp)?;
         s.serialize_field("d", &self.direction)?;
-        s.serialize_field("cl", &self.class)?;
+
+        if !self.class.is_empty() {
+            s.serialize_field("cl", &self.class)?;
+        }
+
         s.serialize_field("mn", &self.message_name)?;
         s.serialize_field("mp", &self.message_protocol)?;
 
