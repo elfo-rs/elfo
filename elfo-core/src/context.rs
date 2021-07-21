@@ -550,6 +550,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             .collect::<Vec<_>>();
 
         if self.context.dumper.is_enabled() {
+            #[allow(clippy::manual_flatten)]
             for response in &responses {
                 // TODO: dump errors.
                 if let Ok(res) = response {
