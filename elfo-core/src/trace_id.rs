@@ -2,12 +2,14 @@ use std::{
     cell::Cell,
     convert::TryFrom,
     num::{NonZeroU64, TryFromIntError},
-    sync::atomic::{AtomicU16, AtomicU64, Ordering},
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
 use derive_more::{Display, From, Into};
 use serde::{Deserialize, Serialize};
+
+use crate::node;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[derive(Serialize, Deserialize, Into, From, Display)]
@@ -31,16 +33,9 @@ impl From<TraceId> for u64 {
 }
 
 static NEXT_CHUNK_NO: AtomicU64 = AtomicU64::new(0);
-static NODE_NO: AtomicU16 = AtomicU16::new(65535);
 
 thread_local! {
     static PREV_TRACE_ID: Cell<TraceId> = Cell::new(TraceId::try_from(0x3ff).unwrap());
-}
-
-/// Sets the generator to generate trace ids with the provided `node_no`.
-/// The value `65535` is used if isn't called.
-pub fn set_node_no(node_no: u16) {
-    NODE_NO.store(node_no, Ordering::Relaxed)
 }
 
 /// Generates a new trace id according to the next layout:
@@ -73,7 +68,7 @@ fn do_generate(prev: TraceId) -> TraceId {
 
 #[cold]
 fn next_chunk() -> u64 {
-    let node_no = u64::from(NODE_NO.load(Ordering::Relaxed));
+    let node_no = u64::from(node::node_no());
     let chunk_no = NEXT_CHUNK_NO.fetch_add(1, Ordering::Relaxed);
     node_no << 22 | (chunk_no & 0xfff) << 10 | 1
 }

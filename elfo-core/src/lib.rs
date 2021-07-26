@@ -23,6 +23,7 @@ pub use crate::{
 pub mod config;
 pub mod errors;
 pub mod messages;
+pub mod node;
 pub mod routers;
 pub mod signal;
 pub mod stream;
@@ -57,6 +58,12 @@ pub mod _priv {
         #[inline]
         pub fn of<C, K, S>(context: &crate::Context<C, K, S>) -> &Dumper {
             context.dumper()
+        }
+    }
+
+    pub mod node {
+        pub fn set_node_no(node_no: crate::node::NodeNo) {
+            crate::node::set_node_no(node_no)
         }
     }
 

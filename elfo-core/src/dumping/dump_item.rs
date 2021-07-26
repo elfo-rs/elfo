@@ -8,7 +8,7 @@ use serde::{
 use smallbox::SmallBox;
 
 use crate::{
-    dumping::sequence_no::SequenceNo, object::ObjectMeta, time::Timestamp, trace_id::TraceId,
+    dumping::sequence_no::SequenceNo, node, object::ObjectMeta, time::Timestamp, trace_id::TraceId,
 };
 
 // Reexported in `elfo::_priv`.
@@ -74,7 +74,7 @@ impl Serialize for DumpItem {
             s.serialize_field("k", key)?;
         }
 
-        s.serialize_field("n", &0)?; // TODO: node_no
+        s.serialize_field("n", &node::node_no())?;
         s.serialize_field("s", &self.sequence_no)?;
         s.serialize_field("t", &self.trace_id)?;
         s.serialize_field("ts", &self.timestamp)?;
