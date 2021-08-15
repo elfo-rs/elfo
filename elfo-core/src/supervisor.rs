@@ -108,7 +108,7 @@ where
                     let is_first_update = control.config.is_none();
                     control.config = config.get().cloned();
                     self.router
-                        .update(&control.config.as_ref().expect("just saved"));
+                        .update(control.config.as_ref().expect("just saved"));
                     self.in_scope(
                         || info!(config = ?control.config.as_ref().unwrap(), "router updated"),
                     );

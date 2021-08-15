@@ -556,7 +556,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
                 if let Ok(res) = response {
                     self.context
                         .dumper
-                        .dump_response::<R>(&res, request_id, Direction::In);
+                        .dump_response::<R>(res, request_id, Direction::In);
                 }
             }
         }

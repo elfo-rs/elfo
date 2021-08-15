@@ -89,7 +89,7 @@ impl Dumper {
             "",
             M::NAME,
             M::PROTOCOL,
-            MessageKind::from_message_kind(&kind),
+            MessageKind::from_message_kind(kind),
             smallbox!(message.clone()),
         );
     }

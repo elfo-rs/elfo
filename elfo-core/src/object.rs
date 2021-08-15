@@ -116,7 +116,7 @@ impl Object {
 
     pub(crate) fn as_actor(&self) -> Option<&Actor> {
         match &self.kind {
-            ObjectKind::Actor(actor) => Some(&actor),
+            ObjectKind::Actor(actor) => Some(actor),
             ObjectKind::Group(_) => None,
         }
     }
