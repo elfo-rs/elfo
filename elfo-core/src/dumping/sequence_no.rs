@@ -6,8 +6,6 @@ use std::{
 
 use serde::Serialize;
 
-use crate::time::Timestamp;
-
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct SequenceNo(NonZeroU64);
 
@@ -33,11 +31,9 @@ pub(crate) struct SequenceNoGenerator {
 
 impl Default for SequenceNoGenerator {
     fn default() -> Self {
-        let now = Timestamp::now().as_nanos();
-
         Self {
             // We add `1` here because `SequenceNo` is supposed to be non-zero.
-            next_sequence_no: AtomicU64::new(now + 1),
+            next_sequence_no: AtomicU64::new(1),
         }
     }
 }
