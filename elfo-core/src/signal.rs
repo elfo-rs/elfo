@@ -39,7 +39,7 @@ enum SignalInner {
 pub enum SignalKind {
     /// Completes when a “ctrl-c” notification is sent to the process.
     ///
-    /// See https://docs.rs/tokio/1.7.1/tokio/signal/fn.ctrl_c.html
+    /// See <https://docs.rs/tokio/1.7.1/tokio/signal/fn.ctrl_c.html>
     CtrlC,
 
     /// Allows for listening to any valid OS signal.
