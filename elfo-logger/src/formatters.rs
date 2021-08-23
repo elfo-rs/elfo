@@ -120,6 +120,48 @@ impl Formatter<str> for ColoredPayload {
     }
 }
 
+// Location
+
+pub(crate) struct Location;
+
+impl Formatter<(&'static str, u32)> for Location {
+    fn fmt(out: &mut String, v: &(&'static str, u32)) {
+        let _ = write!(out, "@location={}:{}", v.0, v.1);
+    }
+}
+
+// ColoredLocation
+
+pub(crate) struct ColoredLocation;
+
+impl Formatter<(&'static str, u32)> for ColoredLocation {
+    fn fmt(out: &mut String, v: &(&'static str, u32)) {
+        let _ = write!(out, "\x1b[1m@location\x1b[22m={}:{}", v.0, v.1);
+    }
+}
+
+// Module
+
+pub(crate) struct Module;
+
+impl Formatter<str> for Module {
+    fn fmt(out: &mut String, v: &str) {
+        out.push_str("@module=");
+        out.push_str(v);
+    }
+}
+
+// ColoredModule
+
+pub(crate) struct ColoredModule;
+
+impl Formatter<str> for ColoredModule {
+    fn fmt(out: &mut String, v: &str) {
+        out.push_str("\x1b[1m@module\x1b[22m=");
+        out.push_str(v);
+    }
+}
+
 // EmptyIfNone
 
 pub(crate) struct EmptyIfNone<I>(PhantomData<I>);

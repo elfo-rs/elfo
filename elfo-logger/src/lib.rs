@@ -11,7 +11,7 @@ use futures_intrusive::{buffer::GrowingHeapBuf, channel::GenericChannel};
 use fxhash::FxBuildHasher;
 use parking_lot::RawMutex;
 use sharded_slab::Pool;
-use tracing::{span::Id as SpanId, Level};
+use tracing::{span::Id as SpanId, Metadata};
 use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 
 use elfo_core::{trace_id::TraceId, Schema, _priv::ObjectMeta};
@@ -44,8 +44,8 @@ struct SpanData {
 
 struct PreparedEvent {
     timestamp: SystemTime,
-    level: Level,
     trace_id: Option<TraceId>,
+    metadata: &'static Metadata<'static>,
     object: Option<Arc<ObjectMeta>>,
     span_id: Option<SpanId>,
     payload_id: StringId,

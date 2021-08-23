@@ -4,6 +4,7 @@ use tokio::{
     fs::{File, OpenOptions},
     io::AsyncWriteExt,
 };
+use tracing::Metadata;
 
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
@@ -61,9 +62,9 @@ impl Logger {
                     buffer.clear();
 
                     if use_colors {
-                        self.format_event::<theme::ColoredTheme>(&mut buffer, event);
+                        self.format_event::<theme::ColoredTheme>(&mut buffer, event, ctx.config());
                     } else {
-                        self.format_event::<theme::PlainTheme>(&mut buffer, event);
+                        self.format_event::<theme::PlainTheme>(&mut buffer, event, ctx.config());
                     }
 
                     if let Some(file) = file.as_mut() {
@@ -77,8 +78,8 @@ impl Logger {
                     let envelope = ward!(envelope, break);
                     msg!(match envelope {
                         ReopenLogFile | ConfigUpdated => {
-                            file = open_file(self.ctx.config()).await;
-                            use_colors = can_use_colors(self.ctx.config());
+                            file = open_file(ctx.config()).await;
+                            use_colors = can_use_colors(ctx.config());
                         },
                     });
                 },
@@ -86,7 +87,12 @@ impl Logger {
         }
     }
 
-    pub(super) fn format_event<T: theme::Theme>(&self, out: &mut String, event: PreparedEvent) {
+    pub(super) fn format_event<T: theme::Theme>(
+        &self,
+        out: &mut String,
+        event: PreparedEvent,
+        config: &Config,
+    ) {
         let payload = self
             .shared
             .pool
@@ -98,7 +104,7 @@ impl Logger {
 
         T::Timestamp::fmt(out, &event.timestamp);
         out.push(' ');
-        T::Level::fmt(out, &event.level);
+        T::Level::fmt(out, event.metadata.level());
         out.push_str(" [");
         T::TraceId::fmt(out, &event.trace_id);
         out.push_str("] ");
@@ -115,7 +121,22 @@ impl Logger {
                 .pool
                 .get(data.payload_id)
                 .expect("unknown string");
-            out.push_str(&payload);
+
+            T::Payload::fmt(out, &payload);
+        }
+
+        if config.format.with_location {
+            if let Some(location) = extract_location(event.metadata) {
+                out.push('\t');
+                T::Location::fmt(out, &location);
+            }
+        }
+
+        if config.format.with_module {
+            if let Some(module) = event.metadata.module_path() {
+                out.push('\t');
+                T::Module::fmt(out, module);
+            }
         }
 
         out.push('\n');
@@ -145,4 +166,10 @@ async fn open_file(config: &Config) -> Option<File> {
 
 fn can_use_colors(config: &Config) -> bool {
     config.sink == Sink::Stdout && atty::is(atty::Stream::Stdout)
+}
+
+fn extract_location(metadata: &Metadata<'static>) -> Option<(&'static str, u32)> {
+    metadata
+        .file()
+        .map(|file| (file, metadata.line().unwrap_or_default()))
 }

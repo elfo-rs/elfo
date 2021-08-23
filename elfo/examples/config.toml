@@ -2,6 +2,9 @@
 #sink = "File"
 #path = "example.log"
 
+#format.with_location = true
+#format.with_module = true
+
 [producers]
 group_count = 3
 item_count = 10

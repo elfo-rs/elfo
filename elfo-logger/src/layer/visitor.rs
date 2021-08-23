@@ -90,7 +90,7 @@ impl Visit for Visitor<'_> {
 
                 if let Some(id) = self.pool.create_with(|tmp| {
                     result = write!(tmp, "{:?}", value);
-                    self.output.insert_str(0, &tmp);
+                    self.output.insert_str(0, tmp);
                 }) {
                     self.pool.clear(id);
                 }
