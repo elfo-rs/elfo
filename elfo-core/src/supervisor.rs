@@ -104,11 +104,15 @@ where
             },
             messages::UpdateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
+                    self.context
+                        .dumper()
+                        .configure(&config.get_system().dumping);
+
                     let mut control = self.control.write();
                     let is_first_update = control.config.is_none();
-                    control.config = config.get().cloned();
+                    control.config = Some(config.get_user::<C>().clone());
                     self.router
-                        .update(&control.config.as_ref().expect("just saved"));
+                        .update(control.config.as_ref().expect("just saved"));
                     self.in_scope(
                         || info!(config = ?control.config.as_ref().unwrap(), "router updated"),
                     );

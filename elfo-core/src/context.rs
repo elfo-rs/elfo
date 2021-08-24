@@ -6,7 +6,7 @@ use futures::{
 };
 use tracing::{info, trace};
 
-use crate as elfo;
+use crate::{self as elfo};
 use elfo_macros::msg_raw as msg;
 
 use crate::{
@@ -15,6 +15,7 @@ use crate::{
     address_book::AddressBook,
     config::AnyConfig,
     demux::Demux,
+    dumping::{self, Direction, Dumper},
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     message::{Message, Request},
@@ -31,6 +32,7 @@ mod source;
 
 pub struct Context<C = (), K = Singleton, S = ()> {
     book: AddressBook,
+    dumper: Dumper,
     addr: Addr,
     group: Addr,
     demux: Demux,
@@ -72,6 +74,7 @@ impl<C, K, S> Context<C, K, S> {
     pub fn with<S1>(self, source: S1) -> Context<C, K, Combined<S, S1>> {
         Context {
             book: self.book,
+            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -89,7 +92,6 @@ impl<C, K, S> Context<C, K, S> {
 
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::Regular { sender: self.addr };
-        trace!("> {:?}", message);
         self.do_send(message, kind).await
     }
 
@@ -99,6 +101,11 @@ impl<C, K, S> Context<C, K, S> {
     }
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
+        trace!("> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper.dump_message(&message, &kind, Direction::Out);
+        }
+
         let envelope = Envelope::new(message, kind).upcast();
         let addrs = self.demux.filter(&envelope);
 
@@ -148,10 +155,24 @@ impl<C, K, S> Context<C, K, S> {
         recipient: Addr,
         message: M,
     ) -> Result<(), SendError<M>> {
+        let kind = MessageKind::Regular { sender: self.addr };
+        self.do_send_to(recipient, message, kind).await
+    }
+
+    async fn do_send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+        kind: MessageKind,
+    ) -> Result<(), SendError<M>> {
+        trace!(to = %recipient, "> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper.dump_message(&message, &kind, Direction::Out);
+        }
+
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(SendError(message)));
-        trace!(to = %recipient, "> {:?}", message);
-        let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
+        let envelope = Envelope::new(message, kind);
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
         result.map_err(|err| SendError(err.0.do_downcast().into_message()))
@@ -162,10 +183,16 @@ impl<C, K, S> Context<C, K, S> {
         recipient: Addr,
         message: M,
     ) -> Result<(), TrySendError<M>> {
+        let kind = MessageKind::Regular { sender: self.addr };
+
+        trace!(to = %recipient, "> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper.dump_message(&message, &kind, Direction::Out);
+        }
+
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(TrySendError::Closed(message)));
-        trace!(to = %recipient, "> {:?}", message);
-        let envelope = Envelope::new(message, MessageKind::Regular { sender: self.addr });
+        let envelope = Envelope::new(message, kind);
 
         object.try_send(envelope.upcast()).map_err(|err| match err {
             TrySendError::Full(envelope) => {
@@ -182,9 +209,15 @@ impl<C, K, S> Context<C, K, S> {
             return;
         }
 
-        let message = R::Wrapper::from(message);
         let sender = token.sender;
+
         trace!(to = %sender, "> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper
+                .dump_response::<R>(&message, token.request_id, Direction::Out);
+        }
+
+        let message = R::Wrapper::from(message);
         let envelope = Envelope::new(message, MessageKind::Regular { sender }).upcast();
         let object = ward!(self.book.get(token.sender));
         let actor = ward!(object.as_actor());
@@ -193,7 +226,6 @@ impl<C, K, S> Context<C, K, S> {
             .respond(token.into_untyped(), envelope);
     }
 
-    #[inline]
     pub async fn recv(&mut self) -> Option<Envelope>
     where
         C: 'static,
@@ -229,27 +261,9 @@ impl<C, K, S> Context<C, K, S> {
             },
         };
 
-        tls::set_trace_id(envelope.trace_id());
-
-        let envelope = msg!(match envelope {
-            (messages::UpdateConfig { config }, token) => {
-                self.config = config.get().cloned().expect("must be decoded");
-                info!("config updated");
-                let message = messages::ConfigUpdated {};
-                let kind = MessageKind::Regular { sender: self.addr };
-                let envelope = Envelope::new(message, kind).upcast();
-                self.respond(token, Ok(()));
-                envelope
-            }
-            envelope => envelope,
-        });
-
-        trace!("< {:?}", envelope.message());
-
-        Some(envelope)
+        Some(self.post_recv(envelope))
     }
 
-    #[inline]
     pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
     where
         C: 'static,
@@ -266,14 +280,22 @@ impl<C, K, S> Context<C, K, S> {
                 return Err(err);
             }
         };
-
-        tls::set_trace_id(envelope.trace_id());
+        drop(object);
 
         // TODO: poll the sources.
 
+        Ok(self.post_recv(envelope))
+    }
+
+    fn post_recv(&mut self, envelope: Envelope) -> Envelope
+    where
+        C: 'static,
+    {
+        tls::set_trace_id(envelope.trace_id());
+
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
-                self.config = config.get().cloned().expect("must be decoded");
+                self.config = config.get_user::<C>().clone();
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
                 let kind = MessageKind::Regular { sender: self.addr };
@@ -284,9 +306,21 @@ impl<C, K, S> Context<C, K, S> {
             envelope => envelope,
         });
 
-        trace!("< {:?}", envelope.message());
+        let message = envelope.message();
+        trace!("< {:?}", envelope);
 
-        Ok(envelope)
+        if self.dumper.is_enabled() {
+            self.dumper.dump(
+                dumping::Direction::In,
+                "",
+                message.name(),
+                message.protocol(),
+                dumping::MessageKind::from_message_kind(envelope.message_kind()),
+                message.erase(),
+            )
+        }
+
+        envelope
     }
 
     /// XXX: mb `BoundEnvelope<C>`?
@@ -294,12 +328,13 @@ impl<C, K, S> Context<C, K, S> {
     where
         C: for<'de> serde::Deserialize<'de> + 'static,
     {
-        config.get().expect("must already be checked")
+        config.get_user()
     }
 
     pub fn pruned(&self) -> Context {
         Context {
             book: self.book.clone(),
+            dumper: self.dumper.clone(),
             addr: self.addr,
             group: self.group,
             demux: self.demux.clone(),
@@ -313,9 +348,14 @@ impl<C, K, S> Context<C, K, S> {
         &self.book
     }
 
+    pub(crate) fn dumper(&self) -> &Dumper {
+        &self.dumper
+    }
+
     pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K, S> {
         Context {
             book: self.book,
+            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -338,6 +378,7 @@ impl<C, K, S> Context<C, K, S> {
     pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1, S> {
         Context {
             book: self.book,
+            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -349,9 +390,10 @@ impl<C, K, S> Context<C, K, S> {
 }
 
 impl Context {
-    pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
+    pub(crate) fn new(book: AddressBook, dumper: Dumper, demux: Demux) -> Self {
         Self {
             book,
+            dumper,
             addr: Addr::NULL,
             group: Addr::NULL,
             demux,
@@ -366,6 +408,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
     fn clone(&self) -> Self {
         Self {
             book: self.book.clone(),
+            dumper: self.dumper.clone(),
             addr: self.addr,
             group: self.group,
             demux: self.demux.clone(),
@@ -439,27 +482,30 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
             .request_table()
             .new_request(self.context.book.clone(), false);
         let request_id = token.request_id;
-        let message_kind = MessageKind::RequestAny(token);
+        let kind = MessageKind::RequestAny(token);
 
-        if let Some(recipient) = self.from {
-            trace!(message = ?self.request, to = %recipient, ">");
-            let rec_entry = self.context.book.get_owned(recipient);
-            let rec_object = ward!(rec_entry, return Err(RequestError::Closed(self.request)));
-            let envelope = Envelope::new(self.request, message_kind);
-            let result = rec_object.send(self.context, envelope.upcast()).await;
-            result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
+        let res = if let Some(recipient) = self.from {
+            self.context.do_send_to(recipient, self.request, kind).await
         } else {
-            trace!(message = ?self.request, ">");
-            let fut = self.context.do_send(self.request, message_kind).await;
-            fut.map_err(|err| RequestError::Closed(err.0))?;
+            self.context.do_send(self.request, kind).await
+        };
+
+        if let Err(err) = res {
+            return Err(RequestError::Closed(err.0));
         }
 
         let mut data = actor.request_table().wait(request_id).await;
         if let Some(Some(envelope)) = data.pop() {
             let message = envelope.do_downcast::<R::Wrapper>().into_message().into();
-            trace!(?message, "<");
+            trace!("< {:?}", message);
+            if self.context.dumper.is_enabled() {
+                self.context
+                    .dumper
+                    .dump_response::<R>(&message, request_id, Direction::In);
+            }
             Ok(message)
         } else {
+            // TODO: dump.
             Err(RequestError::Ignored)
         }
     }
@@ -475,29 +521,19 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             .request_table()
             .new_request(self.context.book.clone(), true);
         let request_id = token.request_id;
-        let message_kind = MessageKind::RequestAll(token);
+        let kind = MessageKind::RequestAll(token);
 
-        if let Some(recipient) = self.from {
-            trace!(message = ?self.request, to = %recipient, ">");
-            let rec_entry = self.context.book.get_owned(recipient);
-            let rec_object = ward!(
-                rec_entry,
-                return vec![Err(RequestError::Closed(self.request))]
-            );
-            let envelope = Envelope::new(self.request, message_kind);
-            if let Err(err) = rec_object.send(self.context, envelope.upcast()).await {
-                let msg = err.0.do_downcast().into_message();
-                return vec![Err(RequestError::Closed(msg))];
-            }
+        let res = if let Some(recipient) = self.from {
+            self.context.do_send_to(recipient, self.request, kind).await
         } else {
-            trace!(message = ?self.request, ">");
+            self.context.do_send(self.request, kind).await
+        };
 
-            if let Err(err) = self.context.do_send(self.request, message_kind).await {
-                return vec![Err(RequestError::Closed(err.0))];
-            }
+        if let Err(err) = res {
+            return vec![Err(RequestError::Closed(err.0))];
         }
 
-        actor
+        let responses = actor
             .request_table()
             .wait(request_id)
             .await
@@ -508,29 +544,40 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             })
             .inspect(|res| {
                 if let Ok(message) = res {
-                    trace!(?message, "<");
+                    trace!("< {:?}", message);
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        if self.context.dumper.is_enabled() {
+            #[allow(clippy::manual_flatten)]
+            for response in &responses {
+                // TODO: dump errors.
+                if let Ok(res) = response {
+                    self.context
+                        .dumper
+                        .dump_response::<R>(res, request_id, Direction::In);
+                }
+            }
+        }
+
+        responses
     }
 }
 
 impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Forgotten> {
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         let token = ResponseToken::forgotten(self.context.book.clone());
-        let message_kind = MessageKind::RequestAny(token);
+        let kind = MessageKind::RequestAny(token);
 
-        if let Some(recipient) = self.from {
-            trace!(message = ?self.request, to = %recipient, ">");
-            let rec_entry = self.context.book.get_owned(recipient);
-            let rec_object = ward!(rec_entry, return Err(RequestError::Closed(self.request)));
-            let envelope = Envelope::new(self.request, message_kind);
-            let result = rec_object.send(self.context, envelope.upcast()).await;
-            result.map_err(|err| RequestError::Closed(err.0.do_downcast().into_message()))?;
+        let res = if let Some(recipient) = self.from {
+            self.context.do_send_to(recipient, self.request, kind).await
         } else {
-            trace!(message = ?self.request, ">");
-            let fut = self.context.do_send(self.request, message_kind).await;
-            fut.map_err(|err| RequestError::Closed(err.0))?;
+            self.context.do_send(self.request, kind).await
+        };
+
+        if let Err(err) = res {
+            return Err(RequestError::Closed(err.0));
         }
 
         Err(RequestError::Ignored)

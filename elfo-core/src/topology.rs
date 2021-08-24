@@ -6,7 +6,8 @@ use crate::{
     addr::Addr,
     address_book::{AddressBook, VacantEntry},
     context::Context,
-    demux::{Demux, Filter},
+    demux::{Demux, Filter as DemuxFilter},
+    dumping::Dumper,
     envelope::Envelope,
     group::Schema,
 };
@@ -14,6 +15,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Topology {
     pub(crate) book: AddressBook,
+    pub(crate) dumper: Dumper,
     inner: Arc<RwLock<Inner>>,
 }
 
@@ -42,6 +44,7 @@ impl Topology {
     pub fn empty() -> Self {
         Self {
             book: AddressBook::new(),
+            dumper: Dumper::default(),
             inner: Arc::new(RwLock::new(Inner::default())),
         }
     }
@@ -115,7 +118,7 @@ impl<'t> Local<'t> {
         for addr in dest.addrs() {
             self.demux
                 .borrow_mut()
-                .append(addr, Filter::Dynamic(filter.clone()));
+                .append(addr, DemuxFilter::Dynamic(filter.clone()));
         }
     }
 
@@ -127,7 +130,14 @@ impl<'t> Local<'t> {
     pub fn mount(self, schema: Schema) {
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
-        let ctx = Context::new(book, self.demux.into_inner()).with_addr(addr);
+
+        let dumping_is_possible = self
+            .topology
+            .actor_groups()
+            .any(|group| group.name == "system.dumpers");
+
+        let dumper = self.topology.dumper.for_group(dumping_is_possible);
+        let ctx = Context::new(book, dumper, self.demux.into_inner()).with_addr(addr);
         let object = (schema.run)(ctx, self.name);
         self.entry.insert(object);
     }

@@ -28,7 +28,7 @@ pub(crate) enum ObjectKind {
     Group(Group),
 }
 
-#[derive(Hash)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct ObjectMeta {
     pub group: String,
     pub key: Option<String>,
@@ -116,7 +116,7 @@ impl Object {
 
     pub(crate) fn as_actor(&self) -> Option<&Actor> {
         match &self.kind {
-            ObjectKind::Actor(actor) => Some(&actor),
+            ObjectKind::Actor(actor) => Some(actor),
             ObjectKind::Group(_) => None,
         }
     }

@@ -124,7 +124,7 @@ fn refine_pat(pat: &mut Pat) {
     match pat {
         // `e @ Enum`
         // `s @ Struct` (~ `s @ Struct { .. }`)
-        Pat::Ident(ident) if is_binding_with_type(&ident) => {
+        Pat::Ident(ident) if is_binding_with_type(ident) => {
             ident.subpat = None;
         }
         // `(e @ SomeType, token)`
@@ -133,10 +133,10 @@ fn refine_pat(pat: &mut Pat) {
             assert_eq!(pat.elems.len(), 2, "invalid request pattern");
 
             match pat.elems.first_mut() {
-                Some(Pat::Ident(ident)) if is_binding_with_type(&ident) => {
+                Some(Pat::Ident(ident)) if is_binding_with_type(ident) => {
                     ident.subpat = None;
                 }
-                Some(pat) if is_likely_type(&pat) => {
+                Some(pat) if is_likely_type(pat) => {
                     *pat = Pat::Wild(PatWild {
                         attrs: Vec::new(),
                         underscore_token: Token![_](pat.span()),
@@ -146,7 +146,7 @@ fn refine_pat(pat: &mut Pat) {
             }
         }
         // `SomeType => ...`
-        pat if is_likely_type(&pat) => {
+        pat if is_likely_type(pat) => {
             *pat = Pat::Wild(PatWild {
                 attrs: Vec::new(),
                 underscore_token: Token![_](pat.span()),

@@ -18,9 +18,26 @@ pub struct CachePadded<T>(pub T);
 /// alternative "early return" statement, like `break` or `continue` for loops.
 #[macro_export]
 macro_rules! ward {
-    ($o:expr) => (ward!($o, else { return; }));
-    ($o:expr, else $body:block) => { if let Some(x) = $o { x } else { $body }; };
-    ($o:expr, $early:stmt) => (ward!($o, else { $early }));
+    ($o:expr) => {
+        // Do not reuse `ward!` here, because it confuses rust-analyzer for now.
+        match $o {
+            Some(x) => x,
+            None => return,
+        }
+    };
+    ($o:expr, else $body:block) => {
+        match $o {
+            Some(x) => x,
+            None => $body,
+        }
+    };
+    ($o:expr, $early:stmt) => {
+        // Do not reuse `ward!` here, because it confuses rust-analyzer for now.
+        match $o {
+            Some(x) => x,
+            None => ({ $early }),
+        }
+    };
 }
 
 pub struct ErrorChain<'a>(pub &'a dyn Error);

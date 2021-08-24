@@ -5,6 +5,8 @@ use linkme::distributed_slice;
 use serde::{Deserialize, Serialize};
 use smallbox::{smallbox, SmallBox};
 
+use crate::dumping;
+
 pub type LocalTypeId = u32;
 
 pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deserialize<'de> {
@@ -19,7 +21,7 @@ pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deseri
 }
 
 pub trait Request: Message {
-    type Response: fmt::Debug;
+    type Response: fmt::Debug + Clone + Send + Serialize;
 
     #[doc(hidden)]
     type Wrapper: Message + Into<Self::Response> + From<Self::Response>;
@@ -31,6 +33,7 @@ pub struct AnyMessage {
 }
 
 impl AnyMessage {
+    #[inline]
     pub fn new<M: Message>(message: M) -> Self {
         AnyMessage {
             ltid: M::_LTID,
@@ -38,14 +41,27 @@ impl AnyMessage {
         }
     }
 
+    #[inline]
+    pub fn name(&self) -> &'static str {
+        with_vtable(self.ltid, |vtable| vtable.name)
+    }
+
+    #[inline]
+    pub fn protocol(&self) -> &'static str {
+        with_vtable(self.ltid, |vtable| vtable.protocol)
+    }
+
+    #[inline]
     pub fn is<T: 'static>(&self) -> bool {
         self.data.is::<T>()
     }
 
+    #[inline]
     pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
         self.data.downcast_ref()
     }
 
+    #[inline]
     pub fn downcast<M: Message>(self) -> Result<M, AnyMessage> {
         if M::_LTID != self.ltid {
             return Err(self);
@@ -56,6 +72,12 @@ impl AnyMessage {
             .downcast::<M>()
             .expect("cannot downcast")
             .into_inner())
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn erase(&self) -> dumping::ErasedMessage {
+        with_vtable(self.ltid, |vtable| (vtable.erase)(self))
     }
 }
 
@@ -77,8 +99,11 @@ impl fmt::Debug for AnyMessage {
 #[derive(Clone)]
 pub struct MessageVTable {
     pub ltid: LocalTypeId,
+    pub name: &'static str,
+    pub protocol: &'static str,
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
+    pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
 }
 
 #[distributed_slice]

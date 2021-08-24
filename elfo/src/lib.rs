@@ -7,6 +7,9 @@ pub use elfo_macros::{message, msg};
 #[cfg(feature = "elfo-configurer")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
 pub use elfo_configurer as configurer;
+#[cfg(feature = "elfo-dumper")]
+#[cfg_attr(docsrs, doc(cfg(feature = "full")))]
+pub use elfo_dumper as dumper;
 #[cfg(feature = "elfo-logger")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
 pub use elfo_logger as logger;

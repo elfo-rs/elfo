@@ -207,6 +207,7 @@ mod reporter {
 
     async fn reporter(ctx: Context<Config>) {
         let interval = Interval::new(|| TimerTick);
+        interval.set_period(ctx.config().interval);
 
         // It's possible to attach additional sources to handle everything the same way.
         let mut ctx = ctx.with(&interval);
@@ -269,6 +270,7 @@ fn topology() -> elfo::Topology {
     let aggregators = topology.local("aggregators");
     let reporters = topology.local("reporters");
     let loggers = topology.local("system.loggers");
+    let dumpers = topology.local("system.dumpers");
     let configurers = topology.local("system.configurers").entrypoint();
 
     // Define links between actor groups.
@@ -282,6 +284,7 @@ fn topology() -> elfo::Topology {
     aggregators.mount(aggregator::new());
     reporters.mount(reporter::new());
     loggers.mount(logger);
+    dumpers.mount(elfo::dumper::new());
 
     // Actors can use `topology` as an extended service locator.
     // Usually it should be used for utilities only.
