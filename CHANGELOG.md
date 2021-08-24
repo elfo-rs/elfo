@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.19] - 2021-08-24
 ### Added
 - signal: add `signal::Signal` in order to work with signals.
 - configurer: reload configs on SIGHUP.
@@ -139,7 +140,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.18...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.19...HEAD
+[0.1.19]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.18...elfo-0.1.19
 [0.1.18]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.17...elfo-0.1.18
 [0.1.17]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.16...elfo-0.1.17
 [0.1.16]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.15...elfo-0.1.16
