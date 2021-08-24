@@ -28,6 +28,7 @@ mod dump_item;
 mod sequence_no;
 
 const SHARD_COUNT: usize = 16;
+const SHARD_MAX_LEN: usize = 300_000;
 
 static NEXT_SHARD_NO: AtomicUsize = AtomicUsize::new(0);
 thread_local! {
@@ -137,6 +138,13 @@ impl Dumper {
 
         let shard_no = SHARD_NO.with(|shard_no| *shard_no);
         let mut queue = self.per_system.shards[shard_no].lock();
+
+        if queue.len() >= SHARD_MAX_LEN {
+            // TODO: move to a limited backlog.
+            // TODO: emit some metric.
+            return;
+        }
+
         queue.push_back(item);
     }
 
