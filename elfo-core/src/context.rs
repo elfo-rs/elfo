@@ -295,7 +295,7 @@ impl<C, K, S> Context<C, K, S> {
 
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
-                self.config = config.get().cloned().expect("must be decoded");
+                self.config = config.get_user::<C>().clone();
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
                 let kind = MessageKind::Regular { sender: self.addr };
@@ -328,7 +328,7 @@ impl<C, K, S> Context<C, K, S> {
     where
         C: for<'de> serde::Deserialize<'de> + 'static,
     {
-        config.get().expect("must already be checked")
+        config.get_user()
     }
 
     pub fn pruned(&self) -> Context {

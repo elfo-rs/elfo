@@ -2,13 +2,15 @@
 #sink = "File"
 #path = "example.log"
 
-#format.with_location = true
-#format.with_module = true
+#format.with_location = false # default
+#format.with_module = false   # default
 
 [system.dumpers]
 path = "example.dump"
 
 [producers]
+# system.dumping.disabled = false # default
+
 group_count = 3
 item_count = 10
 

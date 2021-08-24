@@ -7,7 +7,7 @@ use crate::{
     address_book::{AddressBook, VacantEntry},
     context::Context,
     demux::{Demux, Filter as DemuxFilter},
-    dumping::{Dumper, Filter as DumperFilter},
+    dumping::Dumper,
     envelope::Envelope,
     group::Schema,
 };
@@ -65,7 +65,6 @@ impl Topology {
             topology: self,
             entry,
             demux: RefCell::new(Demux::default()),
-            is_dumping_enabled: true,
         }
     }
 
@@ -96,7 +95,6 @@ pub struct Local<'t> {
     topology: &'t Topology,
     entry: VacantEntry<'t>,
     demux: RefCell<Demux>,
-    is_dumping_enabled: bool,
 }
 
 impl<'t> Local<'t> {
@@ -108,11 +106,6 @@ impl<'t> Local<'t> {
             .find(|group| group.addr == self.entry.addr())
             .expect("just created");
         group.is_entrypoint = true;
-        self
-    }
-
-    pub fn dumping(mut self, is_enabled: bool) -> Self {
-        self.is_dumping_enabled = is_enabled;
         self
     }
 
@@ -138,18 +131,12 @@ impl<'t> Local<'t> {
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
 
-        let dumper_filter = if self.is_dumping_enabled
-            && self
-                .topology
-                .actor_groups()
-                .any(|group| group.name == "system.dumpers")
-        {
-            DumperFilter::All
-        } else {
-            DumperFilter::Nothing
-        };
+        let dumping_is_possible = self
+            .topology
+            .actor_groups()
+            .any(|group| group.name == "system.dumpers");
 
-        let dumper = self.topology.dumper.for_group(dumper_filter);
+        let dumper = self.topology.dumper.for_group(dumping_is_possible);
         let ctx = Context::new(book, dumper, self.demux.into_inner()).with_addr(addr);
         let object = (schema.run)(ctx, self.name);
         self.entry.insert(object);

@@ -32,7 +32,7 @@ pub(crate) struct SequenceNoGenerator {
 impl Default for SequenceNoGenerator {
     fn default() -> Self {
         Self {
-            // We add `1` here because `SequenceNo` is supposed to be non-zero.
+            // We starts with `1` here because `SequenceNo` is supposed to be non-zero.
             next_sequence_no: AtomicU64::new(1),
         }
     }

@@ -9,7 +9,6 @@ use crate::{
     actor::Actor,
     context::Context,
     demux::Demux,
-    dumping::Filter as DumperFilter,
     errors::{RequestError, StartError},
     message,
     messages::{Ping, UpdateConfig},
@@ -89,7 +88,7 @@ pub async fn do_start<F: Future>(
     let addr = entry.addr();
     entry.insert(Object::new(addr, Actor::new(addr)));
 
-    let dumper = topology.dumper.for_group(DumperFilter::All);
+    let dumper = topology.dumper.for_group(false); // TODO: should we dump the starter?
 
     let meta = ObjectMeta {
         group: "starter".into(),

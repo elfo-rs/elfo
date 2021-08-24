@@ -8,7 +8,6 @@ license = "MIT"
 
 [features]
 test-util = ["tokio/test-util"]
-dumping = []
 
 [dependencies]
 elfo-macros = { version = "0.1", path = "../elfo-macros" }

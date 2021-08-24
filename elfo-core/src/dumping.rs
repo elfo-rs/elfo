@@ -2,12 +2,13 @@ use std::{
     collections::VecDeque,
     mem,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
 };
 
 use parking_lot::Mutex;
+use serde::Deserialize;
 use smallbox::smallbox;
 
 use elfo_utils::CachePadded;
@@ -42,6 +43,12 @@ pub struct Dumper {
     per_group: Arc<PerGroup>,
 }
 
+#[derive(Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct DumpingConfig {
+    disabled: bool,
+}
+
 #[derive(Default)]
 struct PerSystem {
     shards: [CachePadded<Mutex<VecDeque<DumpItem>>>; SHARD_COUNT],
@@ -49,33 +56,32 @@ struct PerSystem {
 
 #[derive(Default)]
 struct PerGroup {
+    // TODO: add a rate limiter.
     sequence_no_gen: CachePadded<SequenceNoGenerator>,
-    filter: CachePadded<Filter>,
-}
-
-pub(crate) enum Filter {
-    All,
-    Nothing,
-}
-
-impl Default for Filter {
-    fn default() -> Self {
-        Self::Nothing
-    }
+    is_possible: bool,
+    is_disabled: AtomicBool,
 }
 
 impl Dumper {
-    pub(crate) fn for_group(&self, filter: Filter) -> Self {
+    pub(crate) fn for_group(&self, is_possible: bool) -> Self {
         let mut specific = self.clone();
         specific.per_group = Arc::new(PerGroup {
             sequence_no_gen: CachePadded(SequenceNoGenerator::default()),
-            filter: CachePadded(filter),
+            is_possible,
+            is_disabled: AtomicBool::new(false),
         });
         specific
     }
 
+    pub(crate) fn configure(&self, config: &DumpingConfig) {
+        self.per_group
+            .is_disabled
+            .store(config.disabled, Ordering::Relaxed);
+    }
+
+    #[inline]
     pub fn is_enabled(&self) -> bool {
-        !matches!(self.per_group.filter.0, Filter::Nothing)
+        self.per_group.is_possible && !self.per_group.is_disabled.load(Ordering::Relaxed)
     }
 
     #[inline(always)]

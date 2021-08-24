@@ -19,8 +19,20 @@ assert_impl_all!((): Config);
 #[derive(Clone)]
 pub struct AnyConfig {
     raw: Arc<Value>,
+    decoded: Option<Local<Decoded>>,
+}
+
+#[derive(Clone)]
+struct Decoded {
+    system: Arc<SystemConfig>,
     // Actually, we store `Arc<Arc<C>>` here.
-    decoded: Option<Local<Arc<dyn Any + Send + Sync>>>,
+    user: Arc<dyn Any + Send + Sync>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct SystemConfig {
+    pub(crate) dumping: crate::dumping::DumpingConfig,
 }
 
 impl AnyConfig {
@@ -31,23 +43,47 @@ impl AnyConfig {
         }
     }
 
-    pub(crate) fn get<C: 'static>(&self) -> Option<&Arc<C>> {
-        self.decoded.as_ref().and_then(|local| local.downcast_ref())
+    pub(crate) fn get_user<C: 'static>(&self) -> &Arc<C> {
+        self.decoded
+            .as_ref()
+            .and_then(|local| local.user.downcast_ref())
+            .expect("must be decoded")
+    }
+
+    pub(crate) fn get_system(&self) -> &Arc<SystemConfig> {
+        &self.decoded.as_ref().expect("must be decoded").system
     }
 
     pub(crate) fn decode<C: Config>(&self) -> Result<AnyConfig, String> {
+        let mut raw = (*self.raw).clone();
+
+        let system_decoded = if let Value::Map(map) = &mut raw {
+            if let Some(system_raw) = map.remove(&Value::String("system".into())) {
+                let de = ValueDeserializer::<DeError>::new(system_raw);
+                let config = SystemConfig::deserialize(de).map_err(|err| err.to_string())?;
+                Arc::new(config)
+            } else {
+                Default::default()
+            }
+        } else {
+            Default::default()
+        };
+
         // Handle the special case of default config.
-        let decoded = if TypeId::of::<C>() == TypeId::of::<()>() {
+        let user_decoded = if TypeId::of::<C>() == TypeId::of::<()>() {
             Arc::new(Arc::new(())) as Arc<_>
         } else {
-            let de = ValueDeserializer::<DeError>::new((*self.raw).clone());
+            let de = ValueDeserializer::<DeError>::new(raw);
             let config = C::deserialize(de).map_err(|err| err.to_string())?;
             Arc::new(Arc::new(config)) as Arc<_>
         };
 
         Ok(AnyConfig {
             raw: self.raw.clone(),
-            decoded: Some(Local::from(decoded)),
+            decoded: Some(Local::from(Decoded {
+                system: system_decoded,
+                user: user_decoded,
+            })),
         })
     }
 
