@@ -21,7 +21,6 @@ use crate::{
     envelope,
     message::{Message, Request},
     request_table::RequestId,
-    time::Timestamp,
     tls,
 };
 
@@ -210,8 +209,9 @@ mod tests {
     use std::convert::TryFrom;
 
     use smallbox::smallbox;
+    use tokio::time;
 
-    use crate::{object::ObjectMeta, time, trace_id::TraceId};
+    use crate::{object::ObjectMeta, trace_id::TraceId};
 
     fn dump_msg(dumper: &Dumper, name: &'static str) {
         dumper.dump(

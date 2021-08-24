@@ -7,9 +7,9 @@ use serde::{
 };
 use smallbox::SmallBox;
 
-use crate::{
-    dumping::sequence_no::SequenceNo, node, object::ObjectMeta, time::Timestamp, trace_id::TraceId,
-};
+use elfo_macros::message;
+
+use crate::{dumping::sequence_no::SequenceNo, node, object::ObjectMeta, trace_id::TraceId};
 
 // Reexported in `elfo::_priv`.
 pub struct DumpItem {
@@ -23,6 +23,27 @@ pub struct DumpItem {
     pub message_protocol: &'static str,
     pub message_kind: MessageKind,
     pub message: ErasedMessage,
+}
+
+/// Timestamp in nanos since Unix epoch.
+#[message(part, elfo = crate)]
+#[derive(Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub struct Timestamp(u64);
+
+impl Timestamp {
+    #[inline]
+    pub fn now() -> Self {
+        let ns = std::time::UNIX_EPOCH
+            .elapsed()
+            .expect("invalid system time")
+            .as_nanos() as u64;
+        Self(ns)
+    }
+
+    #[inline]
+    pub fn from_nanos(ns: u64) -> Self {
+        Self(ns)
+    }
 }
 
 pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 136]>;

@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - logger: add `format.with_location` and `format.with_module` options to append `@location` and `@module` fields to logs.
 - dumper: the dumping subsystem and an actor group to save messages on disk.
 - `Message::NAME` and `Message::PROTOCOL`.
-- `time::Timestamp`.
 
 ### Fixed
 - `assert_msg!`: fix false positive `unreachable_patterns` warnings.
