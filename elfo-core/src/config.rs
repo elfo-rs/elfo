@@ -29,12 +29,6 @@ struct Decoded {
     user: Arc<dyn Any + Send + Sync>,
 }
 
-#[derive(Default, Deserialize)]
-#[serde(default)]
-pub(crate) struct SystemConfig {
-    pub(crate) dumping: crate::dumping::DumpingConfig,
-}
-
 impl AnyConfig {
     pub fn new(value: Value) -> Self {
         Self {
@@ -150,6 +144,25 @@ impl<'de> Deserializer<'de> for AnyConfig {
     ) -> Result<V::Value, Self::Error> {
         self.into_value().deserialize_newtype_struct(name, visitor)
     }
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct SystemConfig {
+    pub(crate) dumping: crate::dumping::DumpingConfig,
+    pub(crate) telemetry: TelemetryConfig,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct TelemetryConfig {
+    #[serde(default = "per_actor_group")]
+    pub(crate) per_actor_group: bool,
+    pub(crate) per_actor_key: bool,
+}
+
+fn per_actor_group() -> bool {
+    true
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, From)]

@@ -213,10 +213,14 @@ mod tests {
     struct Num(u32);
 
     fn envelope(addr: Addr, num: Num) -> Envelope {
-        Scope::new(Arc::new(ObjectMeta {
-            group: "test".into(),
-            key: None,
-        }))
+        Scope::new(
+            addr,
+            Arc::new(ObjectMeta {
+                group: "test".into(),
+                key: None,
+            }),
+            Default::default(),
+        )
         .sync_within(|| Envelope::new(num, MessageKind::Regular { sender: addr }).upcast())
     }
 

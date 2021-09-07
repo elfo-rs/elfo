@@ -20,6 +20,7 @@ use crate::{
     exec::{Exec, ExecResult},
     messages,
     object::{Object, ObjectArc, ObjectMeta},
+    permissions::AtomicPermissions,
     routers::{Outcome, Router},
     scope::{self, Scope},
 };
@@ -33,6 +34,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     router: R,
     exec: X,
     control: CachePadded<RwLock<ControlBlock<C>>>,
+    permissions: Arc<AtomicPermissions>,
 }
 
 struct ControlBlock<C> {
@@ -70,12 +72,18 @@ where
             router,
             exec,
             control: CachePadded(RwLock::new(control)),
+            permissions: Default::default(),
         }
     }
 
     fn in_scope(&self, f: impl FnOnce()) {
-        Scope::with_trace_id(scope::trace_id(), self.context.addr(), self.meta.clone())
-            .sync_within(|| self.span.in_scope(f));
+        Scope::with_trace_id(
+            scope::trace_id(),
+            self.context.addr(),
+            self.meta.clone(),
+            self.permissions.clone(),
+        )
+        .sync_within(|| self.span.in_scope(f));
     }
 
     pub(crate) fn handle(self: &Arc<Self>, envelope: Envelope) -> RouteReport {
@@ -105,11 +113,21 @@ where
             },
             messages::UpdateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
-                    self.context
-                        .dumper()
-                        .configure(&config.get_system().dumping);
-
+                    // Make all updates under lock, including telemetry/dumper ones.
                     let mut control = self.control.write();
+
+                    let system = config.get_system();
+
+                    // Update the dumper's config.
+                    self.context.dumper().configure(&system.dumping);
+
+                    // Update telemetry's config.
+                    let mut perm = self.permissions.load();
+                    perm.set_telemetry_per_actor_group_enabled(system.telemetry.per_actor_group);
+                    perm.set_telemetry_per_actor_key_enabled(system.telemetry.per_actor_key);
+                    self.permissions.store(perm);
+
+                    // Update user's config.
                     let is_first_update = control.config.is_none();
                     control.config = Some(config.get_user::<C>().clone());
                     self.router
@@ -117,7 +135,11 @@ where
                     self.in_scope(
                         || info!(config = ?control.config.as_ref().unwrap(), "router updated"),
                     );
+
+                    // Release the lock.
                     drop(control);
+
+                    // Send `UpdateConfig` across actors.
                     let outcome = self.router.route(&envelope);
                     if !is_first_update {
                         let mut envelope = envelope;
@@ -303,7 +325,7 @@ where
             key: Some(key_str),
         });
 
-        let scope = Scope::new(addr, meta);
+        let scope = Scope::new(addr, meta, self.permissions.clone());
         tokio::spawn(scope.within(fut.instrument(span)));
         self.context.book().get_owned(addr).expect("just created")
     }

@@ -48,6 +48,7 @@ mod macros;
 mod mailbox;
 mod message;
 mod object;
+mod permissions;
 mod request_table;
 mod start;
 mod supervisor;
@@ -73,6 +74,7 @@ pub mod _priv {
         envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
         message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},
         object::ObjectMeta,
+        permissions::{AtomicPermissions, Permissions},
         start::do_start,
     };
     pub use linkme;

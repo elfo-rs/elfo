@@ -14,6 +14,8 @@ path = "example.dump"
 
 [producers]
 # system.dumping.disabled = false # default
+# system.telemetry.per_actor_group = true # default
+# system.telemetry.per_actor_key = false # default
 
 group_count = 3
 item_count = 10

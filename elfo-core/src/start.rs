@@ -90,10 +90,10 @@ pub async fn do_start<F: Future>(
     let dumper = topology.dumper.for_group(false); // TODO: should we dump the starter?
 
     let meta = ObjectMeta {
-        group: "starter".into(),
+        group: "init".into(),
         key: Some("_".into()), // Just like `Singleton`.
     };
-    let scope = Scope::new(addr, Arc::new(meta));
+    let scope = Scope::new(addr, Arc::new(meta), Default::default());
     let f = async move {
         let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
         send_configs_to_entrypoints(&ctx, &topology).await?;

@@ -3,6 +3,7 @@ use std::{cell::Cell, future::Future, sync::Arc};
 use crate::{
     addr::Addr,
     object::ObjectMeta,
+    permissions::{AtomicPermissions, Permissions},
     trace_id::{self, TraceId},
 };
 
@@ -15,6 +16,7 @@ pub struct Scope {
     addr: Addr,
     meta: Arc<ObjectMeta>,
     trace_id: Cell<TraceId>,
+    permissions: Arc<AtomicPermissions>,
 }
 
 assert_impl_all!(Scope: Send);
@@ -22,16 +24,22 @@ assert_not_impl_all!(Scope: Sync);
 
 impl Scope {
     #[doc(hidden)]
-    pub fn new(addr: Addr, meta: Arc<ObjectMeta>) -> Self {
-        Self::with_trace_id(trace_id::generate(), addr, meta)
+    pub fn new(addr: Addr, meta: Arc<ObjectMeta>, perm: Arc<AtomicPermissions>) -> Self {
+        Self::with_trace_id(trace_id::generate(), addr, meta, perm)
     }
 
     #[doc(hidden)]
-    pub fn with_trace_id(trace_id: TraceId, addr: Addr, meta: Arc<ObjectMeta>) -> Self {
+    pub fn with_trace_id(
+        trace_id: TraceId,
+        addr: Addr,
+        meta: Arc<ObjectMeta>,
+        permissions: Arc<AtomicPermissions>,
+    ) -> Self {
         Self {
             addr,
             meta,
             trace_id: Cell::new(trace_id),
+            permissions,
         }
     }
 
@@ -56,6 +64,11 @@ impl Scope {
     #[inline]
     pub fn set_trace_id(&self, trace_id: TraceId) {
         self.trace_id.set(trace_id);
+    }
+
+    #[inline]
+    pub fn permissions(&self) -> Permissions {
+        self.permissions.load()
     }
 
     /// Wraps the provided future with the current scope.
