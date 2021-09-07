@@ -139,7 +139,7 @@ impl Proxy {
         });
 
         Proxy {
-            scope: Scope::new(context.addr(), meta, Default::default()),
+            scope: Scope::new(context.addr(), Addr::NULL, meta, Default::default()),
             context,
             non_exhaustive: self.non_exhaustive,
         }
@@ -229,12 +229,12 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
 
     let context = rx.receive().await.unwrap();
     let meta = Arc::new(ObjectMeta {
-        group: "proxy".into(),
+        group: "proxy".into(), // TODO: use a normal group here.
         key: None,
     });
 
     Proxy {
-        scope: Scope::new(context.addr(), meta, Default::default()),
+        scope: Scope::new(context.addr(), Addr::NULL, meta, Default::default()),
         context,
         non_exhaustive: false,
     }

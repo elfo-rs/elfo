@@ -14,6 +14,7 @@ tokio::task_local! {
 #[derive(Clone)]
 pub struct Scope {
     addr: Addr,
+    group: Addr,
     meta: Arc<ObjectMeta>,
     trace_id: Cell<TraceId>,
     permissions: Arc<AtomicPermissions>,
@@ -24,19 +25,26 @@ assert_not_impl_all!(Scope: Sync);
 
 impl Scope {
     #[doc(hidden)]
-    pub fn new(addr: Addr, meta: Arc<ObjectMeta>, perm: Arc<AtomicPermissions>) -> Self {
-        Self::with_trace_id(trace_id::generate(), addr, meta, perm)
+    pub fn new(
+        addr: Addr,
+        group: Addr,
+        meta: Arc<ObjectMeta>,
+        perm: Arc<AtomicPermissions>,
+    ) -> Self {
+        Self::with_trace_id(trace_id::generate(), addr, group, meta, perm)
     }
 
     #[doc(hidden)]
     pub fn with_trace_id(
         trace_id: TraceId,
         addr: Addr,
+        group: Addr,
         meta: Arc<ObjectMeta>,
         permissions: Arc<AtomicPermissions>,
     ) -> Self {
         Self {
             addr,
+            group,
             meta,
             trace_id: Cell::new(trace_id),
             permissions,
@@ -46,6 +54,11 @@ impl Scope {
     #[inline]
     pub fn addr(&self) -> Addr {
         self.addr
+    }
+
+    #[inline]
+    pub fn group(&self) -> Addr {
+        self.group
     }
 
     /// Returns the current object's meta.

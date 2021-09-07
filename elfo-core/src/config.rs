@@ -153,16 +153,20 @@ pub(crate) struct SystemConfig {
     pub(crate) telemetry: TelemetryConfig,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Deserialize)]
 #[serde(default)]
 pub(crate) struct TelemetryConfig {
-    #[serde(default = "per_actor_group")]
     pub(crate) per_actor_group: bool,
     pub(crate) per_actor_key: bool,
 }
 
-fn per_actor_group() -> bool {
-    true
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        Self {
+            per_actor_group: true,
+            per_actor_key: false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, From)]

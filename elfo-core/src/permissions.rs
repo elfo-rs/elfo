@@ -1,16 +1,11 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Reexported in `elfo::_priv`.
+#[derive(Default)]
 pub struct AtomicPermissions(AtomicUsize);
 
 const TELEMETRY_PER_ACTOR_GROUP_IS_ENABLED: usize = 1 << 31;
 const TELEMETRY_PER_ACTOR_KEY_IS_ENABLED: usize = 1 << 30;
-
-impl Default for AtomicPermissions {
-    fn default() -> Self {
-        Self(AtomicUsize::new(TELEMETRY_PER_ACTOR_GROUP_IS_ENABLED))
-    }
-}
 
 impl AtomicPermissions {
     pub(crate) fn store(&self, perm: Permissions) {
@@ -25,7 +20,7 @@ impl AtomicPermissions {
 }
 
 // Reexported in `elfo::_priv`.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Permissions(usize);
 
 impl Permissions {

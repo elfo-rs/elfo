@@ -215,6 +215,7 @@ mod tests {
     fn envelope(addr: Addr, num: Num) -> Envelope {
         Scope::new(
             addr,
+            addr, // TODO: ahah.
             Arc::new(ObjectMeta {
                 group: "test".into(),
                 key: None,

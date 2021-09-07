@@ -1,15 +1,68 @@
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
+
 use fxhash::FxHashMap;
-use metrics::Key;
-use metrics_util::{Handle, MetricKind, NotTracked, Registry};
+use metrics::{GaugeValue, Key, KeyHasher};
+use metrics_util::{Handle, Hashable, MetricKind, NotTracked, Registry};
 use parking_lot::{RwLock, RwLockReadGuard};
+
+use elfo_core::{Addr, _priv::ObjectMeta, scope::Scope};
 
 use crate::distribution::Distribution;
 
 pub(crate) struct Storage {
-    registry: Registry<Key, Handle, NotTracked<Handle>>,
+    registry: Registry<ExtKey, ExtHandle, NotTracked<ExtHandle>>,
     distributions: RwLock<FxHashMap<String, FxHashMap<Vec<String>, Distribution>>>,
     descriptions: RwLock<FxHashMap<String, &'static str>>,
     global_labels: RwLock<FxHashMap<String, String>>,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ExtKey {
+    addr: Addr,
+    // XXX: we are forced to use hash here, because API of `Registry`
+    //      isn't composable with composite keys for now.
+    key_hash: u64,
+}
+
+fn make_ext_key(scope: &Scope, key: &Key, with_actor_key: bool) -> ExtKey {
+    ExtKey {
+        addr: if with_actor_key {
+            scope.addr()
+        } else {
+            scope.group()
+        },
+        key_hash: key.get_hash(),
+    }
+}
+
+impl Hashable for ExtKey {
+    #[inline]
+    fn hashable(&self) -> u64 {
+        // TODO: get rid of double hashing of `key`.
+        let mut hasher = KeyHasher::default();
+        self.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+#[derive(Clone)]
+struct ExtHandle {
+    meta: Arc<ObjectMeta>,
+    with_actor_key: bool,
+    key: Key,
+    handle: Handle,
+}
+
+fn make_ext_handle(scope: &Scope, key: &Key, handle: Handle, with_actor_key: bool) -> ExtHandle {
+    ExtHandle {
+        meta: scope.meta().clone(),
+        with_actor_key,
+        key: key.clone(),
+        handle,
+    }
 }
 
 pub(crate) struct Snapshot {
@@ -21,7 +74,7 @@ pub(crate) struct Snapshot {
 impl Storage {
     pub(crate) fn new() -> Self {
         Self {
-            registry: Registry::<Key, Handle, NotTracked<Handle>>::untracked(),
+            registry: Registry::<ExtKey, ExtHandle, NotTracked<ExtHandle>>::untracked(),
             distributions: RwLock::new(FxHashMap::default()),
             descriptions: RwLock::new(FxHashMap::default()),
             global_labels: RwLock::new(FxHashMap::default()),
@@ -29,11 +82,7 @@ impl Storage {
     }
 
     pub(crate) fn configure(&self) {
-        // TODO
-    }
-
-    pub(crate) fn registry(&self) -> &Registry<Key, Handle, NotTracked<Handle>> {
-        &self.registry
+        // TODO: add global labels.
     }
 
     pub(crate) fn descriptions(&self) -> RwLockReadGuard<'_, FxHashMap<String, &'static str>> {
@@ -49,19 +98,97 @@ impl Storage {
         }
     }
 
+    pub(crate) fn touch_counter(&self, scope: &Scope, key: &Key, with_actor_key: bool) {
+        let ext_key = make_ext_key(scope, key, with_actor_key);
+        self.registry.op(
+            MetricKind::Counter,
+            &ext_key,
+            |_| {},
+            || make_ext_handle(scope, key, Handle::counter(), with_actor_key),
+        );
+    }
+
+    pub(crate) fn touch_gauge(&self, scope: &Scope, key: &Key, with_actor_key: bool) {
+        let ext_key = make_ext_key(scope, key, with_actor_key);
+        self.registry.op(
+            MetricKind::Gauge,
+            &ext_key,
+            |_| {},
+            || make_ext_handle(scope, key, Handle::gauge(), with_actor_key),
+        );
+    }
+
+    pub(crate) fn touch_histogram(&self, scope: &Scope, key: &Key, with_actor_key: bool) {
+        let ext_key = make_ext_key(scope, key, with_actor_key);
+        self.registry.op(
+            MetricKind::Histogram,
+            &ext_key,
+            |_| {},
+            || make_ext_handle(scope, key, Handle::histogram(), with_actor_key),
+        );
+    }
+
+    pub(crate) fn increment_counter(
+        &self,
+        scope: &Scope,
+        key: &Key,
+        value: u64,
+        with_actor_key: bool,
+    ) {
+        let ext_key = make_ext_key(scope, key, with_actor_key);
+        self.registry.op(
+            MetricKind::Counter,
+            &ext_key,
+            |h| h.handle.increment_counter(value),
+            || make_ext_handle(scope, key, Handle::counter(), with_actor_key),
+        );
+    }
+
+    pub(crate) fn update_gauge(
+        &self,
+        scope: &Scope,
+        key: &Key,
+        value: GaugeValue,
+        with_actor_key: bool,
+    ) {
+        let ext_key = make_ext_key(scope, key, with_actor_key);
+        self.registry.op(
+            MetricKind::Gauge,
+            &ext_key,
+            |h| h.handle.update_gauge(value),
+            || make_ext_handle(scope, key, Handle::gauge(), with_actor_key),
+        );
+    }
+
+    pub(crate) fn record_histogram(
+        &self,
+        scope: &Scope,
+        key: &Key,
+        value: f64,
+        with_actor_key: bool,
+    ) {
+        let ext_key = make_ext_key(scope, key, with_actor_key);
+        self.registry.op(
+            MetricKind::Histogram,
+            &ext_key,
+            |h| h.handle.record_histogram(value),
+            || make_ext_handle(scope, key, Handle::histogram(), with_actor_key),
+        );
+    }
+
     pub(crate) fn snapshot(&self) -> Snapshot {
-        let metrics = self.registry().get_handles();
+        let metrics = self.registry.get_handles();
         let global_labels = self.global_labels.read();
 
         let mut counters = FxHashMap::default();
         let mut gauges = FxHashMap::default();
 
-        for ((kind, key), (_, handle)) in metrics.into_iter() {
+        for ((kind, _), (_, h)) in metrics.into_iter() {
             match kind {
                 MetricKind::Counter => {
-                    let value = handle.read_counter();
+                    let value = h.handle.read_counter();
 
-                    let (name, labels) = key_to_parts(&key, &global_labels);
+                    let (name, labels) = make_parts(&h, &global_labels);
                     let entry = counters
                         .entry(name)
                         .or_insert_with(FxHashMap::default)
@@ -70,9 +197,9 @@ impl Storage {
                     *entry = value;
                 }
                 MetricKind::Gauge => {
-                    let value = handle.read_gauge();
+                    let value = h.handle.read_gauge();
 
-                    let (name, labels) = key_to_parts(&key, &global_labels);
+                    let (name, labels) = make_parts(&h, &global_labels);
                     let entry = gauges
                         .entry(name)
                         .or_insert_with(FxHashMap::default)
@@ -81,7 +208,7 @@ impl Storage {
                     *entry = value;
                 }
                 MetricKind::Histogram => {
-                    let (name, labels) = key_to_parts(&key, &global_labels);
+                    let (name, labels) = make_parts(&h, &global_labels);
 
                     let mut wg = self.distributions.write();
                     let entry = wg
@@ -90,7 +217,8 @@ impl Storage {
                         .entry(labels)
                         .or_insert_with(Distribution::new_summary);
 
-                    handle.read_histogram_with_clear(|samples| entry.record_samples(samples));
+                    h.handle
+                        .read_histogram_with_clear(|samples| entry.record_samples(samples));
                 }
             }
         }
@@ -105,12 +233,25 @@ impl Storage {
     }
 }
 
-fn key_to_parts(key: &Key, defaults: &FxHashMap<String, String>) -> (String, Vec<String>) {
-    let name = sanitize_key_name(key.name());
+fn make_parts(h: &ExtHandle, defaults: &FxHashMap<String, String>) -> (String, Vec<String>) {
+    let name = sanitize_key_name(h.key.name());
+
+    // Add global labels.
     let mut values = defaults.clone();
-    key.labels().into_iter().for_each(|label| {
+
+    // Add "actor_group" and "actor_key" labels.
+    values.insert("actor_group".into(), h.meta.group.clone());
+    if h.with_actor_key {
+        if let Some(actor_key) = &h.meta.key {
+            values.insert("actor_key".into(), actor_key.clone());
+        }
+    }
+
+    // Add specific labels.
+    h.key.labels().into_iter().for_each(|label| {
         values.insert(label.key().into(), label.value().into());
     });
+
     let labels = values
         .iter()
         .map(|(k, v)| {

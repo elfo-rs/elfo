@@ -80,6 +80,7 @@ where
         Scope::with_trace_id(
             scope::trace_id(),
             self.context.addr(),
+            self.context.group(), // `Addr::NULL`, actually
             self.meta.clone(),
             self.permissions.clone(),
         )
@@ -325,7 +326,7 @@ where
             key: Some(key_str),
         });
 
-        let scope = Scope::new(addr, meta, self.permissions.clone());
+        let scope = Scope::new(addr, self.context.addr(), meta, self.permissions.clone());
         tokio::spawn(scope.within(fut.instrument(span)));
         self.context.book().get_owned(addr).expect("just created")
     }

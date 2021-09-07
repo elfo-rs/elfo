@@ -34,14 +34,14 @@ pub fn try_meta() -> Option<Arc<ObjectMeta>> {
 
 #[deprecated(note = "use `elfo::scope` instead")]
 pub async fn scope<F: Future>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: F) -> F::Output {
-    let scope = crate::scope::Scope::new(Addr::NULL, meta, Default::default());
+    let scope = crate::scope::Scope::new(Addr::NULL, Addr::NULL, meta, Default::default());
     scope.set_trace_id(trace_id);
     scope.within(f).await
 }
 
 #[deprecated(note = "use `elfo::scope` instead")]
 pub fn sync_scope<R>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: impl FnOnce() -> R) -> R {
-    let scope = crate::scope::Scope::new(Addr::NULL, meta, Default::default());
+    let scope = crate::scope::Scope::new(Addr::NULL, Addr::NULL, meta, Default::default());
     scope.set_trace_id(trace_id);
     scope.sync_within(f)
 }
