@@ -187,6 +187,7 @@ mod reporter {
         prelude::*,
         time::Interval,
     };
+    use metrics::increment_counter;
     use serde::{Deserialize, Serialize};
 
     use crate::protocol::*;
@@ -240,6 +241,9 @@ mod reporter {
                     for summary in ctx.request(req).all().resolve().await {
                         tracing::info!(?summary, "summary");
                     }
+
+                    // How to use metrics.
+                    increment_counter!("ticks_total");
                 }
             });
         }
@@ -270,6 +274,7 @@ fn topology() -> elfo::Topology {
     let aggregators = topology.local("aggregators");
     let reporters = topology.local("reporters");
     let loggers = topology.local("system.loggers");
+    let telemeters = topology.local("system.telemeters");
     let dumpers = topology.local("system.dumpers");
     let configurers = topology.local("system.configurers").entrypoint();
 
@@ -284,6 +289,7 @@ fn topology() -> elfo::Topology {
     aggregators.mount(aggregator::new());
     reporters.mount(reporter::new());
     loggers.mount(logger);
+    telemeters.mount(elfo::telemeter::new());
     dumpers.mount(elfo::dumper::new());
 
     // Actors can use `topology` as an extended service locator.

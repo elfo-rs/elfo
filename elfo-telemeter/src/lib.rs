@@ -1,0 +1,54 @@
+//! Interaction with the `metrics` crate.
+//! Records metrics in the Prometheus exposition format.
+//!
+//! A lot of code here is highly inspired by `metrics-exporter-prometheus`, and
+//! even copy-pasted from it with removing some useful features. Firstly, push
+//! gateways aren't supported. Secondly, histogram overrides don't work, only
+//! summaries.
+//!
+//! All metrics include information about the actor, where they were produced.
+//! Such information is added as labels. By default, only the `actor_group`
+//! label is added, but it's possible to provide `actor_key` on a group basis.
+//! It's useful, if a group has few actors inside.
+//!
+//! I'm going to extend the original crate to reuse code.
+
+#![warn(rust_2018_idioms, unreachable_pub, missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+use std::sync::Arc;
+
+use metrics::Recorder;
+use quanta::Clock;
+use tracing::error;
+
+use elfo_core::Schema;
+
+use self::{recorder::PrometheusRecorder, storage::Storage};
+
+mod actor;
+mod config;
+mod distribution;
+mod recorder;
+mod render;
+mod storage;
+
+/// Installs a global metric recorder and returns a group to handle metrics.
+pub fn new() -> Schema {
+    let (recorder, schema) = with_clock(Clock::new());
+
+    if let Err(err) = metrics::set_boxed_recorder(recorder) {
+        error!(error = %err, "failed to set a metric recorder");
+    }
+
+    schema
+}
+
+/// For testing.
+#[doc(hidden)]
+pub fn with_clock(clock: Clock) -> (Box<dyn Recorder>, Schema) {
+    let storage = Arc::new(Storage::new(clock));
+    let recorder = PrometheusRecorder::new(storage.clone());
+    let schema = actor::new(storage);
+    (Box::new(recorder), schema)
+}

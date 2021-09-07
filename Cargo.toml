@@ -8,6 +8,7 @@ members = [
     "elfo-configurer",
     "elfo-logger",
     "elfo-dumper",
+    "elfo-telemeter",
 ]
 
 [profile.release]

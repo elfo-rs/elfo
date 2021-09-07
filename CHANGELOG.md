@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- telemeter: interoperability with the `metrics` crate.
+
 ### Changed
 - tls: deprecated in favor of `scope`.
 

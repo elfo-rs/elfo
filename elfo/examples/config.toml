@@ -5,6 +5,10 @@
 #format.with_location = false # default
 #format.with_module = false   # default
 
+[system.telemeters]
+sink = "Prometheus"
+address = "0.0.0.0:9042"
+
 [system.dumpers]
 path = "example.dump"
 
