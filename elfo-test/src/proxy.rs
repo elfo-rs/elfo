@@ -44,7 +44,9 @@ impl Proxy {
             let res = self.context.send(message).await;
             res.expect("cannot send message")
         };
-        Scope::new(self.meta.clone()).within(f).await
+        Scope::new(self.context.addr(), self.meta.clone())
+            .within(f)
+            .await
     }
 
     pub async fn send_to<M: Message>(&self, recipient: Addr, message: M) {
@@ -52,7 +54,9 @@ impl Proxy {
             let res = self.context.send_to(recipient, message).await;
             res.expect("cannot send message")
         };
-        Scope::new(self.meta.clone()).within(f).await
+        Scope::new(self.context.addr(), self.meta.clone())
+            .within(f)
+            .await
     }
 
     pub async fn request<R: Request>(&self, request: R) -> R::Response {
@@ -60,15 +64,18 @@ impl Proxy {
             let res = self.context.request(request).resolve().await;
             res.expect("cannot send message")
         };
-        Scope::new(self.meta.clone()).within(f).await
+        Scope::new(self.context.addr(), self.meta.clone())
+            .within(f)
+            .await
     }
 
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, response: R::Response) {
-        Scope::new(self.meta.clone()).sync_within(|| self.context.respond(token, response))
+        Scope::new(self.context.addr(), self.meta.clone())
+            .sync_within(|| self.context.respond(token, response))
     }
 
     pub async fn recv(&mut self) -> Envelope {
-        let scope = Scope::new(self.meta.clone());
+        let scope = Scope::new(self.context.addr(), self.meta.clone());
         let f = async {
             // We are forced to use `std::time::Instant` instead of `tokio::time::Instant`
             // because we don't want to use mocked time by tokio here.
@@ -89,7 +96,8 @@ impl Proxy {
     }
 
     pub fn try_recv(&mut self) -> Option<Envelope> {
-        Scope::new(self.meta.clone()).sync_within(|| self.context.try_recv().ok())
+        Scope::new(self.context.addr(), self.meta.clone())
+            .sync_within(|| self.context.try_recv().ok())
     }
 
     /// Waits until the testable actor handles all previously sent messages.
@@ -105,7 +113,8 @@ impl Proxy {
     #[deprecated]
     pub fn set_addr(&mut self, addr: Addr) {
         #[allow(deprecated)]
-        Scope::new(self.meta.clone()).sync_within(|| self.context.set_addr(addr))
+        Scope::new(self.context.addr(), self.meta.clone())
+            .sync_within(|| self.context.set_addr(addr))
     }
 
     pub fn non_exhaustive(&mut self) {
@@ -116,7 +125,7 @@ impl Proxy {
     /// The main purpose is to test `send_to(..)` and `request(..).from(..)`
     /// calls. It's likely to be changed in the future.
     pub async fn subproxy(&self) -> Proxy {
-        let scope = Scope::new(self.meta.clone());
+        let scope = Scope::new(self.context.addr(), self.meta.clone());
         let f = async {
             self.context
                 .request(StealContext)
@@ -142,7 +151,7 @@ impl Proxy {
 impl Drop for Proxy {
     fn drop(&mut self) {
         if !self.non_exhaustive && !thread::panicking() {
-            Scope::new(self.meta.clone()).sync_within(|| {
+            Scope::new(self.context.addr(), self.meta.clone()).sync_within(|| {
                 if let Some(envelope) = self.try_recv() {
                     panic!(
                         "test ended, but not all messages have been consumed: {:?}",

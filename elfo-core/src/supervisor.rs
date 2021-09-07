@@ -74,7 +74,7 @@ where
     }
 
     fn in_scope(&self, f: impl FnOnce()) {
-        Scope::with_trace_id(scope::trace_id(), self.meta.clone())
+        Scope::with_trace_id(scope::trace_id(), self.context.addr(), self.meta.clone())
             .sync_within(|| self.span.in_scope(f));
     }
 
@@ -303,7 +303,7 @@ where
             key: Some(key_str),
         });
 
-        let scope = Scope::new(meta);
+        let scope = Scope::new(addr, meta);
         tokio::spawn(scope.within(fut.instrument(span)));
         self.context.book().get_owned(addr).expect("just created")
     }

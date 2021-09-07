@@ -93,7 +93,7 @@ pub async fn do_start<F: Future>(
         group: "starter".into(),
         key: Some("_".into()), // Just like `Singleton`.
     };
-    let scope = Scope::new(Arc::new(meta));
+    let scope = Scope::new(addr, Arc::new(meta));
     let f = async move {
         let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
         send_configs_to_entrypoints(&ctx, &topology).await?;

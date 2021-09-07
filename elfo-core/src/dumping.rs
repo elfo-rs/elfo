@@ -213,7 +213,7 @@ mod tests {
     use smallbox::smallbox;
     use tokio::time;
 
-    use crate::{object::ObjectMeta, trace_id::TraceId};
+    use crate::{addr::Addr, object::ObjectMeta, scope::Scope, trace_id::TraceId};
 
     fn dump_msg(dumper: &Dumper, name: &'static str) {
         dumper.dump(
@@ -273,7 +273,7 @@ mod tests {
             assert!(drain.next().is_none());
         };
 
-        let scope = scope::Scope::new(meta.clone());
+        let scope = Scope::new(Addr::NULL, meta.clone());
         scope.set_trace_id(trace_id);
         scope.within(f).await;
     }

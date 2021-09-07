@@ -1,6 +1,7 @@
 use std::{cell::Cell, future::Future, sync::Arc};
 
 use crate::{
+    addr::Addr,
     object::ObjectMeta,
     trace_id::{self, TraceId},
 };
@@ -11,6 +12,7 @@ tokio::task_local! {
 
 #[derive(Clone)]
 pub struct Scope {
+    addr: Addr,
     meta: Arc<ObjectMeta>,
     trace_id: Cell<TraceId>,
 }
@@ -20,16 +22,22 @@ assert_not_impl_all!(Scope: Sync);
 
 impl Scope {
     #[doc(hidden)]
-    pub fn new(meta: Arc<ObjectMeta>) -> Self {
-        Self::with_trace_id(trace_id::generate(), meta)
+    pub fn new(addr: Addr, meta: Arc<ObjectMeta>) -> Self {
+        Self::with_trace_id(trace_id::generate(), addr, meta)
     }
 
     #[doc(hidden)]
-    pub fn with_trace_id(trace_id: TraceId, meta: Arc<ObjectMeta>) -> Self {
+    pub fn with_trace_id(trace_id: TraceId, addr: Addr, meta: Arc<ObjectMeta>) -> Self {
         Self {
+            addr,
             meta,
             trace_id: Cell::new(trace_id),
         }
+    }
+
+    #[inline]
+    pub fn addr(&self) -> Addr {
+        self.addr
     }
 
     /// Returns the current object's meta.

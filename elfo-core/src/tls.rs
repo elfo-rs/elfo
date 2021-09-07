@@ -1,6 +1,6 @@
 use std::{cell::Cell, future::Future, sync::Arc};
 
-use crate::{object::ObjectMeta, trace_id::TraceId};
+use crate::{addr::Addr, object::ObjectMeta, trace_id::TraceId};
 
 tokio::task_local! {
     static META: Arc<ObjectMeta>;
@@ -34,14 +34,14 @@ pub fn try_meta() -> Option<Arc<ObjectMeta>> {
 
 #[deprecated(note = "use `elfo::scope` instead")]
 pub async fn scope<F: Future>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: F) -> F::Output {
-    let scope = crate::scope::Scope::new(meta);
+    let scope = crate::scope::Scope::new(Addr::NULL, meta);
     scope.set_trace_id(trace_id);
     scope.within(f).await
 }
 
 #[deprecated(note = "use `elfo::scope` instead")]
 pub fn sync_scope<R>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: impl FnOnce() -> R) -> R {
-    let scope = crate::scope::Scope::new(meta);
+    let scope = crate::scope::Scope::new(Addr::NULL, meta);
     scope.set_trace_id(trace_id);
     scope.sync_within(f)
 }
