@@ -18,8 +18,6 @@
 
 use std::sync::Arc;
 
-use metrics::Recorder;
-use quanta::Clock;
 use tracing::error;
 
 use elfo_core::Schema;
@@ -35,20 +33,13 @@ mod storage;
 
 /// Installs a global metric recorder and returns a group to handle metrics.
 pub fn new() -> Schema {
-    let (recorder, schema) = with_clock(Clock::new());
+    let storage = Arc::new(Storage::new());
+    let recorder = PrometheusRecorder::new(storage.clone());
+    let schema = actor::new(storage);
 
-    if let Err(err) = metrics::set_boxed_recorder(recorder) {
+    if let Err(err) = metrics::set_boxed_recorder(Box::new(recorder)) {
         error!(error = %err, "failed to set a metric recorder");
     }
 
     schema
-}
-
-/// For testing.
-#[doc(hidden)]
-pub fn with_clock(clock: Clock) -> (Box<dyn Recorder>, Schema) {
-    let storage = Arc::new(Storage::new(clock));
-    let recorder = PrometheusRecorder::new(storage.clone());
-    let schema = actor::new(storage);
-    (Box::new(recorder), schema)
 }

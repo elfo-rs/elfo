@@ -1,15 +1,12 @@
 use fxhash::FxHashMap;
 use metrics::Key;
-use metrics_util::{Handle, MetricKind, MetricKindMask, Recency, Registry, Tracked};
+use metrics_util::{Handle, MetricKind, NotTracked, Registry};
 use parking_lot::{RwLock, RwLockReadGuard};
-use quanta::Clock;
 
 use crate::distribution::Distribution;
 
 pub(crate) struct Storage {
-    registry: Registry<Key, Handle, Tracked<Handle>>,
-    clock: Clock,
-    recency: Recency<Key>,
+    registry: Registry<Key, Handle, NotTracked<Handle>>,
     distributions: RwLock<FxHashMap<String, FxHashMap<Vec<String>, Distribution>>>,
     descriptions: RwLock<FxHashMap<String, &'static str>>,
     global_labels: RwLock<FxHashMap<String, String>>,
@@ -22,11 +19,9 @@ pub(crate) struct Snapshot {
 }
 
 impl Storage {
-    pub(crate) fn new(clock: Clock) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            registry: Registry::<Key, Handle, Tracked<Handle>>::tracked(),
-            clock: clock.clone(),
-            recency: Recency::new(clock, MetricKindMask::NONE, None),
+            registry: Registry::<Key, Handle, NotTracked<Handle>>::untracked(),
             distributions: RwLock::new(FxHashMap::default()),
             descriptions: RwLock::new(FxHashMap::default()),
             global_labels: RwLock::new(FxHashMap::default()),
@@ -37,7 +32,7 @@ impl Storage {
         // TODO
     }
 
-    pub(crate) fn registry(&self) -> &Registry<Key, Handle, Tracked<Handle>> {
+    pub(crate) fn registry(&self) -> &Registry<Key, Handle, NotTracked<Handle>> {
         &self.registry
     }
 
@@ -61,11 +56,7 @@ impl Storage {
         let mut counters = FxHashMap::default();
         let mut gauges = FxHashMap::default();
 
-        for ((kind, key), (gen, handle)) in metrics.into_iter() {
-            if !self.recency.should_store(kind, &key, gen, self.registry()) {
-                continue;
-            }
-
+        for ((kind, key), (_, handle)) in metrics.into_iter() {
             match kind {
                 MetricKind::Counter => {
                     let value = handle.read_counter();
