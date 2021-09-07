@@ -21,7 +21,7 @@ use crate::{
     messages,
     object::{Object, ObjectArc, ObjectMeta},
     routers::{Outcome, Router},
-    tls, trace_id,
+    scope::{self, Scope},
 };
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
@@ -74,7 +74,8 @@ where
     }
 
     fn in_scope(&self, f: impl FnOnce()) {
-        tls::sync_scope(self.meta.clone(), tls::trace_id(), || self.span.in_scope(f));
+        Scope::with_trace_id(scope::trace_id(), self.meta.clone())
+            .sync_within(|| self.span.in_scope(f));
     }
 
     pub(crate) fn handle(self: &Arc<Self>, envelope: Envelope) -> RouteReport {
@@ -245,11 +246,6 @@ where
             actor_key = key_str.as_str()
         );
 
-        let meta = Arc::new(ObjectMeta {
-            group: self.meta.group.clone(),
-            key: Some(key_str),
-        });
-
         let control = self.control.read();
         let config = control.config.as_ref().cloned().expect("config is unset");
 
@@ -301,8 +297,14 @@ where
         };
 
         entry.insert(Object::new(addr, Actor::new(addr)));
-        let initial_trace_id = trace_id::generate();
-        tokio::spawn(tls::scope(meta, initial_trace_id, fut.instrument(span)));
+
+        let meta = Arc::new(ObjectMeta {
+            group: self.meta.group.clone(),
+            key: Some(key_str),
+        });
+
+        let scope = Scope::new(meta);
+        tokio::spawn(scope.within(fut.instrument(span)));
         self.context.book().get_owned(addr).expect("just created")
     }
 

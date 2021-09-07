@@ -25,9 +25,11 @@ pub mod errors;
 pub mod messages;
 pub mod node;
 pub mod routers;
+pub mod scope;
 pub mod signal;
 pub mod stream;
 pub mod time;
+#[deprecated(note = "use `elfo::scope` instead")]
 pub mod tls;
 pub mod topology;
 pub mod trace_id;

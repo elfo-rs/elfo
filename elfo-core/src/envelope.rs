@@ -3,7 +3,6 @@ use crate::{
     address_book::AddressBook,
     message::{AnyMessage, Message},
     request_table::ResponseToken,
-    tls,
     trace_id::TraceId,
 };
 
@@ -53,7 +52,7 @@ impl<M> Envelope<M> {
 
 impl<M: Message> Envelope<M> {
     pub(crate) fn new(message: M, kind: MessageKind) -> Self {
-        Self::with_trace_id(message, kind, tls::trace_id())
+        Self::with_trace_id(message, kind, crate::scope::trace_id())
     }
 
     pub(crate) fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {

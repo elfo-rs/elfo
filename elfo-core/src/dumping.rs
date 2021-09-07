@@ -21,7 +21,7 @@ use crate::{
     envelope,
     message::{Message, Request},
     request_table::RequestId,
-    tls,
+    scope,
 };
 
 mod dump_item;
@@ -128,11 +128,13 @@ impl Dumper {
         message_kind: MessageKind,
         message: ErasedMessage,
     ) {
+        let (meta, trace_id) = scope::with(|scope| (scope.meta().clone(), scope.trace_id()));
+
         let item = DumpItem {
-            meta: tls::meta(),
+            meta,
             sequence_no: self.per_group.sequence_no_gen.generate(),
             timestamp: Timestamp::now(),
-            trace_id: tls::trace_id(),
+            trace_id,
             direction,
             class,
             message_name,
@@ -234,7 +236,7 @@ mod tests {
         });
         let trace_id = TraceId::try_from(42).unwrap();
 
-        tls::scope(meta.clone(), trace_id, async {
+        let f = async {
             let dumper = Dumper::default();
             let mut drain = dumper.drain();
 
@@ -269,7 +271,10 @@ mod tests {
             assert_eq!(msg.message_name, "3");
 
             assert!(drain.next().is_none());
-        })
-        .await;
+        };
+
+        let scope = scope::Scope::new(meta.clone());
+        scope.set_trace_id(trace_id);
+        scope.within(f).await;
     }
 }

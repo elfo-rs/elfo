@@ -41,6 +41,8 @@ impl Dumper {
 
     async fn main(self) {
         let mut file = open_file(self.ctx.config()).await;
+
+        // TODO: use the grant system instead.
         let dumper = dumping::of(&self.ctx);
 
         let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);

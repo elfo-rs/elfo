@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- tls: deprecated in favor of `scope`.
+
 ## [0.1.19] - 2021-08-24
 ### Added
 - signal: add `signal::Signal` in order to work with signals.

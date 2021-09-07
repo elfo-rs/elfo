@@ -3,7 +3,7 @@ use std::{sync::Arc, time::SystemTime};
 use tracing::{span, Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
-use elfo_core::tls;
+use elfo_core::scope;
 
 use self::visitor::Visitor;
 use crate::{PreparedEvent, Shared, SpanData, StringId};
@@ -64,11 +64,17 @@ impl<S: Subscriber> Layer<S> for PrintLayer {
         let current_span = ctx.current_span();
         let payload_id = ward!(self.prepare(true, |visitor| event.record(visitor)));
 
+        let data = scope::try_with(|scope| (scope.meta().clone(), scope.trace_id()));
+        let (object, trace_id) = match data {
+            Some((meta, trace_id)) => (Some(meta), Some(trace_id)),
+            None => (None, None),
+        };
+
         let event = PreparedEvent {
             timestamp: now(),
-            trace_id: tls::try_trace_id(),
+            trace_id,
             metadata: event.metadata(),
-            object: tls::try_meta(),
+            object,
             span_id: event.parent().or_else(|| current_span.id()).cloned(),
             payload_id,
         };

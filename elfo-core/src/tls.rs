@@ -7,45 +7,41 @@ tokio::task_local! {
     static TRACE_ID: Cell<TraceId>;
 }
 
-/// Returns the current trace id.
-///
-/// # Panics
-/// This function will panic if called ouside actors.
+#[deprecated(note = "use `elfo::scope::trace_id()` instead")]
 pub fn trace_id() -> TraceId {
-    TRACE_ID.with(Cell::get)
+    crate::scope::trace_id()
 }
 
-/// Returns the current trace id if inside the actor system.
+#[deprecated(note = "use `elfo::scope::try_trace_id()` instead")]
 pub fn try_trace_id() -> Option<TraceId> {
-    TRACE_ID.try_with(Cell::get).ok()
+    crate::scope::try_trace_id()
 }
 
-/// Replaces the current trace id with the provided one.
-///
-/// # Panics
-/// This function will panic if called ouside actors.
+#[deprecated(note = "use `elfo::scope::set_trace_id()` instead")]
 pub fn set_trace_id(trace_id: TraceId) {
-    TRACE_ID.with(|stored| stored.set(trace_id));
+    crate::scope::set_trace_id(trace_id);
 }
 
-/// Returns the current object's meta.
-///
-/// # Panics
-/// This function will panic if called ouside actors.
+#[deprecated(note = "use `elfo::scope::meta()` instead")]
 pub fn meta() -> Arc<ObjectMeta> {
-    META.with(Arc::clone)
+    crate::scope::meta()
 }
 
-/// Returns the current object's meta if inside the actor system.
+#[deprecated(note = "use `elfo::scope::try_meta()` instead")]
 pub fn try_meta() -> Option<Arc<ObjectMeta>> {
-    META.try_with(Arc::clone).ok()
+    crate::scope::try_meta()
 }
 
+#[deprecated(note = "use `elfo::scope` instead")]
 pub async fn scope<F: Future>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: F) -> F::Output {
-    META.scope(meta, TRACE_ID.scope(Cell::new(trace_id), f))
-        .await
+    let scope = crate::scope::Scope::new(meta);
+    scope.set_trace_id(trace_id);
+    scope.within(f).await
 }
 
+#[deprecated(note = "use `elfo::scope` instead")]
 pub fn sync_scope<R>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: impl FnOnce() -> R) -> R {
-    META.sync_scope(meta, || TRACE_ID.sync_scope(Cell::new(trace_id), f))
+    let scope = crate::scope::Scope::new(meta);
+    scope.set_trace_id(trace_id);
+    scope.sync_within(f)
 }

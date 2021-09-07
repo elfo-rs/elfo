@@ -19,9 +19,8 @@ use elfo_core::{
     Schema,
     _priv::{do_start, ObjectMeta},
     routers::{MapRouter, Outcome},
-    tls,
+    scope::Scope,
     topology::Topology,
-    trace_id,
 };
 use elfo_macros::{message, msg_raw as msg};
 
@@ -41,39 +40,36 @@ impl Proxy {
     }
 
     pub async fn send<M: Message>(&self, message: M) {
-        tls::scope(self.meta.clone(), trace_id::generate(), async {
+        let f = async {
             let res = self.context.send(message).await;
             res.expect("cannot send message")
-        })
-        .await
+        };
+        Scope::new(self.meta.clone()).within(f).await
     }
 
     pub async fn send_to<M: Message>(&self, recipient: Addr, message: M) {
-        tls::scope(self.meta.clone(), trace_id::generate(), async {
+        let f = async {
             let res = self.context.send_to(recipient, message).await;
             res.expect("cannot send message")
-        })
-        .await
+        };
+        Scope::new(self.meta.clone()).within(f).await
     }
 
     pub async fn request<R: Request>(&self, request: R) -> R::Response {
-        tls::scope(self.meta.clone(), trace_id::generate(), async {
+        let f = async {
             let res = self.context.request(request).resolve().await;
-            res.expect("cannot send request")
-        })
-        .await
+            res.expect("cannot send message")
+        };
+        Scope::new(self.meta.clone()).within(f).await
     }
 
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, response: R::Response) {
-        // This trace id will be replaced anyway.
-        tls::sync_scope(self.meta.clone(), trace_id::generate(), || {
-            self.context.respond(token, response)
-        })
+        Scope::new(self.meta.clone()).sync_within(|| self.context.respond(token, response))
     }
 
     pub async fn recv(&mut self) -> Envelope {
-        // This trace id will be replaced anyway.
-        tls::scope(self.meta.clone(), trace_id::generate(), async {
+        let scope = Scope::new(self.meta.clone());
+        let f = async {
             // We are forced to use `std::time::Instant` instead of `tokio::time::Instant`
             // because we don't want to use mocked time by tokio here.
             let start = StdInstant::now();
@@ -88,15 +84,12 @@ impl Proxy {
             } {}
 
             panic!("too long");
-        })
-        .await
+        };
+        scope.within(f).await
     }
 
     pub fn try_recv(&mut self) -> Option<Envelope> {
-        // This trace id will be replaced anyway.
-        tls::sync_scope(self.meta.clone(), trace_id::generate(), || {
-            self.context.try_recv().ok()
-        })
+        Scope::new(self.meta.clone()).sync_within(|| self.context.try_recv().ok())
     }
 
     /// Waits until the testable actor handles all previously sent messages.
@@ -111,11 +104,8 @@ impl Proxy {
 
     #[deprecated]
     pub fn set_addr(&mut self, addr: Addr) {
-        // This trace id will be replaced anyway.
-        tls::sync_scope(self.meta.clone(), trace_id::generate(), || {
-            #[allow(deprecated)]
-            self.context.set_addr(addr);
-        })
+        #[allow(deprecated)]
+        Scope::new(self.meta.clone()).sync_within(|| self.context.set_addr(addr))
     }
 
     pub fn non_exhaustive(&mut self) {
@@ -126,7 +116,8 @@ impl Proxy {
     /// The main purpose is to test `send_to(..)` and `request(..).from(..)`
     /// calls. It's likely to be changed in the future.
     pub async fn subproxy(&self) -> Proxy {
-        let context = tls::scope(self.meta.clone(), trace_id::generate(), async {
+        let scope = Scope::new(self.meta.clone());
+        let f = async {
             self.context
                 .request(StealContext)
                 .from(self.context.group())
@@ -134,8 +125,8 @@ impl Proxy {
                 .await
                 .expect("cannot steal tester's context")
                 .into_inner()
-        })
-        .await;
+        };
+        let context = scope.within(f).await;
 
         Proxy {
             context,
@@ -151,8 +142,7 @@ impl Proxy {
 impl Drop for Proxy {
     fn drop(&mut self) {
         if !self.non_exhaustive && !thread::panicking() {
-            // This trace id will be replaced anyway.
-            tls::sync_scope(self.meta.clone(), trace_id::generate(), || {
+            Scope::new(self.meta.clone()).sync_within(|| {
                 if let Some(envelope) = self.try_recv() {
                     panic!(
                         "test ended, but not all messages have been consumed: {:?}",

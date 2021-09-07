@@ -22,7 +22,7 @@ use crate::{
     messages,
     request_table::ResponseToken,
     routers::Singleton,
-    tls,
+    scope,
 };
 
 use self::source::Combined;
@@ -291,7 +291,7 @@ impl<C, K, S> Context<C, K, S> {
     where
         C: 'static,
     {
-        tls::set_trace_id(envelope.trace_id());
+        scope::set_trace_id(envelope.trace_id());
 
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
