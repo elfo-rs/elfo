@@ -81,8 +81,9 @@ impl Storage {
         }
     }
 
-    pub(crate) fn configure(&self) {
-        // TODO: add global labels.
+    pub(crate) fn configure(&self, global_labels: &[(String, String)]) {
+        let map = global_labels.iter().cloned().collect();
+        *self.global_labels.write() = map;
     }
 
     pub(crate) fn descriptions(&self) -> RwLockReadGuard<'_, FxHashMap<String, &'static str>> {

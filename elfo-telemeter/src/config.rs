@@ -11,7 +11,9 @@ pub(crate) struct Config {
     /// Quantiles to use for aggregating distribution metrics into a summary.
     #[serde(default = "default_quantiles")]
     pub(crate) quantiles: Vec<f64>,
-    // TODO: add `global_labels`?
+    /// Labels that will be added to all metrics.
+    #[serde(default)]
+    pub(crate) global_labels: Vec<(String, String)>,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]

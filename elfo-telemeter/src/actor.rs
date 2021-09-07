@@ -40,16 +40,21 @@ impl Telemeter {
     async fn main(mut self) {
         let mut address = self.ctx.config().address;
         let mut server = start_server(&self.ctx);
+        self.storage.configure(&self.ctx.config().global_labels);
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
                 ConfigUpdated => {
-                    if self.ctx.config().address != address {
+                    let config = self.ctx.config();
+
+                    if config.address != address {
                         info!("address changed, rerun the server");
                         server.abort();
-                        address = self.ctx.config().address;
+                        address = config.address;
                         server = start_server(&self.ctx);
                     }
+
+                    self.storage.configure(&config.global_labels);
                 }
                 (Render, token) => {
                     let quantiles = parse_quantiles(&self.ctx.config().quantiles);
