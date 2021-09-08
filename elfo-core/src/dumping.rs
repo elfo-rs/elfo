@@ -7,6 +7,7 @@ use std::{
     },
 };
 
+use metrics::increment_counter;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use smallbox::smallbox;
@@ -148,7 +149,7 @@ impl Dumper {
 
         if queue.len() >= SHARD_MAX_LEN {
             // TODO: move to a limited backlog.
-            // TODO: emit some metric.
+            increment_counter!("lost_dumps_total");
             return;
         }
 
