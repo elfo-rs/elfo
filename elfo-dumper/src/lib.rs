@@ -60,10 +60,11 @@ impl Dumper {
                 }
                 DumpingTick => {
                     let dumper = dumper.clone();
+                    let timeout = ctx.config().interval;
 
                     // TODO: change error handling?
                     file = task::spawn_blocking(move || {
-                        for dump in dumper.drain() {
+                        for dump in dumper.drain(timeout) {
                             serde_json::to_writer(&mut file, &dump).expect("cannot write");
                             file.write_all(b"\n").expect("cannot write");
                         }

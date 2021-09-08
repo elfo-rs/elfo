@@ -5,12 +5,14 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
+    time::Duration,
 };
 
 use metrics::increment_counter;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use smallbox::smallbox;
+use tokio::time::Instant;
 
 use elfo_utils::CachePadded;
 
@@ -156,11 +158,12 @@ impl Dumper {
         queue.push_back(item);
     }
 
-    pub fn drain(&self) -> Drain<'_> {
+    pub fn drain(&self, timeout: Duration) -> Drain<'_> {
         Drain {
             dumper: self,
             shard_no: 0,
             queue: VecDeque::new(),
+            until: Instant::now() + timeout,
         }
     }
 }
@@ -170,6 +173,7 @@ pub struct Drain<'a> {
     dumper: &'a Dumper,
     shard_no: usize,
     queue: VecDeque<DumpItem>,
+    until: Instant,
 }
 
 impl<'a> Drain<'a> {
@@ -197,9 +201,11 @@ impl<'a> Iterator for Drain<'a> {
     fn next(&mut self) -> Option<DumpItem> {
         if let Some(item) = self.queue.pop_front() {
             Some(item)
-        } else {
+        } else if Instant::now() < self.until {
             self.refill_queue();
             self.queue.pop_front()
+        } else {
+            None
         }
     }
 }
@@ -239,7 +245,7 @@ mod tests {
 
         let f = async {
             let dumper = Dumper::default();
-            let mut drain = dumper.drain();
+            let mut drain = dumper.drain(Duration::from_secs(10));
 
             assert!(drain.next().is_none());
             assert!(drain.next().is_none());
