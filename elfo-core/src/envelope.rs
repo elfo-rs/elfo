@@ -1,3 +1,5 @@
+use quanta::Instant;
+
 use crate::{
     addr::Addr,
     address_book::AddressBook,
@@ -9,13 +11,14 @@ use crate::{
 // TODO: use granular messages instead of `SmallBox`.
 #[derive(Debug)]
 pub struct Envelope<M = AnyMessage> {
+    created_time: Instant, // Now used also as a sent time.
     trace_id: TraceId,
     kind: MessageKind,
     message: M,
 }
 
 assert_impl_all!(Envelope: Send);
-assert_eq_size!(Envelope, [u8; 128]);
+assert_eq_size!(Envelope, [u8; 256]);
 
 #[derive(Debug)]
 pub(crate) enum MessageKind {
@@ -35,9 +38,12 @@ impl<M> Envelope<M> {
         &self.message
     }
 
-    #[inline]
     pub(crate) fn message_kind(&self) -> &MessageKind {
         &self.kind
+    }
+
+    pub(crate) fn created_time(&self) -> Instant {
+        self.created_time
     }
 
     #[inline]
@@ -57,6 +63,7 @@ impl<M: Message> Envelope<M> {
 
     pub(crate) fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
         Self {
+            created_time: Instant::now(),
             trace_id,
             kind,
             message,
@@ -65,6 +72,7 @@ impl<M: Message> Envelope<M> {
 
     pub(crate) fn upcast(self) -> Envelope {
         Envelope {
+            created_time: self.created_time,
             trace_id: self.trace_id,
             kind: self.kind,
             message: AnyMessage::new(self.message),
@@ -86,6 +94,7 @@ impl Envelope {
     pub(crate) fn do_downcast<M: Message>(self) -> Envelope<M> {
         let message = self.message.downcast::<M>().expect("cannot downcast");
         Envelope {
+            created_time: self.created_time,
             trace_id: self.trace_id,
             kind: self.kind,
             message,
@@ -95,6 +104,7 @@ impl Envelope {
     // XXX: why does `Envelope` know about `AddressBook`?
     pub(crate) fn duplicate(&self, book: &AddressBook) -> Option<Self> {
         Some(Self {
+            created_time: self.created_time,
             trace_id: self.trace_id,
             kind: match &self.kind {
                 MessageKind::Regular { sender } => MessageKind::Regular { sender: *sender },

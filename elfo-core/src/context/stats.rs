@@ -1,4 +1,4 @@
-use metrics::{self, Key, Label};
+use metrics::{self, histogram, Key, Label};
 use quanta::Instant;
 
 use crate::{envelope::Envelope, message::Message};
@@ -14,11 +14,17 @@ struct InHandling {
 }
 
 impl Stats {
-    pub(super) fn on_new_message(&mut self, envelope: &Envelope) {
+    pub(super) fn message_waiting_time_seconds(&mut self, envelope: &Envelope) {
         let _recorder = ward!(metrics::try_recorder());
+
+        let now = Instant::now();
+        // Now envelope cannot be forwarded, so use the created time as a sent time.
+        let value = (now - envelope.created_time()).as_secs_f64();
+        histogram!("message_waiting_time_seconds", value);
+
         self.in_handling = Some(InHandling {
             labels: envelope.message().labels(),
-            start_time: Instant::now(),
+            start_time: now,
         });
     }
 

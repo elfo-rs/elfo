@@ -33,7 +33,7 @@ pub trait Request: Message {
 
 pub struct AnyMessage {
     ltid: LocalTypeId,
-    data: SmallBox<dyn Any + Send, [u8; 64]>,
+    data: SmallBox<dyn Any + Send, [u8; 184]>,
 }
 
 impl AnyMessage {

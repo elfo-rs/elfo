@@ -331,7 +331,7 @@ impl<C, K, S> Context<C, K, S> {
             )
         }
 
-        self.stats.on_new_message(&envelope);
+        self.stats.message_waiting_time_seconds(&envelope);
 
         envelope
     }
