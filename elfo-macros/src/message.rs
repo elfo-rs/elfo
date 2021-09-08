@@ -215,12 +215,17 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 const _LTID: #internal::LocalTypeId = #ltid;
                 const PROTOCOL: &'static str = #protocol;
                 const NAME: &'static str = stringify!(#name);
+                const LABELS: &'static [#internal::metrics::Label] = &[
+                    #internal::metrics::Label::from_static_parts("message", Self::NAME),
+                    #internal::metrics::Label::from_static_parts("protocol", Self::PROTOCOL),
+                ];
             }
 
             #[doc(hidden)]
             #[allow(non_snake_case)]
             mod #mod_name {
                 use super::*;
+                use #crate_::Message;
 
                 use std::fmt;
 
@@ -250,9 +255,10 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 #[linkme::distributed_slice(MESSAGE_LIST)]
                 #[linkme(crate = #internal::linkme)]
                 static VTABLE: MessageVTable = MessageVTable {
-                    ltid: #ltid,
-                    name: stringify!(#name),
-                    protocol: #protocol,
+                    ltid: #name::_LTID,
+                    name: #name::NAME,
+                    protocol: #name::PROTOCOL,
+                    labels: #name::LABELS,
                     clone,
                     debug,
                     erase,

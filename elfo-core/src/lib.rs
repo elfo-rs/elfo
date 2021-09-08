@@ -78,6 +78,7 @@ pub mod _priv {
         start::do_start,
     };
     pub use linkme;
+    pub use metrics;
     pub use serde;
     pub use smallbox;
     pub use static_assertions::assert_impl_all;

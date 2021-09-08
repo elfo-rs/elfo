@@ -25,10 +25,11 @@ use crate::{
     scope,
 };
 
-use self::source::Combined;
 pub(crate) use self::source::Source;
+use self::{source::Combined, stats::Stats};
 
 mod source;
+mod stats;
 
 pub struct Context<C = (), K = Singleton, S = ()> {
     book: AddressBook,
@@ -39,6 +40,7 @@ pub struct Context<C = (), K = Singleton, S = ()> {
     config: Arc<C>,
     key: K,
     source: S,
+    stats: Stats,
 }
 
 assert_impl_all!(Context: Send);
@@ -81,6 +83,7 @@ impl<C, K, S> Context<C, K, S> {
             config: self.config,
             key: self.key,
             source: Combined::new(self.source, source),
+            stats: Stats::default(),
         }
     }
 
@@ -101,6 +104,8 @@ impl<C, K, S> Context<C, K, S> {
     }
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
+        self.stats.sent_messages_total::<M>();
+
         trace!("> {:?}", message);
         if self.dumper.is_enabled() {
             self.dumper.dump_message(&message, &kind, Direction::Out);
@@ -165,6 +170,8 @@ impl<C, K, S> Context<C, K, S> {
         message: M,
         kind: MessageKind,
     ) -> Result<(), SendError<M>> {
+        self.stats.sent_messages_total::<M>();
+
         trace!(to = %recipient, "> {:?}", message);
         if self.dumper.is_enabled() {
             self.dumper.dump_message(&message, &kind, Direction::Out);
@@ -231,6 +238,8 @@ impl<C, K, S> Context<C, K, S> {
         C: 'static,
         S: Source,
     {
+        self.stats.message_handling_time_seconds();
+
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
@@ -268,6 +277,8 @@ impl<C, K, S> Context<C, K, S> {
     where
         C: 'static,
     {
+        self.stats.message_handling_time_seconds();
+
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
         let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
         let envelope = match actor.try_recv() {
@@ -320,6 +331,8 @@ impl<C, K, S> Context<C, K, S> {
             )
         }
 
+        self.stats.on_new_message(&envelope);
+
         envelope
     }
 
@@ -341,6 +354,7 @@ impl<C, K, S> Context<C, K, S> {
             config: Arc::new(()),
             key: Singleton,
             source: (),
+            stats: Stats::default(),
         }
     }
 
@@ -362,6 +376,7 @@ impl<C, K, S> Context<C, K, S> {
             config,
             key: self.key,
             source: self.source,
+            stats: Stats::default(),
         }
     }
 
@@ -385,6 +400,7 @@ impl<C, K, S> Context<C, K, S> {
             config: self.config,
             key,
             source: self.source,
+            stats: Stats::default(),
         }
     }
 }
@@ -400,6 +416,7 @@ impl Context {
             config: Arc::new(()),
             key: Singleton,
             source: (),
+            stats: Stats::default(),
         }
     }
 }
@@ -415,6 +432,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             config: self.config.clone(),
             key: self.key.clone(),
             source: (),
+            stats: Stats::default(),
         }
     }
 }
