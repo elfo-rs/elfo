@@ -5,6 +5,7 @@ use std::{
     io::{BufWriter, Write},
 };
 
+use metrics::counter;
 use tokio::task;
 
 use elfo_core as elfo;
@@ -63,16 +64,22 @@ impl Dumper {
                     let timeout = ctx.config().interval;
 
                     // TODO: change error handling?
-                    file = task::spawn_blocking(move || {
+                    let (file1, written_dump_count) = task::spawn_blocking(move || {
+                        let mut written_dump_count = 0;
                         for dump in dumper.drain(timeout) {
                             serde_json::to_writer(&mut file, &dump).expect("cannot write");
                             file.write_all(b"\n").expect("cannot write");
+                            written_dump_count += 1;
                         }
                         file.flush().expect("cannot flush");
-                        file
+                        (file, written_dump_count)
                     })
                     .await
                     .expect("failed to dump");
+
+                    counter!("written_dumps_total", written_dump_count);
+
+                    file = file1;
                 }
             });
         }
