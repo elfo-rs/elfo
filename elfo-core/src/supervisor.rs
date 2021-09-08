@@ -122,8 +122,9 @@ where
                     // Update the dumper's config.
                     self.context.dumper().configure(&system.dumping);
 
-                    // Update telemetry's config.
+                    // Update permissions.
                     let mut perm = self.permissions.load();
+                    perm.set_logging_enabled(system.logging.max_level.to_tracing_level());
                     perm.set_telemetry_per_actor_group_enabled(system.telemetry.per_actor_group);
                     perm.set_telemetry_per_actor_key_enabled(system.telemetry.per_actor_key);
                     self.permissions.store(perm);

@@ -14,6 +14,7 @@ address = "0.0.0.0:9042"
 path = "example.dump"
 
 [producers]
+# system.logging.max_level = "Info" # default, one of: Trace, Debug, Info, Warn, Error, Off.
 # system.dumping.disabled = false # default
 # system.telemetry.per_actor_group = true # default
 # system.telemetry.per_actor_key = false # default
