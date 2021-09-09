@@ -151,7 +151,7 @@ impl Dumper {
 
         if queue.len() >= SHARD_MAX_LEN {
             // TODO: move to a limited backlog.
-            increment_counter!("lost_dumps_total");
+            increment_counter!("elfo_lost_dumps_total");
             return;
         }
 

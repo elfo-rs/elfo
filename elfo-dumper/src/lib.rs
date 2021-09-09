@@ -77,7 +77,7 @@ impl Dumper {
                     .await
                     .expect("failed to dump");
 
-                    counter!("written_dumps_total", written_dump_count);
+                    counter!("elfo_written_dumps_total", written_dump_count);
 
                     file = file1;
                 }
