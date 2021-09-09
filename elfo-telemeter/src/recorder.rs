@@ -21,7 +21,7 @@ impl PrometheusRecorder {
             if perm.is_telemetry_per_actor_group_enabled() {
                 f(&self.storage, scope, false)
             }
-            if perm.is_telemetry_per_actor_key_enabled() {
+            if perm.is_telemetry_per_actor_key_enabled() && scope.meta().key.is_some() {
                 f(&self.storage, scope, true)
             }
         });
