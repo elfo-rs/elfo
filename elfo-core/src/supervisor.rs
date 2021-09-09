@@ -3,6 +3,7 @@ use std::{any::Any, future::Future, panic::AssertUnwindSafe, sync::Arc, time::Du
 use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
+use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
 use tracing::{error_span, info, Instrument, Span};
 
@@ -292,6 +293,13 @@ where
         let fut = async move {
             info!(%addr, "started");
 
+            sv.objects
+                .get(&key)
+                .expect("where is the current actor?")
+                .as_actor()
+                .expect("a supervisor stores only actors")
+                .on_start();
+
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             let new_status = match fut.await {
                 Ok(Ok(())) => ActorStatus::TERMINATED,
@@ -309,8 +317,11 @@ where
                 .set_status(new_status);
 
             if need_to_restart {
+                // TODO: should we register this metrics?
+                increment_gauge!("elfo_restarting_actors", 1.);
                 // TODO: use `backoff`.
                 tokio::time::sleep(Duration::from_secs(5)).await;
+                decrement_gauge!("elfo_restarting_actors", 1.);
                 sv.objects.insert(key.clone(), sv.spawn(key))
             } else {
                 sv.objects.remove(&key).map(|(_, v)| v)
