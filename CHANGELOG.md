@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.20] - 2021-09-09
 ### Added
 - telemeter: interoperability with the `metrics` crate.
 - Add metrics: `elfo_active_actors`, `elfo_inactive_actors_total`, `elfo_restarting_actors`, `elfo_message_waiting_time_seconds`, `elfo_message_handling_time_seconds`, `elfo_sent_messages_total`, `elfo_written_dumps_total`, `elfo_lost_dumps_total`.
@@ -151,7 +152,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.19...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.20...HEAD
+[0.1.20]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.19...elfo-0.1.20
 [0.1.19]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.18...elfo-0.1.19
 [0.1.18]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.17...elfo-0.1.18
 [0.1.17]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.16...elfo-0.1.17

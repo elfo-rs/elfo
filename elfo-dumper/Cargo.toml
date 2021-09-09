@@ -1,14 +1,14 @@
 [package]
 name = "elfo-dumper"
-version = "0.1.0"
+version = "0.1.1"
 description = "Dumps messages on disk"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
 license = "MIT"
 
 [dependencies]
-elfo-macros = { version = "0.1", path = "../elfo-macros" }
-elfo-core = { version = "0.1", path = "../elfo-core" }
+elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
+elfo-core = { version = "0.1.16", path = "../elfo-core" }
 
 tokio = { version = "1", features = ["fs", "io-util"] }
 serde = { version = "1.0.120", features = ["derive", "rc"] }

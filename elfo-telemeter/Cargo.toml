@@ -8,8 +8,8 @@ license = "MIT"
 keywords = ["metrics", "telemetry", "prometheus"]
 
 [dependencies]
-elfo-macros = { version = "0.1", path = "../elfo-macros" }
-elfo-core = { version = "0.1", path = "../elfo-core" }
+elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
+elfo-core = { version = "0.1.16", path = "../elfo-core" }
 
 tokio = "1"
 hyper = { version = "0.14", default-features = false, features = ["server", "tcp", "http1"] }
