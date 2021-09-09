@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - telemeter: interoperability with the `metrics` crate.
+- Add metrics: `elfo_active_actors`, `elfo_inactive_actors_total`, `elfo_restarting_actors`, `elfo_message_waiting_time_seconds`, `elfo_message_handling_time_seconds`, `elfo_sent_messages_total`, `elfo_written_dumps_total`, `elfo_lost_dumps_total`.
 - logger: add a filtering layer to control per group logging. Now it's possible to use `system.logging.max_level` under a group section in order to alter the filter settings.
 
 ### Fixed
