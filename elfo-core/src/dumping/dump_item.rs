@@ -31,6 +31,7 @@ pub struct DumpItem {
 pub struct Timestamp(u64);
 
 impl Timestamp {
+    #[cfg(not(test))]
     #[inline]
     pub fn now() -> Self {
         let ns = std::time::UNIX_EPOCH
@@ -38,6 +39,11 @@ impl Timestamp {
             .expect("invalid system time")
             .as_nanos() as u64;
         Self(ns)
+    }
+
+    #[cfg(test)]
+    pub fn now() -> Self {
+        Self(42)
     }
 
     #[inline]

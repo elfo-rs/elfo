@@ -255,7 +255,7 @@ mod tests {
             let msg = drain.next().unwrap();
             assert_eq!(msg.meta, meta);
             assert_eq!(msg.sequence_no, SequenceNo::try_from(1).unwrap());
-            assert_eq!(msg.timestamp, Timestamp::from_nanos(0));
+            assert_eq!(msg.timestamp, Timestamp::from_nanos(42));
             assert_eq!(msg.trace_id, trace_id);
             assert_eq!(msg.direction, Direction::In);
             assert_eq!(msg.class, "class");
@@ -272,7 +272,7 @@ mod tests {
 
             let msg = drain.next().unwrap();
             assert_eq!(msg.sequence_no, SequenceNo::try_from(2).unwrap());
-            assert_eq!(msg.timestamp, Timestamp::from_nanos(100));
+            assert_eq!(msg.timestamp, Timestamp::from_nanos(42)); // TODO: improve the mock.
             assert_eq!(msg.message_name, "2");
             let msg = drain.next().unwrap();
             assert_eq!(msg.message_name, "3");
