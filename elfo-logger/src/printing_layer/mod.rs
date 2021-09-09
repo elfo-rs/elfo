@@ -10,11 +10,11 @@ use crate::{PreparedEvent, Shared, SpanData, StringId};
 
 mod visitor;
 
-pub struct PrintLayer {
+pub struct PrintingLayer {
     shared: Arc<Shared>,
 }
 
-impl PrintLayer {
+impl PrintingLayer {
     pub(crate) fn new(shared: Arc<Shared>) -> Self {
         Self { shared }
     }
@@ -33,7 +33,7 @@ impl PrintLayer {
 
 // TODO: log if the pool is full.
 
-impl<S: Subscriber> Layer<S> for PrintLayer {
+impl<S: Subscriber> Layer<S> for PrintingLayer {
     fn new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
         let parent_id = if attrs.is_root() {
             None
