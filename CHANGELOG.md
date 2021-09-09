@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - telemeter: interoperability with the `metrics` crate.
 - logger: add a filtering layer to control per group logging. Now it's possible to use `system.logging.max_level` under a group section in order to alter the filter settings.
 
+### Fixed
+- dumper: protect against serialization errors.
+
 ### Changed
 - tls: deprecated in favor of `scope`.
 

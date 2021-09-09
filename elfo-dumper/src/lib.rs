@@ -1,12 +1,15 @@
 #![warn(rust_2018_idioms, unreachable_pub)]
 
 use std::{
+    error::Error as StdError,
     fs::File,
     io::{BufWriter, Write},
 };
 
+use eyre::{Result, WrapErr};
 use metrics::counter;
 use tokio::task;
+use tracing::error;
 
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
@@ -40,7 +43,7 @@ impl Dumper {
         Self { ctx }
     }
 
-    async fn main(self) {
+    async fn main(self) -> Result<()> {
         let mut file = open_file(self.ctx.config()).await;
 
         // TODO: use the grant system instead.
@@ -63,27 +66,56 @@ impl Dumper {
                     let dumper = dumper.clone();
                     let timeout = ctx.config().interval;
 
-                    // TODO: change error handling?
-                    let (file1, written_dump_count) = task::spawn_blocking(move || {
-                        let mut written_dump_count = 0;
+                    let report = task::spawn_blocking(move || -> Result<Report> {
+                        let mut errors = Vec::new();
+                        let mut written = 0;
+
                         for dump in dumper.drain(timeout) {
-                            serde_json::to_writer(&mut file, &dump).expect("cannot write");
-                            file.write_all(b"\n").expect("cannot write");
-                            written_dump_count += 1;
+                            match serde_json::to_writer(&mut file, &dump) {
+                                Ok(()) => {
+                                    written += 1;
+                                }
+                                Err(err) if err.is_io() => {
+                                    Err(err).context("cannot write")?;
+                                }
+                                Err(err) => {
+                                    errors.push(err);
+                                    // TODO: the last line is probably invalid,
+                                    //       should we use custom buffer?
+                                }
+                            };
+                            file.write_all(b"\n").context("cannot write")?;
                         }
-                        file.flush().expect("cannot flush");
-                        (file, written_dump_count)
+                        file.flush().context("cannot flush")?;
+
+                        Ok(Report {
+                            file,
+                            errors,
+                            written,
+                        })
                     })
                     .await
-                    .expect("failed to dump");
+                    .expect("failed to dump")?;
 
-                    counter!("elfo_written_dumps_total", written_dump_count);
+                    counter!("elfo_written_dumps_total", report.written);
+                    file = report.file;
 
-                    file = file1;
+                    // TODO: add a metrics for failed dumps.
+                    for error in report.errors {
+                        error!(error = &error as &(dyn StdError), "cannot serialize");
+                    }
                 }
             });
         }
+
+        Ok(())
     }
+}
+
+struct Report {
+    file: BufWriter<File>,
+    errors: Vec<serde_json::Error>,
+    written: u64,
 }
 
 pub fn new() -> Schema {
