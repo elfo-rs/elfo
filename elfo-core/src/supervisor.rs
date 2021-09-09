@@ -3,6 +3,7 @@ use std::{any::Any, future::Future, panic::AssertUnwindSafe, sync::Arc, time::Du
 use dashmap::DashMap;
 use futures::FutureExt;
 use fxhash::FxBuildHasher;
+use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
 use tracing::{error_span, info, Instrument, Span};
 
@@ -20,8 +21,9 @@ use crate::{
     exec::{Exec, ExecResult},
     messages,
     object::{Object, ObjectArc, ObjectMeta},
+    permissions::AtomicPermissions,
     routers::{Outcome, Router},
-    tls, trace_id,
+    scope::{self, Scope},
 };
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
@@ -33,6 +35,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     router: R,
     exec: X,
     control: CachePadded<RwLock<ControlBlock<C>>>,
+    permissions: Arc<AtomicPermissions>,
 }
 
 struct ControlBlock<C> {
@@ -70,11 +73,19 @@ where
             router,
             exec,
             control: CachePadded(RwLock::new(control)),
+            permissions: Default::default(),
         }
     }
 
     fn in_scope(&self, f: impl FnOnce()) {
-        tls::sync_scope(self.meta.clone(), tls::trace_id(), || self.span.in_scope(f));
+        Scope::with_trace_id(
+            scope::trace_id(),
+            self.context.addr(),
+            self.context.group(), // `Addr::NULL`, actually
+            self.meta.clone(),
+            self.permissions.clone(),
+        )
+        .sync_within(|| self.span.in_scope(f));
     }
 
     pub(crate) fn handle(self: &Arc<Self>, envelope: Envelope) -> RouteReport {
@@ -104,11 +115,22 @@ where
             },
             messages::UpdateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
-                    self.context
-                        .dumper()
-                        .configure(&config.get_system().dumping);
-
+                    // Make all updates under lock, including telemetry/dumper ones.
                     let mut control = self.control.write();
+
+                    let system = config.get_system();
+
+                    // Update the dumper's config.
+                    self.context.dumper().configure(&system.dumping);
+
+                    // Update permissions.
+                    let mut perm = self.permissions.load();
+                    perm.set_logging_enabled(system.logging.max_level.to_tracing_level());
+                    perm.set_telemetry_per_actor_group_enabled(system.telemetry.per_actor_group);
+                    perm.set_telemetry_per_actor_key_enabled(system.telemetry.per_actor_key);
+                    self.permissions.store(perm);
+
+                    // Update user's config.
                     let is_first_update = control.config.is_none();
                     control.config = Some(config.get_user::<C>().clone());
                     self.router
@@ -116,7 +138,11 @@ where
                     self.in_scope(
                         || info!(config = ?control.config.as_ref().unwrap(), "router updated"),
                     );
+
+                    // Release the lock.
                     drop(control);
+
+                    // Send `UpdateConfig` across actors.
                     let outcome = self.router.route(&envelope);
                     if !is_first_update {
                         let mut envelope = envelope;
@@ -245,11 +271,6 @@ where
             actor_key = key_str.as_str()
         );
 
-        let meta = Arc::new(ObjectMeta {
-            group: self.meta.group.clone(),
-            key: Some(key_str),
-        });
-
         let control = self.control.read();
         let config = control.config.as_ref().cloned().expect("config is unset");
 
@@ -272,6 +293,13 @@ where
         let fut = async move {
             info!(%addr, "started");
 
+            sv.objects
+                .get(&key)
+                .expect("where is the current actor?")
+                .as_actor()
+                .expect("a supervisor stores only actors")
+                .on_start();
+
             let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
             let new_status = match fut.await {
                 Ok(Ok(())) => ActorStatus::TERMINATED,
@@ -289,8 +317,11 @@ where
                 .set_status(new_status);
 
             if need_to_restart {
+                // TODO: should we register this metrics?
+                increment_gauge!("elfo_restarting_actors", 1.);
                 // TODO: use `backoff`.
                 tokio::time::sleep(Duration::from_secs(5)).await;
+                decrement_gauge!("elfo_restarting_actors", 1.);
                 sv.objects.insert(key.clone(), sv.spawn(key))
             } else {
                 sv.objects.remove(&key).map(|(_, v)| v)
@@ -301,8 +332,14 @@ where
         };
 
         entry.insert(Object::new(addr, Actor::new(addr)));
-        let initial_trace_id = trace_id::generate();
-        tokio::spawn(tls::scope(meta, initial_trace_id, fut.instrument(span)));
+
+        let meta = Arc::new(ObjectMeta {
+            group: self.meta.group.clone(),
+            key: Some(key_str),
+        });
+
+        let scope = Scope::new(addr, self.context.addr(), meta, self.permissions.clone());
+        tokio::spawn(scope.within(fut.instrument(span)));
         self.context.book().get_owned(addr).expect("just created")
     }
 

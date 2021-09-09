@@ -13,6 +13,9 @@ pub use elfo_dumper as dumper;
 #[cfg(feature = "elfo-logger")]
 #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
 pub use elfo_logger as logger;
+#[cfg(feature = "elfo-telemeter")]
+#[cfg_attr(docsrs, doc(cfg(feature = "full")))]
+pub use elfo_telemeter as telemeter;
 #[cfg(feature = "test-util")]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-util")))]
 pub use elfo_test as test;

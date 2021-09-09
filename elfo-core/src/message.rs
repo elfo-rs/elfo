@@ -2,6 +2,7 @@ use std::{any::Any, fmt};
 
 use fxhash::FxHashMap;
 use linkme::distributed_slice;
+use metrics::Label;
 use serde::{Deserialize, Serialize};
 use smallbox::{smallbox, SmallBox};
 
@@ -18,6 +19,9 @@ pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deseri
     const PROTOCOL: &'static str;
     /// Just a message's name.
     const NAME: &'static str;
+
+    #[doc(hidden)]
+    const LABELS: &'static [Label];
 }
 
 pub trait Request: Message {
@@ -29,7 +33,7 @@ pub trait Request: Message {
 
 pub struct AnyMessage {
     ltid: LocalTypeId,
-    data: SmallBox<dyn Any + Send, [u8; 64]>,
+    data: SmallBox<dyn Any + Send, [u8; 184]>,
 }
 
 impl AnyMessage {
@@ -49,6 +53,12 @@ impl AnyMessage {
     #[inline]
     pub fn protocol(&self) -> &'static str {
         with_vtable(self.ltid, |vtable| vtable.protocol)
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn labels(&self) -> &'static [Label] {
+        with_vtable(self.ltid, |vtable| vtable.labels)
     }
 
     #[inline]
@@ -96,11 +106,13 @@ impl fmt::Debug for AnyMessage {
 
 // Message Virtual Table.
 
+// Reexported in `elfo::_priv`.
 #[derive(Clone)]
 pub struct MessageVTable {
     pub ltid: LocalTypeId,
     pub name: &'static str,
     pub protocol: &'static str,
+    pub labels: &'static [Label],
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,

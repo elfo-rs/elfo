@@ -15,6 +15,8 @@ serde = { version = "1.0.120", features = ["derive", "rc"] }
 serde-value = "0.7.0"
 futures = "0.3.12"
 tracing = "0.1.25"
+metrics = "0.17"
 fxhash = "0.2.1"
 humantime-serde = "1"
 serde_json = "1.0.64"
+eyre = "0.6.5"

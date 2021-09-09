@@ -11,19 +11,20 @@ use futures_intrusive::{buffer::GrowingHeapBuf, channel::GenericChannel};
 use fxhash::FxBuildHasher;
 use parking_lot::RawMutex;
 use sharded_slab::Pool;
-use tracing::{span::Id as SpanId, Metadata};
+use tracing::{span::Id as SpanId, Level, Metadata, Subscriber};
 use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 
 use elfo_core::{trace_id::TraceId, Schema, _priv::ObjectMeta};
 
-use crate::{actor::Logger, layer::PrintLayer};
+use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::PrintingLayer};
 
 pub use crate::actor::ReopenLogFile;
 
 mod actor;
 mod config;
+mod filtering_layer;
 mod formatters;
-mod layer;
+mod printing_layer;
 mod theme;
 
 const CHANNEL_CAPACITY: usize = 128 * 1024;
@@ -51,7 +52,8 @@ struct PreparedEvent {
     payload_id: StringId,
 }
 
-pub fn new() -> (PrintLayer, Schema) {
+// TODO: revise factory (return also `FilteringLayer` somehow).
+pub fn new() -> (PrintingLayer, Schema) {
     let shared = Shared {
         channel: GenericChannel::with_capacity(CHANNEL_CAPACITY),
         pool: Pool::default(),
@@ -59,7 +61,7 @@ pub fn new() -> (PrintLayer, Schema) {
     };
 
     let shared = Arc::new(shared);
-    let layer = PrintLayer::new(shared.clone());
+    let layer = PrintingLayer::new(shared.clone());
     let schema = Logger::new(shared);
 
     (layer, schema)
@@ -67,16 +69,22 @@ pub fn new() -> (PrintLayer, Schema) {
 
 pub fn init() -> Schema {
     // TODO: log instead of panicking.
-    let (print_layer, schema) = new();
+    let (printer, schema) = new();
+    let registry = Registry::default();
 
-    let filter_layer = if env::var(EnvFilter::DEFAULT_ENV).is_ok() {
-        EnvFilter::try_from_default_env().expect("invalid env")
+    if env::var(EnvFilter::DEFAULT_ENV).is_ok() {
+        let filter = EnvFilter::try_from_default_env().expect("invalid env");
+        let subscriber = registry.with(filter).with(printer);
+        install_subscriber(subscriber);
     } else {
-        EnvFilter::try_new("info").unwrap()
+        let filter = FilteringLayer::new(Level::WARN);
+        let subscriber = registry.with(filter).with(printer);
+        install_subscriber(subscriber);
     };
 
-    let subscriber = Registry::default().with(filter_layer).with(print_layer);
-
-    tracing::subscriber::set_global_default(subscriber).expect("cannot set global subscriber");
     schema
+}
+
+fn install_subscriber(s: impl Subscriber + Send + Sync) {
+    tracing::subscriber::set_global_default(s).expect("cannot set global subscriber");
 }

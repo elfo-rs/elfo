@@ -13,9 +13,8 @@ use crate::{
     message,
     messages::{Ping, UpdateConfig},
     object::{Object, ObjectMeta},
-    tls,
+    scope::Scope,
     topology::Topology,
-    trace_id,
 };
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
@@ -91,15 +90,17 @@ pub async fn do_start<F: Future>(
     let dumper = topology.dumper.for_group(false); // TODO: should we dump the starter?
 
     let meta = ObjectMeta {
-        group: "starter".into(),
+        group: "init".into(),
         key: Some("_".into()), // Just like `Singleton`.
     };
-    let initial_trace_id = trace_id::generate();
-    tls::scope(Arc::new(meta), initial_trace_id, async move {
+
+    // XXX: `addr` is used for both a specific actor and a whole group for now.
+    let scope = Scope::new(addr, addr, Arc::new(meta), Default::default());
+    let f = async move {
         let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
         send_configs_to_entrypoints(&ctx, &topology).await?;
         start_entrypoints(&ctx, &topology).await?;
         Ok(f(ctx).await)
-    })
-    .await
+    };
+    scope.within(f).await
 }

@@ -5,11 +5,14 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
+    time::Duration,
 };
 
+use metrics::increment_counter;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use smallbox::smallbox;
+use tokio::time::Instant;
 
 use elfo_utils::CachePadded;
 
@@ -21,7 +24,7 @@ use crate::{
     envelope,
     message::{Message, Request},
     request_table::RequestId,
-    tls,
+    scope,
 };
 
 mod dump_item;
@@ -128,11 +131,13 @@ impl Dumper {
         message_kind: MessageKind,
         message: ErasedMessage,
     ) {
+        let (meta, trace_id) = scope::with(|scope| (scope.meta().clone(), scope.trace_id()));
+
         let item = DumpItem {
-            meta: tls::meta(),
+            meta,
             sequence_no: self.per_group.sequence_no_gen.generate(),
             timestamp: Timestamp::now(),
-            trace_id: tls::trace_id(),
+            trace_id,
             direction,
             class,
             message_name,
@@ -146,18 +151,19 @@ impl Dumper {
 
         if queue.len() >= SHARD_MAX_LEN {
             // TODO: move to a limited backlog.
-            // TODO: emit some metric.
+            increment_counter!("elfo_lost_dumps_total");
             return;
         }
 
         queue.push_back(item);
     }
 
-    pub fn drain(&self) -> Drain<'_> {
+    pub fn drain(&self, timeout: Duration) -> Drain<'_> {
         Drain {
             dumper: self,
             shard_no: 0,
             queue: VecDeque::new(),
+            until: Instant::now() + timeout,
         }
     }
 }
@@ -167,6 +173,7 @@ pub struct Drain<'a> {
     dumper: &'a Dumper,
     shard_no: usize,
     queue: VecDeque<DumpItem>,
+    until: Instant,
 }
 
 impl<'a> Drain<'a> {
@@ -194,9 +201,11 @@ impl<'a> Iterator for Drain<'a> {
     fn next(&mut self) -> Option<DumpItem> {
         if let Some(item) = self.queue.pop_front() {
             Some(item)
-        } else {
+        } else if Instant::now() < self.until {
             self.refill_queue();
             self.queue.pop_front()
+        } else {
+            None
         }
     }
 }
@@ -211,7 +220,7 @@ mod tests {
     use smallbox::smallbox;
     use tokio::time;
 
-    use crate::{object::ObjectMeta, trace_id::TraceId};
+    use crate::{addr::Addr, object::ObjectMeta, scope::Scope, trace_id::TraceId};
 
     fn dump_msg(dumper: &Dumper, name: &'static str) {
         dumper.dump(
@@ -234,9 +243,9 @@ mod tests {
         });
         let trace_id = TraceId::try_from(42).unwrap();
 
-        tls::scope(meta.clone(), trace_id, async {
+        let f = async {
             let dumper = Dumper::default();
-            let mut drain = dumper.drain();
+            let mut drain = dumper.drain(Duration::from_secs(10));
 
             assert!(drain.next().is_none());
             assert!(drain.next().is_none());
@@ -246,7 +255,7 @@ mod tests {
             let msg = drain.next().unwrap();
             assert_eq!(msg.meta, meta);
             assert_eq!(msg.sequence_no, SequenceNo::try_from(1).unwrap());
-            assert_eq!(msg.timestamp, Timestamp::from_nanos(0));
+            assert_eq!(msg.timestamp, Timestamp::from_nanos(42));
             assert_eq!(msg.trace_id, trace_id);
             assert_eq!(msg.direction, Direction::In);
             assert_eq!(msg.class, "class");
@@ -263,13 +272,16 @@ mod tests {
 
             let msg = drain.next().unwrap();
             assert_eq!(msg.sequence_no, SequenceNo::try_from(2).unwrap());
-            assert_eq!(msg.timestamp, Timestamp::from_nanos(100));
+            assert_eq!(msg.timestamp, Timestamp::from_nanos(42)); // TODO: improve the mock.
             assert_eq!(msg.message_name, "2");
             let msg = drain.next().unwrap();
             assert_eq!(msg.message_name, "3");
 
             assert!(drain.next().is_none());
-        })
-        .await;
+        };
+
+        let scope = Scope::new(Addr::NULL, Addr::NULL, meta.clone(), Default::default());
+        scope.set_trace_id(trace_id);
+        scope.within(f).await;
     }
 }

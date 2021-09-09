@@ -2,7 +2,7 @@
 
 use std::convert::TryFrom;
 
-use elfo::{config::AnyConfig, prelude::*, stream, tls, trace_id::TraceId};
+use elfo::{config::AnyConfig, prelude::*, scope, stream, trace_id::TraceId};
 
 #[message]
 #[derive(PartialEq)]
@@ -20,11 +20,11 @@ async fn it_handles_basic_operations() {
         let stream = stream::Stream::new(futures::stream::iter(vec![SomeMessage(0)]));
 
         let mut ctx = ctx.with(&stream);
-        let mut prev_trace_id = tls::trace_id();
+        let mut prev_trace_id = scope::trace_id();
 
         while let Some(envelope) = ctx.recv().await {
-            assert_ne!(tls::trace_id(), prev_trace_id);
-            prev_trace_id = tls::trace_id();
+            assert_ne!(scope::trace_id(), prev_trace_id);
+            prev_trace_id = scope::trace_id();
 
             msg!(match envelope {
                 m @ SomeMessage(_) => ctx.send(m).await.unwrap(),
@@ -69,7 +69,7 @@ async fn it_restores_trace_id() {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 SomeMessage(x) => {
-                    assert_eq!(u64::from(tls::trace_id()), u64::from(x));
+                    assert_eq!(u64::from(scope::trace_id()), u64::from(x));
                     ctx.send(SomeMessage(x)).await.unwrap()
                 }
             })

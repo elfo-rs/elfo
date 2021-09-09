@@ -14,7 +14,7 @@
 * Config updating and distribution
 * Appropriate for both low latency and high throughput tasks
 * Tracing: all messages have `trace_id` that spread across the system
-* Efficient inspecting *TODO*
+* Telemetry (via the `metrics` crate)
 * Efficient dumping
 * Seamless distribution across nodes *TODO*
 * Hot Actor Replacement *TODO*

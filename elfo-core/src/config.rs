@@ -29,12 +29,6 @@ struct Decoded {
     user: Arc<dyn Any + Send + Sync>,
 }
 
-#[derive(Default, Deserialize)]
-#[serde(default)]
-pub(crate) struct SystemConfig {
-    pub(crate) dumping: crate::dumping::DumpingConfig,
-}
-
 impl AnyConfig {
     pub fn new(value: Value) -> Self {
         Self {
@@ -149,6 +143,68 @@ impl<'de> Deserializer<'de> for AnyConfig {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         self.into_value().deserialize_newtype_struct(name, visitor)
+    }
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct SystemConfig {
+    pub(crate) logging: LoggingConfig,
+    pub(crate) dumping: crate::dumping::DumpingConfig,
+    pub(crate) telemetry: TelemetryConfig,
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub(crate) struct LoggingConfig {
+    pub(crate) max_level: MaxLevel,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+pub(crate) enum MaxLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Off,
+}
+
+impl MaxLevel {
+    pub(crate) fn to_tracing_level(self) -> Option<tracing::Level> {
+        use tracing::Level;
+        match self {
+            Self::Trace => Some(Level::TRACE),
+            Self::Debug => Some(Level::DEBUG),
+            Self::Info => Some(Level::INFO),
+            Self::Warn => Some(Level::WARN),
+            Self::Error => Some(Level::ERROR),
+            Self::Off => None,
+        }
+    }
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            max_level: MaxLevel::Info,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub(crate) struct TelemetryConfig {
+    pub(crate) per_actor_group: bool,
+    pub(crate) per_actor_key: bool,
+}
+
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        Self {
+            per_actor_group: true,
+            per_actor_key: false,
+        }
     }
 }
 

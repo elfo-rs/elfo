@@ -25,9 +25,11 @@ pub mod errors;
 pub mod messages;
 pub mod node;
 pub mod routers;
+pub mod scope;
 pub mod signal;
 pub mod stream;
 pub mod time;
+#[deprecated(note = "use `elfo::scope` instead")]
 pub mod tls;
 pub mod topology;
 pub mod trace_id;
@@ -46,6 +48,7 @@ mod macros;
 mod mailbox;
 mod message;
 mod object;
+mod permissions;
 mod request_table;
 mod start;
 mod supervisor;
@@ -71,9 +74,11 @@ pub mod _priv {
         envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
         message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},
         object::ObjectMeta,
+        permissions::{AtomicPermissions, Permissions},
         start::do_start,
     };
     pub use linkme;
+    pub use metrics;
     pub use serde;
     pub use smallbox;
     pub use static_assertions::assert_impl_all;

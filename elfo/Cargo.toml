@@ -41,7 +41,7 @@ harness = false
 required-features = ["full"]
 
 [features]
-full = ["elfo-configurer", "elfo-logger", "elfo-dumper"]
+full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter"]
 test-util = ["elfo-test", "elfo-core/test-util"]
 
 [dependencies]
@@ -50,6 +50,7 @@ elfo-macros = { version = "0.1.8", path = "../elfo-macros" }
 elfo-test = { version = "0.1.12", path = "../elfo-test", optional = true }
 elfo-configurer = { version = "0.1.6", path = "../elfo-configurer", optional = true }
 elfo-logger = { version = "0.1.2", path = "../elfo-logger", optional = true }
+elfo-telemeter = { version = "0.1.0", path = "../elfo-telemeter", optional = true }
 elfo-dumper = { version = "0.1.0", path = "../elfo-dumper", optional = true }
 
 [dev-dependencies]
@@ -60,6 +61,7 @@ futures = "0.3.12"
 derive_more = "0.99.11"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1.25"
+metrics = "0.17"
 tracing-subscriber = "0.2.15"
 serde = { version = "1.0.120", features = ["derive"] }
 toml = "0.5.8"

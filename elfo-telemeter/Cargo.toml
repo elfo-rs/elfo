@@ -1,0 +1,23 @@
+[package]
+name = "elfo-telemeter"
+version = "0.1.0"
+description = "A telemeter collecting metrics"
+authors = ["Paul Loyd <pavelko95@gmail.com>"]
+edition = "2018"
+license = "MIT"
+keywords = ["metrics", "telemetry", "prometheus"]
+
+[dependencies]
+elfo-macros = { version = "0.1", path = "../elfo-macros" }
+elfo-core = { version = "0.1", path = "../elfo-core" }
+
+tokio = "1"
+hyper = { version = "0.14", default-features = false, features = ["server", "tcp", "http1"] }
+serde = { version = "1.0.120", features = ["derive"] }
+metrics = "0.17"
+metrics-util = "0.10"
+tracing = "0.1.25"
+parking_lot = "0.11"
+fxhash = "0.2.1"
+thiserror = "1.0"
+quanta = "0.9.2"

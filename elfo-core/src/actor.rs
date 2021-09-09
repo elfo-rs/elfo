@@ -1,5 +1,6 @@
-use std::fmt;
+use std::{fmt, mem};
 
+use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
@@ -37,6 +38,18 @@ enum ActorStatusKind {
     Terminated,
 }
 
+impl ActorStatusKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ActorStatusKind::Normal => "Normal",
+            ActorStatusKind::Initializing => "Initializing",
+            ActorStatusKind::Alarming => "Alarming",
+            ActorStatusKind::Failed => "Failed",
+            ActorStatusKind::Terminated => "Terminated",
+        }
+    }
+}
+
 impl fmt::Display for ActorStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.details {
@@ -70,6 +83,11 @@ impl ActorStatus {
     pub(crate) fn is_failed(&self) -> bool {
         self.kind == ActorStatusKind::Failed
     }
+
+    fn is_active(&self) -> bool {
+        use ActorStatusKind::*;
+        matches!(self.kind, Normal | Initializing | Alarming)
+    }
 }
 
 impl Actor {
@@ -81,6 +99,11 @@ impl Actor {
                 status: ActorStatus::INITIALIZING,
             }),
         }
+    }
+
+    pub(crate) fn on_start(&self) {
+        increment_gauge!("elfo_active_actors", 1.,
+            "status" => ActorStatusKind::Initializing.as_str());
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
@@ -117,8 +140,11 @@ impl Actor {
         &self.request_table
     }
 
+    // Note that this method should be called inside a right scope.
     pub(crate) fn set_status(&self, status: ActorStatus) {
         let mut control = self.control.write();
+        let prev_status = mem::replace(&mut control.status, status.clone());
+        drop(control);
 
         let is_good_kind = matches!(
             status.kind,
@@ -137,7 +163,16 @@ impl Actor {
             error!(status = ?status.kind, "status changed");
         };
 
-        control.status = status;
+        if status.kind != prev_status.kind {
+            if prev_status.is_active() {
+                decrement_gauge!("elfo_active_actors", 1., "status" => prev_status.kind.as_str());
+            }
+            if status.is_active() {
+                increment_gauge!("elfo_active_actors", 1., "status" => status.kind.as_str());
+            } else {
+                increment_counter!("elfo_inactive_actors_total", "status" => status.kind.as_str());
+            }
+        }
 
         // TODO: use `sdnotify` to provide a detailed status to systemd.
     }
