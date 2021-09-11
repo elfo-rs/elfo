@@ -1,8 +1,18 @@
 # elfo
 
-[![Build status](https://travis-ci.org/elfo-rs/elfo.svg)](https://api.travis-ci.org/elfo-rs/elfo.svg?branch=master)
-[![Crate info](https://img.shields.io/crates/v/elfo.svg)](https://crates.io/crates/elfo)
-[![Documentation](https://docs.rs/elfo/badge.svg)](https://docs.rs/elfo)
+[![Crates.io][crates-badge]][crates-url]
+[![Documentation][docs-badge]][docs-url]
+[![MIT licensed][mit-badge]][mit-url]
+[![Build Status][actions-badge]][actions-url]
+
+[crates-badge]: https://img.shields.io/crates/v/elfo.svg
+[crates-url]: https://crates.io/crates/elfo
+[docs-badge]: https://docs.rs/elfo/badge.svg
+[docs-url]: https://docs.rs/elfo
+[mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[mit-url]: https://github.com/loyd/elfo/blob/master/LICENSE
+[actions-badge]: https://github.com/loyd/elfo/workflows/CI/badge.svg
+[actions-url]: https://github.com/loyd/elfo/actions?query=workflow%3ACI+branch%3Amaster
 
 **Note: this system is still in early development and is not for production.**
 
