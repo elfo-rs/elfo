@@ -55,6 +55,7 @@ async fn it_restarts_with_timeout_after_failures() {
             .await;
         assert!(r.is_err());
 
-        tokio::time::advance(Duration::from_secs(5)).await;
+        // https://github.com/tokio-rs/tokio/issues/3985
+        tokio::time::sleep(Duration::from_millis(5001)).await;
     }
 }
