@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- dumper: provide more detailed errors.
+
 ## [0.1.20] - 2021-09-09
 ### Added
 - telemeter: interoperability with the `metrics` crate.

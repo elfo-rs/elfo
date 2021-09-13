@@ -79,7 +79,7 @@ impl Dumper {
                                     Err(err).context("cannot write")?;
                                 }
                                 Err(err) => {
-                                    errors.push(err);
+                                    errors.push((dump.message_name, err));
                                     // TODO: the last line is probably invalid,
                                     //       should we use custom buffer?
                                 }
@@ -101,8 +101,12 @@ impl Dumper {
                     file = report.file;
 
                     // TODO: add a metrics for failed dumps.
-                    for error in report.errors {
-                        error!(error = &error as &(dyn StdError), "cannot serialize");
+                    for (message_name, error) in report.errors {
+                        error!(
+                            message = message_name,
+                            error = &error as &(dyn StdError),
+                            "cannot serialize"
+                        );
                     }
                 }
             });
@@ -114,7 +118,7 @@ impl Dumper {
 
 struct Report {
     file: BufWriter<File>,
-    errors: Vec<serde_json::Error>,
+    errors: Vec<(&'static str, serde_json::Error)>,
     written: u64,
 }
 
