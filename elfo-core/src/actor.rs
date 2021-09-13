@@ -104,6 +104,8 @@ impl Actor {
     pub(crate) fn on_start(&self) {
         increment_gauge!("elfo_active_actors", 1.,
             "status" => ActorStatusKind::Initializing.as_str());
+        increment_counter!("elfo_actor_status_changes_total",
+            "status" => ActorStatusKind::Initializing.as_str());
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
