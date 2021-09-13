@@ -169,9 +169,9 @@ impl Actor {
             }
             if status.is_active() {
                 increment_gauge!("elfo_active_actors", 1., "status" => status.kind.as_str());
-            } else {
-                increment_counter!("elfo_inactive_actors_total", "status" => status.kind.as_str());
             }
+
+            increment_counter!("elfo_actor_status_changes_total", "status" => status.kind.as_str());
         }
 
         // TODO: use `sdnotify` to provide a detailed status to systemd.

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - dumper: provide more detailed errors.
+- Replace the `elfo_inactive_actors_total` metric with more common `elfo_actor_status_changes_total` one.
 
 ## [0.1.20] - 2021-09-09
 ### Added
