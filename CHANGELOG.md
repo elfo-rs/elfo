@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.22] - 2021-09-13
+### Fixed
+- Set last versions of subcrates.
+
 ## [0.1.21] - 2021-09-13
 ### Added
 - dumper: provide more detailed errors.
@@ -159,7 +163,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.21...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.22...HEAD
+[0.1.22]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.21...elfo-0.1.22
 [0.1.21]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.20...elfo-0.1.21
 [0.1.20]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.19...elfo-0.1.20
 [0.1.19]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.18...elfo-0.1.19
