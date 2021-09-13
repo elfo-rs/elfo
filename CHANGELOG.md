@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.21] - 2021-09-13
 ### Added
 - dumper: provide more detailed errors.
+
+### Changed
 - Replace the `elfo_inactive_actors_total` metric with more common `elfo_actor_status_changes_total` one.
 
 ## [0.1.20] - 2021-09-09
@@ -156,7 +159,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.20...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.21...HEAD
+[0.1.21]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.20...elfo-0.1.21
 [0.1.20]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.19...elfo-0.1.20
 [0.1.19]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.18...elfo-0.1.19
 [0.1.18]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.17...elfo-0.1.18

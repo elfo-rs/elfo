@@ -1,6 +1,6 @@
 [package]
 name = "elfo"
-version = "0.1.20"
+version = "0.1.21"
 description = "Your next actor system"
 keywords = ["actor", "distributed", "tokio"]
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
@@ -51,7 +51,7 @@ elfo-test = { version = "0.1.13", path = "../elfo-test", optional = true }
 elfo-configurer = { version = "0.1.6", path = "../elfo-configurer", optional = true }
 elfo-logger = { version = "0.1.3", path = "../elfo-logger", optional = true }
 elfo-telemeter = { version = "0.1.0", path = "../elfo-telemeter", optional = true }
-elfo-dumper = { version = "0.1.1", path = "../elfo-dumper", optional = true }
+elfo-dumper = { version = "0.1.2", path = "../elfo-dumper", optional = true }
 
 [dev-dependencies]
 elfo-test = { version = "0.1.13", path = "../elfo-test" }
