@@ -33,9 +33,10 @@ pub struct ActorStatus {
 enum ActorStatusKind {
     Normal,
     Initializing,
+    Terminating,
+    Terminated,
     Alarming,
     Failed,
-    Terminated,
 }
 
 impl ActorStatusKind {
@@ -43,9 +44,10 @@ impl ActorStatusKind {
         match self {
             ActorStatusKind::Normal => "Normal",
             ActorStatusKind::Initializing => "Initializing",
+            ActorStatusKind::Terminating => "Terminating",
+            ActorStatusKind::Terminated => "Terminated",
             ActorStatusKind::Alarming => "Alarming",
             ActorStatusKind::Failed => "Failed",
-            ActorStatusKind::Terminated => "Terminated",
         }
     }
 }
@@ -65,6 +67,7 @@ impl ActorStatus {
     pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
     pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
     pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
+    pub(crate) const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
 
     const fn new(kind: ActorStatusKind) -> Self {
         Self {
@@ -148,21 +151,21 @@ impl Actor {
         let prev_status = mem::replace(&mut control.status, status.clone());
         drop(control);
 
-        let is_good_kind = matches!(
+        let is_bad_kind = matches!(
             status.kind,
-            ActorStatusKind::Normal | ActorStatusKind::Initializing | ActorStatusKind::Terminated
+            ActorStatusKind::Alarming | ActorStatusKind::Failed
         );
 
         if let Some(details) = status.details.as_deref() {
-            if is_good_kind {
-                info!(status = ?status.kind, %details, "status changed");
-            } else {
+            if is_bad_kind {
                 error!(status = ?status.kind, %details, "status changed");
+            } else {
+                info!(status = ?status.kind, %details, "status changed");
             }
-        } else if is_good_kind {
-            info!(status = ?status.kind, "status changed");
-        } else {
+        } else if is_bad_kind {
             error!(status = ?status.kind, "status changed");
+        } else {
+            info!(status = ?status.kind, "status changed");
         };
 
         if status.kind != prev_status.kind {

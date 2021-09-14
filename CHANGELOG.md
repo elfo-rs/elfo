@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - logger: a memory leak in case of a full channel.
+- A new actor status: `Terminating`.
 
 ## [0.1.22] - 2021-09-13
 ### Fixed

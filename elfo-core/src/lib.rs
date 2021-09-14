@@ -59,7 +59,7 @@ pub mod _priv {
         pub use crate::dumping::*;
 
         #[inline]
-        pub fn of<C, K, S>(context: &crate::Context<C, K, S>) -> &Dumper {
+        pub fn of<C: 'static, K, S>(context: &crate::Context<C, K, S>) -> &Dumper {
             context.dumper()
         }
     }

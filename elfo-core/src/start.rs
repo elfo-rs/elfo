@@ -64,10 +64,17 @@ async fn start_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
     Ok(())
 }
 
+/// Starts a node with the provided topology.
+///
+/// # Panics
+///
+/// Panics if the system cannot initialize.
+/// Usually, it happens because of an invalid config.
 pub async fn start(topology: Topology) {
     try_start(topology).await.expect("cannot start")
 }
 
+/// The same as `start()`, but returns an error rather than panics.
 pub async fn try_start(topology: Topology) -> Result<()> {
     do_start(topology, |_| future::ready(())).await?;
 

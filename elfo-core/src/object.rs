@@ -46,7 +46,7 @@ impl Object {
         self.addr
     }
 
-    pub(crate) async fn send<C, K, S>(
+    pub(crate) async fn send<C: 'static, K, S>(
         &self,
         ctx: &Context<C, K, S>,
         envelope: Envelope,
