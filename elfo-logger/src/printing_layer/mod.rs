@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::SystemTime};
 
-use tracing::{span, Event, Subscriber};
+use metrics::{Key, Label};
+use tracing::{span, Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 use elfo_core::scope;
@@ -30,8 +31,6 @@ impl PrintingLayer {
         })
     }
 }
-
-// TODO: log if the pool is full.
 
 impl<S: Subscriber> Layer<S> for PrintingLayer {
     fn new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
@@ -79,14 +78,49 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
             payload_id,
         };
 
-        // TODO: count missed events.
-        let _ = self.shared.channel.try_send(event);
+        let level = *event.metadata.level();
+        let is_lost = self.shared.channel.try_send(event).is_err();
+
+        emit_metrics(level, is_lost);
     }
 
     fn on_close(&self, id: span::Id, _: Context<'_, S>) {
         if let Some((_, data)) = self.shared.spans.remove(&id) {
             self.shared.pool.clear(data.payload_id);
         }
+    }
+}
+
+fn emit_metrics(level: Level, is_lost: bool) {
+    let recorder = ward!(metrics::try_recorder());
+    let labels = labels_by_level(level);
+    let key = Key::from_static_parts("elfo_events_total", labels);
+    recorder.increment_counter(&key, 1);
+
+    if is_lost {
+        let labels = labels_by_level(level);
+        let key = Key::from_static_parts("elfo_lost_events_total", labels);
+        recorder.increment_counter(&key, 1);
+    }
+}
+
+fn labels_by_level(level: Level) -> &'static [Label] {
+    const fn f(value: &'static str) -> Label {
+        Label::from_static_parts("level", value)
+    }
+
+    const TRACE_LABELS: &[Label] = &[f("Trace")];
+    const DEBUG_LABELS: &[Label] = &[f("Debug")];
+    const INFO_LABELS: &[Label] = &[f("Info")];
+    const WARN_LABELS: &[Label] = &[f("Warn")];
+    const ERROR_LABELS: &[Label] = &[f("Error")];
+
+    match level {
+        Level::TRACE => TRACE_LABELS,
+        Level::DEBUG => DEBUG_LABELS,
+        Level::INFO => INFO_LABELS,
+        Level::WARN => WARN_LABELS,
+        Level::ERROR => ERROR_LABELS,
     }
 }
 

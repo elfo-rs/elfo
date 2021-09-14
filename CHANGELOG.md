@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- New metrics: `elfo_events_total` and `elfo_lost_events_total`.
+
 ## [0.1.22] - 2021-09-13
 ### Fixed
 - Set last versions of subcrates.
@@ -21,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.20] - 2021-09-09
 ### Added
 - telemeter: interoperability with the `metrics` crate.
-- Add metrics: `elfo_active_actors`, `elfo_inactive_actors_total`, `elfo_restarting_actors`, `elfo_message_waiting_time_seconds`, `elfo_message_handling_time_seconds`, `elfo_sent_messages_total`, `elfo_written_dumps_total`, `elfo_lost_dumps_total`.
+- New metrics: `elfo_active_actors`, `elfo_inactive_actors_total`, `elfo_restarting_actors`, `elfo_message_waiting_time_seconds`, `elfo_message_handling_time_seconds`, `elfo_sent_messages_total`, `elfo_written_dumps_total`, `elfo_lost_dumps_total`.
 - logger: add a filtering layer to control per group logging. Now it's possible to use `system.logging.max_level` under a group section in order to alter the filter settings.
 
 ### Fixed
