@@ -1,5 +1,6 @@
 use std::{fmt, mem};
 
+use futures_intrusive::sync::ManualResetEvent;
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,7 @@ pub(crate) struct Actor {
     mailbox: Mailbox,
     request_table: RequestTable,
     control: RwLock<ControlBlock>,
+    finished: ManualResetEvent,
 }
 
 struct ControlBlock {
@@ -101,6 +103,7 @@ impl Actor {
             control: RwLock::new(ControlBlock {
                 status: ActorStatus::INITIALIZING,
             }),
+            finished: ManualResetEvent::new(false),
         }
     }
 
@@ -112,14 +115,14 @@ impl Actor {
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        if self.is_closed() {
+        if self.is_finished() {
             return Err(TrySendError::Closed(envelope));
         }
         self.mailbox.try_send(envelope)
     }
 
     pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
-        if self.is_closed() {
+        if self.is_finished() {
             return Err(SendError(envelope));
         }
         self.mailbox.send(envelope).await
@@ -179,20 +182,44 @@ impl Actor {
             increment_counter!("elfo_actor_status_changes_total", "status" => status.kind.as_str());
         }
 
+        if self.is_finished() {
+            self.finished.set();
+        }
+
         // TODO: use `sdnotify` to provide a detailed status to systemd.
     }
 
-    pub(crate) fn is_closed(&self) -> bool {
+    fn is_finished(&self) -> bool {
         matches!(
             self.control.read().status.kind,
             ActorStatusKind::Failed | ActorStatusKind::Terminated
         )
     }
 
-    pub(crate) fn is_initializing(&self) -> bool {
+    fn is_initializing(&self) -> bool {
         matches!(
             self.control.read().status.kind,
             ActorStatusKind::Initializing
         )
+    }
+
+    pub(crate) async fn finished(&self) {
+        self.finished.wait().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn finished() {
+        let actor = Actor::new(Addr::NULL);
+        let fut = actor.finished();
+        actor.set_status(ActorStatus::TERMINATED);
+        fut.await;
+        assert!(actor.is_finished());
+        actor.finished().await;
+        assert!(actor.is_finished());
     }
 }
