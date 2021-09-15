@@ -82,6 +82,10 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
         let is_lost = self.shared.channel.try_send(event).is_err();
 
         emit_metrics(level, is_lost);
+
+        if is_lost {
+            self.shared.pool.clear(payload_id);
+        }
     }
 
     fn on_close(&self, id: span::Id, _: Context<'_, S>) {
