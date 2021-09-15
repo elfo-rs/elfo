@@ -22,6 +22,7 @@ pub use crate::actor::ReopenLogFile;
 
 mod actor;
 mod config;
+mod stats;
 mod filtering_layer;
 mod formatters;
 mod printing_layer;
