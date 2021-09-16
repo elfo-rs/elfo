@@ -1,5 +1,7 @@
 use std::{cell::Cell, future::Future, sync::Arc};
 
+use elfo_utils::RateLimiter;
+
 use crate::{
     addr::Addr,
     object::ObjectMeta,
@@ -17,23 +19,36 @@ pub struct Scope {
     group: Addr,
     meta: Arc<ObjectMeta>,
     trace_id: Cell<TraceId>,
+
+    // Per group.
     permissions: Arc<AtomicPermissions>,
+    logging_limiter: Arc<RateLimiter>,
 }
 
 assert_impl_all!(Scope: Send);
 assert_not_impl_all!(Scope: Sync);
 
 impl Scope {
+    /// Private API for now.
     #[doc(hidden)]
     pub fn new(
         addr: Addr,
         group: Addr,
         meta: Arc<ObjectMeta>,
         perm: Arc<AtomicPermissions>,
+        logging_limiter: Arc<RateLimiter>,
     ) -> Self {
-        Self::with_trace_id(trace_id::generate(), addr, group, meta, perm)
+        Self::with_trace_id(
+            trace_id::generate(),
+            addr,
+            group,
+            meta,
+            perm,
+            logging_limiter,
+        )
     }
 
+    /// Private API for now.
     #[doc(hidden)]
     pub fn with_trace_id(
         trace_id: TraceId,
@@ -41,6 +56,7 @@ impl Scope {
         group: Addr,
         meta: Arc<ObjectMeta>,
         permissions: Arc<AtomicPermissions>,
+        logging_limiter: Arc<RateLimiter>,
     ) -> Self {
         Self {
             addr,
@@ -48,6 +64,7 @@ impl Scope {
             meta,
             trace_id: Cell::new(trace_id),
             permissions,
+            logging_limiter,
         }
     }
 
@@ -79,9 +96,17 @@ impl Scope {
         self.trace_id.set(trace_id);
     }
 
+    /// Returns the current permissions (for logging, telemetry and so on).
     #[inline]
     pub fn permissions(&self) -> Permissions {
         self.permissions.load()
+    }
+
+    /// Private API for now.
+    #[inline]
+    #[doc(hidden)]
+    pub fn logging_limiter(&self) -> &RateLimiter {
+        &self.logging_limiter
     }
 
     /// Wraps the provided future with the current scope.
