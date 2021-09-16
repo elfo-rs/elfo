@@ -8,11 +8,13 @@ use std::{
 
 use eyre::{Result, WrapErr};
 use metrics::counter;
-use tokio::{task, time};
-use tracing::error;
+use tokio::{task, time::Duration};
+use tracing::warn;
 
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
+
+use elfo_utils::cooldown;
 
 use elfo::{
     ActorGroup, Context, Schema,
@@ -81,7 +83,15 @@ impl Dumper {
                                     Err(err).context("cannot write")?;
                                 }
                                 Err(err) => {
-                                    errors.push((dump.message_name, err));
+                                    // TODO: avoid this hardcode.
+                                    if errors.len() < 3
+                                        && !errors
+                                            .iter()
+                                            .any(|(name, _)| name == &dump.message_name)
+                                    {
+                                        errors.push((dump.message_name, err));
+                                    }
+
                                     // TODO: the last line is probably invalid,
                                     //       should we use custom buffer?
                                 }
@@ -103,21 +113,23 @@ impl Dumper {
                     file = report.file;
 
                     // TODO: add a metrics for failed dumps.
-                    for (message_name, error) in report.errors {
-                        error!(
-                            message = message_name,
-                            error = &error as &(dyn StdError),
-                            "cannot serialize"
-                        );
-                    }
+                    cooldown!(Duration::from_secs(15), {
+                        for (message_name, error) in report.errors {
+                            warn!(
+                                message = message_name,
+                                error = &error as &(dyn StdError),
+                                "cannot serialize"
+                            );
+                        }
+                    });
 
                     if need_to_terminate {
                         break;
                     }
                 }
                 Terminate => {
-                    // TODO: use phases instead of hardcoded delay.
-                    interval.set_period(time::Duration::from_millis(250));
+                    // TODO: use phases instead of a hardcoded delay.
+                    interval.set_period(Duration::from_millis(250));
                     need_to_terminate = true;
                 }
             });
