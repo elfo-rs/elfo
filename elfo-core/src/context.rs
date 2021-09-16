@@ -321,7 +321,12 @@ impl<C: 'static, K, S> Context<C, K, S> {
                 self.respond(token, Ok(()));
                 envelope
             }
-            envelope => envelope,
+            envelope => {
+                if envelope.is::<messages::Terminate>() {
+                    self.set_status(ActorStatus::TERMINATING);
+                }
+                envelope
+            }
         });
 
         let message = envelope.message();
