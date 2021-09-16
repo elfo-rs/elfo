@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - dumping: per group rate limiter, configurable via `system.dumping.max_rate` (`100_000` by default).
 - dumping: `elfo_emitted_dumps_total` and `elfo_limited_dumps_total` metrics.
 - logger: `elfo_written_events_total` metric.
+- configurer: reload configs forcely on SIGUSR2.
 
 ### Fixed
 - logger: a memory leak in case of a full channel.

@@ -60,6 +60,10 @@ pub struct ReloadConfigs {
 }
 
 impl ReloadConfigs {
+    fn forcing() -> Self {
+        Self { force: true }
+    }
+
     /// If enabled, all configs will be updated, including up-to-date ones.
     pub fn with_force(self, force: bool) -> Self {
         ReloadConfigs { force }
@@ -85,8 +89,10 @@ impl Configurer {
     }
 
     async fn main(mut self) {
-        let signal = Signal::new(SignalKind::Hangup, ReloadConfigs::default);
-        let mut ctx = self.ctx.clone().with(&signal);
+        let hangup = Signal::new(SignalKind::Hangup, ReloadConfigs::default);
+        let user2 = Signal::new(SignalKind::User2, ReloadConfigs::forcing);
+
+        let mut ctx = self.ctx.clone().with(&hangup).with(user2);
         let can_start = self.load_and_update_configs(true).await;
 
         while let Some(envelope) = ctx.recv().await {
