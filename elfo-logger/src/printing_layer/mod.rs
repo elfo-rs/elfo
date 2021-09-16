@@ -98,7 +98,6 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
     }
 }
 
-// TODO: use the `quanta` crate.
 #[cfg(not(test))]
 fn now() -> SystemTime {
     SystemTime::now()
