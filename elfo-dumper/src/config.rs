@@ -10,5 +10,5 @@ pub(crate) struct Config {
 }
 
 fn default_interval() -> Duration {
-    Duration::from_secs(1)
+    Duration::from_millis(500)
 }
