@@ -4,6 +4,10 @@ use std::{error::Error, fmt};
 
 use derive_more::Deref;
 
+pub use self::rate_limiter::RateLimiter;
+
+mod rate_limiter;
+
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Deref)]
 // Spatial prefetcher is now pulling two lines at a time, so we use `align(128)`.
 #[cfg_attr(any(target_arch = "x86_64", target_arch = "aarch64"), repr(align(128)))]
