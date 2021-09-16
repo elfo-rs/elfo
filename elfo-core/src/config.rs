@@ -158,6 +158,7 @@ pub(crate) struct SystemConfig {
 #[serde(default)]
 pub(crate) struct LoggingConfig {
     pub(crate) max_level: MaxLevel,
+    pub(crate) max_rate: u64,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -188,6 +189,7 @@ impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             max_level: MaxLevel::Info,
+            max_rate: 1000,
         }
     }
 }

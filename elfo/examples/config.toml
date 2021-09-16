@@ -15,7 +15,9 @@ path = "example.dump"
 
 [producers]
 # system.logging.max_level = "Info" # default, one of: Trace, Debug, Info, Warn, Error, Off.
+# system.logging.max_rate = 1000 # default
 # system.dumping.disabled = false # default
+# system.dumping.max_rate = 100_000 # default
 # system.telemetry.per_actor_group = true # default
 # system.telemetry.per_actor_key = false # default
 

@@ -9,7 +9,7 @@ use tracing::{error_span, info, Instrument, Span};
 
 use crate as elfo;
 use elfo_macros::msg_raw as msg;
-use elfo_utils::{CachePadded, ErrorChain};
+use elfo_utils::{CachePadded, ErrorChain, RateLimiter};
 
 use crate::{
     actor::{Actor, ActorStatus},
@@ -36,6 +36,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     exec: X,
     control: CachePadded<RwLock<ControlBlock<C>>>,
     permissions: Arc<AtomicPermissions>,
+    logging_limiter: Arc<RateLimiter>,
 }
 
 struct ControlBlock<C> {
@@ -74,9 +75,11 @@ where
             exec,
             control: CachePadded(RwLock::new(control)),
             permissions: Default::default(),
+            logging_limiter: Default::default(),
         }
     }
 
+    // This method shouldn't be called often.
     fn in_scope(&self, f: impl FnOnce()) {
         Scope::with_trace_id(
             scope::trace_id(),
@@ -84,6 +87,7 @@ where
             self.context.group(), // `Addr::NULL`, actually
             self.meta.clone(),
             self.permissions.clone(),
+            Default::default(), // Do not limit logging in supervisor.
         )
         .sync_within(|| self.span.in_scope(f));
     }
@@ -129,6 +133,8 @@ where
                     perm.set_telemetry_per_actor_group_enabled(system.telemetry.per_actor_group);
                     perm.set_telemetry_per_actor_key_enabled(system.telemetry.per_actor_key);
                     self.permissions.store(perm);
+
+                    self.logging_limiter.configure(system.logging.max_rate);
 
                     // Update user's config.
                     let is_first_update = control.config.is_none();
@@ -338,7 +344,13 @@ where
             key: Some(key_str),
         });
 
-        let scope = Scope::new(addr, self.context.addr(), meta, self.permissions.clone());
+        let scope = Scope::new(
+            addr,
+            self.context.addr(),
+            meta,
+            self.permissions.clone(),
+            self.logging_limiter.clone(),
+        );
         tokio::spawn(scope.within(fut.instrument(span)));
         self.context.book().get_owned(addr).expect("just created")
     }

@@ -25,6 +25,7 @@ mod config;
 mod filtering_layer;
 mod formatters;
 mod printing_layer;
+mod stats;
 mod theme;
 
 const CHANNEL_CAPACITY: usize = 128 * 1024;
@@ -77,7 +78,8 @@ pub fn init() -> Schema {
         let subscriber = registry.with(filter).with(printer);
         install_subscriber(subscriber);
     } else {
-        let filter = FilteringLayer::new(Level::WARN);
+        // TODO: get the default level via arguments.
+        let filter = FilteringLayer::new(Level::INFO);
         let subscriber = registry.with(filter).with(printer);
         install_subscriber(subscriber);
     };

@@ -95,7 +95,13 @@ pub async fn do_start<F: Future>(
     };
 
     // XXX: `addr` is used for both a specific actor and a whole group for now.
-    let scope = Scope::new(addr, addr, Arc::new(meta), Default::default());
+    let scope = Scope::new(
+        addr,
+        addr,
+        Arc::new(meta),
+        Default::default(),
+        Default::default(),
+    );
     let f = async move {
         let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
         send_configs_to_entrypoints(&ctx, &topology).await?;

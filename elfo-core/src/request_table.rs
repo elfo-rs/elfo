@@ -221,6 +221,7 @@ mod tests {
                 key: None,
             }),
             Default::default(),
+            Default::default(),
         )
         .sync_within(|| Envelope::new(num, MessageKind::Regular { sender: addr }).upcast())
     }

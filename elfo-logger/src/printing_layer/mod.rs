@@ -1,13 +1,12 @@
 use std::{sync::Arc, time::SystemTime};
 
-use metrics::{Key, Label};
-use tracing::{span, Event, Level, Subscriber};
+use tracing::{span, Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 use elfo_core::scope;
 
 use self::visitor::Visitor;
-use crate::{PreparedEvent, Shared, SpanData, StringId};
+use crate::{stats, PreparedEvent, Shared, SpanData, StringId};
 
 mod visitor;
 
@@ -61,7 +60,11 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
 
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let current_span = ctx.current_span();
-        let payload_id = ward!(self.prepare(true, |visitor| event.record(visitor)));
+        let level = *event.metadata().level();
+        let payload_id = ward!(self.prepare(true, |visitor| event.record(visitor)), {
+            stats::counter_per_level("elfo_lost_events_total", level);
+            return;
+        });
 
         let data = scope::try_with(|scope| (scope.meta().clone(), scope.trace_id()));
         let (object, trace_id) = match data {
@@ -78,10 +81,13 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
             payload_id,
         };
 
-        let level = *event.metadata.level();
         let is_lost = self.shared.channel.try_send(event).is_err();
-
-        emit_metrics(level, is_lost);
+        if is_lost {
+            self.shared.pool.clear(payload_id);
+            stats::counter_per_level("elfo_lost_events_total", level);
+        } else {
+            stats::counter_per_level("elfo_emitted_events_total", level);
+        }
     }
 
     fn on_close(&self, id: span::Id, _: Context<'_, S>) {
@@ -91,40 +97,6 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
     }
 }
 
-fn emit_metrics(level: Level, is_lost: bool) {
-    let recorder = ward!(metrics::try_recorder());
-    let labels = labels_by_level(level);
-    let key = Key::from_static_parts("elfo_events_total", labels);
-    recorder.increment_counter(&key, 1);
-
-    if is_lost {
-        let labels = labels_by_level(level);
-        let key = Key::from_static_parts("elfo_lost_events_total", labels);
-        recorder.increment_counter(&key, 1);
-    }
-}
-
-fn labels_by_level(level: Level) -> &'static [Label] {
-    const fn f(value: &'static str) -> Label {
-        Label::from_static_parts("level", value)
-    }
-
-    const TRACE_LABELS: &[Label] = &[f("Trace")];
-    const DEBUG_LABELS: &[Label] = &[f("Debug")];
-    const INFO_LABELS: &[Label] = &[f("Info")];
-    const WARN_LABELS: &[Label] = &[f("Warn")];
-    const ERROR_LABELS: &[Label] = &[f("Error")];
-
-    match level {
-        Level::TRACE => TRACE_LABELS,
-        Level::DEBUG => DEBUG_LABELS,
-        Level::INFO => INFO_LABELS,
-        Level::WARN => WARN_LABELS,
-        Level::ERROR => ERROR_LABELS,
-    }
-}
-
-// TODO: use the `quanta` crate.
 #[cfg(not(test))]
 fn now() -> SystemTime {
     SystemTime::now()

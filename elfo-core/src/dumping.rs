@@ -14,7 +14,7 @@ use serde::Deserialize;
 use smallbox::smallbox;
 use tokio::time::Instant;
 
-use elfo_utils::CachePadded;
+use elfo_utils::{CachePadded, RateLimiter};
 
 #[allow(unreachable_pub)] // Actually, it's reachable via `elfo::_priv`.
 pub use self::{dump_item::*, sequence_no::SequenceNo};
@@ -45,10 +45,20 @@ pub struct Dumper {
     per_group: Arc<PerGroup>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Deserialize)]
 #[serde(default)]
 pub(crate) struct DumpingConfig {
     disabled: bool,
+    max_rate: u64,
+}
+
+impl Default for DumpingConfig {
+    fn default() -> Self {
+        Self {
+            disabled: false,
+            max_rate: 100_000,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -58,8 +68,9 @@ struct PerSystem {
 
 #[derive(Default)]
 struct PerGroup {
-    // TODO: add a rate limiter.
-    sequence_no_gen: CachePadded<SequenceNoGenerator>,
+    // TODO: add `CachePadded`.
+    rate_limiter: RateLimiter,
+    sequence_no_gen: SequenceNoGenerator,
     is_possible: bool,
     is_disabled: AtomicBool,
 }
@@ -68,7 +79,8 @@ impl Dumper {
     pub(crate) fn for_group(&self, is_possible: bool) -> Self {
         let mut specific = self.clone();
         specific.per_group = Arc::new(PerGroup {
-            sequence_no_gen: CachePadded(SequenceNoGenerator::default()),
+            rate_limiter: RateLimiter::default(),
+            sequence_no_gen: SequenceNoGenerator::default(),
             is_possible,
             is_disabled: AtomicBool::new(false),
         });
@@ -79,11 +91,21 @@ impl Dumper {
         self.per_group
             .is_disabled
             .store(config.disabled, Ordering::Relaxed);
+        self.per_group.rate_limiter.configure(config.max_rate);
     }
 
     #[inline]
     pub fn is_enabled(&self) -> bool {
-        self.per_group.is_possible && !self.per_group.is_disabled.load(Ordering::Relaxed)
+        if !self.per_group.is_possible || self.per_group.is_disabled.load(Ordering::Relaxed) {
+            return false;
+        }
+
+        if self.per_group.rate_limiter.acquire() {
+            true
+        } else {
+            increment_counter!("elfo_limited_dumps_total");
+            false
+        }
     }
 
     #[inline(always)]
@@ -154,6 +176,8 @@ impl Dumper {
             increment_counter!("elfo_lost_dumps_total");
             return;
         }
+
+        increment_counter!("elfo_emitted_dumps_total");
 
         queue.push_back(item);
     }
@@ -280,7 +304,13 @@ mod tests {
             assert!(drain.next().is_none());
         };
 
-        let scope = Scope::new(Addr::NULL, Addr::NULL, meta.clone(), Default::default());
+        let scope = Scope::new(
+            Addr::NULL,
+            Addr::NULL,
+            meta.clone(),
+            Default::default(),
+            Default::default(),
+        );
         scope.set_trace_id(trace_id);
         scope.within(f).await;
     }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use metrics::increment_counter;
 use tokio::{
     fs::{File, OpenOptions},
     io::AsyncWriteExt,
@@ -73,6 +74,8 @@ impl Logger {
                     } else {
                         print!("{}", buffer);
                     }
+
+                    increment_counter!("elfo_written_events_total");
                 },
                 envelope = ctx.recv() => {
                     let envelope = ward!(envelope, break);
