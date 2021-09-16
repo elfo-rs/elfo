@@ -8,6 +8,13 @@ pub struct RateLimiter {
     vtime: AtomicU64, // TODO: wrap into `CachePadded`?
 }
 
+/// Unlimited by default.
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new(SEC)
+    }
+}
+
 const SEC: u64 = 1_000_000_000;
 
 impl RateLimiter {
@@ -72,7 +79,7 @@ mod tests {
     }
 
     #[test]
-    fn forbidden() {
+    fn forbidding() {
         with_time_mock(|mock| {
             let limiter = RateLimiter::new(0);
             for _ in 0..=5 {
