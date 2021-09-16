@@ -4,6 +4,7 @@ use metrics::increment_counter;
 use tokio::{
     fs::{File, OpenOptions},
     io::AsyncWriteExt,
+    time,
 };
 use tracing::Metadata;
 
@@ -11,7 +12,8 @@ use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
 
 use elfo::{
-    messages::ConfigUpdated,
+    group::TerminationPolicy,
+    messages::{ConfigUpdated, Terminate},
     signal::{Signal, SignalKind},
     ActorGroup, Context, Schema,
 };
@@ -39,6 +41,7 @@ impl Logger {
     pub(crate) fn new(shared: Arc<Shared>) -> Schema {
         ActorGroup::new()
             .config::<Config>()
+            .termination_policy(TerminationPolicy::manually())
             .exec(move |ctx| Logger::ctor(ctx, shared.clone()).main())
     }
 
@@ -59,7 +62,8 @@ impl Logger {
         loop {
             tokio::select! {
                 event = self.shared.channel.receive() => {
-                    let event = event.expect("channel cannot close");
+                    let event = ward!(event, break);
+
                     buffer.clear();
 
                     if use_colors {
@@ -84,9 +88,19 @@ impl Logger {
                             file = open_file(ctx.config()).await;
                             use_colors = can_use_colors(ctx.config());
                         },
+                        Terminate => {
+                            // TODO: use phases instead of hardcoded delay.
+                            time::sleep(time::Duration::from_millis(250)).await;
+                            self.shared.channel.close();
+                        },
                     });
                 },
             }
+        }
+
+        if let Some(mut file) = file {
+            file.flush().await.expect("cannot flush the log file");
+            file.sync_all().await.expect("cannot sync the log file");
         }
     }
 
