@@ -46,7 +46,8 @@ pub struct Terminate {
 }
 
 impl Terminate {
-    pub(crate) fn closing() -> Self {
+    /// The message closes a target's mailbox ignoring `TerminationPolicy`.
+    pub fn closing() -> Self {
         Self { closing: true }
     }
 }
