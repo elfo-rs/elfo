@@ -112,7 +112,7 @@ async fn run(producer_count: u32, consumer_count: u32, mode: Mode, iter_count: u
     consumers.mount(make_consumers(consumer_count));
     configurers.mount(elfo::configurer::fixture(&topology, AnyConfig::default()));
 
-    elfo::_priv::do_start(topology, |ctx| async move {
+    elfo::_priv::do_start(topology, |ctx, _| async move {
         ctx.request(Summarize)
             .from(producers_addr)
             .all()
