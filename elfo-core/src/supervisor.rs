@@ -19,7 +19,7 @@ use crate::{
     envelope::Envelope,
     errors::TrySendError,
     exec::{Exec, ExecResult},
-    group::TerminationPolicy,
+    group::{RestartMode, RestartPolicy, TerminationPolicy},
     messages,
     object::{Object, ObjectArc, ObjectMeta},
     permissions::AtomicPermissions,
@@ -29,6 +29,7 @@ use crate::{
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
     meta: Arc<ObjectMeta>,
+    restart_policy: RestartPolicy,
     termination_policy: TerminationPolicy,
     span: Span,
     context: Context,
@@ -74,6 +75,7 @@ where
         group: String,
         exec: X,
         router: R,
+        restart_policy: RestartPolicy,
         termination_policy: TerminationPolicy,
     ) -> Self {
         let control = ControlBlock {
@@ -84,6 +86,7 @@ where
         Self {
             span: error_span!(parent: Span::none(), "", actor_group = group.as_str()),
             meta: Arc::new(ObjectMeta { group, key: None }),
+            restart_policy,
             termination_policy,
             context: ctx,
             objects: DashMap::default(),
@@ -347,7 +350,13 @@ where
                 Err(panic) => ActorStatus::FAILED.with_details(panic_to_string(panic)),
             };
 
-            let need_to_restart = new_status.is_failed() && !sv.control.read().stop_spawning;
+            let should_restart = match sv.restart_policy.mode {
+                RestartMode::Always => true,
+                RestartMode::OnFailures => new_status.is_failed(),
+                RestartMode::Never => false,
+            };
+
+            let need_to_restart = should_restart && !sv.control.read().stop_spawning;
 
             sv.objects
                 .get(&key)

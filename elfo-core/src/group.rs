@@ -13,6 +13,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct ActorGroup<R, C> {
+    restart_policy: RestartPolicy,
     termination_policy: TerminationPolicy,
     router: R,
     _config: PhantomData<C>,
@@ -22,6 +23,7 @@ impl ActorGroup<(), ()> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
+            restart_policy: RestartPolicy::default(),
             termination_policy: TerminationPolicy::default(),
             router: (),
             _config: PhantomData,
@@ -32,10 +34,18 @@ impl ActorGroup<(), ()> {
 impl<R, C> ActorGroup<R, C> {
     pub fn config<C1: Config>(self) -> ActorGroup<R, C1> {
         ActorGroup {
+            restart_policy: self.restart_policy,
             termination_policy: self.termination_policy,
             router: self.router,
             _config: PhantomData,
         }
+    }
+
+    /// The behaviour on actor termination.
+    /// `RestartPolicy::on_failures` is used by default.
+    pub fn restart_policy(mut self, policy: RestartPolicy) -> Self {
+        self.restart_policy = policy;
+        self
     }
 
     /// The behaviour on the `Terminate` message.
@@ -47,6 +57,7 @@ impl<R, C> ActorGroup<R, C> {
 
     pub fn router<R1: Router<C>>(self, router: R1) -> ActorGroup<R1, C> {
         ActorGroup {
+            restart_policy: self.restart_policy,
             termination_policy: self.termination_policy,
             router,
             _config: self._config,
@@ -68,6 +79,7 @@ impl<R, C> ActorGroup<R, C> {
                 name,
                 exec,
                 self.router,
+                self.restart_policy,
                 self.termination_policy,
             ));
             let router = smallbox!(move |envelope| { sv.handle(envelope) });
@@ -121,4 +133,43 @@ impl TerminationPolicy {
     }
 
     // TODO: add `stop_spawning`?
+}
+
+/// The behaviour on actor termination.
+#[derive(Debug, Clone)]
+pub struct RestartPolicy {
+    pub(crate) mode: RestartMode,
+}
+
+impl Default for RestartPolicy {
+    fn default() -> Self {
+        Self::on_failures()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RestartMode {
+    Always,
+    OnFailures,
+    Never,
+}
+
+impl RestartPolicy {
+    pub fn always() -> Self {
+        Self {
+            mode: RestartMode::Always,
+        }
+    }
+
+    pub fn on_failures() -> Self {
+        Self {
+            mode: RestartMode::OnFailures,
+        }
+    }
+
+    pub fn never() -> Self {
+        Self {
+            mode: RestartMode::Never,
+        }
+    }
 }
