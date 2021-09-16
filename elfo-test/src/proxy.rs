@@ -242,7 +242,7 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
 
     let (tx, rx) = shared::oneshot_channel();
     testers.mount(self::testers(tx));
-    do_start(topology, |_| future::ready(()))
+    do_start(topology, |_, _| future::ready(()))
         .await
         .expect("cannot start");
 

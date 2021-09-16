@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Graceful termination.
 - logging: `elfo_emitted_events_total`, `elfo_limited_events_total` and `elfo_lost_events_total` metrics.
 - logging: per group rate limiter, configurable via `system.logging.max_rate` (`1000` by default).
 - dumping: per group rate limiter, configurable via `system.dumping.max_rate` (`100_000` by default).
@@ -15,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - logger: `elfo_written_events_total` metric.
 - configurer: reload configs forcely on SIGUSR2.
 - group: add the `restart_policy` method to specify a restarting behaviour.
+- group: add the `termination_policy` method to specify a restarting behaviour.
+- proxy: add `Proxy::finished()` to await termination and `Proxy::close()` to close a (sub)proxy's mailbox.
 
 ### Fixed
 - logger: a memory leak in case of a full channel.
