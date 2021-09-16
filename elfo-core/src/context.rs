@@ -93,6 +93,15 @@ impl<C: 'static, K, S> Context<C, K, S> {
         actor.set_status(status);
     }
 
+    /// Closes the mailbox, that leads to returning `None` from `recv()` and
+    /// `try_recv()` after handling all available messages in the mailbox.
+    ///
+    /// Returns `true` if the mailbox has just been closed.
+    pub fn close(&self) -> bool {
+        let object = ward!(self.book.get_owned(self.addr), return false);
+        ward!(object.as_actor(), return false).close()
+    }
+
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::Regular { sender: self.addr };
         self.do_send(message, kind).await

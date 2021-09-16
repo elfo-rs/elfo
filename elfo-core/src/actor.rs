@@ -125,7 +125,7 @@ impl Actor {
         msg!(match &envelope {
             Terminate { closing } => {
                 if *closing || self.termination_policy.close_mailbox {
-                    if self.mailbox.close() {
+                    if self.close() {
                         return Ok(());
                     } else {
                         return Err(TrySendError::Closed(envelope));
@@ -141,7 +141,7 @@ impl Actor {
         msg!(match &envelope {
             Terminate { closing } => {
                 if *closing || self.termination_policy.close_mailbox {
-                    if self.mailbox.close() {
+                    if self.close() {
                         return Ok(());
                     } else {
                         return Err(SendError(envelope));
@@ -205,6 +205,10 @@ impl Actor {
         }
 
         // TODO: use `sdnotify` to provide a detailed status to systemd.
+    }
+
+    pub(crate) fn close(&self) -> bool {
+        self.mailbox.close()
     }
 
     pub(crate) fn is_initializing(&self) -> bool {
