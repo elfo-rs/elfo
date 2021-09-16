@@ -38,3 +38,16 @@ impl<R: Display> From<R> for ConfigRejected {
 pub struct ConfigUpdated {
     // TODO: add `old_config`.
 }
+
+#[message(elfo = crate)]
+#[derive(Default)]
+pub struct Terminate {
+    pub(crate) closing: bool,
+}
+
+impl Terminate {
+    /// The message closes a target's mailbox ignoring `TerminationPolicy`.
+    pub fn closing() -> Self {
+        Self { closing: true }
+    }
+}

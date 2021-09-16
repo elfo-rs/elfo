@@ -1,5 +1,5 @@
 use derive_more::From;
-use futures::future::join_all;
+use futures::future::{join_all, BoxFuture};
 use smallbox::SmallBox;
 
 use crate::{
@@ -17,7 +17,8 @@ pub(crate) struct Object {
 }
 
 assert_impl_all!(Object: Sync);
-assert_eq_size!(Object, [u8; 256]);
+// TODO: actually, `Slab::Entry<Object>` should be aligned.
+// assert_eq_size!(Object, [u8; 256]);
 
 pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object>;
 pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object>;
@@ -46,7 +47,7 @@ impl Object {
         self.addr
     }
 
-    pub(crate) async fn send<C, K, S>(
+    pub(crate) async fn send<C: 'static, K, S>(
         &self,
         ctx: &Context<C, K, S>,
         envelope: Envelope,
@@ -120,16 +121,26 @@ impl Object {
             ObjectKind::Group(_) => None,
         }
     }
+
+    pub(crate) async fn finished(&self) {
+        match &self.kind {
+            ObjectKind::Actor(actor) => actor.finished().await,
+            ObjectKind::Group(group) => (group.finished)().await,
+        }
+    }
 }
 
 pub(crate) struct Group {
     router: GroupRouter,
+    finished: GroupFinished,
 }
 
 impl Group {
-    pub(crate) fn new(router: GroupRouter) -> Self {
-        Group { router }
+    pub(crate) fn new(router: GroupRouter, finished: GroupFinished) -> Self {
+        Group { router, finished }
     }
 }
 
+// TODO: reconsider `220`.
 pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 220]>;
+type GroupFinished = Box<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;

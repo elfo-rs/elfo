@@ -20,7 +20,7 @@ use elfo_core::{
     _priv::{do_start, ObjectMeta},
     routers::{MapRouter, Outcome},
     scope::Scope,
-    topology::Topology,
+    topology::{GetAddrs, Topology},
 };
 use elfo_macros::{message, msg_raw as msg};
 
@@ -31,6 +31,7 @@ pub struct Proxy {
     context: Context,
     scope: Scope,
     non_exhaustive: bool,
+    subject_addr: Addr,
 }
 
 // TODO: add `#[track_caller]` after https://github.com/rust-lang/rust/issues/78840.
@@ -148,7 +149,17 @@ impl Proxy {
             ),
             context,
             non_exhaustive: self.non_exhaustive,
+            subject_addr: self.subject_addr,
         }
+    }
+
+    pub async fn finished(&self) {
+        self.context.finished(self.subject_addr).await;
+    }
+
+    /// Closes a mailbox of the proxy.
+    pub fn close(&self) {
+        self.context.close();
     }
 }
 
@@ -219,6 +230,8 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
     let testers = topology.local("system.testers");
     let configurers = topology.local("system.configurers").entrypoint();
 
+    let subject_addr = subject.addrs()[0];
+
     testers.route_all_to(&subject);
     subject.route_all_to(&testers);
 
@@ -229,7 +242,7 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
 
     let (tx, rx) = shared::oneshot_channel();
     testers.mount(self::testers(tx));
-    do_start(topology, |_| future::ready(()))
+    do_start(topology, |_, _| future::ready(()))
         .await
         .expect("cannot start");
 
@@ -249,6 +262,7 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
         ),
         context,
         non_exhaustive: false,
+        subject_addr,
     }
 }
 

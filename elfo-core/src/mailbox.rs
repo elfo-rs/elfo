@@ -46,4 +46,8 @@ impl Mailbox {
             channel::TryReceiveError::Closed => TryRecvError::Closed,
         })
     }
+
+    pub(crate) fn close(&self) -> bool {
+        self.queue.close().is_newly_closed()
+    }
 }

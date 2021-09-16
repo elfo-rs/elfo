@@ -8,7 +8,7 @@ use std::{
 
 use eyre::{Result, WrapErr};
 use metrics::counter;
-use tokio::task;
+use tokio::{task, time};
 use tracing::error;
 
 use elfo_core as elfo;
@@ -17,7 +17,8 @@ use elfo_macros::{message, msg_raw as msg};
 use elfo::{
     ActorGroup, Context, Schema,
     _priv::dumping,
-    messages::ConfigUpdated,
+    group::TerminationPolicy,
+    messages::{ConfigUpdated, Terminate},
     signal::{Signal, SignalKind},
     time::Interval,
 };
@@ -48,6 +49,7 @@ impl Dumper {
 
         // TODO: use the grant system instead.
         let dumper = dumping::of(&self.ctx);
+        let mut need_to_terminate = false;
 
         let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);
         let interval = Interval::new(|| DumpingTick);
@@ -108,9 +110,21 @@ impl Dumper {
                             "cannot serialize"
                         );
                     }
+
+                    if need_to_terminate {
+                        break;
+                    }
+                }
+                Terminate => {
+                    // TODO: use phases instead of hardcoded delay.
+                    interval.set_period(time::Duration::from_millis(250));
+                    need_to_terminate = true;
                 }
             });
         }
+
+        file.flush().context("cannot flush")?;
+        file.get_ref().sync_all().context("cannot sync")?;
 
         Ok(())
     }
@@ -125,6 +139,7 @@ struct Report {
 pub fn new() -> Schema {
     ActorGroup::new()
         .config::<Config>()
+        .termination_policy(TerminationPolicy::manually())
         .exec(|ctx| Dumper::new(ctx).main())
 }
 

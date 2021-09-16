@@ -1,5 +1,6 @@
 use std::{fmt, mem};
 
+use futures_intrusive::sync::ManualResetEvent;
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -9,14 +10,21 @@ use crate::{
     addr::Addr,
     envelope::Envelope,
     errors::{SendError, TryRecvError, TrySendError},
+    group::TerminationPolicy,
     mailbox::Mailbox,
+    messages::Terminate,
     request_table::RequestTable,
 };
 
+use crate::{self as elfo};
+use elfo_macros::msg_raw as msg;
+
 pub(crate) struct Actor {
+    termination_policy: TerminationPolicy,
     mailbox: Mailbox,
     request_table: RequestTable,
     control: RwLock<ControlBlock>,
+    finished: ManualResetEvent,
 }
 
 struct ControlBlock {
@@ -33,9 +41,10 @@ pub struct ActorStatus {
 enum ActorStatusKind {
     Normal,
     Initializing,
+    Terminating,
+    Terminated,
     Alarming,
     Failed,
-    Terminated,
 }
 
 impl ActorStatusKind {
@@ -43,9 +52,10 @@ impl ActorStatusKind {
         match self {
             ActorStatusKind::Normal => "Normal",
             ActorStatusKind::Initializing => "Initializing",
+            ActorStatusKind::Terminating => "Terminating",
+            ActorStatusKind::Terminated => "Terminated",
             ActorStatusKind::Alarming => "Alarming",
             ActorStatusKind::Failed => "Failed",
-            ActorStatusKind::Terminated => "Terminated",
         }
     }
 }
@@ -65,6 +75,7 @@ impl ActorStatus {
     pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
     pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
     pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
+    pub(crate) const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
 
     const fn new(kind: ActorStatusKind) -> Self {
         Self {
@@ -84,20 +95,22 @@ impl ActorStatus {
         self.kind == ActorStatusKind::Failed
     }
 
-    fn is_active(&self) -> bool {
+    fn is_finished(&self) -> bool {
         use ActorStatusKind::*;
-        matches!(self.kind, Normal | Initializing | Alarming)
+        matches!(self.kind, Failed | Terminated)
     }
 }
 
 impl Actor {
-    pub(crate) fn new(addr: Addr) -> Self {
+    pub(crate) fn new(addr: Addr, termination_policy: TerminationPolicy) -> Self {
         Actor {
+            termination_policy,
             mailbox: Mailbox::new(),
             request_table: RequestTable::new(addr),
             control: RwLock::new(ControlBlock {
                 status: ActorStatus::INITIALIZING,
             }),
+            finished: ManualResetEvent::new(false),
         }
     }
 
@@ -109,32 +122,42 @@ impl Actor {
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        if self.is_closed() {
-            return Err(TrySendError::Closed(envelope));
-        }
+        msg!(match &envelope {
+            Terminate { closing } => {
+                if *closing || self.termination_policy.close_mailbox {
+                    if self.close() {
+                        return Ok(());
+                    } else {
+                        return Err(TrySendError::Closed(envelope));
+                    }
+                }
+            }
+        });
+
         self.mailbox.try_send(envelope)
     }
 
     pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
-        if self.is_closed() {
-            return Err(SendError(envelope));
-        }
+        msg!(match &envelope {
+            Terminate { closing } => {
+                if *closing || self.termination_policy.close_mailbox {
+                    if self.close() {
+                        return Ok(());
+                    } else {
+                        return Err(SendError(envelope));
+                    }
+                }
+            }
+        });
+
         self.mailbox.send(envelope).await
     }
 
     pub(crate) async fn recv(&self) -> Option<Envelope> {
-        if self.is_initializing() {
-            self.set_status(ActorStatus::NORMAL);
-        }
-
         self.mailbox.recv().await
     }
 
     pub(crate) fn try_recv(&self) -> Result<Envelope, TryRecvError> {
-        if self.is_initializing() {
-            self.set_status(ActorStatus::NORMAL);
-        }
-
         self.mailbox.try_recv()
     }
 
@@ -148,28 +171,33 @@ impl Actor {
         let prev_status = mem::replace(&mut control.status, status.clone());
         drop(control);
 
-        let is_good_kind = matches!(
+        if status.is_finished() {
+            self.mailbox.close();
+            self.finished.set();
+        }
+
+        let is_bad_kind = matches!(
             status.kind,
-            ActorStatusKind::Normal | ActorStatusKind::Initializing | ActorStatusKind::Terminated
+            ActorStatusKind::Alarming | ActorStatusKind::Failed
         );
 
         if let Some(details) = status.details.as_deref() {
-            if is_good_kind {
-                info!(status = ?status.kind, %details, "status changed");
-            } else {
+            if is_bad_kind {
                 error!(status = ?status.kind, %details, "status changed");
+            } else {
+                info!(status = ?status.kind, %details, "status changed");
             }
-        } else if is_good_kind {
-            info!(status = ?status.kind, "status changed");
-        } else {
+        } else if is_bad_kind {
             error!(status = ?status.kind, "status changed");
+        } else {
+            info!(status = ?status.kind, "status changed");
         };
 
         if status.kind != prev_status.kind {
-            if prev_status.is_active() {
+            if !prev_status.is_finished() {
                 decrement_gauge!("elfo_active_actors", 1., "status" => prev_status.kind.as_str());
             }
-            if status.is_active() {
+            if !status.is_finished() {
                 increment_gauge!("elfo_active_actors", 1., "status" => status.kind.as_str());
             }
 
@@ -179,11 +207,8 @@ impl Actor {
         // TODO: use `sdnotify` to provide a detailed status to systemd.
     }
 
-    pub(crate) fn is_closed(&self) -> bool {
-        matches!(
-            self.control.read().status.kind,
-            ActorStatusKind::Failed | ActorStatusKind::Terminated
-        )
+    pub(crate) fn close(&self) -> bool {
+        self.mailbox.close()
     }
 
     pub(crate) fn is_initializing(&self) -> bool {
@@ -191,5 +216,25 @@ impl Actor {
             self.control.read().status.kind,
             ActorStatusKind::Initializing
         )
+    }
+
+    pub(crate) async fn finished(&self) {
+        self.finished.wait().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn finished() {
+        let actor = Actor::new(Addr::NULL, TerminationPolicy::default());
+        let fut = actor.finished();
+        actor.set_status(ActorStatus::TERMINATED);
+        fut.await;
+        assert!(actor.control.read().status.is_finished());
+        actor.finished().await;
+        assert!(actor.control.read().status.is_finished());
     }
 }

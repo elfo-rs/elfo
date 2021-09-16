@@ -1,7 +1,7 @@
 use std::{fmt, marker::PhantomData};
 
-use futures_intrusive::sync::GenericManualResetEvent;
-use parking_lot::{Mutex, RawMutex};
+use futures_intrusive::sync::ManualResetEvent;
+use parking_lot::Mutex;
 use slotmap::{new_key_type, Key, SlotMap};
 use smallvec::SmallVec;
 
@@ -9,7 +9,7 @@ use crate::{addr::Addr, address_book::AddressBook, envelope::Envelope};
 
 pub(crate) struct RequestTable {
     owner: Addr,
-    notifier: GenericManualResetEvent<RawMutex>,
+    notifier: ManualResetEvent,
     requests: Mutex<SlotMap<RequestId, RequestInfo>>,
 }
 
@@ -32,7 +32,7 @@ impl RequestTable {
     pub(crate) fn new(owner: Addr) -> Self {
         Self {
             owner,
-            notifier: GenericManualResetEvent::new(false),
+            notifier: ManualResetEvent::new(false),
             requests: Mutex::new(SlotMap::default()),
         }
     }

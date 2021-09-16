@@ -1,7 +1,7 @@
-use std::{any::Any, future::Future, panic::AssertUnwindSafe, sync::Arc, time::Duration};
+use std::{any::Any, future::Future, mem, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use futures::FutureExt;
+use futures::{future::BoxFuture, FutureExt};
 use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
@@ -19,6 +19,7 @@ use crate::{
     envelope::Envelope,
     errors::TrySendError,
     exec::{Exec, ExecResult},
+    group::{RestartMode, RestartPolicy, TerminationPolicy},
     messages,
     object::{Object, ObjectArc, ObjectMeta},
     permissions::AtomicPermissions,
@@ -28,6 +29,8 @@ use crate::{
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
     meta: Arc<ObjectMeta>,
+    restart_policy: RestartPolicy,
+    termination_policy: TerminationPolicy,
     span: Span,
     context: Context,
     // TODO: replace with `crossbeam_utils::sync::ShardedLock`?
@@ -41,18 +44,22 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
 
 struct ControlBlock<C> {
     config: Option<Arc<C>>,
+    stop_spawning: bool,
 }
 
+/// Returns `None` if cannot be spawned.
 macro_rules! get_or_spawn {
     ($this:ident, $key:expr) => {{
         let key = $key;
-        ward!($this.objects.get(&key), {
-            $this
+        match $this.objects.get(&key) {
+            Some(object) => Some(object),
+            None => $this
                 .objects
                 .entry(key.clone())
-                .or_insert_with(|| $this.spawn(key))
-                .downgrade()
-        })
+                .or_try_insert_with(|| $this.spawn(key).ok_or(()))
+                .map(|o| o.downgrade())
+                .ok(),
+        }
     }};
 }
 
@@ -63,12 +70,24 @@ where
     <X::Output as Future>::Output: ExecResult,
     C: Config,
 {
-    pub(crate) fn new(ctx: Context, group: String, exec: X, router: R) -> Self {
-        let control = ControlBlock { config: None };
+    pub(crate) fn new(
+        ctx: Context,
+        group: String,
+        exec: X,
+        router: R,
+        restart_policy: RestartPolicy,
+        termination_policy: TerminationPolicy,
+    ) -> Self {
+        let control = ControlBlock {
+            config: None,
+            stop_spawning: false,
+        };
 
         Self {
             span: error_span!(parent: Span::none(), "", actor_group = group.as_str()),
             meta: Arc::new(ObjectMeta { group, key: None }),
+            restart_policy,
+            termination_policy,
             context: ctx,
             objects: DashMap::default(),
             router,
@@ -170,6 +189,17 @@ where
                     RouteReport::Done
                 }
             },
+            messages::Terminate => {
+                if self.termination_policy.stop_spawning {
+                    let is_newly = !mem::replace(&mut self.control.write().stop_spawning, true);
+                    if is_newly {
+                        self.in_scope(|| info!("stopped spawning new actors"));
+                    }
+                }
+
+                let outcome = self.router.route(&envelope);
+                self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+            }
             _ => {
                 let outcome = self.router.route(&envelope);
                 self.do_handle(envelope, outcome)
@@ -177,15 +207,14 @@ where
         })
     }
 
-    pub(crate) fn do_handle(
-        self: &Arc<Self>,
-        envelope: Envelope,
-        outcome: Outcome<R::Key>,
-    ) -> RouteReport {
+    fn do_handle(self: &Arc<Self>, envelope: Envelope, outcome: Outcome<R::Key>) -> RouteReport {
         // TODO: avoid copy & paste.
         match outcome {
             Outcome::Unicast(key) => {
-                let object = get_or_spawn!(self, key);
+                let object = ward!(
+                    get_or_spawn!(self, key),
+                    return RouteReport::Closed(envelope)
+                );
                 let actor = object.as_actor().expect("supervisor stores only actors");
                 match actor.try_send(envelope) {
                     Ok(()) => RouteReport::Done,
@@ -199,7 +228,7 @@ where
 
                 // TODO: avoid the loop in `try_send` case.
                 for key in list {
-                    let object = get_or_spawn!(self, key);
+                    let object = ward!(get_or_spawn!(self, key), continue);
 
                     // TODO: we shouldn't clone `envelope` for the last object in a sequence.
                     let envelope = ward!(
@@ -265,7 +294,12 @@ where
         }
     }
 
-    fn spawn(self: &Arc<Self>, key: R::Key) -> ObjectArc {
+    fn spawn(self: &Arc<Self>, key: R::Key) -> Option<ObjectArc> {
+        let control = self.control.read();
+        if control.stop_spawning {
+            return None;
+        }
+
         let entry = self.context.book().vacant_entry();
         let addr = entry.addr();
 
@@ -277,7 +311,6 @@ where
             actor_key = key_str.as_str()
         );
 
-        let control = self.control.read();
         let config = control.config.as_ref().cloned().expect("config is unset");
 
         let ctx = self
@@ -313,7 +346,13 @@ where
                 Err(panic) => ActorStatus::FAILED.with_details(panic_to_string(panic)),
             };
 
-            let need_to_restart = new_status.is_failed();
+            let should_restart = match sv.restart_policy.mode {
+                RestartMode::Always => true,
+                RestartMode::OnFailures => new_status.is_failed(),
+                RestartMode::Never => false,
+            };
+
+            let need_to_restart = should_restart && !sv.control.read().stop_spawning;
 
             sv.objects
                 .get(&key)
@@ -323,12 +362,16 @@ where
                 .set_status(new_status);
 
             if need_to_restart {
-                // TODO: should we register this metrics?
                 increment_gauge!("elfo_restarting_actors", 1.);
                 // TODO: use `backoff`.
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 decrement_gauge!("elfo_restarting_actors", 1.);
-                sv.objects.insert(key.clone(), sv.spawn(key))
+
+                if let Some(object) = sv.spawn(key.clone()) {
+                    sv.objects.insert(key.clone(), object)
+                } else {
+                    sv.objects.remove(&key).map(|(_, v)| v)
+                }
             } else {
                 sv.objects.remove(&key).map(|(_, v)| v)
             }
@@ -337,7 +380,8 @@ where
             sv.context.book().remove(addr);
         };
 
-        entry.insert(Object::new(addr, Actor::new(addr)));
+        let actor = Actor::new(addr, self.termination_policy.clone());
+        entry.insert(Object::new(addr, actor));
 
         let meta = Arc::new(ObjectMeta {
             group: self.meta.group.clone(),
@@ -352,7 +396,8 @@ where
             self.logging_limiter.clone(),
         );
         tokio::spawn(scope.within(fut.instrument(span)));
-        self.context.book().get_owned(addr).expect("just created")
+        let object = self.context.book().get_owned(addr).expect("just created");
+        Some(object)
     }
 
     fn spawn_by_outcome(self: &Arc<Self>, outcome: Outcome<R::Key>) {
@@ -367,6 +412,25 @@ where
             }
             Outcome::Broadcast | Outcome::Discard | Outcome::Default => {}
         }
+    }
+
+    pub(crate) fn finished(self: &Arc<Self>) -> BoxFuture<'static, ()> {
+        let sv = self.clone();
+        let addrs = self
+            .objects
+            .iter()
+            .map(|r| r.value().addr())
+            .collect::<Vec<_>>();
+
+        let fut = async move {
+            for addr in addrs {
+                let object = ward!(sv.context.book().get_owned(addr), continue);
+                let actor = object.as_actor().expect("a supervisor stores only actors");
+                actor.finished().await;
+            }
+        };
+
+        Box::pin(fut)
     }
 }
 

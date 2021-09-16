@@ -22,6 +22,7 @@ pub use crate::{
 
 pub mod config;
 pub mod errors;
+pub mod group;
 pub mod messages;
 pub mod node;
 pub mod routers;
@@ -42,7 +43,6 @@ mod demux;
 mod dumping;
 mod envelope;
 mod exec;
-mod group;
 mod local;
 mod macros;
 mod mailbox;
@@ -59,7 +59,7 @@ pub mod _priv {
         pub use crate::dumping::*;
 
         #[inline]
-        pub fn of<C, K, S>(context: &crate::Context<C, K, S>) -> &Dumper {
+        pub fn of<C: 'static, K, S>(context: &crate::Context<C, K, S>) -> &Dumper {
             context.dumper()
         }
     }

@@ -54,7 +54,7 @@ impl Permissions {
     }
 
     /// `None` is to disable logging at all.
-    pub fn set_logging_enabled(&mut self, max_level: Option<tracing::Level>) {
+    pub(crate) fn set_logging_enabled(&mut self, max_level: Option<tracing::Level>) {
         self.0 &= !LOGGING_MASK;
 
         if let Some(max_level) = max_level.map(log_level_to_value) {
@@ -63,7 +63,7 @@ impl Permissions {
         }
     }
 
-    pub fn set_telemetry_per_actor_group_enabled(&mut self, is_enabled: bool) {
+    pub(crate) fn set_telemetry_per_actor_group_enabled(&mut self, is_enabled: bool) {
         if is_enabled {
             self.0 |= TELEMETRY_PER_ACTOR_GROUP_IS_ENABLED;
         } else {
@@ -71,7 +71,7 @@ impl Permissions {
         }
     }
 
-    pub fn set_telemetry_per_actor_key_enabled(&mut self, is_enabled: bool) {
+    pub(crate) fn set_telemetry_per_actor_key_enabled(&mut self, is_enabled: bool) {
         if is_enabled {
             self.0 |= TELEMETRY_PER_ACTOR_KEY_IS_ENABLED;
         } else {
