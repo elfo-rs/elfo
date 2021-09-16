@@ -44,6 +44,32 @@ macro_rules! ward {
     };
 }
 
+#[macro_export]
+macro_rules! cooldown {
+    ($period:expr, $body:expr) => {{
+        use std::{
+            sync::atomic::{AtomicU64, Ordering},
+            time::UNIX_EPOCH,
+        };
+
+        static LOGGED_TIME: AtomicU64 = AtomicU64::new(0);
+
+        let period = $period.as_nanos() as u64;
+        let res = LOGGED_TIME.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |logged_time| {
+            let now = UNIX_EPOCH.elapsed().unwrap_or_default().as_nanos() as u64;
+            if logged_time + period <= now {
+                Some(now)
+            } else {
+                None
+            }
+        });
+
+        if res.is_ok() {
+            $body
+        }
+    }};
+}
+
 pub struct ErrorChain<'a>(pub &'a dyn Error);
 
 impl fmt::Display for ErrorChain<'_> {
