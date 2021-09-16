@@ -60,8 +60,9 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
 
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let current_span = ctx.current_span();
+        let level = *event.metadata().level();
         let payload_id = ward!(self.prepare(true, |visitor| event.record(visitor)), {
-            stats::lost_events_total(*event.metadata().level());
+            stats::counter_per_level("elfo_lost_events_total", level);
             return;
         });
 
@@ -80,14 +81,12 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
             payload_id,
         };
 
-        let level = *event.metadata.level();
         let is_lost = self.shared.channel.try_send(event).is_err();
-
         if is_lost {
             self.shared.pool.clear(payload_id);
-            stats::lost_events_total(level);
+            stats::counter_per_level("elfo_lost_events_total", level);
         } else {
-            stats::emitted_events_total(level);
+            stats::counter_per_level("elfo_emitted_events_total", level);
         }
     }
 

@@ -21,16 +21,9 @@ fn labels_by_level(level: Level) -> &'static [Label] {
     }
 }
 
-pub(crate) fn emitted_events_total(level: Level) {
+pub(crate) fn counter_per_level(name: &'static str, level: Level) {
     let recorder = ward!(metrics::try_recorder());
     let labels = labels_by_level(level);
-    let key = Key::from_static_parts("elfo_emitted_events_total", labels);
-    recorder.increment_counter(&key, 1);
-}
-
-pub(crate) fn lost_events_total(level: Level) {
-    let recorder = ward!(metrics::try_recorder());
-    let labels = labels_by_level(level);
-    let key = Key::from_static_parts("elfo_lost_events_total", labels);
+    let key = Key::from_static_parts(name, labels);
     recorder.increment_counter(&key, 1);
 }

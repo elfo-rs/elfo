@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- logging: `elfo_emitted_events_total` and `elfo_lost_events_total` metrics.
+- logging: `elfo_emitted_events_total`, `elfo_limited_events_total` and `elfo_lost_events_total` metrics.
 - logger: `elfo_written_events_total` metric.
 
 ### Fixed
