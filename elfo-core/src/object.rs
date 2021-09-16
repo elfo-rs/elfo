@@ -17,7 +17,8 @@ pub(crate) struct Object {
 }
 
 assert_impl_all!(Object: Sync);
-assert_eq_size!(Object, [u8; 256]);
+// TODO: actually, `Slab::Entry<Object>` should be aligned.
+// assert_eq_size!(Object, [u8; 256]);
 
 pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object>;
 pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object>;
@@ -132,4 +133,5 @@ impl Group {
     }
 }
 
+// TODO: reconsider `220`.
 pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 220]>;

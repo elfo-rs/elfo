@@ -92,7 +92,7 @@ pub async fn do_start<F: Future>(
 
     let entry = topology.book.vacant_entry();
     let addr = entry.addr();
-    entry.insert(Object::new(addr, Actor::new(addr)));
+    entry.insert(Object::new(addr, Actor::new(addr, Default::default())));
 
     let dumper = topology.dumper.for_group(false); // TODO: should we dump the starter?
 

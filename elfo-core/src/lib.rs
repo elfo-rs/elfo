@@ -22,6 +22,7 @@ pub use crate::{
 
 pub mod config;
 pub mod errors;
+pub mod group;
 pub mod messages;
 pub mod node;
 pub mod routers;
@@ -42,7 +43,6 @@ mod demux;
 mod dumping;
 mod envelope;
 mod exec;
-mod group;
 mod local;
 mod macros;
 mod mailbox;

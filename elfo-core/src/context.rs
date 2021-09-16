@@ -22,7 +22,7 @@ use crate::{
     messages,
     request_table::ResponseToken,
     routers::Singleton,
-    scope,
+    scope, trace_id,
 };
 
 pub(crate) use self::source::Source;
@@ -243,6 +243,10 @@ impl<C: 'static, K, S> Context<C, K, S> {
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
 
+        if actor.is_initializing() {
+            actor.set_status(ActorStatus::NORMAL);
+        }
+
         // TODO: remove `fuse`.
         let mailbox_fut = actor.recv().fuse();
         let source_fut = poll_fn(|cx| self.source.poll_recv(cx)).fuse();
@@ -250,26 +254,21 @@ impl<C: 'static, K, S> Context<C, K, S> {
         pin_mut!(mailbox_fut);
         pin_mut!(source_fut);
 
-        // TODO: reset trace_id for these logs?
         let envelope = select_biased! {
-            envelope = mailbox_fut => match envelope {
-                Some(envelope) => envelope,
-                None => {
-                    trace!("mailbox closed");
-                    return None;
-                }
-            },
-            envelope = source_fut => match envelope {
-                Some(envelope) => envelope,
-                None => {
-                    // TODO: rerun select?
-                    trace!("some of sources was closed");
-                    return None;
-                }
-            },
+            envelope = mailbox_fut => envelope,
+            envelope = source_fut => envelope, // TODO: rerun select if `None`?
         };
 
-        self.post_recv(envelope)
+        match envelope {
+            Some(envelope) => Some(self.post_recv(envelope)),
+            None => {
+                actor.set_status(ActorStatus::TERMINATING);
+                // TODO: forward Terminate's trace_id.
+                scope::set_trace_id(trace_id::generate());
+                trace!("input closed");
+                None
+            }
+        }
     }
 
     pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError> {
@@ -277,24 +276,30 @@ impl<C: 'static, K, S> Context<C, K, S> {
 
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
         let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
-        let envelope = match actor.try_recv() {
-            Ok(envelope) => envelope,
-            Err(err) => {
-                if err.is_closed() {
-                    // TODO: reset trace_id for this log?
-                    trace!("mailbox closed");
-                }
-                return Err(err);
-            }
-        };
-        drop(object);
+
+        if actor.is_initializing() {
+            actor.set_status(ActorStatus::NORMAL);
+        }
 
         // TODO: poll the sources.
-
-        self.post_recv(envelope).ok_or(TryRecvError::Closed)
+        match actor.try_recv() {
+            Ok(envelope) => {
+                drop(object);
+                Ok(self.post_recv(envelope))
+            }
+            Err(err) => {
+                if err.is_closed() {
+                    actor.set_status(ActorStatus::TERMINATING);
+                    // TODO: forward Terminate's trace_id.
+                    scope::set_trace_id(trace_id::generate());
+                    trace!("mailbox closed");
+                }
+                Err(err)
+            }
+        }
     }
 
-    fn post_recv(&mut self, envelope: Envelope) -> Option<Envelope> {
+    fn post_recv(&mut self, envelope: Envelope) -> Envelope {
         scope::set_trace_id(envelope.trace_id());
 
         let envelope = msg!(match envelope {
@@ -325,8 +330,7 @@ impl<C: 'static, K, S> Context<C, K, S> {
         }
 
         self.stats.message_waiting_time_seconds(&envelope);
-
-        Some(envelope)
+        envelope
     }
 
     /// XXX: mb `BoundEnvelope<C>`?
