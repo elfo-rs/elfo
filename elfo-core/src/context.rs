@@ -347,6 +347,12 @@ impl<C: 'static, K, S> Context<C, K, S> {
         envelope
     }
 
+    /// This is a part of private API for now.
+    #[doc(hidden)]
+    pub async fn finished(&self, addr: Addr) {
+        ward!(self.book.get_owned(addr)).finished().await;
+    }
+
     /// XXX: mb `BoundEnvelope<C>`?
     pub fn unpack_config<'c>(&self, config: &'c AnyConfig) -> &'c C
     where

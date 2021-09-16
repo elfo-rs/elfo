@@ -1,5 +1,5 @@
 use derive_more::From;
-use futures::future::join_all;
+use futures::future::{join_all, BoxFuture};
 use smallbox::SmallBox;
 
 use crate::{
@@ -121,17 +121,26 @@ impl Object {
             ObjectKind::Group(_) => None,
         }
     }
+
+    pub(crate) async fn finished(&self) {
+        match &self.kind {
+            ObjectKind::Actor(actor) => actor.finished().await,
+            ObjectKind::Group(group) => (group.finished)().await,
+        }
+    }
 }
 
 pub(crate) struct Group {
     router: GroupRouter,
+    finished: GroupFinished,
 }
 
 impl Group {
-    pub(crate) fn new(router: GroupRouter) -> Self {
-        Group { router }
+    pub(crate) fn new(router: GroupRouter, finished: GroupFinished) -> Self {
+        Group { router, finished }
     }
 }
 
 // TODO: reconsider `220`.
 pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 220]>;
+type GroupFinished = Box<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;

@@ -82,8 +82,10 @@ impl<R, C> ActorGroup<R, C> {
                 self.restart_policy,
                 self.termination_policy,
             ));
+            let sv1 = sv.clone();
             let router = smallbox!(move |envelope| { sv.handle(envelope) });
-            Object::new(addr, Group::new(router))
+            let finished = Box::new(move || sv1.finished());
+            Object::new(addr, Group::new(router, finished))
         };
 
         Schema { run: Box::new(run) }

@@ -1,7 +1,7 @@
 use std::{any::Any, future::Future, mem, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use futures::FutureExt;
+use futures::{future::BoxFuture, FutureExt};
 use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
@@ -207,11 +207,7 @@ where
         })
     }
 
-    pub(crate) fn do_handle(
-        self: &Arc<Self>,
-        envelope: Envelope,
-        outcome: Outcome<R::Key>,
-    ) -> RouteReport {
+    fn do_handle(self: &Arc<Self>, envelope: Envelope, outcome: Outcome<R::Key>) -> RouteReport {
         // TODO: avoid copy & paste.
         match outcome {
             Outcome::Unicast(key) => {
@@ -416,6 +412,25 @@ where
             }
             Outcome::Broadcast | Outcome::Discard | Outcome::Default => {}
         }
+    }
+
+    pub(crate) fn finished(self: &Arc<Self>) -> BoxFuture<'static, ()> {
+        let sv = self.clone();
+        let addrs = self
+            .objects
+            .iter()
+            .map(|r| r.value().addr())
+            .collect::<Vec<_>>();
+
+        let fut = async move {
+            for addr in addrs {
+                let object = ward!(sv.context.book().get_owned(addr), continue);
+                let actor = object.as_actor().expect("a supervisor stores only actors");
+                actor.finished().await;
+            }
+        };
+
+        Box::pin(fut)
     }
 }
 
