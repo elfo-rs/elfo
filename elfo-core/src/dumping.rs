@@ -19,6 +19,9 @@ use elfo_utils::{CachePadded, RateLimiter};
 #[allow(unreachable_pub)] // Actually, it's reachable via `elfo::_priv`.
 pub use self::{dump_item::*, sequence_no::SequenceNo};
 
+pub use hider::hide;
+pub(crate) use hider::set_in_dumping;
+
 use self::sequence_no::SequenceNoGenerator;
 use crate::{
     envelope,
@@ -28,6 +31,7 @@ use crate::{
 };
 
 mod dump_item;
+mod hider;
 mod sequence_no;
 
 const SHARD_COUNT: usize = 16;
@@ -40,6 +44,7 @@ thread_local! {
 
 // Reexported in `elfo::_priv`.
 #[derive(Clone, Default)]
+#[doc(hidden)]
 pub struct Dumper {
     per_system: Arc<PerSystem>,
     per_group: Arc<PerGroup>,
@@ -193,6 +198,7 @@ impl Dumper {
 }
 
 // Reexported in `elfo::_priv`.
+#[doc(hidden)]
 pub struct Drain<'a> {
     dumper: &'a Dumper,
     shard_no: usize,

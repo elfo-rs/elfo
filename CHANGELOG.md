@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - group: add the `restart_policy` method to specify a restarting behaviour.
 - group: add the `termination_policy` method to specify a restarting behaviour.
 - proxy: add `Proxy::finished()` to await termination and `Proxy::close()` to close a (sub)proxy's mailbox.
+- dumping: add `dumping::hide()` to hide large fields.
 
 ### Fixed
 - logger: a memory leak in case of a full channel.

@@ -41,6 +41,7 @@ anyhow = "1.0.40"
 libc = "0.2.97"
 tokio = { version = "1", features = ["full"] }
 tracing-subscriber = "0.2.15"
+serde_json = "1.0.64"
 
 [package.metadata.docs.rs]
 all-features = true

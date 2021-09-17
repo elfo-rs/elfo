@@ -74,6 +74,8 @@ impl Dumper {
                         let mut errors = Vec::new();
                         let mut written = 0;
 
+                        dumping::set_in_dumping(true);
+
                         for dump in dumper.drain(timeout) {
                             match serde_json::to_writer(&mut file, &dump) {
                                 Ok(()) => {
@@ -99,6 +101,8 @@ impl Dumper {
                             file.write_all(b"\n").context("cannot write")?;
                         }
                         file.flush().context("cannot flush")?;
+
+                        dumping::set_in_dumping(false);
 
                         Ok(Report {
                             file,
