@@ -171,6 +171,10 @@ impl Actor {
         let prev_status = mem::replace(&mut control.status, status.clone());
         drop(control);
 
+        if status == prev_status {
+            return;
+        }
+
         if status.is_finished() {
             self.mailbox.close();
             self.finished.set();
