@@ -45,7 +45,7 @@ pub struct Context<C = (), K = Singleton, S = ()> {
 
 assert_impl_all!(Context: Send);
 
-impl<C: 'static, K, S> Context<C, K, S> {
+impl<C, K, S> Context<C, K, S> {
     #[inline]
     pub fn addr(&self) -> Addr {
         self.addr
@@ -244,6 +244,7 @@ impl<C: 'static, K, S> Context<C, K, S> {
 
     pub async fn recv(&mut self) -> Option<Envelope>
     where
+        C: 'static,
         S: Source,
     {
         self.stats.message_handling_time_seconds();
@@ -280,7 +281,10 @@ impl<C: 'static, K, S> Context<C, K, S> {
         }
     }
 
-    pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError> {
+    pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
+    where
+        C: 'static,
+    {
         self.stats.message_handling_time_seconds();
 
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
@@ -308,7 +312,10 @@ impl<C: 'static, K, S> Context<C, K, S> {
         }
     }
 
-    fn post_recv(&mut self, envelope: Envelope) -> Envelope {
+    fn post_recv(&mut self, envelope: Envelope) -> Envelope
+    where
+        C: 'static,
+    {
         scope::set_trace_id(envelope.trace_id());
 
         let envelope = msg!(match envelope {
@@ -356,7 +363,7 @@ impl<C: 'static, K, S> Context<C, K, S> {
     /// XXX: mb `BoundEnvelope<C>`?
     pub fn unpack_config<'c>(&self, config: &'c AnyConfig) -> &'c C
     where
-        C: for<'de> serde::Deserialize<'de>,
+        C: for<'de> serde::Deserialize<'de> + 'static,
     {
         config.get_user()
     }
