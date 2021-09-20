@@ -1,6 +1,6 @@
 [package]
 name = "elfo-utils"
-version = "0.1.0"
+version = "0.1.1"
 description = "Utils"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"

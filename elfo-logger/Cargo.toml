@@ -1,6 +1,6 @@
 [package]
 name = "elfo-logger"
-version = "0.1.3"
+version = "0.1.4"
 description = "Logging subsystem"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
@@ -8,8 +8,8 @@ license = "MIT"
 
 [dependencies]
 elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
-elfo-core = { version = "0.1.16", path = "../elfo-core" }
-elfo-utils = { version = "0.1", path = "../elfo-utils" }
+elfo-core = { version = "0.1.18", path = "../elfo-core" }
+elfo-utils = { version = "0.1.1", path = "../elfo-utils" }
 
 derive_more = "0.99.11"
 futures-intrusive = "0.4.0"

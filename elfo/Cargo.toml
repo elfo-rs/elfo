@@ -1,6 +1,6 @@
 [package]
 name = "elfo"
-version = "0.1.22"
+version = "0.1.23"
 description = "Your next actor system"
 keywords = ["actor", "distributed", "tokio"]
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
@@ -45,13 +45,13 @@ full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter"]
 test-util = ["elfo-test", "elfo-core/test-util"]
 
 [dependencies]
-elfo-core = { version = "0.1.17", path = "../elfo-core" }
+elfo-core = { version = "0.1.18", path = "../elfo-core" }
 elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
-elfo-test = { version = "0.1.13", path = "../elfo-test", optional = true }
-elfo-configurer = { version = "0.1.6", path = "../elfo-configurer", optional = true }
-elfo-logger = { version = "0.1.3", path = "../elfo-logger", optional = true }
+elfo-test = { version = "0.1.14", path = "../elfo-test", optional = true }
+elfo-configurer = { version = "0.1.7", path = "../elfo-configurer", optional = true }
+elfo-logger = { version = "0.1.4", path = "../elfo-logger", optional = true }
 elfo-telemeter = { version = "0.1.0", path = "../elfo-telemeter", optional = true }
-elfo-dumper = { version = "0.1.2", path = "../elfo-dumper", optional = true }
+elfo-dumper = { version = "0.1.3", path = "../elfo-dumper", optional = true }
 
 [dev-dependencies]
 elfo-test = { version = "0.1.13", path = "../elfo-test" }
