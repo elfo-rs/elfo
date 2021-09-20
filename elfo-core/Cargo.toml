@@ -1,6 +1,6 @@
 [package]
 name = "elfo-core"
-version = "0.1.18"
+version = "0.1.19"
 description = "The core of the system"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
@@ -13,7 +13,7 @@ test-util = ["tokio/test-util"]
 elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
 elfo-utils = { version = "0.1.1", path = "../elfo-utils" }
 
-tokio = { version = "1.5", features = ["rt", "sync", "time", "signal"] }
+tokio = { version = "1.5", features = ["rt", "sync", "time", "signal", "macros"] }
 tokio-util = "0.6.7"
 sharded-slab = "0.1.1"
 futures-intrusive = "0.4.0"

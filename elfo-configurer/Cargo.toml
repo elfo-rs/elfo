@@ -8,7 +8,7 @@ license = "MIT"
 
 [dependencies]
 elfo-macros = { version = "0.1", path = "../elfo-macros" }
-elfo-core = { version = "0.1.18", path = "../elfo-core" }
+elfo-core = { version = "0.1.19", path = "../elfo-core" }
 
 toml = "0.5.8"
 

@@ -8,7 +8,7 @@ license = "MIT"
 
 [dependencies]
 elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
-elfo-core = { version = "0.1.17", path = "../elfo-core", features = ["test-util"] }
+elfo-core = { version = "0.1.19", path = "../elfo-core", features = ["test-util"] }
 elfo-configurer = { version = "0.1", path = "../elfo-configurer" }
 
 tokio = "1"
