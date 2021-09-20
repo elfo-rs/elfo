@@ -106,6 +106,7 @@ impl Dumper {
         }
 
         if self.per_group.rate_limiter.acquire() {
+            // TODO: increase `sequence_no` anyway.
             true
         } else {
             increment_counter!("elfo_limited_dumps_total");

@@ -1,4 +1,4 @@
-#![cfg(feature = "full")]
+#![cfg(feature = "test-util")]
 
 use std::convert::TryFrom;
 
