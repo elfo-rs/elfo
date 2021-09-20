@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - dumping: per group rate limiter, configurable via `system.dumping.max_rate` (`100_000` by default).
 - dumping: `elfo_emitted_dumps_total` and `elfo_limited_dumps_total` metrics.
 - logger: `elfo_written_events_total` metric.
-- configurer: reload configs forcely on SIGUSR2.
+- configurer: reload configs forcibly on SIGUSR2.
 - group: add the `restart_policy` method to specify a restarting behaviour.
 - group: add the `termination_policy` method to specify a restarting behaviour.
 - proxy: add `Proxy::finished()` to await termination and `Proxy::close()` to close a (sub)proxy's mailbox.
@@ -184,7 +184,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.22...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.23...HEAD
+[0.1.23]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.22...elfo-0.1.23
 [0.1.22]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.21...elfo-0.1.22
 [0.1.21]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.20...elfo-0.1.21
 [0.1.20]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.19...elfo-0.1.20
