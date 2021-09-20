@@ -75,7 +75,7 @@ impl ActorStatus {
     pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
     pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
     pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
-    pub(crate) const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
+    pub const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
 
     const fn new(kind: ActorStatusKind) -> Self {
         Self {
