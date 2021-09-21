@@ -1,26 +1,36 @@
+[common]
+# All properties defined in this section will be merged into each actor group's section.
+# The primary purpose is to define default values of system settings (logging, dumping, and so on).
+
+# Parameters and their defaults:
+#
+#system.logging.max_level = "Info" # one of: Trace, Debug, Info, Warn, Error, Off.
+#system.logging.max_rate = 1000    # per second
+#
+#system.dumping.disabled = false
+#system.dumping.max_rate = 100_000 # per second
+#
+#system.telemetry.per_actor_group = true
+#system.telemetry.per_actor_key = false
+
+# Each parameter can be redefined on the actor group level.
+
 [system.loggers]
-# sink = "File"  # "Stdout" by default
-# path = "example.log"
-# format.with_location = false
-# format.with_module = false
+#sink = "File"  # "Stdout" by default
+#path = "example.log"
+#format.with_location = false
+#format.with_module = false
 
 [system.telemeters]
 sink = "Prometheus"
 address = "0.0.0.0:9042"
-# global_labels = [["label", "value"]]
-# quantiles = [0.5, 0.75, 0.9, 0.95, 0.99]
+#global_labels = [["label", "value"]]
+#quantiles = [0.5, 0.75, 0.9, 0.95, 0.99]
 
 [system.dumpers]
 path = "example.dump"
 
 [producers]
-# system.logging.max_level = "Info" # default, one of: Trace, Debug, Info, Warn, Error, Off.
-# system.logging.max_rate = 1000 # default
-# system.dumping.disabled = false # default
-# system.dumping.max_rate = 100_000 # default
-# system.telemetry.per_actor_group = true # default
-# system.telemetry.per_actor_key = false # default
-
 group_count = 3
 item_count = 10
 

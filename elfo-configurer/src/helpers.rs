@@ -1,7 +1,10 @@
 use fxhash::FxHashMap;
 use serde_value::Value;
 
-pub(crate) fn get_config(configs: &FxHashMap<String, Value>, path: &str) -> Option<Value> {
+pub(crate) fn get_config<'a>(
+    configs: &'a FxHashMap<String, Value>,
+    path: &str,
+) -> Option<&'a Value> {
     let mut parts_iter = path.split('.');
     let mut node = configs.get(parts_iter.next()?)?;
     for part in parts_iter {
@@ -11,7 +14,7 @@ pub(crate) fn get_config(configs: &FxHashMap<String, Value>, path: &str) -> Opti
             return None;
         };
     }
-    Some(node.clone())
+    Some(node)
 }
 
 pub(crate) fn add_defaults(config: Option<Value>, default: &Value) -> Value {
@@ -41,7 +44,7 @@ mod test {
 
     #[test]
     fn get_config_should_get_config_by_key() {
-        assert_eq!(get_config(&create_configs(), "alpha"), Some(alpha_value()));
+        assert_eq!(get_config(&create_configs(), "alpha"), Some(&alpha_value()));
     }
 
     #[test]
@@ -65,7 +68,7 @@ mod test {
     fn get_config_should_get_config_by_path() {
         assert_eq!(
             get_config(&create_configs(), "gamma.zeta.theta"),
-            Some(theta_value())
+            Some(&theta_value())
         );
     }
 
@@ -101,12 +104,13 @@ mod test {
             alpha_value()
         );
 
-        let gamma = get_config(&create_configs(), "gamma");
-        let zeta = get_config(&create_configs(), "gamma.zeta").unwrap();
+        let configs = create_configs();
+        let gamma = get_config(&configs, "gamma");
+        let zeta = get_config(&configs, "gamma.zeta").unwrap();
 
-        if let Value::Map(mut map) = add_defaults(gamma, &zeta) {
+        if let Value::Map(mut map) = add_defaults(gamma.cloned(), zeta) {
             assert_eq!(map.remove(&String("theta".into())), Some(theta_value()));
-            assert_eq!(map.remove(&String("zeta".into())), Some(zeta));
+            assert_eq!(map.remove(&String("zeta".into())), Some(zeta.clone()));
         } else {
             unreachable!();
         }
