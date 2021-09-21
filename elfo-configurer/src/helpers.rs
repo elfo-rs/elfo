@@ -14,6 +14,25 @@ pub(crate) fn get_config(configs: &FxHashMap<String, Value>, path: &str) -> Opti
     Some(node.clone())
 }
 
+pub(crate) fn add_defaults(config: Option<Value>, default: &Value) -> Value {
+    use Value::*;
+
+    match (config, default) {
+        (None, d) => d.clone(),
+        (Some(Newtype(t)), d) => add_defaults(Some(*t), d),
+        (Some(t), Newtype(d)) => add_defaults(Some(t), d),
+        (Some(Option(t)), d) => add_defaults(t.map(|t| *t), d),
+        (Some(Map(mut config)), Map(default)) => {
+            for (k, d) in default {
+                let merged = add_defaults(config.remove(k), d);
+                config.insert(k.clone(), merged);
+            }
+            Map(config)
+        }
+        (Some(v), _) => v,
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -48,6 +67,49 @@ mod test {
             get_config(&create_configs(), "gamma.zeta.theta"),
             Some(theta_value())
         );
+    }
+
+    #[test]
+    fn add_defaults_should_works() {
+        use Value::*;
+
+        assert_eq!(add_defaults(None, &alpha_value()), alpha_value());
+        assert_eq!(
+            add_defaults(Some(Option(None)), &alpha_value()),
+            alpha_value()
+        );
+        assert_eq!(
+            add_defaults(Some(theta_value()), &alpha_value()),
+            theta_value()
+        );
+        assert_eq!(
+            add_defaults(Some(Newtype(Option(None).into())), &alpha_value()),
+            alpha_value()
+        );
+        assert_eq!(
+            add_defaults(
+                Some(Newtype(Option(None).into())),
+                &Newtype(alpha_value().into())
+            ),
+            alpha_value()
+        );
+        assert_eq!(
+            add_defaults(
+                Some(Newtype(Option(None).into())),
+                &Newtype(alpha_value().into())
+            ),
+            alpha_value()
+        );
+
+        let gamma = get_config(&create_configs(), "gamma");
+        let zeta = get_config(&create_configs(), "gamma.zeta").unwrap();
+
+        if let Value::Map(mut map) = add_defaults(gamma, &zeta) {
+            assert_eq!(map.remove(&String("theta".into())), Some(theta_value()));
+            assert_eq!(map.remove(&String("zeta".into())), Some(zeta));
+        } else {
+            unreachable!();
+        }
     }
 
     /// ```json
