@@ -22,6 +22,8 @@ use elfo::{
     ActorGroup, ActorStatus, Addr, Context, Request, Schema, Topology,
 };
 
+mod helpers;
+
 pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Schema {
     let config = Value::deserialize(config).map_err(|err| err.to_string());
     let source = ConfigSource::Fixture(config);
@@ -114,28 +116,37 @@ impl Configurer {
 
         let config = match config {
             Ok(config) => config,
-            Err(reason) => {
-                error!(%reason, "invalid config");
+            Err(error) => {
+                error!(%error, "invalid config");
+                return false;
+            }
+        };
+
+        let configs = match Deserialize::deserialize(config) {
+            Ok(configs) => configs,
+            Err(error) => {
+                error!(%error, "invalid config");
                 return false;
             }
         };
 
         let system_updated = self
-            .update_configs(&config, TopologyFilter::System, force)
+            .update_configs(&configs, TopologyFilter::System, force)
             .await;
         let user_udpated = self
-            .update_configs(&config, TopologyFilter::User, force)
+            .update_configs(&configs, TopologyFilter::User, force)
             .await;
+
         system_updated && user_udpated
     }
 
     async fn update_configs(
         &mut self,
-        config: &Value,
+        configs: &FxHashMap<String, Value>,
         filter: TopologyFilter,
         force: bool,
     ) -> bool {
-        let mut config_list = match_configs(&self.topology, config.clone(), filter);
+        let mut config_list = match_configs(&self.topology, configs, filter);
 
         // Filter up-to-date configs if needed.
         if !force {
@@ -265,11 +276,9 @@ fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
 
 fn match_configs(
     topology: &Topology,
-    config: Value,
+    configs: &FxHashMap<String, Value>,
     filter: TopologyFilter,
 ) -> Vec<ConfigWithMeta> {
-    let configs: FxHashMap<String, Value> = Deserialize::deserialize(config).unwrap_or_default();
-
     topology
         .actor_groups()
         // Entrypoints' configs are updated only at startup.
@@ -279,93 +288,17 @@ fn match_configs(
             TopologyFilter::User => !group.name.starts_with("system."),
         })
         .map(|group| {
-            let config = get_config(&configs, &group.name);
+            let empty = Value::Map(Default::default());
+            let common = helpers::get_config(configs, "common").unwrap_or(&empty);
+            let config = helpers::get_config(configs, &group.name).cloned();
+            let config = helpers::add_defaults(config, common);
 
             ConfigWithMeta {
                 group_name: group.name.clone(),
                 addr: group.addr,
                 hash: fxhash::hash64(&config),
-                config: config.map_or_else(AnyConfig::default, AnyConfig::new),
+                config: AnyConfig::new(config),
             }
         })
         .collect()
-}
-
-fn get_config(configs: &FxHashMap<String, Value>, path: &str) -> Option<Value> {
-    let mut parts_iter = path.split('.');
-    let mut node = configs.get(parts_iter.next()?)?;
-    for part in parts_iter {
-        node = if let Value::Map(map) = node {
-            map.get(&Value::String(part.to_owned()))?
-        } else {
-            return None;
-        };
-    }
-    Some(node.clone())
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn get_config_should_get_config_by_key() {
-        assert_eq!(get_config(&create_configs(), "alpha"), Some(alpha_value()));
-    }
-
-    #[test]
-    fn get_config_should_get_default_for_missing_key() {
-        assert_eq!(get_config(&create_configs(), "beta"), None);
-    }
-
-    #[test]
-    fn get_config_should_get_default_for_completely_missing_path() {
-        assert_eq!(get_config(&create_configs(), "beta.beta.gamma"), None);
-    }
-
-    #[test]
-    fn get_config_should_get_default_for_partially_missing_path() {
-        assert_eq!(get_config(&create_configs(), "gamma.zeta.beta"), None);
-        assert_eq!(get_config(&create_configs(), "alpha.zeta.beta"), None);
-        assert_eq!(get_config(&create_configs(), "gamma.zeta.theta.beta"), None);
-    }
-
-    #[test]
-    fn get_config_should_get_config_by_path() {
-        assert_eq!(
-            get_config(&create_configs(), "gamma.zeta.theta"),
-            Some(theta_value())
-        );
-    }
-
-    /// ```json
-    /// {
-    ///     "alpha": "beta",
-    ///     "gamma": {
-    ///         "zeta": { "theta": "iota" }
-    ///     }
-    /// }
-    /// ```
-    fn create_configs() -> FxHashMap<String, Value> {
-        let mut zeta_value: BTreeMap<Value, Value> = Default::default();
-        zeta_value.insert(Value::String("theta".to_owned()), theta_value());
-        let zeta_value = Value::Map(zeta_value);
-        let mut gamma_value: BTreeMap<Value, Value> = Default::default();
-        gamma_value.insert(Value::String("zeta".to_owned()), zeta_value);
-        let gamma_value = Value::Map(gamma_value);
-        let mut configs: FxHashMap<String, Value> = Default::default();
-        configs.insert("alpha".to_owned(), alpha_value());
-        configs.insert("gamma".to_owned(), gamma_value);
-        configs
-    }
-
-    fn alpha_value() -> Value {
-        Value::String("beta".to_owned())
-    }
-
-    fn theta_value() -> Value {
-        Value::String("iota".to_owned())
-    }
 }
