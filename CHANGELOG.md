@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - configurer: merge `[common]` section into all actor group's sections.
 
+### Fixed
+- A race condition that leads to `config is unset` at startup.
+
 ## [0.1.23] - 2021-09-20
 ### Added
 - Graceful termination.

@@ -14,7 +14,7 @@ use elfo_utils::{CachePadded, ErrorChain, RateLimiter};
 use crate::{
     actor::{Actor, ActorStatus},
     addr::Addr,
-    config::Config,
+    config::{AnyConfig, Config},
     context::Context,
     envelope::Envelope,
     errors::TrySendError,
@@ -44,6 +44,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
 
 struct ControlBlock<C> {
     config: Option<Arc<C>>,
+    is_started: bool,
     stop_spawning: bool,
 }
 
@@ -80,6 +81,7 @@ where
     ) -> Self {
         let control = ControlBlock {
             config: None,
+            is_started: false,
             stop_spawning: false,
         };
 
@@ -115,14 +117,21 @@ where
         msg!(match &envelope {
             messages::ValidateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
-                    let is_first_update = self.control.write().config.is_none();
-                    if !is_first_update {
+                    // Make all updates under lock, including telemetry/dumper ones.
+                    let mut control = self.control.write();
+
+                    if control.config.is_none() {
+                        // We should update configs before spawning any actors
+                        // to avoid a race condition at startup.
+                        // So, we update the config on `ValidateConfig` at the first time.
+                        self.update_config(&mut control, &config);
+                        RouteReport::Done
+                    } else {
+                        drop(control);
                         let outcome = self.router.route(&envelope);
                         let mut envelope = envelope;
                         envelope.set_message(messages::ValidateConfig { config });
                         self.do_handle(envelope, outcome.or(Outcome::Broadcast))
-                    } else {
-                        RouteReport::Done
                     }
                 }
                 Err(reason) => {
@@ -140,42 +149,22 @@ where
                 Ok(config) => {
                     // Make all updates under lock, including telemetry/dumper ones.
                     let mut control = self.control.write();
+                    self.update_config(&mut control, &config);
 
-                    let system = config.get_system();
-
-                    // Update the dumper's config.
-                    self.context.dumper().configure(&system.dumping);
-
-                    // Update permissions.
-                    let mut perm = self.permissions.load();
-                    perm.set_logging_enabled(system.logging.max_level.to_tracing_level());
-                    perm.set_telemetry_per_actor_group_enabled(system.telemetry.per_actor_group);
-                    perm.set_telemetry_per_actor_key_enabled(system.telemetry.per_actor_key);
-                    self.permissions.store(perm);
-
-                    self.logging_limiter.configure(system.logging.max_rate);
-
-                    // Update user's config.
-                    let is_first_update = control.config.is_none();
-                    control.config = Some(config.get_user::<C>().clone());
-                    self.router
-                        .update(control.config.as_ref().expect("just saved"));
-                    self.in_scope(
-                        || info!(config = ?control.config.as_ref().unwrap(), "router updated"),
-                    );
-
-                    // Release the lock.
+                    let only_spawn = !control.is_started;
+                    control.is_started = true;
                     drop(control);
 
-                    // Send `UpdateConfig` across actors.
                     let outcome = self.router.route(&envelope);
-                    if !is_first_update {
+
+                    if only_spawn {
+                        self.spawn_by_outcome(outcome);
+                        RouteReport::Done
+                    } else {
+                        // Send `UpdateConfig` across actors.
                         let mut envelope = envelope;
                         envelope.set_message(messages::UpdateConfig { config });
                         self.do_handle(envelope, outcome.or(Outcome::Broadcast))
-                    } else {
-                        self.spawn_by_outcome(outcome);
-                        RouteReport::Done
                     }
                 }
                 Err(reason) => {
@@ -412,6 +401,28 @@ where
             }
             Outcome::Broadcast | Outcome::Discard | Outcome::Default => {}
         }
+    }
+
+    fn update_config(&self, control: &mut ControlBlock<C>, config: &AnyConfig) {
+        let system = config.get_system();
+
+        // Update the dumper's config.
+        self.context.dumper().configure(&system.dumping);
+
+        // Update permissions.
+        let mut perm = self.permissions.load();
+        perm.set_logging_enabled(system.logging.max_level.to_tracing_level());
+        perm.set_telemetry_per_actor_group_enabled(system.telemetry.per_actor_group);
+        perm.set_telemetry_per_actor_key_enabled(system.telemetry.per_actor_key);
+        self.permissions.store(perm);
+
+        self.logging_limiter.configure(system.logging.max_rate);
+
+        // Update user's config.
+        control.config = Some(config.get_user::<C>().clone());
+        self.router
+            .update(control.config.as_ref().expect("just saved"));
+        self.in_scope(|| info!(config = ?control.config.as_ref().unwrap(), "router updated"));
     }
 
     pub(crate) fn finished(self: &Arc<Self>) -> BoxFuture<'static, ()> {
