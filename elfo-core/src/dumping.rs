@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use smallbox::smallbox;
 use tokio::time::Instant;
+use tracing::error;
 
 use elfo_utils::{CachePadded, RateLimiter};
 
@@ -159,7 +160,14 @@ impl Dumper {
         message_kind: MessageKind,
         message: ErasedMessage,
     ) {
-        let (meta, trace_id) = scope::with(|scope| (scope.meta().clone(), scope.trace_id()));
+        let d = scope::try_with(|scope| (scope.meta().clone(), scope.trace_id()));
+
+        let (meta, trace_id) = ward!(d, {
+            cooldown!(Duration::from_secs(15), {
+                error!("attempt to dump outside the actor scope");
+            });
+            return;
+        });
 
         let item = DumpItem {
             meta,
