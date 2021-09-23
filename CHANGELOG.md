@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.24] - 2021-09-23
 ### Added
 - configurer: merge `[common]` section into all actor group's sections.
 
@@ -191,7 +192,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.23...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.24...HEAD
+[0.1.24]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.23...elfo-0.1.24
 [0.1.23]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.22...elfo-0.1.23
 [0.1.22]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.21...elfo-0.1.22
 [0.1.21]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.20...elfo-0.1.21
