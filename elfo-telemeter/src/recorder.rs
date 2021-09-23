@@ -16,7 +16,7 @@ impl PrometheusRecorder {
     }
 
     fn with_params(&self, f: impl Fn(&Storage, &Scope, bool)) {
-        scope::with(|scope| {
+        scope::try_with(|scope| {
             let perm = scope.permissions();
             if perm.is_telemetry_per_actor_group_enabled() {
                 f(&self.storage, scope, false)

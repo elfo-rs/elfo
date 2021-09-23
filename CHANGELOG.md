@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - A race condition that leads to `config is unset` at startup.
+- telemetry: do not panic if used outside the actor system.
 
 ## [0.1.23] - 2021-09-20
 ### Added
