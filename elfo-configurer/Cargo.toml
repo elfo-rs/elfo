@@ -12,7 +12,7 @@ elfo-core = { version = "0.1.19", path = "../elfo-core" }
 
 toml = "0.5.8"
 
-tokio = "1"
+tokio = { version = "1", features = ["fs"] }
 serde = { version = "1.0.120", features = ["derive", "rc"] }
 serde-value = "0.7.0"
 futures = "0.3.12"
