@@ -149,9 +149,13 @@ where
                 Ok(config) => {
                     // Make all updates under lock, including telemetry/dumper ones.
                     let mut control = self.control.write();
-                    self.update_config(&mut control, &config);
 
                     let only_spawn = !control.is_started;
+                    if !only_spawn || control.config.is_none() {
+                        // At the first time the config is updated on `ValidateConfig`.
+                        self.update_config(&mut control, &config);
+                    }
+
                     control.is_started = true;
                     drop(control);
 
