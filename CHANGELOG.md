@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.25] - 2021-09-24
 ### Fixed
 - supervisor: remove an extra update of configs at startup.
 - start: wait some time before exiting in case of errors at startup.
@@ -196,7 +197,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.24...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.25...HEAD
+[0.1.25]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.24...elfo-0.1.25
 [0.1.24]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.23...elfo-0.1.24
 [0.1.23]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.22...elfo-0.1.23
 [0.1.22]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.21...elfo-0.1.22
