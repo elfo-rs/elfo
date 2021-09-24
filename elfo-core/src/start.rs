@@ -26,7 +26,7 @@ use crate::{
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
 
-async fn send_configs_to_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
+async fn start_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
     let futures = topology
         .actor_groups()
         .filter(|group| group.is_entrypoint)
@@ -58,7 +58,7 @@ async fn send_configs_to_entrypoints(ctx: &Context, topology: &Topology) -> Resu
     }
 }
 
-async fn start_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
+async fn wait_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
     let futures = topology
         .actor_groups()
         .filter(|group| group.is_entrypoint)
@@ -66,7 +66,7 @@ async fn start_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
 
     futures::future::try_join_all(futures)
         .await
-        .map_err(|_| StartError::Other("entrypoint cannot started".into()))?;
+        .map_err(|_| StartError::Other("entrypoint cannot start".into()))?;
 
     Ok(())
 }
@@ -83,8 +83,14 @@ pub async fn start(topology: Topology) {
 
 /// The same as `start()`, but returns an error rather than panics.
 pub async fn try_start(topology: Topology) -> Result<()> {
-    do_start(topology, termination).await?;
-    Ok(())
+    let res = do_start(topology, termination).await;
+
+    if res.is_err() {
+        // XXX: give enough time to the logger.
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    res
 }
 
 #[doc(hidden)]
@@ -116,8 +122,8 @@ pub async fn do_start<F: Future>(
     let scope = Scope::new(addr, addr, Arc::new(meta), perm, Default::default());
     let f = async move {
         let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
-        send_configs_to_entrypoints(&ctx, &topology).await?;
         start_entrypoints(&ctx, &topology).await?;
+        wait_entrypoints(&ctx, &topology).await?;
         Ok(f(ctx, topology).await)
     };
     scope.within(f).await
