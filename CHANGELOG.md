@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- supervisor: remove an extra update of configs at startup.
+- start: wait some time before exiting in case of errors at startup.
+
 ## [0.1.24] - 2021-09-23
 ### Added
 - configurer: merge `[common]` section into all actor group's sections.
