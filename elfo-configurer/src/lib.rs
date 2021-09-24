@@ -1,14 +1,12 @@
 #![warn(rust_2018_idioms, unreachable_pub)]
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use futures::{future, FutureExt};
 use fxhash::FxHashMap;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
+use tokio::fs;
 use tracing::error;
 
 use elfo_core as elfo;
@@ -110,7 +108,7 @@ impl Configurer {
 
     async fn load_and_update_configs(&mut self, force: bool) -> bool {
         let config = match &self.source {
-            ConfigSource::File(path) => load_raw_config(path),
+            ConfigSource::File(path) => load_raw_config(path).await,
             ConfigSource::Fixture(value) => value.clone(),
         };
 
@@ -269,8 +267,10 @@ async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
     errors.count() == 0
 }
 
-fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
-    let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
+async fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
+    let content = fs::read_to_string(path)
+        .await
+        .map_err(|err| err.to_string())?;
     toml::from_str(&content).map_err(|err| err.to_string())
 }
 
