@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use serde::Deserialize;
 
@@ -14,6 +14,8 @@ pub(crate) struct Config {
     /// Labels that will be added to all metrics.
     #[serde(default)]
     pub(crate) global_labels: Vec<(String, String)>,
+    #[serde(with = "humantime_serde", default = "default_compaction_interval")]
+    pub(crate) compaction_interval: Duration,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -22,5 +24,9 @@ pub(crate) enum Sink {
 }
 
 fn default_quantiles() -> Vec<f64> {
-    vec![0.5, 0.75, 0.9, 0.95, 0.99]
+    vec![0.75, 0.9, 0.95, 0.99]
+}
+
+fn default_compaction_interval() -> Duration {
+    Duration::from_secs(8)
 }

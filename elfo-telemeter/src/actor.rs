@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use metrics_util::parse_quantiles;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -9,15 +8,12 @@ use elfo_macros::{message, msg_raw as msg};
 
 use elfo::{messages::ConfigUpdated, scope, trace_id, ActorGroup, Context, Local, Schema};
 
-use crate::{
-    config::Config,
-    render::{self, RenderOptions},
-    storage::Storage,
-};
+use crate::{config::Config, render::Renderer, storage::Storage};
 
 struct Telemeter {
     ctx: Context<Config>,
     storage: Arc<Storage>,
+    renderer: Renderer,
 }
 
 #[message(ret = String, elfo = elfo_core)]
@@ -34,13 +30,19 @@ pub(crate) fn new(storage: Arc<Storage>) -> Schema {
 
 impl Telemeter {
     pub(crate) fn new(ctx: Context<Config>, storage: Arc<Storage>) -> Self {
-        Self { ctx, storage }
+        let mut renderer = Renderer::default();
+        renderer.configure(ctx.config());
+
+        Self {
+            ctx,
+            storage,
+            renderer,
+        }
     }
 
     async fn main(mut self) {
         let mut address = self.ctx.config().address;
         let mut server = start_server(&self.ctx);
-        self.storage.configure(&self.ctx.config().global_labels);
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
@@ -54,19 +56,12 @@ impl Telemeter {
                         server = start_server(&self.ctx);
                     }
 
-                    self.storage.configure(&config.global_labels);
+                    self.renderer.configure(config);
                 }
                 (Render, token) => {
-                    let quantiles = parse_quantiles(&self.ctx.config().quantiles);
                     let snapshot = self.storage.snapshot();
                     let descriptions = self.storage.descriptions();
-                    let output = render::render(
-                        snapshot,
-                        RenderOptions {
-                            quantiles: &quantiles,
-                            descriptions: &descriptions,
-                        },
-                    );
+                    let output = self.renderer.render(snapshot, &descriptions);
                     self.ctx.respond(token, output);
                 }
                 ServerFailed(error) => {
