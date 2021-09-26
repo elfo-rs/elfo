@@ -21,27 +21,34 @@ pub(crate) struct Storage {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct ExtKey {
-    addr: Addr,
+    group: Addr,
     // XXX: we are forced to use hash here, because API of `Registry`
     //      isn't composable with composite keys for now.
     key_hash: u64,
 }
 
 fn make_ext_key(scope: &Scope, key: &Key, with_actor_key: bool) -> ExtKey {
+    let mut hash = key.get_hash();
+
+    if with_actor_key {
+        debug_assert!(scope.meta().key.is_some());
+        let mut hasher = KeyHasher::default();
+        scope.meta().key.hash(&mut hasher);
+        hash ^= hasher.finish();
+    }
+
+    debug_assert_ne!(scope.group(), Addr::NULL);
+
     ExtKey {
-        addr: if with_actor_key {
-            scope.addr()
-        } else {
-            scope.group()
-        },
-        key_hash: key.get_hash(),
+        group: scope.group(),
+        key_hash: hash,
     }
 }
 
 impl Hashable for ExtKey {
     #[inline]
     fn hashable(&self) -> u64 {
-        // TODO: get rid of double hashing of `key`.
+        // TODO: get rid of double hashing.
         let mut hasher = KeyHasher::default();
         self.hash(&mut hasher);
         hasher.finish()
