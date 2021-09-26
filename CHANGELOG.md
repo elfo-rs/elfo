@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- telemeter: periodically compact distributions between scrape requests.
+
 ### Fixed
 - telemetry: preserve metrics per an actor key after respawning.
 

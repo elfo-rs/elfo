@@ -4,8 +4,8 @@ use std::{
 };
 
 use fxhash::FxHashMap;
-use metrics::{GaugeValue, Key, KeyHasher};
-use metrics_util::{Handle, Hashable, MetricKind, NotTracked, Registry};
+use metrics::{GaugeValue, Key, KeyHasher, Label};
+use metrics_util::{Generational, Handle, Hashable, MetricKind, NotTracked, Registry};
 use parking_lot::{RwLock, RwLockReadGuard};
 
 use elfo_core::{Addr, _priv::ObjectMeta, scope::Scope};
@@ -14,9 +14,8 @@ use crate::distribution::Distribution;
 
 pub(crate) struct Storage {
     registry: Registry<ExtKey, ExtHandle, NotTracked<ExtHandle>>,
-    distributions: RwLock<FxHashMap<String, FxHashMap<Vec<String>, Distribution>>>,
+    distributions: RwLock<FxHashMap<String, FxHashMap<Vec<Label>, Distribution>>>,
     descriptions: RwLock<FxHashMap<String, &'static str>>,
-    global_labels: RwLock<FxHashMap<String, String>>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -73,9 +72,9 @@ fn make_ext_handle(scope: &Scope, key: &Key, handle: Handle, with_actor_key: boo
 }
 
 pub(crate) struct Snapshot {
-    pub(crate) counters: FxHashMap<String, FxHashMap<Vec<String>, u64>>,
-    pub(crate) gauges: FxHashMap<String, FxHashMap<Vec<String>, f64>>,
-    pub(crate) distributions: FxHashMap<String, FxHashMap<Vec<String>, Distribution>>,
+    pub(crate) counters: FxHashMap<String, FxHashMap<Vec<Label>, u64>>,
+    pub(crate) gauges: FxHashMap<String, FxHashMap<Vec<Label>, f64>>,
+    pub(crate) distributions: FxHashMap<String, FxHashMap<Vec<Label>, Distribution>>,
 }
 
 impl Storage {
@@ -84,13 +83,7 @@ impl Storage {
             registry: Registry::<ExtKey, ExtHandle, NotTracked<ExtHandle>>::untracked(),
             distributions: RwLock::new(FxHashMap::default()),
             descriptions: RwLock::new(FxHashMap::default()),
-            global_labels: RwLock::new(FxHashMap::default()),
         }
-    }
-
-    pub(crate) fn configure(&self, global_labels: &[(String, String)]) {
-        let map = global_labels.iter().cloned().collect();
-        *self.global_labels.write() = map;
     }
 
     pub(crate) fn descriptions(&self) -> RwLockReadGuard<'_, FxHashMap<String, &'static str>> {
@@ -184,19 +177,40 @@ impl Storage {
         );
     }
 
+    pub(crate) fn compact(&self) {
+        let mut distributions = self.distributions.write();
+
+        self.registry.visit(|kind, (_, h)| {
+            if !matches!(kind, MetricKind::Histogram) {
+                return;
+            }
+
+            let (name, labels) = make_parts(h.get_inner());
+            let entry = distributions
+                .entry(name)
+                .or_insert_with(FxHashMap::default)
+                .entry(labels)
+                .or_insert_with(Distribution::new_summary);
+
+            h.get_inner()
+                .handle
+                .read_histogram_with_clear(|samples| entry.record_samples(samples));
+        });
+    }
+
     pub(crate) fn snapshot(&self) -> Snapshot {
         let metrics = self.registry.get_handles();
-        let global_labels = self.global_labels.read();
 
         let mut counters = FxHashMap::default();
         let mut gauges = FxHashMap::default();
+        let mut distributions = self.distributions.write();
 
         for ((kind, _), (_, h)) in metrics.into_iter() {
             match kind {
                 MetricKind::Counter => {
                     let value = h.handle.read_counter();
 
-                    let (name, labels) = make_parts(&h, &global_labels);
+                    let (name, labels) = make_parts(&h);
                     let entry = counters
                         .entry(name)
                         .or_insert_with(FxHashMap::default)
@@ -207,7 +221,7 @@ impl Storage {
                 MetricKind::Gauge => {
                     let value = h.handle.read_gauge();
 
-                    let (name, labels) = make_parts(&h, &global_labels);
+                    let (name, labels) = make_parts(&h);
                     let entry = gauges
                         .entry(name)
                         .or_insert_with(FxHashMap::default)
@@ -216,10 +230,8 @@ impl Storage {
                     *entry = value;
                 }
                 MetricKind::Histogram => {
-                    let (name, labels) = make_parts(&h, &global_labels);
-
-                    let mut wg = self.distributions.write();
-                    let entry = wg
+                    let (name, labels) = make_parts(&h);
+                    let entry = distributions
                         .entry(name.clone())
                         .or_insert_with(FxHashMap::default)
                         .entry(labels)
@@ -231,48 +243,31 @@ impl Storage {
             }
         }
 
-        let distributions = self.distributions.read().clone();
-
         Snapshot {
             counters,
             gauges,
-            distributions,
+            distributions: distributions.clone(),
         }
     }
 }
 
-fn make_parts(h: &ExtHandle, defaults: &FxHashMap<String, String>) -> (String, Vec<String>) {
+fn make_parts(h: &ExtHandle) -> (String, Vec<Label>) {
     let name = sanitize_key_name(h.key.name());
+    let with_actor_key = h.with_actor_key && h.meta.key.is_some();
+    let label_count = if with_actor_key { 2 } else { 1 } + h.key.labels().len();
 
-    // Add global labels.
-    let mut values = defaults.clone();
+    let mut labels = Vec::with_capacity(label_count);
 
     // Add "actor_group" and "actor_key" labels.
-    values.insert("actor_group".into(), h.meta.group.clone());
-    if h.with_actor_key {
+    labels.push(Label::new("actor_group", h.meta.group.clone()));
+    if with_actor_key {
         if let Some(actor_key) = &h.meta.key {
-            values.insert("actor_key".into(), actor_key.clone());
+            labels.push(Label::new("actor_key", actor_key.clone()));
         }
     }
 
     // Add specific labels.
-    h.key.labels().into_iter().for_each(|label| {
-        values.insert(label.key().into(), label.value().into());
-    });
-
-    let labels = values
-        .iter()
-        .map(|(k, v)| {
-            format!(
-                "{}=\"{}\"",
-                k,
-                v.replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-                    .replace('\n', "\\n")
-            )
-        })
-        .collect();
-
+    labels.extend(h.key.labels().cloned());
     (name, labels)
 }
 

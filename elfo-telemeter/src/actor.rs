@@ -1,27 +1,28 @@
 use std::sync::Arc;
 
-use metrics_util::parse_quantiles;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
 
-use elfo::{messages::ConfigUpdated, scope, trace_id, ActorGroup, Context, Local, Schema};
-
-use crate::{
-    config::Config,
-    render::{self, RenderOptions},
-    storage::Storage,
+use elfo::{
+    messages::ConfigUpdated, scope, time::Interval, trace_id, ActorGroup, Context, Local, Schema,
 };
+
+use crate::{config::Config, render::Renderer, storage::Storage};
 
 struct Telemeter {
     ctx: Context<Config>,
     storage: Arc<Storage>,
+    renderer: Renderer,
 }
 
 #[message(ret = String, elfo = elfo_core)]
 struct Render;
+
+#[message(elfo = elfo_core)]
+struct CompactionTick;
 
 #[message(elfo = elfo_core)]
 struct ServerFailed(Arc<Local<hyper::Error>>);
@@ -34,18 +35,29 @@ pub(crate) fn new(storage: Arc<Storage>) -> Schema {
 
 impl Telemeter {
     pub(crate) fn new(ctx: Context<Config>, storage: Arc<Storage>) -> Self {
-        Self { ctx, storage }
+        let mut renderer = Renderer::default();
+        renderer.configure(ctx.config());
+
+        Self {
+            ctx,
+            storage,
+            renderer,
+        }
     }
 
     async fn main(mut self) {
-        let mut address = self.ctx.config().address;
-        let mut server = start_server(&self.ctx);
-        self.storage.configure(&self.ctx.config().global_labels);
+        let interval = Interval::new(|| CompactionTick);
+        let mut ctx = self.ctx.clone().with(&interval);
 
-        while let Some(envelope) = self.ctx.recv().await {
+        let mut address = ctx.config().address;
+        let mut server = start_server(&self.ctx);
+
+        interval.set_period(ctx.config().compaction_interval);
+
+        while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 ConfigUpdated => {
-                    let config = self.ctx.config();
+                    let config = ctx.config();
 
                     if config.address != address {
                         info!("address changed, rerun the server");
@@ -54,20 +66,19 @@ impl Telemeter {
                         server = start_server(&self.ctx);
                     }
 
-                    self.storage.configure(&config.global_labels);
+                    self.renderer.configure(config);
                 }
                 (Render, token) => {
-                    let quantiles = parse_quantiles(&self.ctx.config().quantiles);
+                    // Rendering includes compaction, skip extra compaction tick.
+                    interval.reset();
+
                     let snapshot = self.storage.snapshot();
                     let descriptions = self.storage.descriptions();
-                    let output = render::render(
-                        snapshot,
-                        RenderOptions {
-                            quantiles: &quantiles,
-                            descriptions: &descriptions,
-                        },
-                    );
-                    self.ctx.respond(token, output);
+                    let output = self.renderer.render(snapshot, &descriptions);
+                    ctx.respond(token, output);
+                }
+                CompactionTick => {
+                    self.storage.compact();
                 }
                 ServerFailed(error) => {
                     error!(error = %&**error, "server failed");

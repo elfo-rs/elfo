@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use serde::Deserialize;
 
@@ -14,6 +14,9 @@ pub(crate) struct Config {
     /// Labels that will be added to all metrics.
     #[serde(default)]
     pub(crate) global_labels: Vec<(String, String)>,
+    /// The maximum time between compaction ticks.
+    #[serde(with = "humantime_serde", default = "default_compaction_interval")]
+    pub(crate) compaction_interval: Duration,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -22,5 +25,11 @@ pub(crate) enum Sink {
 }
 
 fn default_quantiles() -> Vec<f64> {
-    vec![0.5, 0.75, 0.9, 0.95, 0.99]
+    vec![0.75, 0.9, 0.95, 0.99]
+}
+
+fn default_compaction_interval() -> Duration {
+    // 1m, 30s, 15s, 10s are often used values of prometheus's `scrape_interval`.
+    // 4.1s is a good value that splits the scrape interval uniformly enough.
+    Duration::from_millis(4100)
 }
