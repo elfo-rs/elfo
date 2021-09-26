@@ -15,7 +15,7 @@ tokio::task_local! {
 
 #[derive(Clone)]
 pub struct Scope {
-    addr: Addr,
+    actor: Addr,
     group: Addr,
     meta: Arc<ObjectMeta>,
     trace_id: Cell<TraceId>,
@@ -32,7 +32,7 @@ impl Scope {
     /// Private API for now.
     #[doc(hidden)]
     pub fn new(
-        addr: Addr,
+        actor: Addr,
         group: Addr,
         meta: Arc<ObjectMeta>,
         perm: Arc<AtomicPermissions>,
@@ -40,7 +40,7 @@ impl Scope {
     ) -> Self {
         Self::with_trace_id(
             trace_id::generate(),
-            addr,
+            actor,
             group,
             meta,
             perm,
@@ -52,14 +52,14 @@ impl Scope {
     #[doc(hidden)]
     pub fn with_trace_id(
         trace_id: TraceId,
-        addr: Addr,
+        actor: Addr,
         group: Addr,
         meta: Arc<ObjectMeta>,
         permissions: Arc<AtomicPermissions>,
         logging_limiter: Arc<RateLimiter>,
     ) -> Self {
         Self {
-            addr,
+            actor,
             group,
             meta,
             trace_id: Cell::new(trace_id),
@@ -69,8 +69,14 @@ impl Scope {
     }
 
     #[inline]
+    #[deprecated(note = "use `actor()` instead")]
     pub fn addr(&self) -> Addr {
-        self.addr
+        self.actor
+    }
+
+    #[inline]
+    pub fn actor(&self) -> Addr {
+        self.actor
     }
 
     #[inline]

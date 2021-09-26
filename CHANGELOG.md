@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Fixed
+- telemetry: preserve metrics per an actor key after respawning.
 
 ## [0.1.25] - 2021-09-24
 ### Fixed
