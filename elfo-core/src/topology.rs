@@ -137,7 +137,7 @@ impl<'t> Local<'t> {
             .any(|group| group.name == "system.dumpers");
 
         let dumper = self.topology.dumper.for_group(dumping_is_possible);
-        let ctx = Context::new(book, dumper, self.demux.into_inner()).with_addr(addr);
+        let ctx = Context::new(book, dumper, self.demux.into_inner()).with_group(addr);
         let object = (schema.run)(ctx, self.name);
         self.entry.insert(object);
     }

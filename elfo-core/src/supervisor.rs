@@ -104,8 +104,8 @@ where
     fn in_scope(&self, f: impl FnOnce()) {
         Scope::with_trace_id(
             scope::trace_id(),
-            self.context.addr(),
-            self.context.group(), // `Addr::NULL`, actually
+            Addr::NULL,
+            self.context.group(),
             self.meta.clone(),
             self.permissions.clone(),
             Default::default(), // Do not limit logging in supervisor.
@@ -310,7 +310,6 @@ where
             .context
             .clone()
             .with_addr(addr)
-            .with_group(self.context.addr())
             .with_key(key.clone())
             .with_config(config);
 
@@ -383,7 +382,7 @@ where
 
         let scope = Scope::new(
             addr,
-            self.context.addr(),
+            self.context.group(),
             meta,
             self.permissions.clone(),
             self.logging_limiter.clone(),

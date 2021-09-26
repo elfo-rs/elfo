@@ -119,7 +119,7 @@ pub async fn do_start<F: Future>(
         perm
     });
 
-    let scope = Scope::new(addr, addr, Arc::new(meta), perm, Default::default());
+    let scope = Scope::new(addr, Addr::NULL, Arc::new(meta), perm, Default::default());
     let f = async move {
         let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
         start_entrypoints(&ctx, &topology).await?;
