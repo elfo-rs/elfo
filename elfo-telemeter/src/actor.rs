@@ -6,7 +6,9 @@ use tracing::{error, info};
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
 
-use elfo::{messages::ConfigUpdated, scope, trace_id, ActorGroup, Context, Local, Schema};
+use elfo::{
+    messages::ConfigUpdated, scope, time::Interval, trace_id, ActorGroup, Context, Local, Schema,
+};
 
 use crate::{config::Config, render::Renderer, storage::Storage};
 
@@ -18,6 +20,9 @@ struct Telemeter {
 
 #[message(ret = String, elfo = elfo_core)]
 struct Render;
+
+#[message(elfo = elfo_core)]
+struct CompactionTick;
 
 #[message(elfo = elfo_core)]
 struct ServerFailed(Arc<Local<hyper::Error>>);
@@ -41,13 +46,18 @@ impl Telemeter {
     }
 
     async fn main(mut self) {
-        let mut address = self.ctx.config().address;
+        let interval = Interval::new(|| CompactionTick);
+        let mut ctx = self.ctx.clone().with(&interval);
+
+        let mut address = ctx.config().address;
         let mut server = start_server(&self.ctx);
 
-        while let Some(envelope) = self.ctx.recv().await {
+        interval.set_period(ctx.config().compaction_interval);
+
+        while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 ConfigUpdated => {
-                    let config = self.ctx.config();
+                    let config = ctx.config();
 
                     if config.address != address {
                         info!("address changed, rerun the server");
@@ -59,10 +69,16 @@ impl Telemeter {
                     self.renderer.configure(config);
                 }
                 (Render, token) => {
+                    // Rendering includes compaction, skip extra compaction tick.
+                    interval.reset();
+
                     let snapshot = self.storage.snapshot();
                     let descriptions = self.storage.descriptions();
                     let output = self.renderer.render(snapshot, &descriptions);
-                    self.ctx.respond(token, output);
+                    ctx.respond(token, output);
+                }
+                CompactionTick => {
+                    self.storage.compact();
                 }
                 ServerFailed(error) => {
                     error!(error = %&**error, "server failed");

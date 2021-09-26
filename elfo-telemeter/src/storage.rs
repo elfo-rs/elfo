@@ -177,6 +177,27 @@ impl Storage {
         );
     }
 
+    pub(crate) fn compact(&self) {
+        let mut distributions = self.distributions.write();
+
+        self.registry.visit(|kind, (_, h)| {
+            if !matches!(kind, MetricKind::Histogram) {
+                return;
+            }
+
+            let (name, labels) = make_parts(h.get_inner());
+            let entry = distributions
+                .entry(name)
+                .or_insert_with(FxHashMap::default)
+                .entry(labels)
+                .or_insert_with(Distribution::new_summary);
+
+            h.get_inner()
+                .handle
+                .read_histogram_with_clear(|samples| entry.record_samples(samples));
+        });
+    }
+
     pub(crate) fn snapshot(&self) -> Snapshot {
         let metrics = self.registry.get_handles();
 
