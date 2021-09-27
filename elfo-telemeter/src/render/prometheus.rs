@@ -57,11 +57,7 @@ pub(super) fn render(snapshot: Snapshot, options: RenderOptions<'_>) -> String {
                 Distribution::Summary(summary, sum) => {
                     for (quantile, label) in options.quantiles {
                         let value = summary.quantile(quantile.value()).unwrap_or(0.0);
-                        let all_labels = all_labels
-                            .clone()
-                            .chain(labels.iter())
-                            .chain(iter::once(label));
-
+                        let all_labels = all_labels.clone().chain(iter::once(label));
                         write_metric_line(&mut output, &name, None, all_labels, value);
                     }
 

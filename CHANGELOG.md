@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- telemeter: remove duplicated actor_group/actor_key labels.
+
 ## [0.1.26] - 2021-09-27
 ### Added
 - telemeter: periodically compact distributions between scrape requests.
