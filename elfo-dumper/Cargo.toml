@@ -1,6 +1,6 @@
 [package]
 name = "elfo-dumper"
-version = "0.1.3"
+version = "0.1.4"
 description = "Dumps messages on disk"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"

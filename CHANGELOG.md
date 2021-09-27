@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.26] - 2021-09-27
 ### Added
 - telemeter: periodically compact distributions between scrape requests.
 
@@ -203,7 +205,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.25...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.26...HEAD
+[0.1.26]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.25...elfo-0.1.26
 [0.1.25]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.24...elfo-0.1.25
 [0.1.24]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.23...elfo-0.1.24
 [0.1.23]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.22...elfo-0.1.23
