@@ -62,7 +62,7 @@ impl Dumper {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 ReopenDumpFile | ConfigUpdated => {
-                    let config = self.ctx.config();
+                    let config = ctx.config();
                     interval.set_period(config.interval);
                     file = open_file(config).await;
                 }
