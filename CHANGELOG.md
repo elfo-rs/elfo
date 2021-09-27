@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.27] - 2021-09-27
 ### Fixed
-- telemeter: remove duplicated actor_group/actor_key labels.
+- telemeter: remove duplicate actor_group/actor_key labels.
 
 ## [0.1.26] - 2021-09-27
 ### Added
@@ -208,7 +209,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.26...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.27...HEAD
+[0.1.27]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.26...elfo-0.1.27
 [0.1.26]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.25...elfo-0.1.26
 [0.1.25]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.24...elfo-0.1.25
 [0.1.24]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.23...elfo-0.1.24
