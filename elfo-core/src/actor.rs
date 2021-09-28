@@ -222,6 +222,13 @@ impl Actor {
         )
     }
 
+    pub(crate) fn is_terminating(&self) -> bool {
+        matches!(
+            self.control.read().status.kind,
+            ActorStatusKind::Terminating
+        )
+    }
+
     pub(crate) async fn finished(&self) {
         self.finished.wait().await
     }

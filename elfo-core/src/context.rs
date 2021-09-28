@@ -1,16 +1,13 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use futures::{
-    future::{poll_fn, FutureExt},
-    pin_mut, select_biased,
-};
-use tracing::{info, trace};
+use futures::{future::poll_fn, pin_mut};
+use tracing::{error, info, trace};
 
 use crate::{self as elfo};
 use elfo_macros::msg_raw as msg;
 
 use crate::{
-    actor::ActorStatus,
+    actor::{Actor, ActorStatus},
     addr::Addr,
     address_book::AddressBook,
     config::AnyConfig,
@@ -40,7 +37,15 @@ pub struct Context<C = (), K = Singleton, S = ()> {
     config: Arc<C>,
     key: K,
     source: S,
+    stage: Stage,
     stats: Stats,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Stage {
+    PreRecv,
+    Working,
+    Closed,
 }
 
 assert_impl_all!(Context: Send);
@@ -83,6 +88,7 @@ impl<C, K, S> Context<C, K, S> {
             config: self.config,
             key: self.key,
             source: Combined::new(self.source, source),
+            stage: Stage::PreRecv,
             stats: Stats::default(),
         }
     }
@@ -242,56 +248,72 @@ impl<C, K, S> Context<C, K, S> {
             .respond(token.into_untyped(), envelope);
     }
 
+    /// Receives the next envelope.
+    ///
+    /// # Panics
+    /// If the method is called again after returning `None`.
     pub async fn recv(&mut self) -> Option<Envelope>
     where
         C: 'static,
         S: Source,
     {
+        if self.stage == Stage::Closed {
+            on_recv_after_close();
+        }
+
         self.stats.message_handling_time_seconds();
 
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
         let actor = object.as_actor()?;
 
-        if actor.is_initializing() {
-            actor.set_status(ActorStatus::NORMAL);
+        if self.stage == Stage::PreRecv {
+            on_first_recv(&mut self.stage, actor);
         }
 
-        // TODO: remove `fuse`.
-        let mailbox_fut = actor.recv().fuse();
-        let source_fut = poll_fn(|cx| self.source.poll_recv(cx)).fuse();
-
+        let mailbox_fut = actor.recv();
         pin_mut!(mailbox_fut);
+
+        let source_fut = poll_fn(|cx| self.source.poll_recv(cx));
         pin_mut!(source_fut);
 
-        let envelope = select_biased! {
+        let envelope = tokio::select! { biased;
             envelope = mailbox_fut => envelope,
             envelope = source_fut => envelope, // TODO: rerun select if `None`?
+            // Now no sources return `None`.
         };
 
         match envelope {
             Some(envelope) => Some(self.post_recv(envelope)),
             None => {
-                actor.set_status(ActorStatus::TERMINATING);
+                on_input_closed(&mut self.stage, actor);
                 // TODO: forward Terminate's trace_id.
                 scope::set_trace_id(trace_id::generate());
-                trace!("input closed");
                 None
             }
         }
     }
 
+    /// Receives the next envelope.
+    ///
+    /// # Panics
+    /// If the method is called again after returning
+    /// `Err(TryRecvError::Closed)`.
     pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
     where
         C: 'static,
     {
+        if self.stage == Stage::Closed {
+            on_recv_after_close();
+        }
+
         self.stats.message_handling_time_seconds();
 
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
         let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
 
-        if actor.is_initializing() {
-            actor.set_status(ActorStatus::NORMAL);
+        if self.stage == Stage::PreRecv {
+            on_first_recv(&mut self.stage, actor);
         }
 
         // TODO: poll the sources.
@@ -302,10 +324,9 @@ impl<C, K, S> Context<C, K, S> {
             }
             Err(err) => {
                 if err.is_closed() {
-                    actor.set_status(ActorStatus::TERMINATING);
+                    on_input_closed(&mut self.stage, actor);
                     // TODO: forward Terminate's trace_id.
                     scope::set_trace_id(trace_id::generate());
-                    trace!("mailbox closed");
                 }
                 Err(err)
             }
@@ -378,6 +399,7 @@ impl<C, K, S> Context<C, K, S> {
             config: Arc::new(()),
             key: Singleton,
             source: (),
+            stage: self.stage,
             stats: Stats::default(),
         }
     }
@@ -400,6 +422,7 @@ impl<C, K, S> Context<C, K, S> {
             config,
             key: self.key,
             source: self.source,
+            stage: self.stage,
             stats: Stats::default(),
         }
     }
@@ -424,9 +447,33 @@ impl<C, K, S> Context<C, K, S> {
             config: self.config,
             key,
             source: self.source,
+            stage: self.stage,
             stats: Stats::default(),
         }
     }
+}
+
+#[cold]
+fn on_first_recv(stage: &mut Stage, actor: &Actor) {
+    if actor.is_initializing() {
+        actor.set_status(ActorStatus::NORMAL);
+    }
+    *stage = Stage::Working;
+}
+
+#[cold]
+fn on_input_closed(stage: &mut Stage, actor: &Actor) {
+    if !actor.is_terminating() {
+        actor.set_status(ActorStatus::TERMINATING);
+    }
+    *stage = Stage::Closed;
+    trace!("input closed");
+}
+
+#[cold]
+fn on_recv_after_close() {
+    error!("calling `recv()` or `try_recv()` after `None` is returned, an infinite loop?");
+    panic!("suicide");
 }
 
 impl Context {
@@ -440,6 +487,7 @@ impl Context {
             config: Arc::new(()),
             key: Singleton,
             source: (),
+            stage: Stage::PreRecv,
             stats: Stats::default(),
         }
     }
@@ -456,6 +504,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             config: self.config.clone(),
             key: self.key.clone(),
             source: (),
+            stage: self.stage,
             stats: Stats::default(),
         }
     }
