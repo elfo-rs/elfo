@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - context: `Context::recv()` and `Context::try_recv()` panics if called again after returning `None`.
+- logger: use `_location` and `_module` instead of `@location` and `@module`.
 
 ## [0.1.27] - 2021-09-27
 ### Fixed

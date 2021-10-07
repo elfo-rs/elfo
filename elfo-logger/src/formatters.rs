@@ -126,7 +126,7 @@ pub(crate) struct Location;
 
 impl Formatter<(&'static str, u32)> for Location {
     fn fmt(out: &mut String, v: &(&'static str, u32)) {
-        let _ = write!(out, "@location={}:{}", v.0, v.1);
+        let _ = write!(out, "_location={}:{}", v.0, v.1);
     }
 }
 
@@ -136,7 +136,7 @@ pub(crate) struct ColoredLocation;
 
 impl Formatter<(&'static str, u32)> for ColoredLocation {
     fn fmt(out: &mut String, v: &(&'static str, u32)) {
-        let _ = write!(out, "\x1b[1m@location\x1b[22m={}:{}", v.0, v.1);
+        let _ = write!(out, "\x1b[1m_location\x1b[22m={}:{}", v.0, v.1);
     }
 }
 
@@ -146,7 +146,7 @@ pub(crate) struct Module;
 
 impl Formatter<str> for Module {
     fn fmt(out: &mut String, v: &str) {
-        out.push_str("@module=");
+        out.push_str("_module=");
         out.push_str(v);
     }
 }
@@ -157,7 +157,7 @@ pub(crate) struct ColoredModule;
 
 impl Formatter<str> for ColoredModule {
     fn fmt(out: &mut String, v: &str) {
-        out.push_str("\x1b[1m@module\x1b[22m=");
+        out.push_str("\x1b[1m_module\x1b[22m=");
         out.push_str(v);
     }
 }
