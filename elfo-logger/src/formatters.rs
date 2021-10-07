@@ -126,7 +126,7 @@ pub(crate) struct Location;
 
 impl Formatter<(&'static str, u32)> for Location {
     fn fmt(out: &mut String, v: &(&'static str, u32)) {
-        let _ = write!(out, "_location={}:{}", v.0, v.1);
+        let _ = write!(out, "_location={}:{}", reduce_location(v.0), v.1);
     }
 }
 
@@ -136,7 +136,12 @@ pub(crate) struct ColoredLocation;
 
 impl Formatter<(&'static str, u32)> for ColoredLocation {
     fn fmt(out: &mut String, v: &(&'static str, u32)) {
-        let _ = write!(out, "\x1b[1m_location\x1b[22m={}:{}", v.0, v.1);
+        let _ = write!(
+            out,
+            "\x1b[1m_location\x1b[22m={}:{}",
+            reduce_location(v.0),
+            v.1
+        );
     }
 }
 
@@ -202,4 +207,23 @@ impl<T: Hash, I: Formatter<T>> Formatter<T> for ColoredByHash<I> {
 
 fn clamp(v: f64) -> u8 {
     v.max(0.).min(255.) as u8
+}
+
+fn reduce_location(s: &str) -> &str {
+    // $CARGO_HOME/registry/src/$REG-HASH
+    s.split_once("/registry/src/")
+        .and_then(|(_, s)| s.split_once('/'))
+        .map_or(s, |(_, s)| s)
+}
+
+#[test]
+fn it_reduces_location() {
+    assert_eq!(
+        reduce_location("/cache/.cargo/registry/src/github.com-xyz/foo-0.1.0/src/bar/baz.rs"),
+        "foo-0.1.0/src/bar/baz.rs"
+    );
+    assert_eq!(
+        reduce_location("actors/foo/src/bar/baz.rs"),
+        "actors/foo/src/bar/baz.rs"
+    );
 }
