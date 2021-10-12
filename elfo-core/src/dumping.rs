@@ -259,7 +259,7 @@ mod tests {
     use smallbox::smallbox;
     use tokio::time;
 
-    use crate::{addr::Addr, object::ObjectMeta, scope::Scope, trace_id::TraceId};
+    use crate::{actor::ActorMeta, addr::Addr, scope::Scope, trace_id::TraceId};
 
     fn dump_msg(dumper: &Dumper, name: &'static str) {
         dumper.dump(
@@ -276,9 +276,9 @@ mod tests {
     async fn it_works() {
         time::pause();
 
-        let meta = Arc::new(ObjectMeta {
+        let meta = Arc::new(ActorMeta {
             group: "group".into(),
-            key: Some("key".into()),
+            key: "key".into(),
         });
         let trace_id = TraceId::try_from(42).unwrap();
 

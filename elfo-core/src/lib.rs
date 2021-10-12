@@ -6,8 +6,9 @@ extern crate static_assertions;
 #[macro_use]
 extern crate elfo_utils;
 
+// TODO: revise this list.
 pub use crate::{
-    actor::ActorStatus,
+    actor::{ActorMeta, ActorStatus, ActorStatusKind},
     addr::Addr,
     config::Config,
     context::{Context, RequestBuilder},
@@ -77,7 +78,6 @@ pub mod _priv {
     pub use crate::{
         envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
         message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},
-        object::ObjectMeta,
         permissions::{AtomicPermissions, Permissions},
         start::do_start,
     };

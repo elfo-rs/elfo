@@ -1,9 +1,9 @@
 use std::{cell::Cell, future::Future, sync::Arc};
 
-use crate::{addr::Addr, object::ObjectMeta, trace_id::TraceId};
+use crate::{actor::ActorMeta, addr::Addr, trace_id::TraceId};
 
 tokio::task_local! {
-    static META: Arc<ObjectMeta>;
+    static META: Arc<ActorMeta>;
     static TRACE_ID: Cell<TraceId>;
 }
 
@@ -23,17 +23,17 @@ pub fn set_trace_id(trace_id: TraceId) {
 }
 
 #[deprecated(note = "use `elfo::scope::meta()` instead")]
-pub fn meta() -> Arc<ObjectMeta> {
+pub fn meta() -> Arc<ActorMeta> {
     crate::scope::meta()
 }
 
 #[deprecated(note = "use `elfo::scope::try_meta()` instead")]
-pub fn try_meta() -> Option<Arc<ObjectMeta>> {
+pub fn try_meta() -> Option<Arc<ActorMeta>> {
     crate::scope::try_meta()
 }
 
 #[deprecated(note = "use `elfo::scope` instead")]
-pub async fn scope<F: Future>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: F) -> F::Output {
+pub async fn scope<F: Future>(meta: Arc<ActorMeta>, trace_id: TraceId, f: F) -> F::Output {
     #[allow(deprecated)]
     let scope = make_stupid_scope(meta);
     scope.set_trace_id(trace_id);
@@ -41,14 +41,14 @@ pub async fn scope<F: Future>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: F) ->
 }
 
 #[deprecated(note = "use `elfo::scope` instead")]
-pub fn sync_scope<R>(meta: Arc<ObjectMeta>, trace_id: TraceId, f: impl FnOnce() -> R) -> R {
+pub fn sync_scope<R>(meta: Arc<ActorMeta>, trace_id: TraceId, f: impl FnOnce() -> R) -> R {
     #[allow(deprecated)]
     let scope = make_stupid_scope(meta);
     scope.set_trace_id(trace_id);
     scope.sync_within(f)
 }
 
-fn make_stupid_scope(meta: Arc<ObjectMeta>) -> crate::scope::Scope {
+fn make_stupid_scope(meta: Arc<ActorMeta>) -> crate::scope::Scope {
     crate::scope::Scope::new(
         Addr::NULL,
         Addr::NULL,

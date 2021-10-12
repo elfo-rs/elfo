@@ -125,7 +125,7 @@ impl Logger {
         out.push_str(" [");
         T::TraceId::fmt(out, &event.trace_id);
         out.push_str("] ");
-        T::ObjectMeta::fmt(out, &event.object);
+        T::ActorMeta::fmt(out, &event.object);
         out.push_str(" - ");
         T::Payload::fmt(out, &payload);
 

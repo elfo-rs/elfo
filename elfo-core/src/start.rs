@@ -10,14 +10,14 @@ use tracing::{error, info, warn, Level};
 use elfo_macros::message;
 
 use crate::{
-    actor::Actor,
+    actor::{Actor, ActorMeta},
     addr::Addr,
     context::Context,
     demux::Demux,
     errors::{RequestError, StartError},
     message,
     messages::{Ping, Terminate, UpdateConfig},
-    object::{Object, ObjectMeta},
+    object::Object,
     permissions::{AtomicPermissions, Permissions},
     scope::Scope,
     signal::{Signal, SignalKind},
@@ -106,9 +106,9 @@ pub async fn do_start<F: Future>(
 
     let dumper = topology.dumper.for_group(false); // TODO: should we dump the starter?
 
-    let meta = ObjectMeta {
+    let meta = ActorMeta {
         group: "init".into(),
-        key: Some("_".into()), // Just like `Singleton`.
+        key: "_".into(), // Just like `Singleton`.
     };
 
     // XXX: `addr` is used for both a specific actor and a whole group for now.

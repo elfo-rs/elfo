@@ -2,7 +2,7 @@ use std::{fmt::Write, hash::Hash, marker::PhantomData, sync::Arc, time::SystemTi
 
 use tracing::Level;
 
-use elfo_core::{_priv::ObjectMeta, trace_id::TraceId};
+use elfo_core::{trace_id::TraceId, ActorMeta};
 
 pub(crate) trait Formatter<T: ?Sized> {
     fn fmt(dest: &mut String, v: &T);
@@ -61,16 +61,15 @@ impl Formatter<TraceId> for TraceId {
     }
 }
 
-// ObjectMeta
+// ActorMeta
 
-impl Formatter<Arc<ObjectMeta>> for Arc<ObjectMeta> {
-    fn fmt(out: &mut String, v: &Arc<ObjectMeta>) {
-        if let Some(key) = v.key.as_ref() {
-            out.push_str(&v.group);
+impl Formatter<Arc<ActorMeta>> for Arc<ActorMeta> {
+    fn fmt(out: &mut String, v: &Arc<ActorMeta>) {
+        out.push_str(&v.group);
+
+        if !v.key.is_empty() {
             out.push('.');
-            out.push_str(key);
-        } else {
-            out.push_str(&v.group);
+            out.push_str(&v.key);
         }
     }
 }

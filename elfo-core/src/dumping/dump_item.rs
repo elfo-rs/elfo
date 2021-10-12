@@ -9,11 +9,11 @@ use smallbox::SmallBox;
 
 use elfo_macros::message;
 
-use crate::{dumping::sequence_no::SequenceNo, node, object::ObjectMeta, trace_id::TraceId};
+use crate::{actor::ActorMeta, dumping::sequence_no::SequenceNo, node, trace_id::TraceId};
 
 // Reexported in `elfo::_priv`.
 pub struct DumpItem {
-    pub meta: Arc<ObjectMeta>,
+    pub meta: Arc<ActorMeta>,
     pub sequence_no: SequenceNo,
     pub timestamp: Timestamp,
     pub trace_id: TraceId,
@@ -90,17 +90,12 @@ impl MessageKind {
 impl Serialize for DumpItem {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let field_count = 11
-            + self.meta.key.is_some() as usize
             + !matches!(self.message_kind, MessageKind::Regular) as usize
             + !self.class.is_empty() as usize;
 
         let mut s = serializer.serialize_struct("Dump", field_count)?;
         s.serialize_field("g", &self.meta.group)?;
-
-        if let Some(key) = &self.meta.key {
-            s.serialize_field("k", key)?;
-        }
-
+        s.serialize_field("k", &self.meta.key)?;
         s.serialize_field("n", &node::node_no())?;
         s.serialize_field("s", &self.sequence_no)?;
         s.serialize_field("t", &self.trace_id)?;

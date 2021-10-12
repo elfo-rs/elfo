@@ -206,7 +206,7 @@ mod tests {
 
     use elfo_macros::message;
 
-    use crate::{assert_msg_eq, envelope::MessageKind, object::ObjectMeta, scope::Scope};
+    use crate::{actor::ActorMeta, assert_msg_eq, envelope::MessageKind, scope::Scope};
 
     #[message(elfo = crate)]
     #[derive(PartialEq)]
@@ -216,9 +216,9 @@ mod tests {
         Scope::new(
             addr,
             addr, // TODO: ahah.
-            Arc::new(ObjectMeta {
+            Arc::new(ActorMeta {
                 group: "test".into(),
-                key: None,
+                key: String::new(),
             }),
             Default::default(),
             Default::default(),

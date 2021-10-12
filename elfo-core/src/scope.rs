@@ -3,8 +3,8 @@ use std::{cell::Cell, future::Future, sync::Arc};
 use elfo_utils::RateLimiter;
 
 use crate::{
+    actor::ActorMeta,
     addr::Addr,
-    object::ObjectMeta,
     permissions::{AtomicPermissions, Permissions},
     trace_id::{self, TraceId},
 };
@@ -17,7 +17,7 @@ tokio::task_local! {
 pub struct Scope {
     actor: Addr,
     group: Addr,
-    meta: Arc<ObjectMeta>,
+    meta: Arc<ActorMeta>,
     trace_id: Cell<TraceId>,
 
     // Per group.
@@ -34,7 +34,7 @@ impl Scope {
     pub fn new(
         actor: Addr,
         group: Addr,
-        meta: Arc<ObjectMeta>,
+        meta: Arc<ActorMeta>,
         perm: Arc<AtomicPermissions>,
         logging_limiter: Arc<RateLimiter>,
     ) -> Self {
@@ -54,7 +54,7 @@ impl Scope {
         trace_id: TraceId,
         actor: Addr,
         group: Addr,
-        meta: Arc<ObjectMeta>,
+        meta: Arc<ActorMeta>,
         permissions: Arc<AtomicPermissions>,
         logging_limiter: Arc<RateLimiter>,
     ) -> Self {
@@ -86,7 +86,7 @@ impl Scope {
 
     /// Returns the current object's meta.
     #[inline]
-    pub fn meta(&self) -> &Arc<ObjectMeta> {
+    pub fn meta(&self) -> &Arc<ActorMeta> {
         &self.meta
     }
 
@@ -186,12 +186,12 @@ pub fn set_trace_id(trace_id: TraceId) {
 /// # Panics
 /// This function will panic if called ouside the actor system.
 #[inline]
-pub fn meta() -> Arc<ObjectMeta> {
+pub fn meta() -> Arc<ActorMeta> {
     with(|scope| scope.meta().clone())
 }
 
 /// Returns the current object's meta if inside the actor system.
 #[inline]
-pub fn try_meta() -> Option<Arc<ObjectMeta>> {
+pub fn try_meta() -> Option<Arc<ActorMeta>> {
     try_with(|scope| scope.meta().clone())
 }

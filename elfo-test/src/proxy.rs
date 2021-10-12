@@ -15,9 +15,9 @@ use serde_value::Value;
 use tokio::task;
 
 use elfo_core::{
-    self as elfo, ActorGroup, Addr, Context, Envelope, Local, Message, Request, ResponseToken,
-    Schema,
-    _priv::{do_start, ObjectMeta},
+    self as elfo, ActorGroup, ActorMeta, Addr, Context, Envelope, Local, Message, Request,
+    ResponseToken, Schema,
+    _priv::do_start,
     routers::{MapRouter, Outcome},
     scope::Scope,
     topology::{GetAddrs, Topology},
@@ -134,9 +134,9 @@ impl Proxy {
         };
         let context = self.scope.clone().within(f).await;
 
-        let meta = Arc::new(ObjectMeta {
+        let meta = Arc::new(ActorMeta {
             group: "subproxy".into(),
-            key: None,
+            key: String::new(),
         });
 
         Proxy {
@@ -247,9 +247,9 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
         .expect("cannot start");
 
     let context = rx.receive().await.unwrap();
-    let meta = Arc::new(ObjectMeta {
+    let meta = Arc::new(ActorMeta {
         group: "proxy".into(), // TODO: use a normal group here.
-        key: None,
+        key: String::new(),
     });
 
     Proxy {

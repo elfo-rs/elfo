@@ -31,6 +31,12 @@ struct ControlBlock {
     status: ActorStatus,
 }
 
+#[derive(Debug, Hash, PartialEq, Serialize, Deserialize)]
+pub struct ActorMeta {
+    pub group: String,
+    pub key: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActorStatus {
     kind: ActorStatusKind,
@@ -38,7 +44,8 @@ pub struct ActorStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-enum ActorStatusKind {
+#[non_exhaustive]
+pub enum ActorStatusKind {
     Normal,
     Initializing,
     Terminating,

@@ -12,7 +12,7 @@ use elfo_macros::msg_raw as msg;
 use elfo_utils::{CachePadded, ErrorChain, RateLimiter};
 
 use crate::{
-    actor::{Actor, ActorStatus},
+    actor::{Actor, ActorMeta, ActorStatus},
     addr::Addr,
     config::{AnyConfig, Config},
     context::Context,
@@ -21,14 +21,14 @@ use crate::{
     exec::{Exec, ExecResult},
     group::{RestartMode, RestartPolicy, TerminationPolicy},
     messages,
-    object::{Object, ObjectArc, ObjectMeta},
+    object::{Object, ObjectArc},
     permissions::AtomicPermissions,
     routers::{Outcome, Router},
     scope::{self, Scope},
 };
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
-    meta: Arc<ObjectMeta>,
+    meta: Arc<ActorMeta>,
     restart_policy: RestartPolicy,
     termination_policy: TerminationPolicy,
     span: Span,
@@ -87,7 +87,10 @@ where
 
         Self {
             span: error_span!(parent: Span::none(), "", actor_group = group.as_str()),
-            meta: Arc::new(ObjectMeta { group, key: None }),
+            meta: Arc::new(ActorMeta {
+                group,
+                key: String::new(),
+            }),
             restart_policy,
             termination_policy,
             context: ctx,
@@ -375,9 +378,9 @@ where
         let actor = Actor::new(addr, self.termination_policy.clone());
         entry.insert(Object::new(addr, actor));
 
-        let meta = Arc::new(ObjectMeta {
+        let meta = Arc::new(ActorMeta {
             group: self.meta.group.clone(),
-            key: Some(key_str),
+            key: key_str,
         });
 
         let scope = Scope::new(

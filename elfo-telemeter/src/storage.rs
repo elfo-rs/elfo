@@ -8,7 +8,7 @@ use metrics::{GaugeValue, Key, KeyHasher, Label};
 use metrics_util::{Generational, Handle, Hashable, MetricKind, NotTracked, Registry};
 use parking_lot::{RwLock, RwLockReadGuard};
 
-use elfo_core::{Addr, _priv::ObjectMeta, scope::Scope};
+use elfo_core::{scope::Scope, ActorMeta, Addr};
 
 use crate::distribution::Distribution;
 
@@ -30,7 +30,7 @@ fn make_ext_key(scope: &Scope, key: &Key, with_actor_key: bool) -> ExtKey {
     let mut hash = key.get_hash();
 
     if with_actor_key {
-        debug_assert!(scope.meta().key.is_some());
+        debug_assert!(!scope.meta().key.is_empty());
         let mut hasher = KeyHasher::default();
         scope.meta().key.hash(&mut hasher);
         hash ^= hasher.finish();
@@ -56,7 +56,7 @@ impl Hashable for ExtKey {
 
 #[derive(Clone)]
 struct ExtHandle {
-    meta: Arc<ObjectMeta>,
+    meta: Arc<ActorMeta>,
     with_actor_key: bool,
     key: Key,
     handle: Handle,
@@ -253,7 +253,7 @@ impl Storage {
 
 fn make_parts(h: &ExtHandle) -> (String, Vec<Label>) {
     let name = sanitize_key_name(h.key.name());
-    let with_actor_key = h.with_actor_key && h.meta.key.is_some();
+    let with_actor_key = h.with_actor_key && !h.meta.key.is_empty();
     let label_count = if with_actor_key { 2 } else { 1 } + h.key.labels().len();
 
     let mut labels = Vec::with_capacity(label_count);
@@ -261,9 +261,7 @@ fn make_parts(h: &ExtHandle) -> (String, Vec<Label>) {
     // Add "actor_group" and "actor_key" labels.
     labels.push(Label::new("actor_group", h.meta.group.clone()));
     if with_actor_key {
-        if let Some(actor_key) = &h.meta.key {
-            labels.push(Label::new("actor_key", actor_key.clone()));
-        }
+        labels.push(Label::new("actor_key", h.meta.key.clone()));
     }
 
     // Add specific labels.
