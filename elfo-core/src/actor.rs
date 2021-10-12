@@ -43,7 +43,8 @@ pub struct ActorStatus {
     details: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A list specifying statuses of actors. It's used with the [`ActorStatus`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ActorStatusKind {
     Normal,
@@ -91,11 +92,22 @@ impl ActorStatus {
         }
     }
 
+    /// Creates a new status with the same kind and provided details.
     pub fn with_details(&self, details: impl fmt::Display) -> Self {
         ActorStatus {
-            kind: self.kind.clone(),
+            kind: self.kind,
             details: Some(format!("{}", details)),
         }
+    }
+
+    /// Returns the corresponding [`ActorStatusKind`] for this status.
+    pub fn kind(&self) -> ActorStatusKind {
+        self.kind
+    }
+
+    /// Returns details for this status, if provided.
+    pub fn details(&self) -> Option<&str> {
+        self.details.as_deref()
     }
 
     pub(crate) fn is_failed(&self) -> bool {
