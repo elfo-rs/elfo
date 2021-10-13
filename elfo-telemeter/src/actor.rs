@@ -18,8 +18,11 @@ struct Telemeter {
     renderer: Renderer,
 }
 
-#[message(ret = String, elfo = elfo_core)]
+#[message(ret = Rendered, elfo = elfo_core)]
 struct Render;
+
+#[message(elfo = elfo_core)]
+struct Rendered(#[serde(serialize_with = "elfo::dumping::hide")] String);
 
 #[message(elfo = elfo_core)]
 struct CompactionTick;
@@ -75,7 +78,7 @@ impl Telemeter {
                     let snapshot = self.storage.snapshot();
                     let descriptions = self.storage.descriptions();
                     let output = self.renderer.render(snapshot, &descriptions);
-                    ctx.respond(token, output);
+                    ctx.respond(token, Rendered(output));
                 }
                 CompactionTick => {
                     self.storage.compact();
@@ -115,12 +118,13 @@ fn start_server(ctx: &Context<Config>) -> JoinHandle<()> {
                     let scope = scope.clone();
 
                     let f = async move {
-                        let output = ctx
+                        let Rendered(output) = ctx
                             .request(Render)
                             .from(ctx.addr())
                             .resolve()
                             .await
                             .expect("failed to send to the telemeter");
+
                         Ok::<_, HyperError>(Response::new(Body::from(output)))
                     };
 
