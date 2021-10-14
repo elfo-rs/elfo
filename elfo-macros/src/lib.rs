@@ -20,6 +20,7 @@ pub fn msg_raw(input: TokenStream) -> TokenStream {
 /// Attributes:
 /// * `part` — do not derive `Message`. Useful for parts of messages.
 /// * `ret = SomeType` — also derive `Request` with the provided response type.
+/// * `name = "SomeName"` — override a message name.
 /// * `not(Debug)` — do not derive `Debug`. Useful for custom instances.
 /// * `not(Clone)` — the same for `Clone`.
 /// * `elfo = some::path` — override a path to elfo.

@@ -1,16 +1,17 @@
 use std::time::UNIX_EPOCH;
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, ToTokens};
 use syn::{
     parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
-    parse_macro_input, parse_quote, Data, DeriveInput, Ident, Path, Token, Type,
+    parse_macro_input, parse_quote, Data, DeriveInput, Ident, LitStr, Path, Token, Type,
 };
 
 #[derive(Debug)]
 struct MessageArgs {
+    name: Option<LitStr>,
     ret: Option<Type>,
     part: bool,
     transparent: bool,
@@ -20,10 +21,9 @@ struct MessageArgs {
 
 impl Parse for MessageArgs {
     fn parse(input: ParseStream<'_>) -> Result<Self, ParseError> {
-        // TODO: support any order of attributes.
-
         let mut args = MessageArgs {
             ret: None,
+            name: None,
             part: false,
             transparent: false,
             crate_: parse_quote!(::elfo),
@@ -31,15 +31,20 @@ impl Parse for MessageArgs {
         };
 
         // `#[message]`
+        // `#[message(name = "N")]`
+        // `#[message(ret = A)]`
         // `#[message(part)]`
         // `#[message(part, transparent)]`
-        // `#[message(ret = A)]`
         // `#[message(elfo = some)]`
         // `#[message(not(Debug))]`
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
 
             match ident.to_string().as_str() {
+                "name" => {
+                    let _: Token![=] = input.parse()?;
+                    args.name = Some(input.parse()?);
+                }
                 "ret" => {
                     let _: Token![=] = input.parse()?;
                     args.ret = Some(input.parse()?);
@@ -209,12 +214,17 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    let name_str = args.name.unwrap_or_else(|| {
+        let s = input.ident.to_string();
+        LitStr::new(&s, Span::call_site())
+    });
+
     let impl_message = if !args.part {
         quote! {
             impl #crate_::Message for #name {
                 const _LTID: #internal::LocalTypeId = #ltid;
                 const PROTOCOL: &'static str = #protocol;
-                const NAME: &'static str = stringify!(#name);
+                const NAME: &'static str = #name_str;
                 const LABELS: &'static [#internal::metrics::Label] = &[
                     #internal::metrics::Label::from_static_parts("message", Self::NAME),
                     #internal::metrics::Label::from_static_parts("protocol", Self::PROTOCOL),
