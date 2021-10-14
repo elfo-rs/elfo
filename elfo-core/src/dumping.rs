@@ -144,8 +144,8 @@ impl Dumper {
         self.dump(
             direction,
             "",
-            R::NAME,
-            R::PROTOCOL,
+            R::Wrapper::NAME,
+            R::Wrapper::PROTOCOL,
             MessageKind::Response(request_id.data().as_ffi()),
             smallbox!(message.clone()),
         );

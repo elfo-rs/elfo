@@ -1,7 +1,7 @@
 use std::time::UNIX_EPOCH;
 
 use proc_macro::TokenStream;
-use proc_macro2::{Span, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
     parenthesized,
@@ -139,6 +139,12 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let protocol = std::env::var("CARGO_PKG_NAME").expect("building without cargo?");
 
+    let name_str = args
+        .name
+        .as_ref()
+        .map(LitStr::value)
+        .unwrap_or_else(|| input.ident.to_string());
+
     let impl_request = if let Some(ret) = &args.ret {
         assert!(!args.part, "`part` and `ret` attributes are incompatible");
 
@@ -152,9 +158,12 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    let request_wrapper = if let Some(ret) = &args.ret {
+    let ret_wrapper = if let Some(ret) = &args.ret {
+        let wrapper_name_str = format!("{}::Response", name_str);
+
         quote! {
-            #[message(not(Debug), elfo = #crate_)] // `message` is imported in the module.
+            // `message` is imported in the module.
+            #[message(not(Debug), name = #wrapper_name_str, elfo = #crate_)]
             pub struct Wrapper(#ret);
 
             impl fmt::Debug for Wrapper {
@@ -214,11 +223,6 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    let name_str = args.name.unwrap_or_else(|| {
-        let s = input.ident.to_string();
-        LitStr::new(&s, Span::call_site())
-    });
-
     let impl_message = if !args.part {
         quote! {
             impl #crate_::Message for #name {
@@ -244,7 +248,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     smallbox::smallbox, linkme
                 };
 
-                #request_wrapper
+                #ret_wrapper
 
                 fn cast_ref(message: &AnyMessage) -> &#name {
                     message.downcast_ref::<#name>().expect("invalid vtable")
