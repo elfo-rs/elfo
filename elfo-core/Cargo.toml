@@ -1,6 +1,6 @@
 [package]
 name = "elfo-core"
-version = "0.1.22"
+version = "0.1.23"
 description = "The core of the system"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
@@ -10,7 +10,7 @@ license = "MIT"
 test-util = ["tokio/test-util"]
 
 [dependencies]
-elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
+elfo-macros = { version = "0.1.10", path = "../elfo-macros" }
 elfo-utils = { version = "0.1.1", path = "../elfo-utils" }
 
 tokio = { version = "1.5", features = ["rt", "sync", "time", "signal", "macros"] }
