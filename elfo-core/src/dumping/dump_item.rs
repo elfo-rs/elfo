@@ -89,13 +89,18 @@ impl MessageKind {
 
 impl Serialize for DumpItem {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let field_count = 11
-            + !matches!(self.message_kind, MessageKind::Regular) as usize
-            + !self.class.is_empty() as usize;
+        let field_count = 10
+            + !self.meta.key.is_empty() as usize // "k"
+            + !self.class.is_empty() as usize // "cl"
+            + !matches!(self.message_kind, MessageKind::Regular) as usize; // "c"
 
         let mut s = serializer.serialize_struct("Dump", field_count)?;
         s.serialize_field("g", &self.meta.group)?;
-        s.serialize_field("k", &self.meta.key)?;
+
+        if !self.meta.key.is_empty() {
+            s.serialize_field("k", &self.meta.key)?;
+        }
+
         s.serialize_field("n", &node::node_no())?;
         s.serialize_field("s", &self.sequence_no)?;
         s.serialize_field("t", &self.trace_id)?;

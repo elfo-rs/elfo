@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Expose `ActorMeta` and `ActorStatusKind`.
 - Provide methods to inspect `ActorStatus`.
+- `SubscribeToActorStatuses` and `ActorStatusReport` messages.
 
 ### Changed
 - context: `Context::recv()` and `Context::try_recv()` panics if called again after returning `None`.
