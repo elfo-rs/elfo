@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - telemeter: hide rendered metrics in dumps.
 - dumping: responses are dumped with the `RequestName::Response` name.
 
+### Fixed
+- telemetry: emit metrics in `ctx.respond()`.
+
 ## [0.1.27] - 2021-09-27
 ### Fixed
 - telemeter: remove duplicate actor_group/actor_key labels.

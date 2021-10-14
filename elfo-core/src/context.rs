@@ -205,6 +205,8 @@ impl<C, K, S> Context<C, K, S> {
         recipient: Addr,
         message: M,
     ) -> Result<(), TrySendError<M>> {
+        self.stats.sent_messages_total::<M>();
+
         let kind = MessageKind::Regular { sender: self.addr };
 
         trace!(to = %recipient, "> {:?}", message);
@@ -230,6 +232,8 @@ impl<C, K, S> Context<C, K, S> {
         if token.is_forgotten() {
             return;
         }
+
+        self.stats.sent_messages_total::<R::Wrapper>();
 
         let sender = token.sender;
 
@@ -587,6 +591,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
 
         let mut data = actor.request_table().wait(request_id).await;
         if let Some(Some(envelope)) = data.pop() {
+            // TODO: increase a counter.
             let message = envelope.do_downcast::<R::Wrapper>().into_message().into();
             trace!("< {:?}", message);
             if self.context.dumper.is_enabled() {
@@ -596,7 +601,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
             }
             Ok(message)
         } else {
-            // TODO: dump.
+            // TODO: should we dump it and increase a counter?
             Err(RequestError::Ignored)
         }
     }
@@ -634,6 +639,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
                 None => Err(RequestError::Ignored),
             })
             .inspect(|res| {
+                // TODO: increase a counter.
                 if let Ok(message) = res {
                     trace!("< {:?}", message);
                 }
