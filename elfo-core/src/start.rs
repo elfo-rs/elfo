@@ -21,6 +21,7 @@ use crate::{
     permissions::{AtomicPermissions, Permissions},
     scope::Scope,
     signal::{Signal, SignalKind},
+    subscription::SubscriptionManager,
     topology::Topology,
 };
 
@@ -102,16 +103,25 @@ pub async fn do_start<F: Future>(
 
     let entry = topology.book.vacant_entry();
     let addr = entry.addr();
-    entry.insert(Object::new(addr, Actor::new(addr, Default::default())));
-
     let dumper = topology.dumper.for_group(false); // TODO: should we dump the starter?
+    let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
 
-    let meta = ActorMeta {
+    let meta = Arc::new(ActorMeta {
         group: "init".into(),
         key: "_".into(), // Just like `Singleton`.
-    };
+    });
 
-    // XXX: `addr` is used for both a specific actor and a whole group for now.
+    // XXX
+    entry.insert(Object::new(
+        addr,
+        Actor::new(
+            meta.clone(),
+            addr,
+            Default::default(),
+            Arc::new(SubscriptionManager::new(ctx.clone())),
+        ),
+    ));
+
     let perm = Arc::new(AtomicPermissions::default());
     perm.store({
         let mut perm = Permissions::default();
@@ -119,9 +129,8 @@ pub async fn do_start<F: Future>(
         perm
     });
 
-    let scope = Scope::new(addr, Addr::NULL, Arc::new(meta), perm, Default::default());
+    let scope = Scope::new(addr, Addr::NULL, meta, perm, Default::default());
     let f = async move {
-        let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
         start_entrypoints(&ctx, &topology).await?;
         wait_entrypoints(&ctx, &topology).await?;
         Ok(f(ctx, topology).await)

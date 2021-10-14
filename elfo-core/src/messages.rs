@@ -1,10 +1,13 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use derive_more::Constructor;
 
 use elfo_macros::message;
 
-use crate::config::AnyConfig;
+use crate::{
+    actor::{ActorMeta, ActorStatus},
+    config::AnyConfig,
+};
 
 #[message(ret = (), elfo = crate)]
 pub struct Ping;
@@ -50,4 +53,19 @@ impl Terminate {
     pub fn closing() -> Self {
         Self { closing: true }
     }
+}
+
+// === Status ===
+
+// TODO: should it be a request?
+#[message(elfo = crate)]
+#[derive(Default)]
+#[non_exhaustive]
+pub struct SubscribeToActorStatuses {}
+
+#[message(elfo = crate)]
+#[non_exhaustive]
+pub struct ActorStatusReport {
+    pub meta: Arc<ActorMeta>,
+    pub status: ActorStatus,
 }

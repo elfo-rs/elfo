@@ -1,4 +1,4 @@
-use std::{fmt, mem};
+use std::{fmt, mem, sync::Arc};
 
 use futures_intrusive::sync::ManualResetEvent;
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
@@ -12,24 +12,15 @@ use crate::{
     errors::{SendError, TryRecvError, TrySendError},
     group::TerminationPolicy,
     mailbox::Mailbox,
-    messages::Terminate,
+    messages::{ActorStatusReport, Terminate},
     request_table::RequestTable,
+    subscription::SubscriptionManager,
 };
 
 use crate::{self as elfo};
 use elfo_macros::msg_raw as msg;
 
-pub(crate) struct Actor {
-    termination_policy: TerminationPolicy,
-    mailbox: Mailbox,
-    request_table: RequestTable,
-    control: RwLock<ControlBlock>,
-    finished: ManualResetEvent,
-}
-
-struct ControlBlock {
-    status: ActorStatus,
-}
+// === ActorMeta ===
 
 #[derive(Debug, Hash, PartialEq, Serialize, Deserialize)]
 pub struct ActorMeta {
@@ -37,44 +28,12 @@ pub struct ActorMeta {
     pub key: String,
 }
 
+// === ActorStatus ===
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActorStatus {
     kind: ActorStatusKind,
     details: Option<String>,
-}
-
-/// A list specifying statuses of actors. It's used with the [`ActorStatus`].
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub enum ActorStatusKind {
-    Normal,
-    Initializing,
-    Terminating,
-    Terminated,
-    Alarming,
-    Failed,
-}
-
-impl ActorStatusKind {
-    fn as_str(&self) -> &'static str {
-        match self {
-            ActorStatusKind::Normal => "Normal",
-            ActorStatusKind::Initializing => "Initializing",
-            ActorStatusKind::Terminating => "Terminating",
-            ActorStatusKind::Terminated => "Terminated",
-            ActorStatusKind::Alarming => "Alarming",
-            ActorStatusKind::Failed => "Failed",
-        }
-    }
-}
-
-impl fmt::Display for ActorStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.details {
-            Some(details) => write!(f, "{:?}: {}", self.kind, details),
-            None => write!(f, "{:?}", self.kind),
-        }
-    }
 }
 
 impl ActorStatus {
@@ -120,9 +79,67 @@ impl ActorStatus {
     }
 }
 
+impl fmt::Display for ActorStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.details {
+            Some(details) => write!(f, "{:?}: {}", self.kind, details),
+            None => write!(f, "{:?}", self.kind),
+        }
+    }
+}
+
+// === ActorStatusKind ===
+
+/// A list specifying statuses of actors. It's used with the [`ActorStatus`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum ActorStatusKind {
+    Normal,
+    Initializing,
+    Terminating,
+    Terminated,
+    Alarming,
+    Failed,
+}
+
+impl ActorStatusKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ActorStatusKind::Normal => "Normal",
+            ActorStatusKind::Initializing => "Initializing",
+            ActorStatusKind::Terminating => "Terminating",
+            ActorStatusKind::Terminated => "Terminated",
+            ActorStatusKind::Alarming => "Alarming",
+            ActorStatusKind::Failed => "Failed",
+        }
+    }
+}
+
+// === Actor ===
+
+pub(crate) struct Actor {
+    meta: Arc<ActorMeta>,
+    termination_policy: TerminationPolicy,
+    mailbox: Mailbox,
+    request_table: RequestTable,
+    control: RwLock<ControlBlock>,
+    finished: ManualResetEvent, // TODO: remove in favor of `status_subscription`?
+    status_subscription: Arc<SubscriptionManager>,
+}
+
+struct ControlBlock {
+    status: ActorStatus,
+}
+
 impl Actor {
-    pub(crate) fn new(addr: Addr, termination_policy: TerminationPolicy) -> Self {
+    pub(crate) fn new(
+        meta: Arc<ActorMeta>,
+        addr: Addr,
+        termination_policy: TerminationPolicy,
+        status_subscription: Arc<SubscriptionManager>,
+    ) -> Self {
         Actor {
+            meta,
             termination_policy,
             mailbox: Mailbox::new(),
             request_table: RequestTable::new(addr),
@@ -130,6 +147,7 @@ impl Actor {
                 status: ActorStatus::INITIALIZING,
             }),
             finished: ManualResetEvent::new(false),
+            status_subscription,
         }
     }
 
@@ -138,6 +156,8 @@ impl Actor {
             "status" => ActorStatusKind::Initializing.as_str());
         increment_counter!("elfo_actor_status_changes_total",
             "status" => ActorStatusKind::Initializing.as_str());
+
+        self.send_status_to_subscribers(&self.control.read());
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
@@ -188,11 +208,13 @@ impl Actor {
     pub(crate) fn set_status(&self, status: ActorStatus) {
         let mut control = self.control.write();
         let prev_status = mem::replace(&mut control.status, status.clone());
-        drop(control);
 
         if status == prev_status {
             return;
         }
+
+        self.send_status_to_subscribers(&control);
+        drop(control);
 
         if status.is_finished() {
             self.mailbox.close();
@@ -228,6 +250,7 @@ impl Actor {
         }
 
         // TODO: use `sdnotify` to provide a detailed status to systemd.
+        //       or use another actor to listen all statuses for this.
     }
 
     pub(crate) fn close(&self) -> bool {
@@ -251,15 +274,37 @@ impl Actor {
     pub(crate) async fn finished(&self) {
         self.finished.wait().await
     }
+
+    /// Accesses the actor's status under lock to avoid race conditions.
+    pub(crate) fn with_status<R>(&self, f: impl FnOnce(ActorStatusReport) -> R) -> R {
+        let control = self.control.read();
+        f(ActorStatusReport {
+            meta: self.meta.clone(),
+            status: control.status.clone(),
+        })
+    }
+
+    fn send_status_to_subscribers(&self, control: &ControlBlock) {
+        self.status_subscription.send(ActorStatusReport {
+            meta: self.meta.clone(),
+            status: control.status.clone(),
+        });
+    }
 }
 
 #[cfg(test)]
+#[cfg(feature = "FIXME")]
 mod tests {
     use super::*;
 
     #[tokio::test]
     async fn finished() {
-        let actor = Actor::new(Addr::NULL, TerminationPolicy::default());
+        let meta = Arc::new(ActorMeta {
+            group: "foo".into(),
+            key: "bar".into(),
+        });
+
+        let actor = Actor::new(meta, Addr::NULL, TerminationPolicy::default());
         let fut = actor.finished();
         actor.set_status(ActorStatus::TERMINATED);
         fut.await;

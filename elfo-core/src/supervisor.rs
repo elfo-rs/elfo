@@ -5,7 +5,7 @@ use futures::{future::BoxFuture, FutureExt};
 use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
-use tracing::{error_span, info, Instrument, Span};
+use tracing::{error_span, info, warn, Instrument, Span};
 
 use crate as elfo;
 use elfo_macros::msg_raw as msg;
@@ -25,6 +25,7 @@ use crate::{
     permissions::AtomicPermissions,
     routers::{Outcome, Router},
     scope::{self, Scope},
+    subscription::SubscriptionManager,
 };
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
@@ -40,6 +41,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     control: CachePadded<RwLock<ControlBlock<C>>>,
     permissions: Arc<AtomicPermissions>,
     logging_limiter: Arc<RateLimiter>,
+    status_subscription: Arc<SubscriptionManager>,
 }
 
 struct ControlBlock<C> {
@@ -85,6 +87,8 @@ where
             stop_spawning: false,
         };
 
+        let status_subscription = SubscriptionManager::new(ctx.clone());
+
         Self {
             span: error_span!(parent: Span::none(), "", actor_group = group.as_str()),
             meta: Arc::new(ActorMeta {
@@ -100,6 +104,7 @@ where
             control: CachePadded(RwLock::new(control)),
             permissions: Default::default(),
             logging_limiter: Default::default(),
+            status_subscription: Arc::new(status_subscription),
         }
     }
 
@@ -117,6 +122,8 @@ where
     }
 
     pub(crate) fn handle(self: &Arc<Self>, envelope: Envelope) -> RouteReport {
+        let sender = envelope.sender();
+
         msg!(match &envelope {
             messages::ValidateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
@@ -185,6 +192,10 @@ where
                     RouteReport::Done
                 }
             },
+            messages::SubscribeToActorStatuses => {
+                self.in_scope(|| self.subscribe_to_statuses(sender));
+                RouteReport::Done
+            }
             messages::Terminate => {
                 if self.termination_policy.stop_spawning {
                     let is_newly = !mem::replace(&mut self.control.write().stop_spawning, true);
@@ -375,13 +386,18 @@ where
             sv.context.book().remove(addr);
         };
 
-        let actor = Actor::new(addr, self.termination_policy.clone());
-        entry.insert(Object::new(addr, actor));
-
         let meta = Arc::new(ActorMeta {
             group: self.meta.group.clone(),
             key: key_str,
         });
+
+        let actor = Actor::new(
+            meta.clone(),
+            addr,
+            self.termination_policy.clone(),
+            self.status_subscription.clone(),
+        );
+        entry.insert(Object::new(addr, actor));
 
         let scope = Scope::new(
             addr,
@@ -429,6 +445,28 @@ where
         self.router
             .update(control.config.as_ref().expect("just saved"));
         self.in_scope(|| info!(config = ?control.config.as_ref().unwrap(), "router updated"));
+    }
+
+    fn subscribe_to_statuses(&self, addr: Addr) {
+        // Firstly, add the subscriber to handle new objects right way.
+        self.status_subscription.add(addr);
+
+        // Send active statuses to the subscriber.
+        for item in self.objects.iter() {
+            let actor = item
+                .value()
+                .as_actor()
+                .expect("a supervisor stores only actors");
+
+            let result = actor.with_status(|report| self.context.try_send_to(addr, report));
+
+            if result.is_err() {
+                // TODO: `unbounded_send(Unsubscribed)`
+                warn!(%addr, "status cannot be sent, unsubscribing");
+                self.status_subscription.remove(addr);
+                break;
+            }
+        }
     }
 
     pub(crate) fn finished(self: &Arc<Self>) -> BoxFuture<'static, ()> {
