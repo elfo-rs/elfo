@@ -7,7 +7,8 @@ use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
 
 use elfo::{
-    messages::ConfigUpdated, scope, time::Interval, trace_id, ActorGroup, Context, Local, Schema,
+    messages::ConfigUpdated, scope, time::Interval, trace_id, ActorGroup, Context, MoveOwnership,
+    Schema,
 };
 
 use crate::{config::Config, render::Renderer, storage::Storage};
@@ -28,7 +29,7 @@ struct Rendered(#[serde(serialize_with = "elfo::dumping::hide")] String);
 struct CompactionTick;
 
 #[message(elfo = elfo_core)]
-struct ServerFailed(Arc<Local<hyper::Error>>);
+struct ServerFailed(MoveOwnership<hyper::Error>);
 
 pub(crate) fn new(storage: Arc<Storage>) -> Schema {
     ActorGroup::new()
@@ -84,7 +85,7 @@ impl Telemeter {
                     self.storage.compact();
                 }
                 ServerFailed(error) => {
-                    error!(error = %&**error, "server failed");
+                    error!(error = %&error.take().unwrap(), "server failed");
                     panic!("server failed");
                 }
             });
@@ -139,7 +140,7 @@ fn start_server(ctx: &Context<Config>) -> JoinHandle<()> {
     tokio::spawn(async move {
         if let Err(err) = serving.await {
             let f = async {
-                let _ = ctx1.send(ServerFailed(Arc::new(Local::from(err)))).await;
+                let _ = ctx1.send(ServerFailed(err.into())).await;
             };
 
             scope1.set_trace_id(trace_id::generate());

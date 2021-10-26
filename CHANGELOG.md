@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- `MoveOwnership` to transfer ownership over messaging.
 
 ## [0.1.28] - 2021-10-14
 ### Added

@@ -261,9 +261,11 @@ fn topology() -> elfo::Topology {
     // Set up logging (based on the `tracing` crate).
     // `elfo` provides a logger actor group to support runtime control.
     //
-    // You can filter logs by passing `RUST_LOG`:
+    // Also, you can filter logs by passing `RUST_LOG`:
     // * `RUST_LOG=elfo`
     // * `RUST_LOG=info,[{actor_group=aggregators}]`
+    //
+    // However, it's more useful to control logging in the config file.
     //
     // In the future, `elfo` will implement inexpensive dumping subsystem and tools
     // for regression testing & tracing.

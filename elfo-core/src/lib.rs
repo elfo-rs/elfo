@@ -14,7 +14,7 @@ pub use crate::{
     context::{Context, RequestBuilder},
     envelope::Envelope,
     group::{ActorGroup, Schema},
-    local::Local,
+    local::{Local, MoveOwnership},
     message::{Message, Request},
     request_table::ResponseToken,
     start::{start, try_start},
