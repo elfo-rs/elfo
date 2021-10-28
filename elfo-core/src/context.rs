@@ -28,6 +28,7 @@ use self::{source::Combined, stats::Stats};
 mod source;
 mod stats;
 
+/// An actor execution context.
 pub struct Context<C = (), K = Singleton, S = ()> {
     book: AddressBook,
     dumper: Dumper,
@@ -49,35 +50,41 @@ enum Stage {
 }
 
 assert_impl_all!(Context: Send);
+// TODO: !Sync?
 
 impl<C, K, S> Context<C, K, S> {
+    /// Returns the actor's address.
     #[inline]
     pub fn addr(&self) -> Addr {
         self.addr
     }
 
+    /// Returns the current group's address.
     #[inline]
     pub fn group(&self) -> Addr {
         self.group
     }
 
     #[deprecated]
+    #[doc(hidden)]
     #[cfg(feature = "test-util")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "test-util")))]
     pub fn set_addr(&mut self, addr: Addr) {
         self.addr = addr;
     }
 
+    /// Returns the actual config.
     #[inline]
     pub fn config(&self) -> &C {
         &self.config
     }
 
+    /// Returns the actor's key.
     #[inline]
     pub fn key(&self) -> &K {
         &self.key
     }
 
+    /// Transforms the context to another one with the provided source.
     pub fn with<S1>(self, source: S1) -> Context<C, K, Combined<S, S1>> {
         Context {
             book: self.book,
@@ -93,6 +100,11 @@ impl<C, K, S> Context<C, K, S> {
         }
     }
 
+    /// Updates the actor's status.
+    ///
+    /// ```no_run
+    /// ctx.set_status(ActorStatus::ALARMING.with_details("something wrong"));
+    /// ```
     pub fn set_status(&self, status: ActorStatus) {
         let object = ward!(self.book.get_owned(self.addr));
         let actor = ward!(object.as_actor());
@@ -108,11 +120,40 @@ impl<C, K, S> Context<C, K, S> {
         ward!(object.as_actor(), return false).close()
     }
 
+    /// Sends a message using the routing system.
+    ///
+    /// Returns `Err` if the message hasn't reached any mailboxes.
+    ///
+    /// # Example
+    /// ```no_run
+    /// // Fire and forget.
+    /// let _ = ctx.send(SomethingHappened).await;
+    ///
+    /// // Fire or fail.
+    /// ctx.send(SomethingHappened).await?;
+    ///
+    /// // Fire or log.
+    /// if let Some(err) = ctx.send(SomethingHappened).await {
+    ///     warn!("...", error = err);
+    /// }
+    /// ```
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::Regular { sender: self.addr };
         self.do_send(message, kind).await
     }
 
+    /// Returns a request builder.
+    ///
+    /// # Example
+    /// ```no_run
+    /// // Request and wait for a response.
+    /// let response = ctx.request(SomeCommand).resolve().await?;
+    ///
+    /// // Request and wait for all responses.
+    /// for result in ctx.request(SomeCommand).all().resolve().await {
+    ///     // ...
+    /// }
+    /// ```
     #[inline]
     pub fn request<R: Request>(&self, request: R) -> RequestBuilder<'_, C, K, S, R, Any> {
         RequestBuilder::new(self, request)
@@ -170,6 +211,23 @@ impl<C, K, S> Context<C, K, S> {
         }
     }
 
+    /// Sends a message to the specified recipient.
+    ///
+    /// Returns `Err` if the message hasn't reached any mailboxes.
+    ///
+    /// # Example
+    /// ```no_run
+    /// // Fire and forget.
+    /// let _ = ctx.send_to(addr, SomethingHappened).await;
+    ///
+    /// // Fire or fail.
+    /// ctx.send_to(addr, SomethingHappened).await?;
+    ///
+    /// // Fire or log.
+    /// if let Some(err) = ctx.send_to(addr, SomethingHappened).await {
+    ///     warn!("...", error = err);
+    /// }
+    /// ```
     pub async fn send_to<M: Message>(
         &self,
         recipient: Addr,
@@ -200,6 +258,23 @@ impl<C, K, S> Context<C, K, S> {
         result.map_err(|err| SendError(err.0.do_downcast().into_message()))
     }
 
+    /// Tries to send a message to the specified recipient.
+    ///
+    /// Returns `Err` if the message hasn't reached mailboxes or they are full.
+    ///
+    /// # Example
+    /// ```no_run
+    /// // Fire and forget.
+    /// let _ = ctx.send(SomethingHappened).await;
+    ///
+    /// // Fire or fail.
+    /// ctx.send(SomethingHappened).await?;
+    ///
+    /// // Fire or log.
+    /// if let Some(err) = ctx.send(SomethingHappened).await {
+    ///     warn!("...", error = err);
+    /// }
+    /// ```
     pub fn try_send_to<M: Message>(
         &self,
         recipient: Addr,
@@ -228,6 +303,17 @@ impl<C, K, S> Context<C, K, S> {
         })
     }
 
+    /// Responds to the requester with the provided response.
+    ///
+    /// The token can be used only once.
+    ///
+    /// ```no_run
+    /// msg!(match envelope {
+    ///     (SomeRequest, token) => {
+    ///         ctx.respond(token, SomeResponse);
+    ///     }
+    /// })
+    /// ```
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, message: R::Response) {
         if token.is_forgotten() {
             return;
@@ -256,6 +342,15 @@ impl<C, K, S> Context<C, K, S> {
     ///
     /// # Panics
     /// If the method is called again after returning `None`.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// while let Some(envelope) = ctx.recv().await {
+    ///     msg!(match envelope {
+    ///         SomethingHappened => /* ... */,
+    ///     })
+    /// }
+    /// ```
     pub async fn recv(&mut self) -> Option<Envelope>
     where
         C: 'static,
@@ -298,11 +393,21 @@ impl<C, K, S> Context<C, K, S> {
         }
     }
 
-    /// Receives the next envelope.
+    /// Receives the next envelope without waiting.
     ///
     /// # Panics
     /// If the method is called again after returning
     /// `Err(TryRecvError::Closed)`.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// // Iterate over all available messages.
+    /// while let Ok(envelope) = ctx.try_recv() {
+    ///     msg!(match envelope {
+    ///         SomethingHappened => /* ... */,
+    ///     })
+    /// }
+    /// ```
     pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
     where
         C: 'static,
@@ -380,12 +485,21 @@ impl<C, K, S> Context<C, K, S> {
     }
 
     /// This is a part of private API for now.
+    /// We should provide a way to handle it asynchronous.
     #[doc(hidden)]
     pub async fn finished(&self, addr: Addr) {
         ward!(self.book.get_owned(addr)).finished().await;
     }
 
-    /// XXX: mb `BoundEnvelope<C>`?
+    /// Used to get the typed config from `ValidateConfig`.
+    /// ```no_run
+    /// msg!(match envelope {
+    ///     (ValidateConfig { config, .. }, token) => {
+    ///         let new_config = ctx.unpack_config(&config);
+    ///         ctx.respond(token, Err("oops".into()));
+    ///     }
+    /// })
+    /// ```
     pub fn unpack_config<'c>(&self, config: &'c AnyConfig) -> &'c C
     where
         C: for<'de> serde::Deserialize<'de> + 'static,
@@ -393,6 +507,9 @@ impl<C, K, S> Context<C, K, S> {
         config.get_user()
     }
 
+    /// Produces a new context that can be used for sending messages only.
+    ///
+    /// Pruned contexts are likely to be removed in favor of `Output`.
     pub fn pruned(&self) -> Context {
         Context {
             book: self.book.clone(),
@@ -559,6 +676,7 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
 }
 
 impl<'c, C, K, S, R, M> RequestBuilder<'c, C, K, S, R, M> {
+    /// Specified the recipient of the request.
     #[inline]
     pub fn from(mut self, addr: Addr) -> Self {
         self.from = Some(addr);
@@ -568,6 +686,7 @@ impl<'c, C, K, S, R, M> RequestBuilder<'c, C, K, S, R, M> {
 
 // TODO: add `pub async fn id() { ... }`
 impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
+    /// Waits for the response.
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.addr;
@@ -608,6 +727,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
 }
 
 impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
+    /// Waits for the responses.
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError<R>>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.addr;
