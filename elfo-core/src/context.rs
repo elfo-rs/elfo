@@ -102,7 +102,7 @@ impl<C, K, S> Context<C, K, S> {
 
     /// Updates the actor's status.
     ///
-    /// ```no_run
+    /// ```ignore
     /// ctx.set_status(ActorStatus::ALARMING.with_details("something wrong"));
     /// ```
     pub fn set_status(&self, status: ActorStatus) {
@@ -125,7 +125,7 @@ impl<C, K, S> Context<C, K, S> {
     /// Returns `Err` if the message hasn't reached any mailboxes.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// // Fire and forget.
     /// let _ = ctx.send(SomethingHappened).await;
     ///
@@ -145,7 +145,7 @@ impl<C, K, S> Context<C, K, S> {
     /// Returns a request builder.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// // Request and wait for a response.
     /// let response = ctx.request(SomeCommand).resolve().await?;
     ///
@@ -216,7 +216,7 @@ impl<C, K, S> Context<C, K, S> {
     /// Returns `Err` if the message hasn't reached any mailboxes.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// // Fire and forget.
     /// let _ = ctx.send_to(addr, SomethingHappened).await;
     ///
@@ -263,7 +263,7 @@ impl<C, K, S> Context<C, K, S> {
     /// Returns `Err` if the message hasn't reached mailboxes or they are full.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// // Fire and forget.
     /// let _ = ctx.send(SomethingHappened).await;
     ///
@@ -307,7 +307,7 @@ impl<C, K, S> Context<C, K, S> {
     ///
     /// The token can be used only once.
     ///
-    /// ```no_run
+    /// ```ignore
     /// msg!(match envelope {
     ///     (SomeRequest, token) => {
     ///         ctx.respond(token, SomeResponse);
@@ -344,7 +344,7 @@ impl<C, K, S> Context<C, K, S> {
     /// If the method is called again after returning `None`.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// while let Some(envelope) = ctx.recv().await {
     ///     msg!(match envelope {
     ///         SomethingHappened => /* ... */,
@@ -400,7 +400,7 @@ impl<C, K, S> Context<C, K, S> {
     /// `Err(TryRecvError::Closed)`.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// // Iterate over all available messages.
     /// while let Ok(envelope) = ctx.try_recv() {
     ///     msg!(match envelope {
@@ -492,7 +492,7 @@ impl<C, K, S> Context<C, K, S> {
     }
 
     /// Used to get the typed config from `ValidateConfig`.
-    /// ```no_run
+    /// ```ignore
     /// msg!(match envelope {
     ///     (ValidateConfig { config, .. }, token) => {
     ///         let new_config = ctx.unpack_config(&config);

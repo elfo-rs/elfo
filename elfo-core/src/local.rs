@@ -21,7 +21,7 @@ use serde::{
 /// deserialized (it returns an error on attempts).
 ///
 /// # Example
-/// ```no_run
+/// ```ignore
 /// #[message]
 /// pub struct OpenDirectChannel {
 ///     pub tx: Local<mpsc::Sender>,
@@ -84,7 +84,7 @@ impl<'de, T> Deserialize<'de> for Local<T> {
 /// information), it cannot be deserialized (it returns an error on attempts).
 ///
 /// # Example
-/// ```no_run
+/// ```ignore
 /// #[message]
 /// pub struct HandleFile {
 ///     pub path: PathBuf,
