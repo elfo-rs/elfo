@@ -1,4 +1,6 @@
-use std::{any::Any, future::Future, mem, panic::AssertUnwindSafe, sync::Arc, time::Duration};
+use std::{
+    any::Any, future::Future, mem, ops::Deref, panic::AssertUnwindSafe, sync::Arc, time::Duration,
+};
 
 use dashmap::DashMap;
 use futures::{future::BoxFuture, FutureExt};
@@ -229,75 +231,55 @@ where
                     Err(TrySendError::Closed(envelope)) => RouteReport::Closed(envelope),
                 }
             }
-            Outcome::Multicast(list) => {
-                let mut waiters = Vec::new();
-                let mut someone = false;
-
-                // TODO: avoid the loop in `try_send` case.
-                for key in list {
-                    let object = ward!(get_or_spawn!(self, key), continue);
-
-                    // TODO: we shouldn't clone `envelope` for the last object in a sequence.
-                    let envelope = ward!(
-                        envelope.duplicate(self.context.book()),
-                        continue // A requester has died, but `Multicast` is more insistent.
-                    );
-
-                    let actor = object.as_actor().expect("supervisor stores only actors");
-
-                    match actor.try_send(envelope) {
-                        Ok(_) => someone = true,
-                        Err(TrySendError::Full(envelope)) => {
-                            waiters.push((object.addr(), envelope))
-                        }
-                        Err(TrySendError::Closed(_)) => {}
-                    }
-                }
-
-                if waiters.is_empty() {
-                    if someone {
-                        RouteReport::Done
-                    } else {
-                        RouteReport::Closed(envelope)
-                    }
-                } else {
-                    RouteReport::WaitAll(someone, waiters)
-                }
-            }
-            Outcome::Broadcast => {
-                let mut waiters = Vec::new();
-                let mut someone = false;
-
-                // TODO: avoid the loop in `try_send` case.
-                for object in self.objects.iter() {
-                    // TODO: we shouldn't clone `envelope` for the last object in a sequence.
-                    let envelope = ward!(
-                        envelope.duplicate(self.context.book()),
-                        return RouteReport::Done // A requester has died.
-                    );
-
-                    let actor = object.as_actor().expect("supervisor stores only actors");
-
-                    match actor.try_send(envelope) {
-                        Ok(_) => someone = true,
-                        Err(TrySendError::Full(envelope)) => {
-                            waiters.push((object.addr(), envelope))
-                        }
-                        Err(TrySendError::Closed(_)) => {}
-                    }
-                }
-
-                if waiters.is_empty() {
-                    if someone {
-                        RouteReport::Done
-                    } else {
-                        RouteReport::Closed(envelope)
-                    }
-                } else {
-                    RouteReport::WaitAll(someone, waiters)
-                }
-            }
+            Outcome::Multicast(list) => self.do_handle_multiple(
+                envelope,
+                list.into_iter().filter_map(|key| get_or_spawn!(self, key)),
+                false,
+            ),
+            Outcome::Broadcast => self.do_handle_multiple(envelope, self.objects.iter(), true),
             Outcome::Discard | Outcome::Default => RouteReport::Done,
+        }
+    }
+
+    fn do_handle_multiple(
+        &self,
+        envelope: Envelope,
+        iter: impl Iterator<Item = impl Deref<Target = ObjectArc>>,
+        short_circuit: bool,
+    ) -> RouteReport {
+        let mut waiters = Vec::new();
+        let mut someone = false;
+
+        for object in iter {
+            // TODO: we shouldn't clone `envelope` for the last object in a sequence.
+            let envelope = ward!(
+                envelope.duplicate(self.context.book()),
+                if short_circuit {
+                    // A requester has died.
+                    return RouteReport::Done;
+                } else {
+                    // A requester has died, but we should spawn other actors.
+                    continue;
+                }
+            );
+
+            let actor = object.as_actor().expect("supervisor stores only actors");
+
+            match actor.try_send(envelope) {
+                Ok(_) => someone = true,
+                Err(TrySendError::Full(envelope)) => waiters.push((object.addr(), envelope)),
+                Err(TrySendError::Closed(_)) => {}
+            }
+        }
+
+        if waiters.is_empty() {
+            if someone {
+                RouteReport::Done
+            } else {
+                RouteReport::Closed(envelope)
+            }
+        } else {
+            RouteReport::WaitAll(someone, waiters)
         }
     }
 
