@@ -13,6 +13,75 @@ use metrics_util::MetricKind;
 use super::RenderOptions;
 use crate::protocol::{Distribution, Metrics, Snapshot};
 
+#[derive(Default)]
+pub(super) struct PrometheusRenderer {
+    prev_size: usize,
+}
+
+impl PrometheusRenderer {
+    pub(super) fn render(&mut self, snapshot: &Snapshot, options: RenderOptions<'_>) -> String {
+        let mut output = String::with_capacity(self.prev_size * 5 / 4);
+        render(&mut output, snapshot, options);
+        self.prev_size = output.len();
+        output
+    }
+}
+
+fn render(buffer: &mut String, snapshot: &Snapshot, options: RenderOptions<'_>) {
+    for ((kind, original_name), by_labels) in group_by_name(snapshot) {
+        let name = &*sanitize_name(original_name);
+
+        if let Some(desc) = options.descriptions.get(original_name) {
+            write_help_line(buffer, name, desc);
+        }
+
+        write_type_line(buffer, name, kind);
+
+        for (meta, value) in by_labels {
+            let actor_group_label = Label::new("actor_group", meta.actor_group.to_string());
+            let actor_key_label = meta
+                .actor_key
+                .map(|k| Label::new("actor_key", k.to_string()));
+
+            let labels = options
+                .global_labels
+                .iter()
+                .chain(iter::once(&actor_group_label))
+                .chain(actor_key_label.as_ref())
+                .chain(meta.key.labels());
+
+            match value {
+                MetricValue::Counter(value) => {
+                    write_metric_line(buffer, name, None, labels.clone(), value);
+                }
+                MetricValue::Gauge(value) => {
+                    write_metric_line(buffer, name, None, labels.clone(), value);
+                }
+                MetricValue::Distribution(distribution) => {
+                    for (quantile, label) in options.quantiles {
+                        let value = distribution.quantile(quantile.value()).unwrap_or(0.0);
+                        let all_labels = labels.clone().chain(iter::once(label));
+                        write_metric_line(buffer, name, None, all_labels, value);
+                    }
+
+                    let sum = distribution.sum();
+                    let count = distribution.count();
+                    let min = distribution.min();
+                    let max = distribution.max();
+
+                    // TODO: write types for this.
+                    write_metric_line(buffer, name, Some("sum"), labels.clone(), sum);
+                    write_metric_line(buffer, name, Some("count"), labels.clone(), count);
+                    write_metric_line(buffer, name, Some("min"), labels.clone(), min);
+                    write_metric_line(buffer, name, Some("max"), labels.clone(), max);
+                }
+            }
+        }
+
+        buffer.push('\n');
+    }
+}
+
 type GroupedData<'a> = BTreeMap<(MetricKind, &'a str), BTreeMap<MetricMeta<'a>, MetricValue<'a>>>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -157,63 +226,4 @@ fn sanitize_label_value(value: &str) -> Cow<'_, str> {
             .replace('\n', "\\n")
             .into()
     }
-}
-
-pub(super) fn render(snapshot: &Snapshot, options: RenderOptions<'_>) -> String {
-    let mut output = String::new();
-
-    for ((kind, original_name), by_labels) in group_by_name(snapshot) {
-        let name = &*sanitize_name(original_name);
-
-        if let Some(desc) = options.descriptions.get(original_name) {
-            write_help_line(&mut output, name, desc);
-        }
-
-        write_type_line(&mut output, name, kind);
-
-        for (meta, value) in by_labels {
-            let actor_group_label = Label::new("actor_group", meta.actor_group.to_string());
-            let actor_key_label = meta
-                .actor_key
-                .map(|k| Label::new("actor_key", k.to_string()));
-
-            let labels = options
-                .global_labels
-                .iter()
-                .chain(iter::once(&actor_group_label))
-                .chain(actor_key_label.as_ref())
-                .chain(meta.key.labels());
-
-            match value {
-                MetricValue::Counter(value) => {
-                    write_metric_line(&mut output, name, None, labels.clone(), value);
-                }
-                MetricValue::Gauge(value) => {
-                    write_metric_line(&mut output, name, None, labels.clone(), value);
-                }
-                MetricValue::Distribution(distribution) => {
-                    for (quantile, label) in options.quantiles {
-                        let value = distribution.quantile(quantile.value()).unwrap_or(0.0);
-                        let all_labels = labels.clone().chain(iter::once(label));
-                        write_metric_line(&mut output, name, None, all_labels, value);
-                    }
-
-                    let sum = distribution.sum();
-                    let count = distribution.count();
-                    let min = distribution.min();
-                    let max = distribution.max();
-
-                    // TODO: write types for this.
-                    write_metric_line(&mut output, name, Some("sum"), labels.clone(), sum);
-                    write_metric_line(&mut output, name, Some("count"), labels.clone(), count);
-                    write_metric_line(&mut output, name, Some("min"), labels.clone(), min);
-                    write_metric_line(&mut output, name, Some("max"), labels.clone(), max);
-                }
-            }
-        }
-
-        output.push('\n');
-    }
-
-    output
 }

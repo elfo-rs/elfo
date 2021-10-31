@@ -4,12 +4,15 @@ use metrics_util::{parse_quantiles, Quantile};
 
 use crate::{config::Config, protocol::Snapshot};
 
+use self::prometheus::PrometheusRenderer;
+
 mod prometheus;
 
 #[derive(Default)]
 pub(crate) struct Renderer {
     quantiles: Vec<(Quantile, Label)>,
     global_labels: Vec<Label>,
+    prometheus: PrometheusRenderer,
 }
 
 struct RenderOptions<'a> {
@@ -37,7 +40,7 @@ impl Renderer {
     }
 
     pub(crate) fn render(
-        &self,
+        &mut self,
         snapshot: &Snapshot,
         descriptions: &FxHashMap<String, &'static str>,
     ) -> String {
@@ -47,6 +50,6 @@ impl Renderer {
             global_labels: &self.global_labels,
         };
 
-        prometheus::render(snapshot, options)
+        self.prometheus.render(snapshot, options)
     }
 }
