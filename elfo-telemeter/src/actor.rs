@@ -11,7 +11,12 @@ use elfo::{
     Schema,
 };
 
-use crate::{config::Config, protocol::Snapshot, render::Renderer, storage::Storage};
+use crate::{
+    config::Config,
+    protocol::{GetSnapshot, Snapshot},
+    render::Renderer,
+    storage::Storage,
+};
 
 struct Telemeter {
     ctx: Context<Config>,
@@ -73,6 +78,13 @@ impl Telemeter {
                     }
 
                     self.renderer.configure(config);
+                }
+                (GetSnapshot, token) => {
+                    // Rendering includes compaction, skip extra compaction tick.
+                    interval.reset();
+
+                    self.fill_snapshot(/* only_histograms = */ false);
+                    ctx.respond(token, self.snapshot.clone().into());
                 }
                 (Render, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
