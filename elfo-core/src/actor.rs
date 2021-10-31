@@ -22,7 +22,7 @@ use elfo_macros::msg_raw as msg;
 
 // === ActorMeta ===
 
-#[derive(Debug, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActorMeta {
     pub group: String,
     pub key: String,
