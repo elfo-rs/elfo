@@ -11,11 +11,17 @@ use elfo::{
     Schema,
 };
 
-use crate::{config::Config, render::Renderer, storage::Storage};
+use crate::{
+    config::Config,
+    protocol::{GetSnapshot, Snapshot},
+    render::Renderer,
+    storage::Storage,
+};
 
 struct Telemeter {
     ctx: Context<Config>,
     storage: Arc<Storage>,
+    snapshot: Arc<Snapshot>,
     renderer: Renderer,
 }
 
@@ -45,6 +51,7 @@ impl Telemeter {
         Self {
             ctx,
             storage,
+            snapshot: Default::default(),
             renderer,
         }
     }
@@ -72,17 +79,24 @@ impl Telemeter {
 
                     self.renderer.configure(config);
                 }
+                (GetSnapshot, token) => {
+                    // Rendering includes compaction, skip extra compaction tick.
+                    interval.reset();
+
+                    self.fill_snapshot(/* only_histograms = */ false);
+                    ctx.respond(token, self.snapshot.clone().into());
+                }
                 (Render, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
                     interval.reset();
 
-                    let snapshot = self.storage.snapshot();
+                    self.fill_snapshot(/* only_histograms = */ false);
                     let descriptions = self.storage.descriptions();
-                    let output = self.renderer.render(snapshot, &descriptions);
+                    let output = self.renderer.render(&self.snapshot, &descriptions);
                     ctx.respond(token, Rendered(output));
                 }
                 CompactionTick => {
-                    self.storage.compact();
+                    self.fill_snapshot(/* only_histograms = */ true);
                 }
                 ServerFailed(error) => {
                     error!(error = %&error.take().unwrap(), "server failed");
@@ -90,6 +104,12 @@ impl Telemeter {
                 }
             });
         }
+    }
+
+    fn fill_snapshot(&mut self, only_histograms: bool) {
+        // Reuse the latest snapshot if possible.
+        let snapshot = Arc::make_mut(&mut self.snapshot);
+        self.storage.fill_snapshot(snapshot, only_histograms);
     }
 }
 

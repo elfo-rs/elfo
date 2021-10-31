@@ -4,17 +4,16 @@ use std::{
 };
 
 use fxhash::FxHashMap;
-use metrics::{GaugeValue, Key, KeyHasher, Label};
+use metrics::{GaugeValue, Key, KeyHasher};
 use metrics_util::{Generational, Handle, Hashable, MetricKind, NotTracked, Registry};
 use parking_lot::{RwLock, RwLockReadGuard};
 
 use elfo_core::{scope::Scope, ActorMeta, Addr};
 
-use crate::distribution::Distribution;
+use crate::protocol::{Metrics, Snapshot};
 
 pub(crate) struct Storage {
     registry: Registry<ExtKey, ExtHandle, NotTracked<ExtHandle>>,
-    distributions: RwLock<FxHashMap<String, FxHashMap<Vec<Label>, Distribution>>>,
     descriptions: RwLock<FxHashMap<String, &'static str>>,
 }
 
@@ -71,18 +70,11 @@ fn make_ext_handle(scope: &Scope, key: &Key, handle: Handle, with_actor_key: boo
     }
 }
 
-pub(crate) struct Snapshot {
-    pub(crate) counters: FxHashMap<String, FxHashMap<Vec<Label>, u64>>,
-    pub(crate) gauges: FxHashMap<String, FxHashMap<Vec<Label>, f64>>,
-    pub(crate) distributions: FxHashMap<String, FxHashMap<Vec<Label>, Distribution>>,
-}
-
 impl Storage {
     pub(crate) fn new() -> Self {
         Self {
             registry: Registry::<ExtKey, ExtHandle, NotTracked<ExtHandle>>::untracked(),
-            distributions: RwLock::new(FxHashMap::default()),
-            descriptions: RwLock::new(FxHashMap::default()),
+            descriptions: Default::default(),
         }
     }
 
@@ -177,100 +169,58 @@ impl Storage {
         );
     }
 
-    pub(crate) fn compact(&self) {
-        let mut distributions = self.distributions.write();
+    pub(crate) fn fill_snapshot(&self, snapshot: &mut Snapshot, only_histograms: bool) {
+        let mut histograms = Vec::new();
 
         self.registry.visit(|kind, (_, h)| {
-            if !matches!(kind, MetricKind::Histogram) {
+            if kind == MetricKind::Histogram {
+                // Defer processing to unlock the registry faster.
+                histograms.push(h.get_inner().clone());
                 return;
             }
 
-            let (name, labels) = make_parts(h.get_inner());
-            let entry = distributions
-                .entry(name)
-                .or_insert_with(FxHashMap::default)
-                .entry(labels)
-                .or_insert_with(Distribution::new_summary);
-
-            h.get_inner()
-                .handle
-                .read_histogram_with_clear(|samples| entry.record_samples(samples));
-        });
-    }
-
-    pub(crate) fn snapshot(&self) -> Snapshot {
-        let metrics = self.registry.get_handles();
-
-        let mut counters = FxHashMap::default();
-        let mut gauges = FxHashMap::default();
-        let mut distributions = self.distributions.write();
-
-        for ((kind, _), (_, h)) in metrics.into_iter() {
-            match kind {
-                MetricKind::Counter => {
-                    let value = h.handle.read_counter();
-
-                    let (name, labels) = make_parts(&h);
-                    let entry = counters
-                        .entry(name)
-                        .or_insert_with(FxHashMap::default)
-                        .entry(labels)
-                        .or_insert(0);
-                    *entry = value;
-                }
-                MetricKind::Gauge => {
-                    let value = h.handle.read_gauge();
-
-                    let (name, labels) = make_parts(&h);
-                    let entry = gauges
-                        .entry(name)
-                        .or_insert_with(FxHashMap::default)
-                        .entry(labels)
-                        .or_insert(0.0);
-                    *entry = value;
-                }
-                MetricKind::Histogram => {
-                    let (name, labels) = make_parts(&h);
-                    let entry = distributions
-                        .entry(name.clone())
-                        .or_insert_with(FxHashMap::default)
-                        .entry(labels)
-                        .or_insert_with(Distribution::new_summary);
-
-                    h.handle
-                        .read_histogram_with_clear(|samples| entry.record_samples(samples));
-                }
+            if only_histograms {
+                return;
             }
-        }
 
-        Snapshot {
-            counters,
-            gauges,
-            distributions: distributions.clone(),
+            fill_metric(snapshot, h.get_inner());
+        });
+
+        // Process deferred histograms.
+        for handle in histograms {
+            fill_metric(snapshot, &handle);
         }
     }
 }
 
-fn make_parts(h: &ExtHandle) -> (String, Vec<Label>) {
-    let name = sanitize_key_name(h.key.name());
-    let with_actor_key = h.with_actor_key && !h.meta.key.is_empty();
-    let label_count = if with_actor_key { 2 } else { 1 } + h.key.labels().len();
-
-    let mut labels = Vec::with_capacity(label_count);
-
-    // Add "actor_group" and "actor_key" labels.
-    labels.push(Label::new("actor_group", h.meta.group.clone()));
-    if with_actor_key {
-        labels.push(Label::new("actor_key", h.meta.key.clone()));
-    }
-
-    // Add specific labels.
-    labels.extend(h.key.labels().cloned());
-    (name, labels)
+fn fill_metric(snapshot: &mut Snapshot, handle: &ExtHandle) {
+    let m = get_metrics(snapshot, handle);
+    let h = &handle.handle;
+    match h {
+        Handle::Counter(_) => {
+            m.counters.insert(handle.key.clone(), h.read_counter());
+        }
+        Handle::Gauge(_) => {
+            m.gauges.insert(handle.key.clone(), h.read_gauge());
+        }
+        Handle::Histogram(_) => h.read_histogram_with_clear(|samples| {
+            m.distributions
+                .entry(handle.key.clone())
+                .or_default()
+                .record_samples(samples)
+        }),
+    };
 }
 
-fn sanitize_key_name(key: &str) -> String {
-    // Replace anything that isn't [a-zA-Z0-9_:].
-    let sanitize = |c: char| !(c.is_alphanumeric() || c == '_' || c == ':');
-    key.to_string().replace(sanitize, "_")
+fn get_metrics<'a>(snapshot: &'a mut Snapshot, handle: &ExtHandle) -> &'a mut Metrics {
+    if handle.with_actor_key {
+        snapshot.per_actor.entry(handle.meta.clone()).or_default()
+    } else if snapshot.per_group.contains_key(&handle.meta.group) {
+        snapshot.per_group.get_mut(&handle.meta.group).unwrap()
+    } else {
+        snapshot
+            .per_group
+            .entry(handle.meta.group.clone())
+            .or_default()
+    }
 }

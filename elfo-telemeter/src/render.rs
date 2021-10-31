@@ -2,7 +2,9 @@ use fxhash::FxHashMap;
 use metrics::Label;
 use metrics_util::{parse_quantiles, Quantile};
 
-use crate::{config::Config, storage::Snapshot};
+use crate::{config::Config, protocol::Snapshot};
+
+use self::prometheus::PrometheusRenderer;
 
 mod prometheus;
 
@@ -10,6 +12,7 @@ mod prometheus;
 pub(crate) struct Renderer {
     quantiles: Vec<(Quantile, Label)>,
     global_labels: Vec<Label>,
+    prometheus: PrometheusRenderer,
 }
 
 struct RenderOptions<'a> {
@@ -37,8 +40,8 @@ impl Renderer {
     }
 
     pub(crate) fn render(
-        &self,
-        snapshot: Snapshot,
+        &mut self,
+        snapshot: &Snapshot,
         descriptions: &FxHashMap<String, &'static str>,
     ) -> String {
         let options = RenderOptions {
@@ -47,6 +50,6 @@ impl Renderer {
             global_labels: &self.global_labels,
         };
 
-        prometheus::render(snapshot, options)
+        self.prometheus.render(snapshot, options)
     }
 }

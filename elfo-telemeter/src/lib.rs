@@ -22,11 +22,12 @@ use tracing::error;
 
 use elfo_core::Schema;
 
-use self::{recorder::PrometheusRecorder, storage::Storage};
+use self::{recorder::Recorder, storage::Storage};
+
+pub mod protocol;
 
 mod actor;
 mod config;
-mod distribution;
 mod recorder;
 mod render;
 mod storage;
@@ -34,7 +35,7 @@ mod storage;
 /// Installs a global metric recorder and returns a group to handle metrics.
 pub fn new() -> Schema {
     let storage = Arc::new(Storage::new());
-    let recorder = PrometheusRecorder::new(storage.clone());
+    let recorder = Recorder::new(storage.clone());
     let schema = actor::new(storage);
 
     if let Err(err) = metrics::set_boxed_recorder(Box::new(recorder)) {
