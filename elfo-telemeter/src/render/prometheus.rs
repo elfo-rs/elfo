@@ -1,4 +1,4 @@
-//! A lot of code here is copy-pasted from `metrics-exporter-prometheus`.
+//! Highly inspired by `metrics-exporter-prometheus`.
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -7,6 +7,7 @@ use std::{
 };
 
 use cow_utils::CowUtils;
+use fxhash::FxHashSet;
 use metrics::{Key, Label};
 use metrics_util::MetricKind;
 
@@ -16,18 +17,27 @@ use crate::protocol::{Distribution, Metrics, Snapshot};
 #[derive(Default)]
 pub(super) struct PrometheusRenderer {
     prev_size: usize,
+    // The renderer renders new counters with `0` for the first time.
+    // See https://www.section.io/blog/beware-prometheus-counters-that-do-not-begin-at-zero/.
+    // We store only hashes of `MetricMeta` because `insert()` API is bad for compound values.
+    known_counters: FxHashSet<u64>,
 }
 
 impl PrometheusRenderer {
     pub(super) fn render(&mut self, snapshot: &Snapshot, options: RenderOptions<'_>) -> String {
         let mut output = String::with_capacity(self.prev_size * 5 / 4);
-        render(&mut output, snapshot, options);
+        render(&mut output, snapshot, options, &mut self.known_counters);
         self.prev_size = output.len();
         output
     }
 }
 
-fn render(buffer: &mut String, snapshot: &Snapshot, options: RenderOptions<'_>) {
+fn render(
+    buffer: &mut String,
+    snapshot: &Snapshot,
+    options: RenderOptions<'_>,
+    known_counters: &mut FxHashSet<u64>,
+) {
     for ((kind, original_name), by_labels) in group_by_name(snapshot) {
         let name = &*sanitize_name(original_name);
 
@@ -52,6 +62,11 @@ fn render(buffer: &mut String, snapshot: &Snapshot, options: RenderOptions<'_>) 
 
             match value {
                 MetricValue::Counter(value) => {
+                    let value = if known_counters.insert(fxhash::hash64(&meta)) {
+                        0
+                    } else {
+                        value
+                    };
                     write_metric_line(buffer, name, None, labels.clone(), value);
                 }
                 MetricValue::Gauge(value) => {
@@ -64,10 +79,14 @@ fn render(buffer: &mut String, snapshot: &Snapshot, options: RenderOptions<'_>) 
                         write_metric_line(buffer, name, None, all_labels, value);
                     }
 
-                    let sum = distribution.sum();
-                    let count = distribution.count();
                     let min = distribution.min();
                     let max = distribution.max();
+
+                    let (sum, count) = if known_counters.insert(fxhash::hash64(&meta)) {
+                        (0., 0)
+                    } else {
+                        (distribution.sum(), distribution.count())
+                    };
 
                     // TODO: write types for this.
                     write_metric_line(buffer, name, Some("sum"), labels.clone(), sum);
@@ -84,7 +103,7 @@ fn render(buffer: &mut String, snapshot: &Snapshot, options: RenderOptions<'_>) 
 
 type GroupedData<'a> = BTreeMap<(MetricKind, &'a str), BTreeMap<MetricMeta<'a>, MetricValue<'a>>>;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct MetricMeta<'a> {
     actor_group: &'a str,
     actor_key: Option<&'a str>,
