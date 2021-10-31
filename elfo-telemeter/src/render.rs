@@ -2,7 +2,7 @@ use fxhash::FxHashMap;
 use metrics::Label;
 use metrics_util::{parse_quantiles, Quantile};
 
-use crate::{config::Config, storage::Snapshot};
+use crate::{config::Config, protocol::Snapshot};
 
 mod prometheus;
 
@@ -38,7 +38,7 @@ impl Renderer {
 
     pub(crate) fn render(
         &self,
-        snapshot: Snapshot,
+        snapshot: &Snapshot,
         descriptions: &FxHashMap<String, &'static str>,
     ) -> String {
         let options = RenderOptions {

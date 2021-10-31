@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
-use metrics::{GaugeValue, Key, Recorder, Unit};
+use metrics::{GaugeValue, Key, Unit};
 
 use elfo_core::scope::{self, Scope};
 
 use crate::storage::Storage;
 
-pub(crate) struct PrometheusRecorder {
+pub(crate) struct Recorder {
     storage: Arc<Storage>,
 }
 
-impl PrometheusRecorder {
+impl Recorder {
     pub(crate) fn new(storage: Arc<Storage>) -> Self {
         Self { storage }
     }
@@ -28,7 +28,7 @@ impl PrometheusRecorder {
     }
 }
 
-impl Recorder for PrometheusRecorder {
+impl metrics::Recorder for Recorder {
     fn register_counter(&self, key: &Key, _unit: Option<Unit>, description: Option<&'static str>) {
         self.storage.add_description_if_missing(key, description);
         self.with_params(|storage, scope, with_actor_key| {
