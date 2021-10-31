@@ -30,6 +30,6 @@ fn default_quantiles() -> Vec<f64> {
 
 fn default_compaction_interval() -> Duration {
     // 1m, 30s, 15s, 10s are often used values of prometheus's `scrape_interval`.
-    // 4.1s is a good value that splits the scrape interval uniformly enough.
-    Duration::from_millis(4100)
+    // 1.1s is a good value that splits the scrape interval uniformly enough.
+    Duration::from_millis(1100)
 }
