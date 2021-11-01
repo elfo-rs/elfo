@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - context: sending methods return an error if a message is discarded by all recipients. Previously, such messages were considered as delivered.
+- telemeter: close the server before termination.
 
 ## [0.1.28] - 2021-10-14
 ### Added

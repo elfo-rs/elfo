@@ -104,6 +104,8 @@ impl Telemeter {
                 }
             });
         }
+
+        server.abort();
     }
 
     fn fill_snapshot(&mut self, only_histograms: bool) {
