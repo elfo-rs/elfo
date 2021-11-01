@@ -102,6 +102,7 @@ impl Envelope {
     }
 
     // XXX: why does `Envelope` know about `AddressBook`?
+    // TODO: avoid `None` here?
     pub(crate) fn duplicate(&self, book: &AddressBook) -> Option<Self> {
         Some(Self {
             created_time: self.created_time,

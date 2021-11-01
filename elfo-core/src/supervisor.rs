@@ -233,9 +233,8 @@ where
             Outcome::Multicast(list) => self.do_handle_multiple(
                 envelope,
                 list.into_iter().filter_map(|key| get_or_spawn!(self, key)),
-                false,
             ),
-            Outcome::Broadcast => self.do_handle_multiple(envelope, self.objects.iter(), true),
+            Outcome::Broadcast => self.do_handle_multiple(envelope, self.objects.iter()),
             Outcome::Discard => RouteReport::Closed(envelope),
             Outcome::Default => unreachable!("must be altered earlier"),
         }
@@ -244,27 +243,17 @@ where
     fn do_handle_multiple(
         &self,
         envelope: Envelope,
-        iter: impl Iterator<Item = impl Deref<Target = ObjectArc>>,
-        short_circuit: bool,
+        mut iter: impl Iterator<Item = impl Deref<Target = ObjectArc>>,
     ) -> RouteReport {
         let mut waiters = Vec::new();
         let mut someone = false;
 
-        for object in iter {
+        for object in &mut iter {
             // TODO: we shouldn't clone `envelope` for the last object in a sequence.
-            let envelope = ward!(
-                envelope.duplicate(self.context.book()),
-                if short_circuit {
-                    // A requester has died.
-                    return RouteReport::Done;
-                } else {
-                    // A requester has died, but we should spawn other actors.
-                    continue;
-                }
-            );
+            // If a requester has died, go out.
+            let envelope = ward!(envelope.duplicate(self.context.book()), break);
 
             let actor = object.as_actor().expect("supervisor stores only actors");
-
             match actor.try_send(envelope) {
                 Ok(_) => someone = true,
                 Err(TrySendError::Full(envelope)) => waiters.push((object.addr(), envelope)),
