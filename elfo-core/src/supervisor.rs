@@ -211,13 +211,12 @@ where
             }
             _ => {
                 let outcome = self.router.route(&envelope);
-                self.do_handle(envelope, outcome)
+                self.do_handle(envelope, outcome.or(Outcome::Discard))
             }
         })
     }
 
     fn do_handle(self: &Arc<Self>, envelope: Envelope, outcome: Outcome<R::Key>) -> RouteReport {
-        // TODO: avoid copy & paste.
         match outcome {
             Outcome::Unicast(key) => {
                 let object = ward!(
@@ -237,7 +236,8 @@ where
                 false,
             ),
             Outcome::Broadcast => self.do_handle_multiple(envelope, self.objects.iter(), true),
-            Outcome::Discard | Outcome::Default => RouteReport::Done,
+            Outcome::Discard => RouteReport::Closed(envelope),
+            Outcome::Default => unreachable!("must be altered earlier"),
         }
     }
 

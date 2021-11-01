@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - telemeter: render new counters with `0` value during scraping to avoid [some problems](https://www.section.io/blog/beware-prometheus-counters-that-do-not-begin-at-zero/).
 
+### Fixed
+- context: sending methods return an error if a message is discarded by all recipients. Previously, such messages were considered as delivered.
+
 ## [0.1.28] - 2021-10-14
 ### Added
 - Expose `ActorMeta` and `ActorStatusKind`.
