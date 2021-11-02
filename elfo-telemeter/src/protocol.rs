@@ -92,4 +92,8 @@ impl Distribution {
             self.sum += *sample;
         }
     }
+
+    pub(crate) fn estimated_size(&self) -> usize {
+        self.summary.estimated_size() + std::mem::size_of::<Self>()
+    }
 }

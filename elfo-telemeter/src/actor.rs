@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use metrics::gauge;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -111,7 +112,11 @@ impl Telemeter {
     fn fill_snapshot(&mut self, only_histograms: bool) {
         // Reuse the latest snapshot if possible.
         let snapshot = Arc::make_mut(&mut self.snapshot);
-        self.storage.fill_snapshot(snapshot, only_histograms);
+        let size = self.storage.fill_snapshot(snapshot, only_histograms);
+
+        if !only_histograms {
+            gauge!("elfo_metrics_usage_bytes", size as f64);
+        }
     }
 }
 

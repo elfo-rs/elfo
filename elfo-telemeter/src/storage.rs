@@ -1,5 +1,6 @@
 use std::{
     hash::{Hash, Hasher},
+    mem,
     sync::Arc,
 };
 
@@ -169,8 +170,9 @@ impl Storage {
         );
     }
 
-    pub(crate) fn fill_snapshot(&self, snapshot: &mut Snapshot, only_histograms: bool) {
+    pub(crate) fn fill_snapshot(&self, snapshot: &mut Snapshot, only_histograms: bool) -> usize {
         let mut histograms = Vec::new();
+        let mut estimated_size = 0;
 
         self.registry.visit(|kind, (_, h)| {
             if kind == MetricKind::Histogram {
@@ -183,33 +185,39 @@ impl Storage {
                 return;
             }
 
-            fill_metric(snapshot, h.get_inner());
+            estimated_size += fill_metric(snapshot, h.get_inner());
         });
 
         // Process deferred histograms.
         for handle in histograms {
-            fill_metric(snapshot, &handle);
+            estimated_size += fill_metric(snapshot, &handle);
         }
+
+        estimated_size
     }
 }
 
-fn fill_metric(snapshot: &mut Snapshot, handle: &ExtHandle) {
+fn fill_metric(snapshot: &mut Snapshot, handle: &ExtHandle) -> usize {
     let m = get_metrics(snapshot, handle);
     let h = &handle.handle;
-    match h {
+
+    let estimated_size = match h {
         Handle::Counter(_) => {
             m.counters.insert(handle.key.clone(), h.read_counter());
+            8
         }
         Handle::Gauge(_) => {
             m.gauges.insert(handle.key.clone(), h.read_gauge());
+            8
         }
-        Handle::Histogram(_) => h.read_histogram_with_clear(|samples| {
-            m.distributions
-                .entry(handle.key.clone())
-                .or_default()
-                .record_samples(samples)
-        }),
+        Handle::Histogram(_) => {
+            let d = m.distributions.entry(handle.key.clone()).or_default();
+            h.read_histogram_with_clear(|samples| d.record_samples(samples));
+            d.estimated_size()
+        }
     };
+
+    mem::size_of::<Key>() + estimated_size
 }
 
 fn get_metrics<'a>(snapshot: &'a mut Snapshot, handle: &ExtHandle) -> &'a mut Metrics {

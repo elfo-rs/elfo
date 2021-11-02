@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `MoveOwnership` to transfer ownership over messaging.
+- telemeter: `elfo_metrics_usage_bytes` metric.
 
 ### Changed
 - telemeter: render new counters with `0` value during scraping to avoid [some problems](https://www.section.io/blog/beware-prometheus-counters-that-do-not-begin-at-zero/).
