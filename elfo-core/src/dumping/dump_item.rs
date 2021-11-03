@@ -25,6 +25,7 @@ pub struct DumpItem {
     pub message: ErasedMessage,
 }
 
+// TODO: move to `time`.
 /// Timestamp in nanos since Unix epoch.
 #[message(part, elfo = crate)]
 #[derive(Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]

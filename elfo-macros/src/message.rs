@@ -244,7 +244,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 use std::fmt;
 
                 use #internal::{
-                    MESSAGE_LIST, MessageVTable, AnyMessage, dumping,
+                    MESSAGE_LIST, MessageVTable, AnyMessage,
                     smallbox::smallbox, linkme
                 };
 
@@ -262,7 +262,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     fmt::Debug::fmt(cast_ref(message), f)
                 }
 
-                fn erase(message: &AnyMessage) -> dumping::ErasedMessage {
+                fn erase(message: &AnyMessage) -> #crate_::dumping::ErasedMessage {
                     smallbox!(Clone::clone(cast_ref(message)))
                 }
 

@@ -69,19 +69,6 @@ mod supervisor;
 
 #[doc(hidden)]
 pub mod _priv {
-    pub mod dumping {
-        pub use crate::dumping::*;
-
-        #[inline]
-        pub fn of<C: 'static, K, S>(context: &crate::Context<C, K, S>) -> &Dumper {
-            context.dumper()
-        }
-
-        pub fn set_in_dumping(flag: bool) {
-            crate::dumping::set_in_dumping(flag);
-        }
-    }
-
     pub mod node {
         pub fn set_node_no(node_no: crate::node::NodeNo) {
             crate::node::set_node_no(node_no)

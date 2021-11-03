@@ -17,12 +17,12 @@ use elfo_macros::{message, msg_raw as msg};
 use elfo_utils::cooldown;
 
 use elfo::{
-    ActorGroup, Context, Schema,
-    _priv::dumping,
+    dumping::_priv as dumping,
     group::TerminationPolicy,
     messages::{ConfigUpdated, Terminate},
     signal::{Signal, SignalKind},
     time::Interval,
+    ActorGroup, Context, Schema,
 };
 
 use self::config::Config;

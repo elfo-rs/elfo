@@ -10,30 +10,19 @@ use std::{
 
 use metrics::increment_counter;
 use parking_lot::Mutex;
-use serde::Deserialize;
 use smallbox::smallbox;
 use tokio::time::Instant;
 use tracing::error;
 
 use elfo_utils::{CachePadded, RateLimiter};
 
-#[allow(unreachable_pub)] // Actually, it's reachable via `elfo::_priv`.
-pub use self::{dump_item::*, sequence_no::SequenceNo};
-
-pub use hider::hide;
-pub(crate) use hider::set_in_dumping;
-
-use self::sequence_no::SequenceNoGenerator;
+use super::{dump_item::*, sequence_no::SequenceNoGenerator, DumpingConfig};
 use crate::{
     envelope,
     message::{Message, Request},
     request_table::RequestId,
     scope,
 };
-
-mod dump_item;
-mod hider;
-mod sequence_no;
 
 const SHARD_COUNT: usize = 16;
 const SHARD_MAX_LEN: usize = 300_000;
@@ -51,24 +40,9 @@ pub struct Dumper {
     per_group: Arc<PerGroup>,
 }
 
-#[derive(Deserialize)]
-#[serde(default)]
-pub(crate) struct DumpingConfig {
-    disabled: bool,
-    max_rate: u64,
-}
-
-impl Default for DumpingConfig {
-    fn default() -> Self {
-        Self {
-            disabled: false,
-            max_rate: 100_000,
-        }
-    }
-}
-
 #[derive(Default)]
 struct PerSystem {
+    // TODO: NUMA awareness.
     shards: [CachePadded<Mutex<VecDeque<DumpItem>>>; SHARD_COUNT],
 }
 
@@ -253,14 +227,15 @@ impl<'a> Iterator for Drain<'a> {
 #[cfg(test)]
 #[cfg(feature = "test-util")]
 mod tests {
-    use super::*;
-
     use std::convert::TryFrom;
 
     use smallbox::smallbox;
     use tokio::time;
 
-    use crate::{actor::ActorMeta, addr::Addr, scope::Scope, trace_id::TraceId};
+    use super::*;
+    use crate::{
+        actor::ActorMeta, addr::Addr, dumping::SequenceNo, scope::Scope, trace_id::TraceId,
+    };
 
     fn dump_msg(dumper: &Dumper, name: &'static str) {
         dumper.dump(
