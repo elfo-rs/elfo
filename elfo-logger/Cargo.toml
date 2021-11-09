@@ -1,6 +1,6 @@
 [package]
 name = "elfo-logger"
-version = "0.1.5"
+version = "0.1.6"
 description = "Logging subsystem"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"

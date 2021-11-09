@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.29] - 2021-11-09
 ### Added
 - `MoveOwnership` to transfer ownership over messaging.
 - telemeter: `elfo_metrics_usage_bytes` metric.
@@ -235,7 +237,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.27...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.29...HEAD
+[0.1.29]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.28...elfo-0.1.29
+[0.1.28]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.27...elfo-0.1.28
 [0.1.27]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.26...elfo-0.1.27
 [0.1.26]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.25...elfo-0.1.26
 [0.1.25]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.24...elfo-0.1.25
