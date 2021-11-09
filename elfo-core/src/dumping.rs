@@ -220,6 +220,7 @@ impl<'a> Drain<'a> {
         debug_assert!(self.queue.is_empty());
         let mut next_shard_no = self.shard_no;
 
+        #[allow(clippy::blocks_in_if_conditions)]
         while {
             {
                 let mut next_queue = self.dumper.per_system.shards[next_shard_no].lock();

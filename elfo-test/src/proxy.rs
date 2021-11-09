@@ -77,6 +77,7 @@ impl Proxy {
             // because we don't want to use mocked time by tokio here.
             let start = StdInstant::now();
 
+            #[allow(clippy::blocks_in_if_conditions)]
             while {
                 if let Some(envelope) = self.try_recv() {
                     return envelope;
