@@ -209,20 +209,30 @@ fn clamp(v: f64) -> u8 {
 }
 
 fn reduce_location(s: &str) -> &str {
-    // $CARGO_HOME/registry/src/$REG-HASH
-    s.split_once("/registry/src/")
-        .and_then(|(_, s)| s.split_once('/'))
-        .map_or(s, |(_, s)| s)
+    // {cargo_home}/registry/src/{registry}-{hash}/{crate}-{version}/{path}
+    //                                             ^------- useful -------^
+    if let Some((_, s)) = s.split_once("/registry/src/") {
+        s.split_once('/').map_or(s, |(_, s)| s)
+    }
+    // {cargo_home}/git/checkouts/{repository}-{hash}/{commit}/{crate}/{path}
+    //                            ^---------------- useful -----------------^
+    else {
+        s.split_once("/git/checkouts/").map_or(s, |(_, s)| s)
+    }
 }
 
 #[test]
 fn it_reduces_location() {
     assert_eq!(
+        reduce_location("actors/foo/src/bar/baz.rs"),
+        "actors/foo/src/bar/baz.rs"
+    );
+    assert_eq!(
         reduce_location("/cache/.cargo/registry/src/github.com-xyz/foo-0.1.0/src/bar/baz.rs"),
         "foo-0.1.0/src/bar/baz.rs"
     );
     assert_eq!(
-        reduce_location("actors/foo/src/bar/baz.rs"),
-        "actors/foo/src/bar/baz.rs"
+        reduce_location("/cache/.cargo/git/checkouts/foo-foo-xyz/fa1fa1/foo/src/bar/baz.rs"),
+        "foo-foo-xyz/fa1fa1/foo/src/bar/baz.rs"
     );
 }
