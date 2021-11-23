@@ -70,8 +70,11 @@ macro_rules! cooldown {
     }};
 }
 
+#[deprecated]
+#[doc(hidden)]
 pub struct ErrorChain<'a>(pub &'a dyn Error);
 
+#[allow(deprecated)]
 impl fmt::Display for ErrorChain<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)?;
@@ -87,12 +90,14 @@ impl fmt::Display for ErrorChain<'_> {
 }
 
 #[test]
+#[allow(deprecated)]
 fn trivial_error_chain() {
     let error = anyhow::anyhow!("oops");
     assert_eq!(format!("{}", ErrorChain(&*error)), "oops");
 }
 
 #[test]
+#[allow(deprecated)]
 fn error_chain() {
     let innermost = anyhow::anyhow!("innermost");
     let inner = innermost.context("inner");

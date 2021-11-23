@@ -11,9 +11,9 @@ use tracing::{error_span, info, warn, Instrument, Span};
 
 use crate as elfo;
 use elfo_macros::msg_raw as msg;
-use elfo_utils::{CachePadded, ErrorChain, RateLimiter};
+use elfo_utils::{CachePadded, RateLimiter};
 
-use self::measure_poll::MeasurePoll;
+use self::{error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
     addr::Addr,
@@ -31,6 +31,7 @@ use crate::{
     subscription::SubscriptionManager,
 };
 
+mod error_chain;
 mod measure_poll;
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
