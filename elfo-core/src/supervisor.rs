@@ -13,6 +13,7 @@ use crate as elfo;
 use elfo_macros::msg_raw as msg;
 use elfo_utils::{CachePadded, ErrorChain, RateLimiter};
 
+use self::measure_poll::MeasurePoll;
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
     addr::Addr,
@@ -29,6 +30,8 @@ use crate::{
     scope::{self, Scope},
     subscription::SubscriptionManager,
 };
+
+mod measure_poll;
 
 pub(crate) struct Supervisor<R: Router<C>, C, X> {
     meta: Arc<ActorMeta>,
@@ -377,7 +380,8 @@ where
             self.permissions.clone(),
             self.logging_limiter.clone(),
         );
-        tokio::spawn(scope.within(fut.instrument(span)));
+        let fut = MeasurePoll::new(fut.instrument(span));
+        tokio::spawn(scope.within(fut));
         let object = self.context.book().get_owned(addr).expect("just created");
         Some(object)
     }

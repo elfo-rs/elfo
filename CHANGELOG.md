@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `elfo_busy_time_seconds` metric.
+
 ## [0.1.29] - 2021-11-09
 ### Added
 - `MoveOwnership` to transfer ownership over messaging.
