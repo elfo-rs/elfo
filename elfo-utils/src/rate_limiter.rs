@@ -5,7 +5,7 @@ use quanta::Instant;
 pub struct RateLimiter {
     start_time: Instant,
     step: AtomicU64,
-    vtime: AtomicU64, // TODO: wrap into `CachePadded`?
+    vtime: AtomicU64,
 }
 
 /// Unlimited by default.

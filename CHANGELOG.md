@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `elfo_busy_time_seconds` metric.
 - logging: add the `system.logging.targets` section to override logging options for specific targets.
 
+### Changed
+- logging: replace `max_rate` with `max_rate_per_level`.
+
 ## [0.1.29] - 2021-11-09
 ### Added
 - `MoveOwnership` to transfer ownership over messaging.
