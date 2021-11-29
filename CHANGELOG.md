@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.30] - 2021-11-29
 ### Added
 - `elfo_busy_time_seconds` metric.
 - logging: add the `system.logging.targets` section to override logging options for specific targets.
@@ -244,7 +245,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.29...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.30...HEAD
+[0.1.30]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.29...elfo-0.1.30
 [0.1.29]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.28...elfo-0.1.29
 [0.1.28]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.27...elfo-0.1.28
 [0.1.27]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.26...elfo-0.1.27
