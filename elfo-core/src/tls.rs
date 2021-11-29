@@ -1,6 +1,6 @@
 use std::{cell::Cell, future::Future, sync::Arc};
 
-use crate::{actor::ActorMeta, addr::Addr, trace_id::TraceId};
+use crate::{actor::ActorMeta, addr::Addr, scope::ScopeShared, trace_id::TraceId};
 
 tokio::task_local! {
     static META: Arc<ActorMeta>;
@@ -49,11 +49,5 @@ pub fn sync_scope<R>(meta: Arc<ActorMeta>, trace_id: TraceId, f: impl FnOnce() -
 }
 
 fn make_stupid_scope(meta: Arc<ActorMeta>) -> crate::scope::Scope {
-    crate::scope::Scope::new(
-        Addr::NULL,
-        Addr::NULL,
-        meta,
-        Default::default(),
-        Default::default(),
-    )
+    crate::scope::Scope::new(Addr::NULL, meta, Arc::new(ScopeShared::new(Addr::NULL)))
 }

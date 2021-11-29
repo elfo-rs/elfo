@@ -2,14 +2,20 @@
 # All properties defined in this section will be merged into each actor group's section.
 # The primary purpose is to define default values of system settings (logging, dumping, and so on).
 
-# Parameters and their defaults:
-#
+# Parameters and their defaults
+# Logging
 #system.logging.max_level = "Info" # one of: Trace, Debug, Info, Warn, Error, Off.
-#system.logging.max_rate = 1000    # per second
+#system.logging.max_rate_per_level = 1000    # per second
 #
+# It's possible to override `max_level` for a specific target:
+#system.logging.targets.hyper.max_level = "Trace"
+#system.logging.targets."hyper::server".max_level = "Warn"
+#
+# Dumping
 #system.dumping.disabled = false
 #system.dumping.max_rate = 100_000 # per second
 #
+# Telemetry
 #system.telemetry.per_actor_group = true
 #system.telemetry.per_actor_key = false
 

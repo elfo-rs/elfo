@@ -320,13 +320,7 @@ mod tests {
             assert!(drain.next().is_none());
         };
 
-        let scope = Scope::new(
-            Addr::NULL,
-            Addr::NULL,
-            meta.clone(),
-            Default::default(),
-            Default::default(),
-        );
+        let scope = Scope::test(Addr::NULL, meta.clone());
         scope.set_trace_id(trace_id);
         scope.within(f).await;
     }

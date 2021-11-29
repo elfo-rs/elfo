@@ -141,13 +141,7 @@ impl Proxy {
         });
 
         Proxy {
-            scope: Scope::new(
-                context.addr(),
-                Addr::NULL,
-                meta,
-                Default::default(),
-                Default::default(),
-            ),
+            scope: Scope::test(context.addr(), meta),
             context,
             non_exhaustive: self.non_exhaustive,
             subject_addr: self.subject_addr,
@@ -254,13 +248,7 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
     });
 
     Proxy {
-        scope: Scope::new(
-            context.addr(),
-            Addr::NULL,
-            meta,
-            Default::default(),
-            Default::default(),
-        ),
+        scope: Scope::test(context.addr(), meta),
         context,
         non_exhaustive: false,
         subject_addr,

@@ -5,21 +5,21 @@ use tokio::{
     pin, select,
     time::{sleep, timeout, Instant},
 };
-use tracing::{error, info, warn, Level};
+use tracing::{error, info, level_filters::LevelFilter, warn};
 
 use elfo_macros::message;
 
 use crate::{
     actor::{Actor, ActorMeta},
     addr::Addr,
+    config::SystemConfig,
     context::Context,
     demux::Demux,
     errors::{RequestError, StartError},
     message,
     messages::{Ping, Terminate, UpdateConfig},
     object::Object,
-    permissions::{AtomicPermissions, Permissions},
-    scope::Scope,
+    scope::{Scope, ScopeShared},
     signal::{Signal, SignalKind},
     subscription::SubscriptionManager,
     topology::Topology,
@@ -122,14 +122,13 @@ pub async fn do_start<F: Future>(
         ),
     ));
 
-    let perm = Arc::new(AtomicPermissions::default());
-    perm.store({
-        let mut perm = Permissions::default();
-        perm.set_logging_enabled(Some(Level::INFO));
-        perm
-    });
+    let scope_shared = ScopeShared::new(Addr::NULL);
+    let mut config = SystemConfig::default();
+    config.logging.max_level = LevelFilter::INFO;
+    config.telemetry.per_actor_group = false;
+    scope_shared.configure(&config);
 
-    let scope = Scope::new(addr, Addr::NULL, meta, perm, Default::default());
+    let scope = Scope::new(addr, meta, Arc::new(scope_shared));
     let f = async move {
         start_entrypoints(&ctx, &topology).await?;
         wait_entrypoints(&ctx, &topology).await?;

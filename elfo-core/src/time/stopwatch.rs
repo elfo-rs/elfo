@@ -96,7 +96,6 @@ mod tests {
         time::pause();
 
         let sw = Stopwatch::new(|| Timeout);
-        println!("{:?}", tokio::time::Instant::now());
 
         for _ in 0..=5 {
             // Before scheduling.
