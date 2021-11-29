@@ -62,7 +62,7 @@ derive_more = "0.99.11"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1.25"
 metrics = "0.17"
-tracing-subscriber = "0.2.15"
+tracing-subscriber = "0.3"
 serde = { version = "1.0.120", features = ["derive"] }
 toml = "0.5.8"
 humantime-serde = "1"
