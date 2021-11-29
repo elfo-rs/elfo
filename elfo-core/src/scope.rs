@@ -1,10 +1,10 @@
 use std::{cell::Cell, future::Future, sync::Arc};
 
-use elfo_utils::RateLimiter;
-
 use crate::{
     actor::ActorMeta,
     addr::Addr,
+    config::SystemConfig,
+    logging::_priv::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
     trace_id::{self, TraceId},
 };
@@ -16,13 +16,9 @@ tokio::task_local! {
 #[derive(Clone)]
 pub struct Scope {
     actor: Addr,
-    group: Addr,
     meta: Arc<ActorMeta>,
     trace_id: Cell<TraceId>,
-
-    // Per group.
-    permissions: Arc<AtomicPermissions>,
-    logging_limiter: Arc<RateLimiter>,
+    shared: Arc<ScopeShared>,
 }
 
 assert_impl_all!(Scope: Send);
@@ -31,40 +27,25 @@ assert_not_impl_all!(Scope: Sync);
 impl Scope {
     /// Private API for now.
     #[doc(hidden)]
-    pub fn new(
-        actor: Addr,
-        group: Addr,
-        meta: Arc<ActorMeta>,
-        perm: Arc<AtomicPermissions>,
-        logging_limiter: Arc<RateLimiter>,
-    ) -> Self {
-        Self::with_trace_id(
-            trace_id::generate(),
-            actor,
-            group,
-            meta,
-            perm,
-            logging_limiter,
-        )
+    pub fn test(actor: Addr, meta: Arc<ActorMeta>) -> Self {
+        Self::new(actor, meta, Arc::new(ScopeShared::new(Addr::NULL)))
     }
 
-    /// Private API for now.
-    #[doc(hidden)]
-    pub fn with_trace_id(
+    pub(crate) fn new(actor: Addr, meta: Arc<ActorMeta>, shared: Arc<ScopeShared>) -> Self {
+        Self::with_trace_id(trace_id::generate(), actor, meta, shared)
+    }
+
+    pub(crate) fn with_trace_id(
         trace_id: TraceId,
         actor: Addr,
-        group: Addr,
         meta: Arc<ActorMeta>,
-        permissions: Arc<AtomicPermissions>,
-        logging_limiter: Arc<RateLimiter>,
+        shared: Arc<ScopeShared>,
     ) -> Self {
         Self {
             actor,
-            group,
             meta,
             trace_id: Cell::new(trace_id),
-            permissions,
-            logging_limiter,
+            shared,
         }
     }
 
@@ -81,7 +62,7 @@ impl Scope {
 
     #[inline]
     pub fn group(&self) -> Addr {
-        self.group
+        self.shared.group
     }
 
     /// Returns the current object's meta.
@@ -105,14 +86,14 @@ impl Scope {
     /// Returns the current permissions (for logging, telemetry and so on).
     #[inline]
     pub fn permissions(&self) -> Permissions {
-        self.permissions.load()
+        self.shared.permissions.load()
     }
 
     /// Private API for now.
     #[inline]
     #[doc(hidden)]
-    pub fn logging_limiter(&self) -> &RateLimiter {
-        &self.logging_limiter
+    pub fn logging(&self) -> &LoggingControl {
+        &self.shared.logging
     }
 
     /// Wraps the provided future with the current scope.
@@ -123,6 +104,35 @@ impl Scope {
     /// Runs the provided function with the current scope.
     pub fn sync_within<R>(self, f: impl FnOnce() -> R) -> R {
         SCOPE.sync_scope(self, f)
+    }
+}
+
+pub(crate) struct ScopeShared {
+    group: Addr,
+    permissions: AtomicPermissions,
+    logging: LoggingControl,
+}
+
+impl ScopeShared {
+    pub(crate) fn new(group: Addr) -> Self {
+        Self {
+            group,
+            permissions: Default::default(), // everything is disabled
+            logging: Default::default(),
+        }
+    }
+
+    pub(crate) fn configure(&self, config: &SystemConfig) {
+        // Update the logging subsystem.
+        self.logging.configure(&config.logging);
+        let max_level = self.logging.max_level_hint().into_level();
+
+        // Update permissions.
+        let mut perm = self.permissions.load();
+        perm.set_logging_enabled(max_level);
+        perm.set_telemetry_per_actor_group_enabled(config.telemetry.per_actor_group);
+        perm.set_telemetry_per_actor_key_enabled(config.telemetry.per_actor_key);
+        self.permissions.store(perm);
     }
 }
 

@@ -9,9 +9,9 @@ use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
 use tracing::{error_span, info, warn, Instrument, Span};
 
-use crate as elfo;
+use crate::{self as elfo};
 use elfo_macros::msg_raw as msg;
-use elfo_utils::{CachePadded, RateLimiter};
+use elfo_utils::CachePadded;
 
 use self::{error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
@@ -25,9 +25,8 @@ use crate::{
     group::{RestartMode, RestartPolicy, TerminationPolicy},
     messages,
     object::{Object, ObjectArc},
-    permissions::AtomicPermissions,
     routers::{Outcome, Router},
-    scope::{self, Scope},
+    scope::{self, Scope, ScopeShared},
     subscription::SubscriptionManager,
 };
 
@@ -40,13 +39,11 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     termination_policy: TerminationPolicy,
     span: Span,
     context: Context,
-    // TODO: replace with `crossbeam_utils::sync::ShardedLock`?
     objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
     router: R,
     exec: X,
     control: CachePadded<RwLock<ControlBlock<C>>>,
-    permissions: Arc<AtomicPermissions>,
-    logging_limiter: Arc<RateLimiter>,
+    scope_shared: Arc<ScopeShared>,
     status_subscription: Arc<SubscriptionManager>,
 }
 
@@ -103,14 +100,13 @@ where
             }),
             restart_policy,
             termination_policy,
-            context: ctx,
             objects: DashMap::default(),
             router,
             exec,
             control: CachePadded(RwLock::new(control)),
-            permissions: Default::default(),
-            logging_limiter: Default::default(),
+            scope_shared: Arc::new(ScopeShared::new(ctx.group())),
             status_subscription: Arc::new(status_subscription),
+            context: ctx,
         }
     }
 
@@ -119,10 +115,9 @@ where
         Scope::with_trace_id(
             scope::trace_id(),
             Addr::NULL,
-            self.context.group(),
             self.meta.clone(),
-            self.permissions.clone(),
-            Default::default(), // Do not limit logging in supervisor.
+            // TODO: do not limit logging in supervisor.
+            self.scope_shared.clone(),
         )
         .sync_within(|| self.span.in_scope(f));
     }
@@ -374,13 +369,7 @@ where
         );
         entry.insert(Object::new(addr, actor));
 
-        let scope = Scope::new(
-            addr,
-            self.context.group(),
-            meta,
-            self.permissions.clone(),
-            self.logging_limiter.clone(),
-        );
+        let scope = Scope::new(addr, meta, self.scope_shared.clone());
         let fut = MeasurePoll::new(fut.instrument(span));
         tokio::spawn(scope.within(fut));
         let object = self.context.book().get_owned(addr).expect("just created");
@@ -407,14 +396,7 @@ where
         // Update the dumper's config.
         self.context.dumper().configure(&system.dumping);
 
-        // Update permissions.
-        let mut perm = self.permissions.load();
-        perm.set_logging_enabled(system.logging.max_level.to_tracing_level());
-        perm.set_telemetry_per_actor_group_enabled(system.telemetry.per_actor_group);
-        perm.set_telemetry_per_actor_key_enabled(system.telemetry.per_actor_key);
-        self.permissions.store(perm);
-
-        self.logging_limiter.configure(system.logging.max_rate);
+        self.scope_shared.configure(system);
 
         // Update user's config.
         control.config = Some(config.get_user::<C>().clone());

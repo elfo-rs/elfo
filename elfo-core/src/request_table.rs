@@ -213,15 +213,12 @@ mod tests {
     struct Num(u32);
 
     fn envelope(addr: Addr, num: Num) -> Envelope {
-        Scope::new(
+        Scope::test(
             addr,
-            addr, // TODO: ahah.
             Arc::new(ActorMeta {
                 group: "test".into(),
                 key: String::new(),
             }),
-            Default::default(),
-            Default::default(),
         )
         .sync_within(|| Envelope::new(num, MessageKind::Regular { sender: addr }).upcast())
     }

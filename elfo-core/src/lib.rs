@@ -25,6 +25,7 @@ pub mod config;
 pub mod dumping;
 pub mod errors;
 pub mod group;
+pub mod logging;
 pub mod messages;
 pub mod node;
 pub mod routers;

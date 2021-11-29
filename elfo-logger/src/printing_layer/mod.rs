@@ -32,7 +32,7 @@ impl PrintingLayer {
 }
 
 impl<S: Subscriber> Layer<S> for PrintingLayer {
-    fn new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
+    fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
         let parent_id = if attrs.is_root() {
             None
         } else {

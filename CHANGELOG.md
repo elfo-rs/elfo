@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `elfo_busy_time_seconds` metric.
+- logging: add the `system.logging.targets` section to override logging options for specific targets.
 
 ## [0.1.29] - 2021-11-09
 ### Added

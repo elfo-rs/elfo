@@ -149,49 +149,9 @@ impl<'de> Deserializer<'de> for AnyConfig {
 #[derive(Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct SystemConfig {
-    pub(crate) logging: LoggingConfig,
+    pub(crate) logging: crate::logging::LoggingConfig,
     pub(crate) dumping: crate::dumping::DumpingConfig,
     pub(crate) telemetry: TelemetryConfig,
-}
-
-#[derive(Deserialize)]
-#[serde(default)]
-pub(crate) struct LoggingConfig {
-    pub(crate) max_level: MaxLevel,
-    pub(crate) max_rate: u64,
-}
-
-#[derive(Clone, Copy, Deserialize)]
-pub(crate) enum MaxLevel {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-    Off,
-}
-
-impl MaxLevel {
-    pub(crate) fn to_tracing_level(self) -> Option<tracing::Level> {
-        use tracing::Level;
-        match self {
-            Self::Trace => Some(Level::TRACE),
-            Self::Debug => Some(Level::DEBUG),
-            Self::Info => Some(Level::INFO),
-            Self::Warn => Some(Level::WARN),
-            Self::Error => Some(Level::ERROR),
-            Self::Off => None,
-        }
-    }
-}
-
-impl Default for LoggingConfig {
-    fn default() -> Self {
-        Self {
-            max_level: MaxLevel::Info,
-            max_rate: 1000,
-        }
-    }
 }
 
 #[derive(Deserialize)]
