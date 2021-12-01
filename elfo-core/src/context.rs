@@ -467,7 +467,7 @@ impl<C, K, S> Context<C, K, S> {
         });
 
         let message = envelope.message();
-        trace!("< {:?}", envelope);
+        trace!("< {:?}", message);
 
         if self.dumper.is_enabled() {
             self.dumper.dump(
