@@ -23,6 +23,7 @@ use crate::{
     signal::{Signal, SignalKind},
     subscription::SubscriptionManager,
     topology::Topology,
+    trace_id,
 };
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
@@ -128,7 +129,7 @@ pub async fn do_start<F: Future>(
     config.telemetry.per_actor_group = false;
     scope_shared.configure(&config);
 
-    let scope = Scope::new(addr, meta, Arc::new(scope_shared));
+    let scope = Scope::new(trace_id::generate(), addr, meta, Arc::new(scope_shared));
     let f = async move {
         start_entrypoints(&ctx, &topology).await?;
         wait_entrypoints(&ctx, &topology).await?;
@@ -162,6 +163,7 @@ async fn termination(ctx: Context, topology: Topology) {
         select! {
             _ = &mut termination => return,
             Some(envelope) = ctx.recv() => {
+                // TODO: `Terminate::closing` on second `Ctrl-C`
                 // `Ctrl-C` has been pressed again.
                 // Terminate immediately.
                 if envelope.is::<TerminateSystem>() {
@@ -181,6 +183,7 @@ async fn do_termination(ctx: Context, topology: Topology) {
 }
 
 async fn terminate_groups(ctx: &Context, topology: &Topology, user: bool) {
+    // TODO: specify order of system groups.
     let futures = topology
         .actor_groups()
         .filter(|group| user ^ group.name.starts_with("system."))

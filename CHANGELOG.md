@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Actors reuse a message's trace id when start instead of generating a new one.
+
 ## [0.1.30] - 2021-11-29
 ### Added
 - `elfo_busy_time_seconds` metric.

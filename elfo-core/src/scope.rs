@@ -28,14 +28,15 @@ impl Scope {
     /// Private API for now.
     #[doc(hidden)]
     pub fn test(actor: Addr, meta: Arc<ActorMeta>) -> Self {
-        Self::new(actor, meta, Arc::new(ScopeShared::new(Addr::NULL)))
+        Self::new(
+            trace_id::generate(),
+            actor,
+            meta,
+            Arc::new(ScopeShared::new(Addr::NULL)),
+        )
     }
 
-    pub(crate) fn new(actor: Addr, meta: Arc<ActorMeta>, shared: Arc<ScopeShared>) -> Self {
-        Self::with_trace_id(trace_id::generate(), actor, meta, shared)
-    }
-
-    pub(crate) fn with_trace_id(
+    pub(crate) fn new(
         trace_id: TraceId,
         actor: Addr,
         meta: Arc<ActorMeta>,
