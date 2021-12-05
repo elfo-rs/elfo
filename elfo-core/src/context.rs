@@ -458,12 +458,7 @@ impl<C, K, S> Context<C, K, S> {
                 self.respond(token, Ok(()));
                 envelope
             }
-            envelope => {
-                if envelope.is::<messages::Terminate>() {
-                    self.set_status(ActorStatus::TERMINATING);
-                }
-                envelope
-            }
+            envelope => envelope,
         });
 
         let message = envelope.message();
@@ -478,6 +473,12 @@ impl<C, K, S> Context<C, K, S> {
                 dumping::MessageKind::from_message_kind(envelope.message_kind()),
                 message.erase(),
             )
+        }
+
+        // We should change the status after dumping the original message
+        // in order to see `ActorStatusReport` after that message.
+        if envelope.is::<messages::Terminate>() {
+            self.set_status(ActorStatus::TERMINATING);
         }
 
         self.stats.message_waiting_time_seconds(&envelope);

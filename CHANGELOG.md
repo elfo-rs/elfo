@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actors reuse a message's trace id when start instead of generating a new one.
 - Actors reuse `Terminate`'s trace id after the mailbox is closed.
 
+### Fixed
+- `ActorStatusReport`s are dumped after incoming messages.
+
 ## [0.1.30] - 2021-11-29
 ### Added
 - `elfo_busy_time_seconds` metric.
