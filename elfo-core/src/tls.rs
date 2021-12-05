@@ -49,5 +49,10 @@ pub fn sync_scope<R>(meta: Arc<ActorMeta>, trace_id: TraceId, f: impl FnOnce() -
 }
 
 fn make_stupid_scope(meta: Arc<ActorMeta>) -> crate::scope::Scope {
-    crate::scope::Scope::new(Addr::NULL, meta, Arc::new(ScopeShared::new(Addr::NULL)))
+    crate::scope::Scope::new(
+        crate::scope::trace_id(),
+        Addr::NULL,
+        meta,
+        Arc::new(ScopeShared::new(Addr::NULL)),
+    )
 }

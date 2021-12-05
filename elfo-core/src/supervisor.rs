@@ -28,6 +28,7 @@ use crate::{
     routers::{Outcome, Router},
     scope::{self, Scope, ScopeShared},
     subscription::SubscriptionManager,
+    trace_id,
 };
 
 mod error_chain;
@@ -112,7 +113,7 @@ where
 
     // This method shouldn't be called often.
     fn in_scope(&self, f: impl FnOnce()) {
-        Scope::with_trace_id(
+        Scope::new(
             scope::trace_id(),
             Addr::NULL,
             self.meta.clone(),
@@ -343,6 +344,9 @@ where
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 decrement_gauge!("elfo_restarting_actors", 1.);
 
+                // Restarted actors should have a new trace id.
+                scope::set_trace_id(trace_id::generate());
+
                 if let Some(object) = sv.spawn(key.clone()) {
                     sv.objects.insert(key.clone(), object)
                 } else {
@@ -369,7 +373,7 @@ where
         );
         entry.insert(Object::new(addr, actor));
 
-        let scope = Scope::new(addr, meta, self.scope_shared.clone());
+        let scope = Scope::new(scope::trace_id(), addr, meta, self.scope_shared.clone());
         let fut = MeasurePoll::new(fut.instrument(span));
         tokio::spawn(scope.within(fut));
         let object = self.context.book().get_owned(addr).expect("just created");

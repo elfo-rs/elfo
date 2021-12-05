@@ -2,11 +2,12 @@ use futures_intrusive::{
     buffer::GrowingHeapBuf,
     channel::{self, GenericChannel},
 };
-use parking_lot::RawMutex;
+use parking_lot::{Mutex, RawMutex};
 
 use crate::{
     envelope::Envelope,
-    errors::{SendError, TryRecvError, TrySendError},
+    errors::{SendError, TrySendError},
+    trace_id::TraceId,
 };
 
 // TODO: make mailboxes bounded by time instead of size.
@@ -14,12 +15,14 @@ const LIMIT: usize = 100_000;
 
 pub(crate) struct Mailbox {
     queue: GenericChannel<RawMutex, Envelope, GrowingHeapBuf<Envelope>>,
+    close: Mutex<Option<TraceId>>,
 }
 
 impl Mailbox {
     pub(crate) fn new() -> Self {
         Self {
             queue: GenericChannel::with_capacity(LIMIT),
+            close: Mutex::new(None),
         }
     }
 
@@ -35,19 +38,40 @@ impl Mailbox {
         })
     }
 
-    pub(crate) async fn recv(&self) -> Option<Envelope> {
+    pub(crate) async fn recv(&self) -> RecvResult {
         let fut = self.queue.receive();
-        fut.await
+        match fut.await {
+            Some(envelope) => RecvResult::Data(envelope),
+            None => self.on_close(),
+        }
     }
 
-    pub(crate) fn try_recv(&self) -> Result<Envelope, TryRecvError> {
-        self.queue.try_receive().map_err(|err| match err {
-            channel::TryReceiveError::Empty => TryRecvError::Empty,
-            channel::TryReceiveError::Closed => TryRecvError::Closed,
-        })
+    pub(crate) fn try_recv(&self) -> Option<RecvResult> {
+        match self.queue.try_receive() {
+            Ok(envelope) => Some(RecvResult::Data(envelope)),
+            Err(channel::TryReceiveError::Empty) => None,
+            Err(channel::TryReceiveError::Closed) => Some(self.on_close()),
+        }
     }
 
-    pub(crate) fn close(&self) -> bool {
-        self.queue.close().is_newly_closed()
+    #[cold]
+    pub(crate) fn close(&self, trace_id: TraceId) -> bool {
+        if self.queue.close().is_newly_closed() {
+            *self.close.lock() = Some(trace_id);
+            true
+        } else {
+            false
+        }
     }
+
+    #[cold]
+    fn on_close(&self) -> RecvResult {
+        let trace_id = self.close.lock().expect("TODO");
+        RecvResult::Closed(trace_id)
+    }
+}
+
+pub(crate) enum RecvResult {
+    Data(Envelope),
+    Closed(TraceId),
 }

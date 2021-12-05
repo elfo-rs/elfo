@@ -7,6 +7,8 @@ use crate::envelope::Envelope;
 /// Note that implementations must be fused.
 #[allow(unreachable_pub)]
 pub trait Source: sealed::Sealed {
+    // TODO: use `RecvResult` instead?
+    #[doc(hidden)]
     fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>>;
 
     // TODO: try_recv.

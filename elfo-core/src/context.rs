@@ -15,11 +15,12 @@ use crate::{
     dumping::{self, Direction, Dumper},
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
+    mailbox::RecvResult,
     message::{Message, Request},
     messages,
     request_table::ResponseToken,
     routers::Singleton,
-    scope, trace_id,
+    scope,
 };
 
 pub(crate) use self::source::Source;
@@ -356,11 +357,11 @@ impl<C, K, S> Context<C, K, S> {
         C: 'static,
         S: Source,
     {
+        self.stats.message_handling_time_seconds();
+
         if self.stage == Stage::Closed {
             on_recv_after_close();
         }
-
-        self.stats.message_handling_time_seconds();
 
         // TODO: cache `OwnedEntry`?
         let object = self.book.get_owned(self.addr)?;
@@ -376,20 +377,21 @@ impl<C, K, S> Context<C, K, S> {
         let source_fut = poll_fn(|cx| self.source.poll_recv(cx));
         pin_mut!(source_fut);
 
-        let envelope = tokio::select! { biased;
-            envelope = mailbox_fut => envelope,
-            envelope = source_fut => envelope, // TODO: rerun select if `None`?
-            // Now no sources return `None`.
-        };
-
-        match envelope {
-            Some(envelope) => Some(self.post_recv(envelope)),
-            None => {
-                on_input_closed(&mut self.stage, actor);
-                // TODO: forward Terminate's trace_id.
-                scope::set_trace_id(trace_id::generate());
-                None
-            }
+        tokio::select! { biased;
+            result = mailbox_fut => {
+                match result {
+                    RecvResult::Data(envelope) => Some(self.post_recv(envelope)),
+                    RecvResult::Closed(trace_id) => {
+                        scope::set_trace_id(trace_id);
+                        on_input_closed(&mut self.stage, actor);
+                        None
+                    }
+                }
+            },
+            option = source_fut => {
+                // Sources cannot return `None` for now.
+                option.map(|e| self.post_recv(e))
+            },
         }
     }
 
@@ -412,11 +414,11 @@ impl<C, K, S> Context<C, K, S> {
     where
         C: 'static,
     {
+        self.stats.message_handling_time_seconds();
+
         if self.stage == Stage::Closed {
             on_recv_after_close();
         }
-
-        self.stats.message_handling_time_seconds();
 
         let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
         let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
@@ -427,18 +429,16 @@ impl<C, K, S> Context<C, K, S> {
 
         // TODO: poll the sources.
         match actor.try_recv() {
-            Ok(envelope) => {
+            Some(RecvResult::Data(envelope)) => {
                 drop(object);
                 Ok(self.post_recv(envelope))
             }
-            Err(err) => {
-                if err.is_closed() {
-                    on_input_closed(&mut self.stage, actor);
-                    // TODO: forward Terminate's trace_id.
-                    scope::set_trace_id(trace_id::generate());
-                }
-                Err(err)
+            Some(RecvResult::Closed(trace_id)) => {
+                scope::set_trace_id(trace_id);
+                on_input_closed(&mut self.stage, actor);
+                Err(TryRecvError::Closed)
             }
+            None => Err(TryRecvError::Empty),
         }
     }
 
