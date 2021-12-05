@@ -9,11 +9,12 @@ use tracing::{error, info};
 use crate::{
     addr::Addr,
     envelope::Envelope,
-    errors::{SendError, TryRecvError, TrySendError},
+    errors::{SendError, TrySendError},
     group::TerminationPolicy,
-    mailbox::Mailbox,
+    mailbox::{Mailbox, RecvResult},
     messages::{ActorStatusReport, Terminate},
     request_table::RequestTable,
+    scope,
     subscription::SubscriptionManager,
 };
 
@@ -192,11 +193,11 @@ impl Actor {
         self.mailbox.send(envelope).await
     }
 
-    pub(crate) async fn recv(&self) -> Option<Envelope> {
+    pub(crate) async fn recv(&self) -> RecvResult {
         self.mailbox.recv().await
     }
 
-    pub(crate) fn try_recv(&self) -> Result<Envelope, TryRecvError> {
+    pub(crate) fn try_recv(&self) -> Option<RecvResult> {
         self.mailbox.try_recv()
     }
 
@@ -217,7 +218,7 @@ impl Actor {
         drop(control);
 
         if status.is_finished() {
-            self.mailbox.close();
+            self.mailbox.close(scope::trace_id());
             self.finished.set();
         }
 
@@ -254,7 +255,7 @@ impl Actor {
     }
 
     pub(crate) fn close(&self) -> bool {
-        self.mailbox.close()
+        self.mailbox.close(scope::trace_id())
     }
 
     pub(crate) fn is_initializing(&self) -> bool {
