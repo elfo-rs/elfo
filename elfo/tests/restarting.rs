@@ -47,7 +47,7 @@ async fn it_restarts_with_timeout_after_failures() {
 
     let mut proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
 
-    for _ in 1..5 {
+    for i in 1..5 {
         proxy.send(Terminate).await;
 
         let r = AssertUnwindSafe(async { proxy.recv().await })
@@ -56,6 +56,6 @@ async fn it_restarts_with_timeout_after_failures() {
         assert!(r.is_err());
 
         // https://github.com/tokio-rs/tokio/issues/3985
-        tokio::time::sleep(Duration::from_millis(5001)).await;
+        tokio::time::sleep(Duration::from_millis(5000 * i + 1)).await;
     }
 }
