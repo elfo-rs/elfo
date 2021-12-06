@@ -148,12 +148,13 @@ impl Proxy {
     }
 
     pub async fn finished(&self) {
-        self.context.finished(self.subject_addr).await;
+        let fut = self.context.finished(self.subject_addr);
+        self.scope.clone().within(fut).await
     }
 
     /// Closes a mailbox of the proxy.
     pub fn close(&self) {
-        self.context.close();
+        self.scope.clone().sync_within(|| self.context.close());
     }
 }
 
