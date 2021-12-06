@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- configurer: add the `TryReloadConfigs` request.
+
 ### Changed
 - context: `request(msg).from(addr)` is deprecated in favor of `request_to(addr, msg)`.
 - Actors reuse a message's trace id when start instead of generating a new one.
