@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Actors reuse a message's trace id when start instead of generating a new one.
 - Actors reuse `Terminate`'s trace id after the mailbox is closed.
+- supervisor: restart actors with a linear backoff, starting immediately and with 5s step.
 
 ### Fixed
 - `ActorStatusReport`s are dumped after incoming messages.

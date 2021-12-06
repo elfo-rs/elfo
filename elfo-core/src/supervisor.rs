@@ -7,13 +7,13 @@ use futures::{future::BoxFuture, FutureExt};
 use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
-use tracing::{error_span, info, warn, Instrument, Span};
+use tracing::{debug, error_span, info, warn, Instrument, Span};
 
 use crate::{self as elfo};
 use elfo_macros::msg_raw as msg;
 use elfo_utils::CachePadded;
 
-use self::{error_chain::ErrorChain, measure_poll::MeasurePoll};
+use self::{backoff::Backoff, error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
     addr::Addr,
@@ -31,6 +31,7 @@ use crate::{
     trace_id,
 };
 
+mod backoff;
 mod error_chain;
 mod measure_poll;
 
@@ -63,7 +64,7 @@ macro_rules! get_or_spawn {
             None => $this
                 .objects
                 .entry(key.clone())
-                .or_try_insert_with(|| $this.spawn(key).ok_or(()))
+                .or_try_insert_with(|| $this.spawn(key, Default::default()).ok_or(()))
                 .map(|o| o.downgrade())
                 .ok(),
         }
@@ -272,7 +273,7 @@ where
         }
     }
 
-    fn spawn(self: &Arc<Self>, key: R::Key) -> Option<ObjectArc> {
+    fn spawn(self: &Arc<Self>, key: R::Key, mut backoff: Backoff) -> Option<ObjectArc> {
         let control = self.control.read();
         if control.stop_spawning {
             return None;
@@ -339,20 +340,29 @@ where
                 .set_status(new_status);
 
             if need_to_restart {
-                increment_gauge!("elfo_restarting_actors", 1.);
-                // TODO: use `backoff`.
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                decrement_gauge!("elfo_restarting_actors", 1.);
+                let after = backoff.next();
+
+                if after == Duration::from_secs(0) {
+                    debug!("actor will be restarted immediately");
+                } else {
+                    debug!(?after, "actor will be restarted");
+
+                    increment_gauge!("elfo_restarting_actors", 1.);
+                    tokio::time::sleep(after).await;
+                    decrement_gauge!("elfo_restarting_actors", 1.);
+                }
 
                 // Restarted actors should have a new trace id.
                 scope::set_trace_id(trace_id::generate());
 
-                if let Some(object) = sv.spawn(key.clone()) {
+                backoff.start();
+                if let Some(object) = sv.spawn(key.clone(), backoff) {
                     sv.objects.insert(key.clone(), object)
                 } else {
                     sv.objects.remove(&key).map(|(_, v)| v)
                 }
             } else {
+                debug!("actor won't be restarted");
                 sv.objects.remove(&key).map(|(_, v)| v)
             }
             .expect("where is the current actor?");

@@ -218,7 +218,7 @@ impl Actor {
         drop(control);
 
         if status.is_finished() {
-            self.mailbox.close(scope::trace_id());
+            self.close();
             self.finished.set();
         }
 
