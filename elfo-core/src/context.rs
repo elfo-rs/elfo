@@ -160,6 +160,27 @@ impl<C, K, S> Context<C, K, S> {
         RequestBuilder::new(self, request)
     }
 
+    /// Returns a request builder to the specified recipient.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Request and wait for a response.
+    /// let response = ctx.request_to(addr, SomeCommand).resolve().await?;
+    ///
+    /// // Request and wait for all responses.
+    /// for result in ctx.request_to(addr, SomeCommand).all().resolve().await {
+    ///     // ...
+    /// }
+    /// ```
+    #[inline]
+    pub fn request_to<R: Request>(
+        &self,
+        recipient: Addr,
+        request: R,
+    ) -> RequestBuilder<'_, C, K, S, R, Any> {
+        RequestBuilder::new(self, request).to(recipient)
+    }
+
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
         self.stats.sent_messages_total::<M>();
 
@@ -636,7 +657,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
 pub struct RequestBuilder<'c, C, K, S, R, M> {
     context: &'c Context<C, K, S>,
     request: R,
-    from: Option<Addr>,
+    to: Option<Addr>,
     marker: PhantomData<M>,
 }
 
@@ -649,7 +670,7 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
         Self {
             context,
             request,
-            from: None,
+            to: None,
             marker: PhantomData,
         }
     }
@@ -659,7 +680,7 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
         RequestBuilder {
             context: self.context,
             request: self.request,
-            from: self.from,
+            to: self.to,
             marker: PhantomData,
         }
     }
@@ -670,17 +691,24 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
         RequestBuilder {
             context: self.context,
             request: self.request,
-            from: self.from,
+            to: self.to,
             marker: PhantomData,
         }
     }
 }
 
 impl<'c, C, K, S, R, M> RequestBuilder<'c, C, K, S, R, M> {
+    #[deprecated(note = "use `Context::request_to()` instead")]
+    #[doc(hidden)]
+    #[inline]
+    pub fn from(self, addr: Addr) -> Self {
+        self.to(addr)
+    }
+
     /// Specified the recipient of the request.
     #[inline]
-    pub fn from(mut self, addr: Addr) -> Self {
-        self.from = Some(addr);
+    fn to(mut self, addr: Addr) -> Self {
+        self.to = Some(addr);
         self
     }
 }
@@ -699,7 +727,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
         let request_id = token.request_id;
         let kind = MessageKind::RequestAny(token);
 
-        let res = if let Some(recipient) = self.from {
+        let res = if let Some(recipient) = self.to {
             self.context.do_send_to(recipient, self.request, kind).await
         } else {
             self.context.do_send(self.request, kind).await
@@ -740,7 +768,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
         let request_id = token.request_id;
         let kind = MessageKind::RequestAll(token);
 
-        let res = if let Some(recipient) = self.from {
+        let res = if let Some(recipient) = self.to {
             self.context.do_send_to(recipient, self.request, kind).await
         } else {
             self.context.do_send(self.request, kind).await
@@ -788,7 +816,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Forgotten>
         let token = ResponseToken::forgotten(self.context.book.clone());
         let kind = MessageKind::RequestAny(token);
 
-        let res = if let Some(recipient) = self.from {
+        let res = if let Some(recipient) = self.to {
             self.context.do_send_to(recipient, self.request, kind).await
         } else {
             self.context.do_send(self.request, kind).await

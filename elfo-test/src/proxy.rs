@@ -126,8 +126,7 @@ impl Proxy {
     pub async fn subproxy(&self) -> Proxy {
         let f = async {
             self.context
-                .request(StealContext)
-                .from(self.context.group())
+                .request_to(self.context.group(), StealContext)
                 .resolve()
                 .await
                 .expect("cannot steal tester's context")

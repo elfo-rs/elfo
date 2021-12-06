@@ -212,8 +212,7 @@ impl Configurer {
             .map(|item| {
                 let group = item.group_name;
                 self.ctx
-                    .request(make_msg(item.config))
-                    .from(item.addr)
+                    .request_to(item.addr, make_msg(item.config))
                     .all()
                     .resolve()
                     .map(|res| (group, res))
@@ -249,7 +248,7 @@ async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
     let futures = config_list
         .iter()
         .cloned()
-        .map(|item| ctx.request(Ping).from(item.addr).all().resolve())
+        .map(|item| ctx.request_to(item.addr, Ping).all().resolve())
         .collect::<Vec<_>>();
 
     // TODO: use `try_join_all`.

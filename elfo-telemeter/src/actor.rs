@@ -147,8 +147,7 @@ fn start_server(ctx: &Context<Config>) -> JoinHandle<()> {
 
                     let f = async move {
                         let Rendered(output) = ctx
-                            .request(Render)
-                            .from(ctx.addr())
+                            .request_to(ctx.addr(), Render)
                             .resolve()
                             .await
                             .expect("failed to send to the telemeter");

@@ -34,8 +34,7 @@ async fn start_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
         .filter(|group| group.is_entrypoint)
         .map(|group| {
             let config = Default::default();
-            ctx.request(UpdateConfig { config })
-                .from(group.addr)
+            ctx.request_to(group.addr, UpdateConfig { config })
                 .resolve()
                 .or_else(|err| async move {
                     match err {
@@ -64,7 +63,7 @@ async fn wait_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
     let futures = topology
         .actor_groups()
         .filter(|group| group.is_entrypoint)
-        .map(|group| ctx.request(Ping).from(group.addr).resolve());
+        .map(|group| ctx.request_to(group.addr, Ping).resolve());
 
     futures::future::try_join_all(futures)
         .await
