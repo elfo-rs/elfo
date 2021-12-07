@@ -9,6 +9,8 @@ use crate::{
     config::AnyConfig,
 };
 
+/// Checks that the actor is able to handle messages.
+/// Routed to all actors in a group by default and handled implicitly by actors.
 #[message(ret = (), elfo = crate)]
 pub struct Ping;
 

@@ -210,6 +210,10 @@ where
                 let outcome = self.router.route(&envelope);
                 self.do_handle(envelope, outcome.or(Outcome::Broadcast))
             }
+            messages::Ping => {
+                let outcome = self.router.route(&envelope);
+                self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+            }
             _ => {
                 let outcome = self.router.route(&envelope);
                 self.do_handle(envelope, outcome.or(Outcome::Discard))
