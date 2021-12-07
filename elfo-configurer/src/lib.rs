@@ -84,10 +84,12 @@ impl Configurer {
         let mut ctx = self.ctx.clone().with(&hangup).with(user2);
         let can_start = self.load_and_update_configs(true).await.is_ok();
 
+        if !can_start {
+            panic!("configs are invalid at startup");
+        }
+
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
-                (Ping, token) if can_start => ctx.respond(token, ()),
-                (Ping, token) => drop(token),
                 ReloadConfigs { force } => {
                     let _ = self.load_and_update_configs(force).await;
                 }
@@ -181,7 +183,7 @@ impl Configurer {
             return Err(errors);
         }
 
-        // TODO: make `Ping` automatically handled.
+        // TODO: enable this.
         // if !ping(ctx, &config_list).await {
         // error!("ping failed");
         // ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent

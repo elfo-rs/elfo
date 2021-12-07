@@ -378,41 +378,49 @@ impl<C, K, S> Context<C, K, S> {
         C: 'static,
         S: Source,
     {
-        self.stats.message_handling_time_seconds();
+        loop {
+            self.stats.message_handling_time_seconds();
 
-        if self.stage == Stage::Closed {
-            on_recv_after_close();
-        }
+            if self.stage == Stage::Closed {
+                on_recv_after_close();
+            }
 
-        // TODO: cache `OwnedEntry`?
-        let object = self.book.get_owned(self.addr)?;
-        let actor = object.as_actor()?;
+            // TODO: cache `OwnedEntry`?
+            let object = self.book.get_owned(self.addr)?;
+            let actor = object.as_actor()?;
 
-        if self.stage == Stage::PreRecv {
-            on_first_recv(&mut self.stage, actor);
-        }
+            if self.stage == Stage::PreRecv {
+                on_first_recv(&mut self.stage, actor);
+            }
 
-        let mailbox_fut = actor.recv();
-        pin_mut!(mailbox_fut);
+            let mailbox_fut = actor.recv();
+            pin_mut!(mailbox_fut);
 
-        let source_fut = poll_fn(|cx| self.source.poll_recv(cx));
-        pin_mut!(source_fut);
+            let source_fut = poll_fn(|cx| self.source.poll_recv(cx));
+            pin_mut!(source_fut);
 
-        tokio::select! { biased;
-            result = mailbox_fut => {
-                match result {
-                    RecvResult::Data(envelope) => Some(self.post_recv(envelope)),
+            tokio::select! { biased;
+                result = mailbox_fut => match result {
+                    RecvResult::Data(envelope) => {
+                        if let Some(envelope) = self.post_recv(envelope) {
+                            return Some(envelope);
+                        }
+                    },
                     RecvResult::Closed(trace_id) => {
                         scope::set_trace_id(trace_id);
                         on_input_closed(&mut self.stage, actor);
-                        None
+                        return None;
                     }
-                }
-            },
-            option = source_fut => {
-                // Sources cannot return `None` for now.
-                option.map(|e| self.post_recv(e))
-            },
+                },
+                option = source_fut => {
+                    // Sources cannot return `None` for now.
+                    let envelope = option.expect("source cannot return None");
+
+                    if let Some(envelope) = self.post_recv(envelope) {
+                        return Some(envelope);
+                    }
+                },
+            }
         }
     }
 
@@ -435,35 +443,40 @@ impl<C, K, S> Context<C, K, S> {
     where
         C: 'static,
     {
-        self.stats.message_handling_time_seconds();
+        loop {
+            self.stats.message_handling_time_seconds();
 
-        if self.stage == Stage::Closed {
-            on_recv_after_close();
-        }
-
-        let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
-        let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
-
-        if self.stage == Stage::PreRecv {
-            on_first_recv(&mut self.stage, actor);
-        }
-
-        // TODO: poll the sources.
-        match actor.try_recv() {
-            Some(RecvResult::Data(envelope)) => {
-                drop(object);
-                Ok(self.post_recv(envelope))
+            if self.stage == Stage::Closed {
+                on_recv_after_close();
             }
-            Some(RecvResult::Closed(trace_id)) => {
-                scope::set_trace_id(trace_id);
-                on_input_closed(&mut self.stage, actor);
-                Err(TryRecvError::Closed)
+
+            let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
+            let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
+
+            if self.stage == Stage::PreRecv {
+                on_first_recv(&mut self.stage, actor);
             }
-            None => Err(TryRecvError::Empty),
+
+            // TODO: poll the sources.
+            match actor.try_recv() {
+                Some(RecvResult::Data(envelope)) => {
+                    drop(object);
+
+                    if let Some(envelope) = self.post_recv(envelope) {
+                        return Ok(envelope);
+                    }
+                }
+                Some(RecvResult::Closed(trace_id)) => {
+                    scope::set_trace_id(trace_id);
+                    on_input_closed(&mut self.stage, actor);
+                    return Err(TryRecvError::Closed);
+                }
+                None => return Err(TryRecvError::Empty),
+            }
         }
     }
 
-    fn post_recv(&mut self, envelope: Envelope) -> Envelope
+    fn post_recv(&mut self, envelope: Envelope) -> Option<Envelope>
     where
         C: 'static,
     {
@@ -503,7 +516,14 @@ impl<C, K, S> Context<C, K, S> {
         }
 
         self.stats.message_waiting_time_seconds(&envelope);
-        envelope
+
+        msg!(match envelope {
+            (messages::Ping, token) => {
+                self.respond(token, ());
+                None
+            }
+            envelope => Some(envelope),
+        })
     }
 
     /// This is a part of private API for now.
