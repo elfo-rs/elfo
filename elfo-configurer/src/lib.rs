@@ -1,13 +1,17 @@
 #![warn(rust_2018_idioms, unreachable_pub)]
 
-use std::path::{Path, PathBuf};
+use std::{
+    future::Future,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
-use futures::{future, FutureExt};
+use futures::future;
 use fxhash::FxHashMap;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
-use tokio::fs;
-use tracing::error;
+use tokio::{fs, select, time};
+use tracing::{error, warn};
 
 use elfo_core as elfo;
 use elfo_macros::msg_raw as msg;
@@ -24,6 +28,9 @@ pub use self::protocol::*;
 
 mod helpers;
 mod protocol;
+
+// How often warn if a group is updating a config too long.
+const WARN_INTERVAL: Duration = Duration::from_secs(5);
 
 pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Schema {
     let config = Value::deserialize(config).map_err(|err| err.to_string());
@@ -203,11 +210,13 @@ impl Configurer {
             .cloned()
             .map(|item| {
                 let group = item.group_name;
-                self.ctx
+                let fut = self
+                    .ctx
                     .request_to(item.addr, make_msg(item.config))
                     .all()
-                    .resolve()
-                    .map(|res| (group, res))
+                    .resolve();
+
+                wrap_request_future(fut, group)
             })
             .collect::<Vec<_>>();
 
@@ -232,6 +241,18 @@ impl Configurer {
             Ok(())
         } else {
             Err(errors)
+        }
+    }
+}
+
+async fn wrap_request_future<F: Future>(f: F, group_name: String) -> (String, F::Output) {
+    tokio::pin!(f);
+    loop {
+        select! {
+            output = &mut f => return (group_name, output),
+            _ = time::sleep(WARN_INTERVAL) => {
+                warn!(group = %group_name, "group is updating the config suspiciously long");
+            }
         }
     }
 }
