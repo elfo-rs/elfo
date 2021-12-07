@@ -9,6 +9,7 @@ members = [
     "elfo-logger",
     "elfo-dumper",
     "elfo-telemeter",
+    "elfo-pinger",
 ]
 
 [profile.release]

@@ -278,6 +278,7 @@ fn topology() -> elfo::Topology {
     let loggers = topology.local("system.loggers");
     let telemeters = topology.local("system.telemeters");
     let dumpers = topology.local("system.dumpers");
+    let pingers = topology.local("system.pingers");
     let configurers = topology.local("system.configurers").entrypoint();
 
     // Define links between actor groups.
@@ -293,6 +294,7 @@ fn topology() -> elfo::Topology {
     loggers.mount(logger);
     telemeters.mount(elfo::telemeter::new());
     dumpers.mount(elfo::dumper::new());
+    pingers.mount(elfo::pinger::new(&topology));
 
     // Actors can use `topology` as an extended service locator.
     // Usually it should be used for utilities only.

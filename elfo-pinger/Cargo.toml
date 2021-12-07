@@ -1,0 +1,16 @@
+[package]
+name = "elfo-pinger"
+version = "0.1.0"
+description = "Pings groups of the elfo system"
+authors = ["Paul Loyd <pavelko95@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+elfo-macros = { version = "0.1", path = "../elfo-macros" }
+elfo-core = { version = "0.1.25", path = "../elfo-core" }
+
+tokio = { version = "1", features = ["time"] }
+serde = { version = "1.0.120", features = ["derive"] }
+humantime-serde = "1"
+tracing = "0.1.25"

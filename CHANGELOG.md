@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - configurer: add the `TryReloadConfigs` request.
 - configurer: warn if a group is updating a config suspiciously long time.
+- pinger: an actor group that pings other groups to detect freezes.
 
 ### Changed
 - context: `request(msg).from(addr)` is deprecated in favor of `request_to(addr, msg)`.

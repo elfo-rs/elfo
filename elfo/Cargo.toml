@@ -41,7 +41,7 @@ harness = false
 required-features = ["full"]
 
 [features]
-full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter"]
+full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter", "elfo-pinger"]
 test-util = ["elfo-test", "elfo-core/test-util"]
 
 [dependencies]
@@ -52,6 +52,7 @@ elfo-configurer = { version = "0.1.9", path = "../elfo-configurer", optional = t
 elfo-logger = { version = "0.1.7", path = "../elfo-logger", optional = true }
 elfo-telemeter = { version = "0.1.5", path = "../elfo-telemeter", optional = true }
 elfo-dumper = { version = "0.1.4", path = "../elfo-dumper", optional = true }
+elfo-pinger = { version = "0.1", path = "../elfo-pinger", optional = true }
 
 [dev-dependencies]
 elfo-test = { version = "0.1", path = "../elfo-test" }
