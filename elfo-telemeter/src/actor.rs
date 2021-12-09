@@ -13,7 +13,7 @@ use elfo::{
 };
 
 use crate::{
-    config::Config,
+    config::{Config, Sink},
     protocol::{GetSnapshot, Snapshot},
     render::Renderer,
     storage::Storage,
@@ -58,6 +58,9 @@ impl Telemeter {
     }
 
     async fn main(mut self) {
+        // Now only prometheus is supported.
+        assert_eq!(self.ctx.config().sink, Sink::Prometheus);
+
         let interval = Interval::new(|| CompactionTick);
         let mut ctx = self.ctx.clone().with(&interval);
 

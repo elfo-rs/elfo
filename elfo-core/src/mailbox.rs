@@ -71,6 +71,7 @@ impl Mailbox {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum RecvResult {
     Data(Envelope),
     Closed(TraceId),
