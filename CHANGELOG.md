@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.31] - 2021-12-09
 ### Added
 - configurer: add the `TryReloadConfigs` request.
 - configurer: warn if a group is updating a config suspiciously long time.
@@ -260,7 +261,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.30...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.31...HEAD
+[0.1.31]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.30...elfo-0.1.31
 [0.1.30]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.29...elfo-0.1.30
 [0.1.29]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.28...elfo-0.1.29
 [0.1.28]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.27...elfo-0.1.28

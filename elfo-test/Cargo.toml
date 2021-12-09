@@ -1,6 +1,6 @@
 [package]
 name = "elfo-test"
-version = "0.1.17"
+version = "0.1.18"
 description = "Test utils"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
@@ -8,7 +8,7 @@ license = "MIT"
 
 [dependencies]
 elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
-elfo-core = { version = "0.1.25", path = "../elfo-core", features = ["test-util"] }
+elfo-core = { version = "0.1.26", path = "../elfo-core", features = ["test-util"] }
 elfo-configurer = { version = "0.1", path = "../elfo-configurer" }
 
 tokio = "1"
