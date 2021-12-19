@@ -48,6 +48,7 @@ mod exec;
 mod local;
 mod macros;
 mod mailbox;
+mod memory_tracker;
 mod message;
 mod object;
 mod permissions;
