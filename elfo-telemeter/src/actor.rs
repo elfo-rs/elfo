@@ -8,8 +8,8 @@ use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
 
 use elfo::{
-    messages::ConfigUpdated, scope, time::Interval, trace_id, ActorGroup, Context, MoveOwnership,
-    Schema,
+    messages::ConfigUpdated, scope, time::Interval, tracing::TraceId, ActorGroup, Context,
+    MoveOwnership, Schema,
 };
 
 use crate::{
@@ -158,7 +158,7 @@ fn start_server(ctx: &Context<Config>) -> JoinHandle<()> {
                         Ok::<_, HyperError>(Response::new(Body::from(output)))
                     };
 
-                    scope.set_trace_id(trace_id::generate());
+                    scope.set_trace_id(TraceId::generate());
                     scope.within(f)
                 }))
             }
@@ -172,7 +172,7 @@ fn start_server(ctx: &Context<Config>) -> JoinHandle<()> {
                 let _ = ctx1.send(ServerFailed(err.into())).await;
             };
 
-            scope1.set_trace_id(trace_id::generate());
+            scope1.set_trace_id(TraceId::generate());
             scope1.within(f).await;
         }
     })

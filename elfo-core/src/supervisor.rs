@@ -28,7 +28,7 @@ use crate::{
     routers::{Outcome, Router},
     scope::{self, Scope, ScopeShared},
     subscription::SubscriptionManager,
-    trace_id,
+    tracing::TraceId,
 };
 
 mod backoff;
@@ -357,7 +357,7 @@ where
                 }
 
                 // Restarted actors should have a new trace id.
-                scope::set_trace_id(trace_id::generate());
+                scope::set_trace_id(TraceId::generate());
 
                 backoff.start();
                 if let Some(object) = sv.spawn(key.clone(), backoff) {

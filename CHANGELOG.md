@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - init: rename to `system.init` and enable metrics for it.
+- The `trace_id` module is deprecated in favor of `tracing`.
 
 ## [0.1.31] - 2021-12-09
 ### Added

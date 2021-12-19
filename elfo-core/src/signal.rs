@@ -15,7 +15,7 @@ use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
-    trace_id,
+    tracing::TraceId,
 };
 
 /// `Source` that watches signals.
@@ -145,7 +145,7 @@ where
 
         let message = (self.message_factory)();
         let kind = MessageKind::Regular { sender: Addr::NULL };
-        let trace_id = trace_id::generate();
+        let trace_id = TraceId::generate();
         let envelope = Envelope::with_trace_id(message, kind, trace_id).upcast();
         Poll::Ready(Some(envelope))
     }

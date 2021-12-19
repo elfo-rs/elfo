@@ -13,7 +13,7 @@ use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
-    trace_id::{self, TraceId},
+    tracing::TraceId,
 };
 
 // === Stream ===
@@ -170,6 +170,6 @@ impl<M: Message> StreamItem for (TraceId, M) {
 impl<M: Message> StreamItem for M {
     #[doc(hidden)]
     fn unify(self) -> Envelope {
-        (trace_id::generate(), self).unify()
+        (TraceId::generate(), self).unify()
     }
 }

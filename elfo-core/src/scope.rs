@@ -6,7 +6,7 @@ use crate::{
     config::SystemConfig,
     logging::_priv::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
-    trace_id::{self, TraceId},
+    tracing::TraceId,
 };
 
 tokio::task_local! {
@@ -29,7 +29,7 @@ impl Scope {
     #[doc(hidden)]
     pub fn test(actor: Addr, meta: Arc<ActorMeta>) -> Self {
         Self::new(
-            trace_id::generate(),
+            TraceId::generate(),
             actor,
             meta,
             Arc::new(ScopeShared::new(Addr::NULL)),
