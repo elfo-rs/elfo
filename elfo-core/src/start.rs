@@ -7,21 +7,24 @@ use tokio::{
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
-use elfo_macros::message;
+use crate::{self as elfo};
+use elfo_macros::{message, msg_raw as msg};
 
 use crate::{
-    actor::{Actor, ActorMeta},
+    actor::{Actor, ActorMeta, ActorStatus},
     addr::Addr,
     config::SystemConfig,
     context::Context,
     demux::Demux,
     errors::{RequestError, StartError},
+    memory_tracker::MemoryTracker,
     message,
     messages::{Ping, Terminate, UpdateConfig},
     object::Object,
     scope::{Scope, ScopeShared},
     signal::{Signal, SignalKind},
     subscription::SubscriptionManager,
+    time::Interval,
     topology::Topology,
     trace_id,
 };
@@ -140,20 +143,43 @@ pub async fn do_start<F: Future>(
 #[message(elfo = crate)]
 struct TerminateSystem;
 
+#[message(elfo = crate)]
+struct CheckMemoryUsageTick;
+
+// TODO: make these values configurable.
 const SEND_CLOSING_TERMINATE_AFTER: Duration = Duration::from_secs(30);
 const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(45);
+const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
+const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(7);
 
 async fn termination(ctx: Context, topology: Topology) {
-    let term = Signal::new(SignalKind::Terminate, || TerminateSystem);
-    let ctrl_c = Signal::new(SignalKind::CtrlC, || TerminateSystem);
+    let term_signal = Signal::new(SignalKind::Terminate, || TerminateSystem);
+    let ctrl_c_signal = Signal::new(SignalKind::CtrlC, || TerminateSystem);
+    let memory_usage_interval = Interval::new(|| CheckMemoryUsageTick);
 
-    let mut ctx = ctx.with(&term).with(&ctrl_c);
+    let mut ctx = ctx
+        .with(&term_signal)
+        .with(&ctrl_c_signal)
+        .with(&memory_usage_interval);
+
+    let memory_tracker = MemoryTracker::new(MAX_MEMORY_USAGE_RATIO);
+    if memory_tracker.is_some() {
+        memory_usage_interval.set_period(CHECK_MEMORY_USAGE_INTERVAL);
+    }
 
     while let Some(envelope) = ctx.recv().await {
-        if envelope.is::<TerminateSystem>() {
-            break;
-        }
+        msg!(match envelope {
+            TerminateSystem => break,
+            CheckMemoryUsageTick => {
+                if !memory_tracker.as_ref().map_or(true, |mt| mt.check()) {
+                    error!("maximum memory usage is reached, forcibly terminating");
+                    let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
+                }
+            }
+        });
     }
+
+    ctx.set_status(ActorStatus::TERMINATING);
 
     let termination = do_termination(ctx.pruned(), topology);
     pin!(termination);
