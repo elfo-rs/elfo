@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - init: check memory usage and terminate the system gracefully if the threshold is reached (`90%`).
 - init: add the `elfo_memory_usage` metric.
 
+### Changed
+- init: rename to `system.init` and enable metrics for it.
+
 ## [0.1.31] - 2021-12-09
 ### Added
 - configurer: add the `TryReloadConfigs` request.

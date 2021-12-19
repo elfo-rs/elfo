@@ -110,28 +110,27 @@ pub async fn do_start<F: Future>(
     let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
 
     let meta = Arc::new(ActorMeta {
-        group: "init".into(),
+        group: "system.init".into(),
         key: "_".into(), // Just like `Singleton`.
     });
 
-    // XXX
-    entry.insert(Object::new(
+    // XXX: create a real group.
+    let actor = Actor::new(
+        meta.clone(),
         addr,
-        Actor::new(
-            meta.clone(),
-            addr,
-            Default::default(),
-            Arc::new(SubscriptionManager::new(ctx.clone())),
-        ),
-    ));
+        Default::default(),
+        Arc::new(SubscriptionManager::new(ctx.clone())),
+    );
 
-    let scope_shared = ScopeShared::new(Addr::NULL);
+    let scope_shared = ScopeShared::new(addr);
     let mut config = SystemConfig::default();
     config.logging.max_level = LevelFilter::INFO;
-    config.telemetry.per_actor_group = false;
     scope_shared.configure(&config);
 
     let scope = Scope::new(trace_id::generate(), addr, meta, Arc::new(scope_shared));
+    scope.clone().sync_within(|| actor.on_start()); // need to emit initial metrics
+    entry.insert(Object::new(addr, actor));
+
     let f = async move {
         start_entrypoints(&ctx, &topology).await?;
         wait_entrypoints(&ctx, &topology).await?;
