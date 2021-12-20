@@ -53,8 +53,8 @@ mod message;
 mod object;
 mod permissions;
 mod request_table;
-mod sealed;
-mod start;
+mod source;
+mod start; // TODO: rename to `init`
 mod subscription;
 mod supervisor;
 

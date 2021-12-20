@@ -6,13 +6,12 @@ use std::{
 
 use futures::Stream as FutStream;
 use parking_lot::Mutex;
+use sealed::sealed;
 
 use crate::{
     addr::Addr,
-    context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
-    sealed::Sealed,
     trace_id::{self, TraceId},
 };
 
@@ -57,9 +56,8 @@ impl<S> Stream<S> {
     }
 }
 
-impl<S> Sealed for Stream<S> {}
-
-impl<S> Source for Stream<S>
+#[sealed]
+impl<S> crate::source::Source for Stream<S>
 where
     S: FutStream,
     S::Item: StreamItem,

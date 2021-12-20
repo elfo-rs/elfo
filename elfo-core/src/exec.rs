@@ -1,6 +1,6 @@
 use std::{error::Error, future::Future};
 
-use crate::sealed::Sealed;
+use sealed::sealed;
 
 pub(crate) trait Exec<CTX>: Send + Sync + 'static {
     type Output: Future + Send + 'static;
@@ -24,18 +24,19 @@ where
     }
 }
 
-pub trait ExecResult: Sealed {
+#[sealed]
+pub trait ExecResult {
     fn unify(self) -> Result<(), BoxedError>;
 }
 
+#[sealed]
 impl ExecResult for () {
     fn unify(self) -> Result<(), BoxedError> {
         Ok(())
     }
 }
 
-impl<E: Into<BoxedError>> Sealed for Result<(), E> {}
-
+#[sealed]
 impl<E> ExecResult for Result<(), E>
 where
     E: Into<BoxedError>,

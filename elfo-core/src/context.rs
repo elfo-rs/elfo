@@ -21,12 +21,11 @@ use crate::{
     request_table::ResponseToken,
     routers::Singleton,
     scope,
+    source::{Combined, Source},
 };
 
-pub(crate) use self::source::Source;
-use self::{source::Combined, stats::Stats};
+use self::stats::Stats;
 
-mod source;
 mod stats;
 
 /// An actor execution context.

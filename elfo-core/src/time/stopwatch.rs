@@ -5,14 +5,13 @@ use std::{
 };
 
 use parking_lot::Mutex;
+use sealed::sealed;
 use tokio::time::{self, Duration, Instant, Sleep};
 
 use crate::{
     addr::Addr,
-    context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
-    sealed::Sealed,
     trace_id,
 };
 
@@ -56,9 +55,8 @@ impl<F> Stopwatch<F> {
     }
 }
 
-impl<F> Sealed for Stopwatch<F> {}
-
-impl<M, F> Source for Stopwatch<F>
+#[sealed]
+impl<M, F> crate::source::Source for Stopwatch<F>
 where
     F: Fn() -> M,
     M: Message,
@@ -90,6 +88,8 @@ mod tests {
     use tokio::time;
 
     use elfo_macros::message;
+
+    use crate::source::Source;
 
     #[message(elfo = crate)]
     struct Timeout;
