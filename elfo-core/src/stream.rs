@@ -83,18 +83,20 @@ where
 
 // === StreamItem ===
 
-// TODO: seal it.
+#[sealed]
 pub trait StreamItem {
     #[doc(hidden)]
     fn unify(self) -> Envelope;
 }
 
+#[sealed]
 impl StreamItem for Envelope {
     fn unify(self) -> Envelope {
         self
     }
 }
 
+#[sealed]
 impl<M: Message> StreamItem for (TraceId, M) {
     fn unify(self) -> Envelope {
         let kind = MessageKind::Regular { sender: Addr::NULL };
@@ -102,6 +104,7 @@ impl<M: Message> StreamItem for (TraceId, M) {
     }
 }
 
+#[sealed]
 impl<M: Message> StreamItem for M {
     fn unify(self) -> Envelope {
         (trace_id::generate(), self).unify()
