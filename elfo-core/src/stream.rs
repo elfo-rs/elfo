@@ -62,7 +62,7 @@ impl<S> Sealed for Stream<S> {}
 impl<S> Source for Stream<S>
 where
     S: FutStream,
-    S::Item: TracedItem,
+    S::Item: StreamItem,
 {
     fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
         let mut state = self.0.lock();
@@ -73,12 +73,7 @@ where
         };
 
         match stream.as_mut().poll_next(cx) {
-            Poll::Ready(Some(message)) => {
-                let (trace_id, message) = message.unify();
-                let kind = MessageKind::Regular { sender: Addr::NULL };
-                let envelope = Envelope::with_trace_id(message, kind, trace_id).upcast();
-                Poll::Ready(Some(envelope))
-            }
+            Poll::Ready(Some(item)) => Poll::Ready(Some(item.unify())),
             Poll::Ready(None) => {
                 *state = StreamState::Closed;
                 Poll::Ready(None)
@@ -88,28 +83,29 @@ where
     }
 }
 
-// === TracedItem ===
+// === StreamItem ===
 
 // TODO: seal it.
-pub trait TracedItem {
-    type Message: Message;
-    fn unify(self) -> (TraceId, Self::Message);
+pub trait StreamItem {
+    #[doc(hidden)]
+    fn unify(self) -> Envelope;
 }
 
-impl<M: Message> TracedItem for M {
-    type Message = M;
-
-    #[inline]
-    fn unify(self) -> (TraceId, M) {
-        (trace_id::generate(), self)
+impl StreamItem for Envelope {
+    fn unify(self) -> Envelope {
+        self
     }
 }
 
-impl<M: Message> TracedItem for (TraceId, M) {
-    type Message = M;
+impl<M: Message> StreamItem for (TraceId, M) {
+    fn unify(self) -> Envelope {
+        let kind = MessageKind::Regular { sender: Addr::NULL };
+        Envelope::with_trace_id(self.1, kind, self.0).upcast()
+    }
+}
 
-    #[inline]
-    fn unify(self) -> (TraceId, M) {
-        self
+impl<M: Message> StreamItem for M {
+    fn unify(self) -> Envelope {
+        (trace_id::generate(), self).unify()
     }
 }
