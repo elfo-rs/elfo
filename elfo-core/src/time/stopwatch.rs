@@ -12,6 +12,7 @@ use crate::{
     context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
+    sealed::Sealed,
     trace_id,
 };
 
@@ -54,6 +55,8 @@ impl<F> Stopwatch<F> {
         self.schedule_at(Instant::now() + duration)
     }
 }
+
+impl<F> Sealed for Stopwatch<F> {}
 
 impl<M, F> Source for Stopwatch<F>
 where

@@ -12,6 +12,7 @@ use crate::{
     context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
+    sealed::Sealed,
     trace_id,
 };
 
@@ -72,6 +73,8 @@ impl<F> Interval<F> {
         state.sleep.as_mut().reset(new_deadline);
     }
 }
+
+impl<F> Sealed for Interval<F> {}
 
 impl<M, F> Source for Interval<F>
 where

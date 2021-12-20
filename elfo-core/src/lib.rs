@@ -53,6 +53,7 @@ mod message;
 mod object;
 mod permissions;
 mod request_table;
+mod sealed;
 mod start;
 mod subscription;
 mod supervisor;

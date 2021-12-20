@@ -12,8 +12,11 @@ use crate::{
     context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
+    sealed::Sealed,
     trace_id::{self, TraceId},
 };
+
+// === Stream ===
 
 /// A wrapper around `futures::Stream` implementing `Source` trait.
 ///
@@ -28,7 +31,7 @@ enum StreamState<S> {
 
 impl<S> Stream<S> {
     pub fn new(stream: S) -> Self {
-        Stream(Mutex::new(StreamState::Active(Box::pin(stream))))
+        Self(Mutex::new(StreamState::Active(Box::pin(stream))))
     }
 
     pub fn set(&self, stream: S) {
@@ -53,6 +56,8 @@ impl<S> Stream<S> {
         )
     }
 }
+
+impl<S> Sealed for Stream<S> {}
 
 impl<S> Source for Stream<S>
 where
@@ -83,6 +88,9 @@ where
     }
 }
 
+// === TracedItem ===
+
+// TODO: seal it.
 pub trait TracedItem {
     type Message: Message;
     fn unify(self) -> (TraceId, Self::Message);

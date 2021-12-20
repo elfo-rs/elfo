@@ -15,6 +15,7 @@ use crate::{
     context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
+    sealed::Sealed,
     trace_id,
 };
 
@@ -118,6 +119,8 @@ fn create_by_kind(kind: SignalKind) -> io::Result<unix::Signal> {
 
     unix::signal(kind)
 }
+
+impl<F> Sealed for Signal<F> {}
 
 impl<M, F> Source for Signal<F>
 where

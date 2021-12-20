@@ -2,11 +2,11 @@ use std::task::{self, Poll};
 
 use derive_more::Constructor;
 
-use crate::envelope::Envelope;
+use crate::{envelope::Envelope, sealed::Sealed};
 
 /// Note that implementations must be fused.
 #[allow(unreachable_pub)]
-pub trait Source: sealed::Sealed {
+pub trait Source: Sealed {
     // TODO: use `RecvResult` instead?
     #[doc(hidden)]
     fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>>;
@@ -35,6 +35,8 @@ pub struct Combined<L, R> {
     right: R,
 }
 
+impl<L, R> Sealed for Combined<L, R> {}
+
 impl<L, R> Source for Combined<L, R>
 where
     L: Source,
@@ -51,16 +53,4 @@ where
             },
         }
     }
-}
-
-mod sealed {
-    use super::*;
-    pub trait Sealed {}
-    impl<S: Sealed> Sealed for &S {}
-    impl Sealed for () {}
-    impl<L, R> Sealed for Combined<L, R> {}
-    impl<F> Sealed for crate::time::Interval<F> {}
-    impl<F> Sealed for crate::time::Stopwatch<F> {}
-    impl<S> Sealed for crate::stream::Stream<S> {}
-    impl<F> Sealed for crate::signal::Signal<F> {}
 }
