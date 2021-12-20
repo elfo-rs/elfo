@@ -1,10 +1,13 @@
 use std::{
+    future::Future,
     mem,
     pin::Pin,
     task::{self, Poll},
 };
 
-use futures::Stream as FutStream;
+use futures::{
+    channel::mpsc, sink::SinkExt as _, stream, stream::StreamExt as _, Stream as FutStream,
+};
 use parking_lot::Mutex;
 use sealed::sealed;
 
@@ -56,6 +59,17 @@ impl<S> Stream<S> {
     }
 }
 
+impl Stream<()> {
+    pub fn generate<F>(gen: impl FnOnce(Yielder) -> F) -> Stream<impl FutStream<Item = Envelope>>
+    where
+        F: Future<Output = ()>,
+    {
+        let (tx, rx) = mpsc::channel(0);
+        let fake_stream = stream::once(gen(Yielder(tx))).filter_map(|_| async { None });
+        Stream::new(stream::select(fake_stream, rx))
+    }
+}
+
 #[sealed]
 impl<S> crate::source::Source for Stream<S>
 where
@@ -78,6 +92,17 @@ where
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+// === Yielder ===
+
+pub struct Yielder(mpsc::Sender<Envelope>);
+
+impl Yielder {
+    /// Yields a message from the generated stream.
+    pub async fn emit(&mut self, item: impl StreamItem) {
+        let _ = self.0.send(item.unify()).await;
     }
 }
 
