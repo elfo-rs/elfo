@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{trace_id::TraceIdLayout, TraceId};
+use super::trace_id::{TraceId, TraceIdLayout};
 use crate::{node, time};
 
 // === ChunkRegistry ===

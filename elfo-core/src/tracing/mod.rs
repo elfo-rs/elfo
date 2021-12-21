@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 use self::generator::{ChunkRegistry, Generator};
 
-pub use self::trace_id::TraceId;
+pub use self::{trace_id::TraceId, validator::TraceIdValidator};
 
 impl TraceId {
     /// Generates a new trace id according to [the schema](https://actoromicon.rs/ch05-04-tracing.html#traceid).
@@ -21,3 +21,4 @@ thread_local! {
 
 mod generator;
 mod trace_id;
+mod validator;

@@ -23,6 +23,7 @@ use elfo_macros::msg_raw as msg;
 
 // === ActorMeta ===
 
+/// Represents meta information about actor: his group and key.
 #[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActorMeta {
     pub group: String,
@@ -31,6 +32,8 @@ pub struct ActorMeta {
 
 // === ActorStatus ===
 
+/// Represents the current status of an actor.
+/// See [The Actoromicon](https://actoromicon.rs/ch03-01-actor-lifecycle.html) for details.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActorStatus {
     kind: ActorStatusKind,

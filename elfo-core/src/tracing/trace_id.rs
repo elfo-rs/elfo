@@ -66,6 +66,14 @@ pub(crate) struct TraceIdLayout {
 #[derive(Clone, Copy, Deref)]
 pub(crate) struct TruncatedTime(u32);
 
+impl TruncatedTime {
+    pub(crate) fn abs_delta(self, other: TruncatedTime) -> u32 {
+        let a = self.0.wrapping_sub(other.0) & 0x1ff_ffff;
+        let b = other.0.wrapping_sub(self.0) & 0x1ff_ffff;
+        a.min(b)
+    }
+}
+
 impl From<SystemTime> for TruncatedTime {
     fn from(time: SystemTime) -> Self {
         let unixtime = time
@@ -86,6 +94,26 @@ impl From<u32> for Bottom {
         debug_assert!((1..=0x3f_ffff).contains(&value));
         Self(value)
     }
+}
+
+#[test]
+fn truncated_time_delta_secs() {
+    let check = |a, b, expected| {
+        assert_eq!(
+            TruncatedTime(a).abs_delta(TruncatedTime(b)),
+            expected,
+            "{} abs {} != {}",
+            a,
+            b,
+            expected
+        );
+    };
+
+    check(5, 5, 0);
+    check(25, 50, 25);
+    check((1 << 25) - 15, (1 << 25) - 5, 10);
+    check(0, (1 << 25) - 5, 5);
+    check(1, (1 << 25) - 5, 6);
 }
 
 #[test]
