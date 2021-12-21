@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - stream: add `Stream::generate()` to generate a stream from a generator.
 - init: check memory usage and terminate the system gracefully if the threshold is reached (`90%`).
 - init: add the `elfo_memory_usage` metric.
+- tracing: `TraceIdValidator` to check incoming raw trace ids.
 
 ### Changed
 - init: rename to `system.init` and enable metrics for it.
+- The `trace_id` module is deprecated in favor of `tracing`.
 
 ## [0.1.31] - 2021-12-09
 ### Added

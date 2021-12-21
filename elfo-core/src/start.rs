@@ -26,7 +26,7 @@ use crate::{
     subscription::SubscriptionManager,
     time::Interval,
     topology::Topology,
-    trace_id,
+    tracing::TraceId,
 };
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
@@ -127,7 +127,7 @@ pub async fn do_start<F: Future>(
     config.logging.max_level = LevelFilter::INFO;
     scope_shared.configure(&config);
 
-    let scope = Scope::new(trace_id::generate(), addr, meta, Arc::new(scope_shared));
+    let scope = Scope::new(TraceId::generate(), addr, meta, Arc::new(scope_shared));
     scope.clone().sync_within(|| actor.on_start()); // need to emit initial metrics
     entry.insert(Object::new(addr, actor));
 
