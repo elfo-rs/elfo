@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.32] - 2021-12-21
 ### Added
 - stream: add `Stream::generate()` to generate a stream from a generator.
 - init: check memory usage and terminate the system gracefully if the threshold is reached (`90%`).
@@ -270,7 +272,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.31...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.32...HEAD
+[0.1.32]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.31...elfo-0.1.32
 [0.1.31]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.30...elfo-0.1.31
 [0.1.30]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.29...elfo-0.1.30
 [0.1.29]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.28...elfo-0.1.29

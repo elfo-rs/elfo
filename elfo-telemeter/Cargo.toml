@@ -1,6 +1,6 @@
 [package]
 name = "elfo-telemeter"
-version = "0.1.5"
+version = "0.1.6"
 description = "A telemeter collecting metrics"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
@@ -9,7 +9,7 @@ keywords = ["metrics", "telemetry", "prometheus"]
 
 [dependencies]
 elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
-elfo-core = { version = "0.1.21", path = "../elfo-core" }
+elfo-core = { version = "0.1.27", path = "../elfo-core" }
 
 tokio = "1"
 hyper = { version = "0.14", default-features = false, features = ["server", "tcp", "http1"] }
