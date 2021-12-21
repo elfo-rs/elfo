@@ -80,3 +80,34 @@ async fn it_restores_trace_id() {
     assert_msg_eq!(proxy.recv().await, SomeMessage(5));
     assert_msg_eq!(proxy.recv().await, SomeMessage(6));
 }
+
+#[message]
+#[derive(PartialEq)]
+struct SomeMessage2(u32);
+
+#[tokio::test]
+async fn it_generates_stream() {
+    let group = ActorGroup::new().exec(|ctx| async move {
+        let stream = stream::Stream::generate(|mut y| async move {
+            y.emit(SomeMessage(1)).await;
+            y.emit(SomeMessage2(2)).await;
+        });
+
+        let mut ctx = ctx.with(&stream);
+
+        while let Some(envelope) = ctx.recv().await {
+            msg!(match envelope {
+                SomeMessage(x) => {
+                    ctx.send(SomeMessage(x)).await.unwrap()
+                }
+                SomeMessage2(x) => {
+                    ctx.send(SomeMessage2(x)).await.unwrap()
+                }
+            })
+        }
+    });
+
+    let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
+    assert_msg_eq!(proxy.recv().await, SomeMessage(1));
+    assert_msg_eq!(proxy.recv().await, SomeMessage2(2));
+}

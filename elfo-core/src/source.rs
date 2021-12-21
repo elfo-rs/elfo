@@ -1,12 +1,13 @@
 use std::task::{self, Poll};
 
 use derive_more::Constructor;
+use sealed::sealed;
 
 use crate::envelope::Envelope;
 
 /// Note that implementations must be fused.
-#[allow(unreachable_pub)]
-pub trait Source: sealed::Sealed {
+#[sealed(pub(crate))]
+pub trait Source {
     // TODO: use `RecvResult` instead?
     #[doc(hidden)]
     fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>>;
@@ -14,6 +15,7 @@ pub trait Source: sealed::Sealed {
     // TODO: try_recv.
 }
 
+#[sealed]
 impl<S: Source> Source for &S {
     #[inline]
     fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
@@ -21,6 +23,7 @@ impl<S: Source> Source for &S {
     }
 }
 
+#[sealed]
 impl Source for () {
     #[inline]
     fn poll_recv(&self, _cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
@@ -35,6 +38,7 @@ pub struct Combined<L, R> {
     right: R,
 }
 
+#[sealed]
 impl<L, R> Source for Combined<L, R>
 where
     L: Source,
@@ -51,16 +55,4 @@ where
             },
         }
     }
-}
-
-mod sealed {
-    use super::*;
-    pub trait Sealed {}
-    impl<S: Sealed> Sealed for &S {}
-    impl Sealed for () {}
-    impl<L, R> Sealed for Combined<L, R> {}
-    impl<F> Sealed for crate::time::Interval<F> {}
-    impl<F> Sealed for crate::time::Stopwatch<F> {}
-    impl<S> Sealed for crate::stream::Stream<S> {}
-    impl<F> Sealed for crate::signal::Signal<F> {}
 }

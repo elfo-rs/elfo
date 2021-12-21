@@ -21,12 +21,11 @@ use crate::{
     request_table::ResponseToken,
     routers::Singleton,
     scope,
+    source::{Combined, Source},
 };
 
-pub(crate) use self::source::Source;
-use self::{source::Combined, stats::Stats};
+use self::stats::Stats;
 
-mod source;
 mod stats;
 
 /// An actor execution context.
@@ -392,6 +391,8 @@ impl<C, K, S> Context<C, K, S> {
             if self.stage == Stage::PreRecv {
                 on_first_recv(&mut self.stage, actor);
             }
+
+            // TODO: reset `trace_id` to `None`?
 
             let mailbox_fut = actor.recv();
             pin_mut!(mailbox_fut);

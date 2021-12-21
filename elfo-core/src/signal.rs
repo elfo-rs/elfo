@@ -5,6 +5,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
+use sealed::sealed;
 use tokio::signal;
 #[cfg(unix)]
 use tokio::signal::unix;
@@ -12,7 +13,6 @@ use tokio_util::sync::ReusableBoxFuture;
 
 use crate::{
     addr::Addr,
-    context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
     trace_id,
@@ -119,7 +119,8 @@ fn create_by_kind(kind: SignalKind) -> io::Result<unix::Signal> {
     unix::signal(kind)
 }
 
-impl<M, F> Source for Signal<F>
+#[sealed]
+impl<M, F> crate::source::Source for Signal<F>
 where
     F: Fn() -> M,
     M: Message,
@@ -159,7 +160,7 @@ mod tests {
 
     use elfo_macros::message;
 
-    use crate::assert_msg;
+    use crate::{assert_msg, source::Source};
 
     #[message(elfo = crate)]
     struct SomeSignal;

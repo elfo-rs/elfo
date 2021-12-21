@@ -5,11 +5,11 @@ use std::{
 };
 
 use parking_lot::Mutex;
+use sealed::sealed;
 use tokio::time::{self, Duration, Instant, Sleep};
 
 use crate::{
     addr::Addr,
-    context::Source,
     envelope::{Envelope, MessageKind},
     message::Message,
     trace_id,
@@ -73,7 +73,8 @@ impl<F> Interval<F> {
     }
 }
 
-impl<M, F> Source for Interval<F>
+#[sealed]
+impl<M, F> crate::source::Source for Interval<F>
 where
     F: Fn() -> M,
     M: Message,
