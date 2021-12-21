@@ -14,10 +14,10 @@ pub use crate::{
     context::{Context, RequestBuilder},
     envelope::Envelope,
     group::{ActorGroup, Schema},
+    init::{start, try_start},
     local::{Local, MoveOwnership},
     message::{Message, Request},
     request_table::ResponseToken,
-    start::{start, try_start},
     topology::Topology,
 };
 
@@ -54,6 +54,7 @@ mod context;
 mod demux;
 mod envelope;
 mod exec;
+mod init;
 mod local;
 mod macros;
 mod mailbox;
@@ -63,7 +64,6 @@ mod object;
 mod permissions;
 mod request_table;
 mod source;
-mod start; // TODO: rename to `init`
 mod subscription;
 mod supervisor;
 
@@ -90,9 +90,9 @@ pub mod _priv {
 
     pub use crate::{
         envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
+        init::do_start,
         message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},
         permissions::{AtomicPermissions, Permissions},
-        start::do_start,
     };
     pub use linkme;
     pub use metrics;
