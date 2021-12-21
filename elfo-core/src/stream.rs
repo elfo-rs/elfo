@@ -20,8 +20,7 @@ use crate::{
 
 /// A wrapper around [`futures::Stream`] implementing `Source` trait.
 ///
-/// Stream items must be messages or pairs `(Option<trace_id>, message)`,
-/// if `trace_id` is generated.
+/// Stream items must implement [`Message`].
 pub struct Stream<S>(Mutex<StreamState<S>>);
 
 enum StreamState<S> {
@@ -67,7 +66,7 @@ impl Stream<()> {
     /// Generates a stream from the provided generator.
     ///
     /// The generator receives [`Yielder`] as an argument and should return a
-    /// future that will produce the stream's items by using [`Yielder::emit`].
+    /// future that will produce messages by using [`Yielder::emit`].
     ///
     /// # Examples
     ///
@@ -112,6 +111,7 @@ where
             StreamState::Closed => return Poll::Pending, // TODO: `Poll::Ready(None)`?
         };
 
+        // TODO: should we poll streams in a separate scope?
         match stream.as_mut().poll_next(cx) {
             Poll::Ready(Some(item)) => Poll::Ready(Some(item.unify())),
             Poll::Ready(None) => {
@@ -130,19 +130,22 @@ pub struct Yielder(mpsc::Sender<Envelope>);
 
 impl Yielder {
     /// Emits a message from the generated stream.
-    pub async fn emit(&mut self, item: impl StreamItem) {
-        let _ = self.0.send(item.unify()).await;
+    pub async fn emit<M: Message>(&mut self, message: M) {
+        let _ = self.0.send(message.unify()).await;
     }
 }
 
 // === StreamItem ===
 
+#[doc(hidden)]
 #[sealed]
 pub trait StreamItem {
     #[doc(hidden)]
     fn unify(self) -> Envelope;
 }
 
+// TODO(v0.2): it's inconsistent with `ctx.send()` that accepts only messages.
+#[doc(hidden)]
 #[sealed]
 impl StreamItem for Envelope {
     #[doc(hidden)]
@@ -151,6 +154,8 @@ impl StreamItem for Envelope {
     }
 }
 
+// TODO(v0.2): remove it, use explicit `scope::set_trace_id()` instead.
+#[doc(hidden)]
 #[sealed]
 impl<M: Message> StreamItem for (TraceId, M) {
     #[doc(hidden)]
@@ -160,6 +165,7 @@ impl<M: Message> StreamItem for (TraceId, M) {
     }
 }
 
+#[doc(hidden)]
 #[sealed]
 impl<M: Message> StreamItem for M {
     #[doc(hidden)]

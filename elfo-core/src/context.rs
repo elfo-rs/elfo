@@ -392,6 +392,8 @@ impl<C, K, S> Context<C, K, S> {
                 on_first_recv(&mut self.stage, actor);
             }
 
+            // TODO: reset `trace_id` to `None`?
+
             let mailbox_fut = actor.recv();
             pin_mut!(mailbox_fut);
 
