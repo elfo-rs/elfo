@@ -5,9 +5,7 @@ use std::{
     task::{self, Poll},
 };
 
-use futures::{
-    channel::mpsc, sink::SinkExt as _, stream, stream::StreamExt as _, Stream as FutStream,
-};
+use futures::{self, channel::mpsc, sink::SinkExt as _, stream, stream::StreamExt as _};
 use parking_lot::Mutex;
 use sealed::sealed;
 
@@ -20,7 +18,7 @@ use crate::{
 
 // === Stream ===
 
-/// A wrapper around `futures::Stream` implementing `Source` trait.
+/// A wrapper around [`futures::Stream`] implementing `Source` trait.
 ///
 /// Stream items must be messages or pairs `(Option<trace_id>, message)`,
 /// if `trace_id` is generated.
@@ -32,14 +30,17 @@ enum StreamState<S> {
 }
 
 impl<S> Stream<S> {
+    /// Wraps [`futures::Stream`] into the source.
     pub fn new(stream: S) -> Self {
         Self(Mutex::new(StreamState::Active(Box::pin(stream))))
     }
 
+    /// Drops the inner stream and uses the provided one instead.
     pub fn set(&self, stream: S) {
         *self.0.lock() = StreamState::Active(Box::pin(stream));
     }
 
+    /// Replaces the inner stream with the provided one.
     pub fn replace(&self, stream: S) -> Option<S>
     where
         S: Unpin,
@@ -51,6 +52,9 @@ impl<S> Stream<S> {
         }
     }
 
+    /// Drops the inner stream and stops emitting messages.
+    ///
+    /// [`Stream::set`] and [`Stream::replace`] can be used after this method.
     pub fn close(&self) -> bool {
         !matches!(
             mem::replace(&mut *self.0.lock(), StreamState::Closed),
@@ -60,20 +64,44 @@ impl<S> Stream<S> {
 }
 
 impl Stream<()> {
-    pub fn generate<F>(gen: impl FnOnce(Yielder) -> F) -> Stream<impl FutStream<Item = Envelope>>
+    /// Generates a stream from the provided generator.
+    ///
+    /// The generator receives [`Yielder`] as an argument and should return a
+    /// future that will produce the stream's items by using [`Yielder::emit`].
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// #[message]
+    /// struct SomeMessage(u32);
+    ///
+    /// #[message]
+    /// struct AnotherMessage;
+    ///
+    /// let stream = Stream::generate(|mut y| async move {
+    ///     y.emit(SomeMessage(42)).await;
+    ///     y.emit(AnotherMessage).await;
+    /// });
+    ///
+    /// let mut ctx = ctx.with(&stream);
+    /// ```
+    pub fn generate<G, F>(generator: G) -> Stream<impl futures::Stream<Item = Envelope>>
     where
+        G: FnOnce(Yielder) -> F,
         F: Future<Output = ()>,
     {
+        // Highly inspired by https://github.com/Riateche/stream_generator.
         let (tx, rx) = mpsc::channel(0);
-        let fake_stream = stream::once(gen(Yielder(tx))).filter_map(|_| async { None });
-        Stream::new(stream::select(fake_stream, rx))
+        let gen = generator(Yielder(tx));
+        let fake = stream::once(gen).filter_map(|_| async { None });
+        Stream::new(stream::select(fake, rx))
     }
 }
 
 #[sealed]
 impl<S> crate::source::Source for Stream<S>
 where
-    S: FutStream,
+    S: futures::Stream,
     S::Item: StreamItem,
 {
     fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
@@ -97,10 +125,11 @@ where
 
 // === Yielder ===
 
+/// A handle for emitting messages from [`Stream::generate`].
 pub struct Yielder(mpsc::Sender<Envelope>);
 
 impl Yielder {
-    /// Yields a message from the generated stream.
+    /// Emits a message from the generated stream.
     pub async fn emit(&mut self, item: impl StreamItem) {
         let _ = self.0.send(item.unify()).await;
     }
@@ -116,6 +145,7 @@ pub trait StreamItem {
 
 #[sealed]
 impl StreamItem for Envelope {
+    #[doc(hidden)]
     fn unify(self) -> Envelope {
         self
     }
@@ -123,6 +153,7 @@ impl StreamItem for Envelope {
 
 #[sealed]
 impl<M: Message> StreamItem for (TraceId, M) {
+    #[doc(hidden)]
     fn unify(self) -> Envelope {
         let kind = MessageKind::Regular { sender: Addr::NULL };
         Envelope::with_trace_id(self.1, kind, self.0).upcast()
@@ -131,6 +162,7 @@ impl<M: Message> StreamItem for (TraceId, M) {
 
 #[sealed]
 impl<M: Message> StreamItem for M {
+    #[doc(hidden)]
     fn unify(self) -> Envelope {
         (trace_id::generate(), self).unify()
     }
