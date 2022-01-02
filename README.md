@@ -14,22 +14,9 @@
 [actions-badge]: https://github.com/loyd/elfo/workflows/CI/badge.svg
 [actions-url]: https://github.com/loyd/elfo/actions?query=workflow%3ACI+branch%3Amaster
 
-**Note: this system is still in early development and is not for production.**
+Elfo is another actor system. Check [The Actoromicon](http://actoromicon.rs/).
 
-## Features
-* Async actors with supervision and custom lifecycle
-* Two-level routing system: between actor groups and inside them (sharding)
-* Multiple protocols: actors (so-called gates) can handle messages from different protocols
-* Multiple patterns of communication: regular messages, request-response (*TODO: subscriptions*)
-* Config updating and distribution
-* Appropriate for both low latency and high throughput tasks
-* Tracing: all messages have `trace_id` that spread across the system
-* Telemetry (via the `metrics` crate)
-* Efficient dumping
-* Seamless distribution across nodes *TODO*
-* Hot Actor Replacement *TODO*
-* Utils for simple testing
-* Utils for benchmarking *TODO*
+**Note: this system is still in early development and is not for production.**
 
 ## Usage
 To use `elfo`, add this to your `Cargo.toml`:
@@ -44,5 +31,3 @@ elfo = { version = "0.1", features = ["test-util"] }
 ## Examples
 * [Basic usage](elfo/examples/usage.rs)
 * [Testing](elfo/examples/test.rs)
-
-Also check [The Actoromicon](http://actoromicon.rs/).
