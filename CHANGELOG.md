@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - context: add `Context::try_send`.
 - errors: add `TrySendError::map` and `RequestError::map`.
+- dumping: write `ts` firstly to support the `sort` utility.
 
 ### Fixed
 - init: do not start termination if the memory tracker fails to read files.

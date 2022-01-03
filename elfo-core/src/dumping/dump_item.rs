@@ -96,6 +96,9 @@ impl Serialize for DumpItem {
             + !matches!(self.message_kind, MessageKind::Regular) as usize; // "c"
 
         let mut s = serializer.serialize_struct("Dump", field_count)?;
+
+        // Dump `ts` firstly to make it possible to use `sort`.
+        s.serialize_field("ts", &self.timestamp)?;
         s.serialize_field("g", &self.meta.group)?;
 
         if !self.meta.key.is_empty() {
@@ -105,7 +108,6 @@ impl Serialize for DumpItem {
         s.serialize_field("n", &node::node_no())?;
         s.serialize_field("s", &self.sequence_no)?;
         s.serialize_field("t", &self.trace_id)?;
-        s.serialize_field("ts", &self.timestamp)?;
         s.serialize_field("d", &self.direction)?;
 
         if !self.class.is_empty() {
