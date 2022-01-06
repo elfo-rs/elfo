@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- context: add `Context::try_send`.
 - errors: add `TrySendError::map` and `RequestError::map`.
 
 ## [0.1.32] - 2021-12-21
