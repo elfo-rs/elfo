@@ -314,14 +314,9 @@ impl<C, K, S> Context<C, K, S> {
         let object = ward!(entry, return Err(TrySendError::Closed(message)));
         let envelope = Envelope::new(message, kind);
 
-        object.try_send(envelope.upcast()).map_err(|err| match err {
-            TrySendError::Full(envelope) => {
-                TrySendError::Full(envelope.do_downcast().into_message())
-            }
-            TrySendError::Closed(envelope) => {
-                TrySendError::Closed(envelope.do_downcast().into_message())
-            }
-        })
+        object
+            .try_send(envelope.upcast())
+            .map_err(|err| err.map(|envelope| envelope.do_downcast().into_message()))
     }
 
     /// Responds to the requester with the provided response.

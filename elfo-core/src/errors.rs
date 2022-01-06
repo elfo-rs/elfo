@@ -33,6 +33,15 @@ impl<T> TrySendError<T> {
         }
     }
 
+    /// Transforms the inner message.
+    #[inline]
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> TrySendError<U> {
+        match self {
+            Self::Full(inner) => TrySendError::Full(f(inner)),
+            Self::Closed(inner) => TrySendError::Closed(f(inner)),
+        }
+    }
+
     /// Returns whether the error is the `Full` variant.
     #[inline]
     pub fn is_full(&self) -> bool {
@@ -63,6 +72,15 @@ impl<T> RequestError<T> {
         match self {
             Self::Ignored => None,
             Self::Closed(inner) => Some(inner),
+        }
+    }
+
+    /// Transforms the inner message.
+    #[inline]
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> RequestError<U> {
+        match self {
+            Self::Ignored => RequestError::Ignored,
+            Self::Closed(inner) => RequestError::Closed(f(inner)),
         }
     }
 
