@@ -1,44 +1,35 @@
-#[allow(unreachable_pub)] // Actually, it's reachable via `elfo::_priv`.
+//! Includes structs and functions to work with dumping.
+//! For more details see [The Actoromicon](https://actoromicon.rs/ch05-03-dumping.md.html).
+
+// Stable.
+pub use self::hider::hide;
+
+// Unstable.
 pub use self::{
+    control::{CheckResult, DumpingControl},
     dump_item::{Direction, DumpItem, ErasedMessage, MessageKind, Timestamp},
     dumper::Dumper,
-    hider::hide,
+    recorder::{set_make_recorder, Recorder},
     sequence_no::SequenceNo,
 };
 
-use serde::Deserialize;
+pub(crate) use self::config::DumpingConfig;
 
+#[cfg_attr(docsrs, doc(cfg(feature = "unstable")))]
+#[stability::unstable]
+pub const INTERNAL_CLASS: &str = "internal";
+
+mod config;
+mod control;
 mod dump_item;
 mod dumper;
 mod hider;
+mod recorder;
 mod sequence_no;
 
-#[derive(Deserialize)]
-#[serde(default)]
-pub(crate) struct DumpingConfig {
-    disabled: bool,
-    max_rate: u64,
-}
-
-impl Default for DumpingConfig {
-    fn default() -> Self {
-        Self {
-            disabled: false,
-            max_rate: 100_000,
-        }
-    }
-}
-
-#[doc(hidden)]
-pub mod _priv {
-    pub use super::*;
-
-    #[inline]
-    pub fn of<C: 'static, K, S>(context: &crate::Context<C, K, S>) -> &Dumper {
-        context.dumper()
-    }
-
-    pub fn set_in_dumping(flag: bool) {
-        hider::set_in_dumping(flag);
-    }
+// TODO: move to `scope::set_serde_env(SerdeMode::Dumping)`
+//#[doc(hidden)]
+#[stability::unstable]
+pub fn set_in_dumping(flag: bool) {
+    hider::set_in_dumping(flag);
 }

@@ -12,7 +12,7 @@ use crate::{
     address_book::AddressBook,
     config::AnyConfig,
     demux::Demux,
-    dumping::{self, Direction, Dumper},
+    dumping::{self, Direction, Dumper, INTERNAL_CLASS},
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     mailbox::RecvResult,
@@ -572,7 +572,6 @@ impl<C, K, S> Context<C, K, S> {
         if self.dumper.is_enabled() {
             self.dumper.dump(
                 dumping::Direction::In,
-                "",
                 message.name(),
                 message.protocol(),
                 dumping::MessageKind::from_message_kind(envelope.message_kind()),
@@ -640,10 +639,6 @@ impl<C, K, S> Context<C, K, S> {
 
     pub(crate) fn book(&self) -> &AddressBook {
         &self.book
-    }
-
-    pub(crate) fn dumper(&self) -> &Dumper {
-        &self.dumper
     }
 
     pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K, S> {
@@ -715,10 +710,10 @@ fn on_recv_after_close() {
 }
 
 impl Context {
-    pub(crate) fn new(book: AddressBook, dumper: Dumper, demux: Demux) -> Self {
+    pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
         Self {
             book,
-            dumper,
+            dumper: Dumper::new(INTERNAL_CLASS),
             addr: Addr::NULL,
             group: Addr::NULL,
             demux,

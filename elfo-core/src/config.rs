@@ -16,6 +16,8 @@ impl<C> Config for C where C: for<'de> Deserialize<'de> + Send + Sync + fmt::Deb
 
 assert_impl_all!((): Config);
 
+// === AnyConfig ===
+
 #[derive(Clone)]
 pub struct AnyConfig {
     raw: Arc<Value>,
@@ -146,6 +148,8 @@ impl<'de> Deserializer<'de> for AnyConfig {
     }
 }
 
+// === SystemConfig ===
+
 #[derive(Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct SystemConfig {
@@ -169,6 +173,8 @@ impl Default for TelemetryConfig {
         }
     }
 }
+
+// === Secret ===
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, From)]
 pub struct Secret<T>(T);

@@ -2,13 +2,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Layout:
 //
-//      7 6   4 3 2 1 0
+//      7 6 5 4 3 2 1 0
 //     +-+-+-+-+-+-+-+-+
-//     |G|K| |E|W|I|D|T|
+//     |G|K|D|E|W|I|D|T|
 //     +-+-+-+-+-+-+-+-+
-//      | |  '---------'
-//      | |    |
-//      | |    +- logging levels
+//      | | |'---------'
+//      | | |  |
+//      | | |  +- logging levels
+//      | | +---- dumping
 //      | +------ telemetry per actor key
 //      +-------- telemetry per actor group
 //
@@ -17,6 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub struct AtomicPermissions(AtomicUsize);
 
 const LOGGING_MASK: usize = 0b00011111;
+const DUMPING_IS_ENABLED: usize = 0b00100000;
 const TELEMETRY_PER_ACTOR_GROUP_IS_ENABLED: usize = 0b01000000;
 const TELEMETRY_PER_ACTOR_KEY_IS_ENABLED: usize = 0b10000000;
 
@@ -44,6 +46,11 @@ impl Permissions {
     }
 
     #[inline]
+    pub fn is_dumping_enabled(&self) -> bool {
+        self.0 & DUMPING_IS_ENABLED != 0
+    }
+
+    #[inline]
     pub fn is_telemetry_per_actor_group_enabled(&self) -> bool {
         self.0 & TELEMETRY_PER_ACTOR_GROUP_IS_ENABLED != 0
     }
@@ -60,6 +67,14 @@ impl Permissions {
         if let Some(max_level) = max_level.map(log_level_to_value) {
             let disabled = (1 << max_level) - 1;
             self.0 |= LOGGING_MASK & !disabled;
+        }
+    }
+
+    pub(crate) fn set_dumping_enabled(&mut self, is_enabled: bool) {
+        if is_enabled {
+            self.0 |= DUMPING_IS_ENABLED;
+        } else {
+            self.0 &= !DUMPING_IS_ENABLED;
         }
     }
 
@@ -131,6 +146,15 @@ mod tests {
         perm.set_logging_enabled(None);
         assert!(!perm.is_logging_enabled(Level::ERROR));
         assert!(!perm.is_logging_enabled(Level::TRACE));
+    }
+
+    #[test]
+    fn dumping_flag_works() {
+        let mut perm = Permissions::default();
+
+        assert!(!perm.is_dumping_enabled());
+        perm.set_dumping_enabled(true);
+        assert!(perm.is_dumping_enabled());
     }
 
     #[test]

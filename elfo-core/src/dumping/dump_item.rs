@@ -11,7 +11,8 @@ use elfo_macros::message;
 
 use crate::{actor::ActorMeta, dumping::sequence_no::SequenceNo, node, trace_id::TraceId};
 
-// Reexported in `elfo::_priv`.
+#[doc(hidden)]
+#[stability::unstable]
 pub struct DumpItem {
     pub meta: Arc<ActorMeta>,
     pub sequence_no: SequenceNo,
@@ -29,11 +30,13 @@ pub struct DumpItem {
 /// Timestamp in nanos since Unix epoch.
 #[message(part, elfo = crate)]
 #[derive(Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[stability::unstable]
 pub struct Timestamp(u64);
 
 impl Timestamp {
     #[cfg(not(test))]
     #[inline]
+    #[stability::unstable]
     pub fn now() -> Self {
         let ns = std::time::UNIX_EPOCH
             .elapsed()
@@ -53,6 +56,7 @@ impl Timestamp {
     }
 }
 
+#[doc(hidden)]
 pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 136]>;
 
 assert_impl_all!(DumpItem: Send);
@@ -60,6 +64,7 @@ assert_eq_size!(DumpItem, [u8; 256]);
 
 // Reexported in `elfo::_priv`.
 #[derive(Debug, PartialEq, Serialize)]
+#[stability::unstable]
 pub enum Direction {
     In,
     Out,
@@ -67,6 +72,7 @@ pub enum Direction {
 
 // Reexported in `elfo::_priv`.
 #[derive(Debug, PartialEq)]
+#[stability::unstable]
 pub enum MessageKind {
     Regular,
     Request(u64),
@@ -90,9 +96,8 @@ impl MessageKind {
 
 impl Serialize for DumpItem {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let field_count = 10
+        let field_count = 11
             + !self.meta.key.is_empty() as usize // "k"
-            + !self.class.is_empty() as usize // "cl"
             + !matches!(self.message_kind, MessageKind::Regular) as usize; // "c"
 
         let mut s = serializer.serialize_struct("Dump", field_count)?;
@@ -109,11 +114,7 @@ impl Serialize for DumpItem {
         s.serialize_field("s", &self.sequence_no)?;
         s.serialize_field("t", &self.trace_id)?;
         s.serialize_field("d", &self.direction)?;
-
-        if !self.class.is_empty() {
-            s.serialize_field("cl", &self.class)?;
-        }
-
+        s.serialize_field("cl", &self.class)?;
         s.serialize_field("mn", &self.message_name)?;
         s.serialize_field("mp", &self.message_protocol)?;
 

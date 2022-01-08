@@ -9,6 +9,8 @@ license = "MIT"
 [features]
 test-util = ["tokio/test-util"]
 
+unstable = []
+
 [dependencies]
 elfo-macros = { version = "0.1.10", path = "../elfo-macros" }
 elfo-utils = { version = "0.1.1", path = "../elfo-utils" }
@@ -38,6 +40,9 @@ arc-swap = "1.2.0"
 erased-serde = "0.3.16"
 pin-project = "1.0.8"
 sealed = "0.3.0"
+#stability = "0.1.0"
+stability = { git = "https://github.com/loyd/stability" }
+once_cell = { version = "1.8.0", features = ["parking_lot"] }
 
 [dev-dependencies]
 anyhow = "1.0.40"

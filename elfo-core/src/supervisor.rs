@@ -118,7 +118,7 @@ where
             scope::trace_id(),
             Addr::NULL,
             self.meta.clone(),
-            // TODO: do not limit logging in supervisor.
+            // TODO: do not limit logging and dumping in supervisor.
             self.scope_shared.clone(),
         )
         .sync_within(|| self.span.in_scope(f));
@@ -410,10 +410,6 @@ where
 
     fn update_config(&self, control: &mut ControlBlock<C>, config: &AnyConfig) {
         let system = config.get_system();
-
-        // Update the dumper's config.
-        self.context.dumper().configure(&system.dumping);
-
         self.scope_shared.configure(system);
 
         // Update user's config.
