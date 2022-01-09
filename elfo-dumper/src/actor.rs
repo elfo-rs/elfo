@@ -1,10 +1,4 @@
-use std::{
-    error::Error as StdError,
-    fs::File,
-    io::{BufWriter, Write},
-    iter,
-    sync::Arc,
-};
+use std::{error::Error as StdError, fs::File, io::Write, iter, sync::Arc};
 
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
@@ -28,9 +22,11 @@ use elfo::{
     ActorGroup, Context, Schema,
 };
 
-use crate::{config::Config, storage::Storage};
-
-const BUFFER_CAPACITY: usize = 128 * 1024;
+use crate::{
+    config::Config,
+    dump_buffer::{AppendError, DumpBuffer},
+    storage::Storage,
+};
 
 #[message(elfo = elfo_core)]
 struct StartDumperForClass(String);
@@ -58,8 +54,14 @@ impl Dumper {
         }
     }
 
+    fn is_manager(&self) -> bool {
+        // Now we use a dumper for the `internal` class as a manager.
+        self.ctx.key() == INTERNAL_CLASS
+    }
+
     async fn main(mut self) -> Result<()> {
         let mut file = open_file(self.ctx.config(), self.ctx.key()).await;
+        let mut buffer = DumpBuffer::new(self.ctx.config().max_dump_size);
 
         let class = Box::leak(self.ctx.key().clone().into_boxed_str());
         let registry = { self.storage.lock().registry(class) };
@@ -68,6 +70,7 @@ impl Dumper {
 
         let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);
         let interval = Interval::new(|| DumpingTick);
+        // TODO: `interval.after` to set random time shift.
         interval.set_period(self.ctx.config().interval);
 
         let mut ctx = self.ctx.clone().with(&signal).with(&interval);
@@ -79,6 +82,11 @@ impl Dumper {
                     let config = ctx.config();
                     interval.set_period(config.interval);
                     file = open_file(config, self.ctx.key()).await;
+                    buffer.configure(config.max_dump_size);
+
+                    if self.is_manager() {
+                        self.storage.lock().configure(config.registry_capacity);
+                    }
                 }
                 DumpingTick => {
                     let registry = registry.clone();
@@ -92,14 +100,18 @@ impl Dumper {
                         dumping::set_in_dumping(true);
 
                         for dump in registry.drain(timeout) {
-                            match serde_json::to_writer(&mut file, &dump) {
-                                Ok(()) => {
+                            match buffer.append(&dump) {
+                                Ok(buf) => {
                                     written += 1;
+
+                                    if let Some(buf) = buf {
+                                        file.write_all(buf).context("cannot write")?;
+                                    }
                                 }
-                                Err(err) if err.is_io() => {
-                                    Err(err).context("cannot write")?;
+                                Err(AppendError::LimitExceeded(_limit)) => {
+                                    // TODO: add to separate `errors`.
                                 }
-                                Err(err) => {
+                                Err(AppendError::SerializationFailed(err)) => {
                                     // TODO: avoid this hardcode.
                                     if errors.len() < 3
                                         && !errors
@@ -108,19 +120,20 @@ impl Dumper {
                                     {
                                         errors.push((dump.message_name, err));
                                     }
-
-                                    // TODO: the last line is probably invalid,
-                                    //       should we use custom buffer?
                                 }
-                            };
-                            file.write_all(b"\n").context("cannot write")?;
+                            }
                         }
-                        file.flush().context("cannot flush")?;
 
+                        if let Some(buf) = buffer.take() {
+                            file.write_all(buf).context("cannot write")?;
+                        }
+
+                        file.flush().context("cannot flush")?;
                         dumping::set_in_dumping(false);
 
                         Ok(Report {
                             file,
+                            buffer,
                             errors,
                             written,
                         })
@@ -130,6 +143,7 @@ impl Dumper {
 
                     counter!("elfo_written_dumps_total", report.written);
                     file = report.file;
+                    buffer = report.buffer;
 
                     // TODO: add a metrics for failed dumps.
                     cooldown!(Duration::from_secs(15), {
@@ -146,7 +160,7 @@ impl Dumper {
                         break;
                     }
 
-                    if self.ctx.key() == INTERNAL_CLASS {
+                    if self.is_manager() {
                         self.spawn_dumpers_if_needed();
                     }
                 }
@@ -160,7 +174,7 @@ impl Dumper {
 
         info!("flushing the buffer and synchronizing the file");
         file.flush().context("cannot flush")?;
-        file.get_ref().sync_all().context("cannot sync")?;
+        file.sync_all().context("cannot sync")?;
 
         Ok(())
     }
@@ -190,7 +204,8 @@ impl Dumper {
 }
 
 struct Report {
-    file: BufWriter<File>,
+    file: File,
+    buffer: DumpBuffer,
     errors: Vec<(&'static str, serde_json::Error)>,
     written: u64,
 }
@@ -216,17 +231,15 @@ pub(crate) fn new(storage: Arc<Mutex<Storage>>) -> Schema {
         .exec(move |ctx| Dumper::new(ctx, storage_1.clone()).main())
 }
 
-async fn open_file(config: &Config, class: &str) -> BufWriter<File> {
+async fn open_file(config: &Config, class: &str) -> File {
     use tokio::fs::OpenOptions;
 
-    let file = OpenOptions::new()
+    OpenOptions::new()
         .create(true)
         .append(true)
         .open(&config.path(class))
         .await
         .expect("cannot open the dump file")
         .into_std()
-        .await;
-
-    BufWriter::with_capacity(BUFFER_CAPACITY, file)
+        .await
 }

@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - dumping: write `ts` firstly to support the `sort` utility.
 - dumper: extract a dump's name if it's not specified.
 - dumper: support the `{class}` variable in config's `path` param.
+- dumper: don't dump large messages, configurable by `max_dump_size` param (64KiB by default).
+
+### Fixed
+- dumper: don't dump partially invalid messages. Previously, it could lead to file corruption.
 
 ### Fixed
 - init: do not start termination if the memory tracker fails to read files.

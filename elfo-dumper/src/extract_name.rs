@@ -1,23 +1,16 @@
 use std::fmt;
 
+use derive_more::{Display, Error};
 use serde::{ser, Serialize, Serializer};
 
 // === Outcome ===
 
-#[derive(Debug)]
+#[derive(Debug, Display, Error)]
 enum Outcome {
     Done,
     Inapplicable,
-    Error(String),
+    Error(#[error(not(source))] String),
 }
-
-impl fmt::Display for Outcome {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Ok(())
-    }
-}
-
-impl std::error::Error for Outcome {}
 
 impl ser::Error for Outcome {
     fn custom<T: fmt::Display>(msg: T) -> Self {

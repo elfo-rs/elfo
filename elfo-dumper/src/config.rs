@@ -8,10 +8,19 @@ pub(crate) struct Config {
     /// * `dumps/all.dump` - one file.
     /// * `dumps/{class}.dump` - file per class.
     path: String,
+    /// How often dumpers should flush dumps to file.
+    /// 500ms by default.
     #[serde(with = "humantime_serde", default = "default_interval")]
     pub(crate) interval: Duration,
+    /// The maximum number of dumps in memory per class.
+    /// 3_000_000 by default.
     #[serde(default = "default_registry_capacity")]
     pub(crate) registry_capacity: usize,
+    /// The allowed size of a serialized dump.
+    /// If exceeded, the dump is lost with limited logging.
+    /// 64KiB by default.
+    #[serde(default = "default_max_dump_size")]
+    pub(crate) max_dump_size: usize,
 }
 
 impl Config {
@@ -26,4 +35,8 @@ fn default_interval() -> Duration {
 
 fn default_registry_capacity() -> usize {
     3_000_000
+}
+
+fn default_max_dump_size() -> usize {
+    64 * 1024
 }

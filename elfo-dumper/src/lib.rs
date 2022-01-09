@@ -14,6 +14,7 @@ use self::storage::Storage;
 
 mod actor;
 mod config;
+mod dump_buffer;
 mod extract_name;
 mod recorder;
 mod storage;
