@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - errors: add `TrySendError::map` and `RequestError::map`.
 - dumping: write `ts` firstly to support the `sort` utility.
 - dumper: extract a dump's name if it's not specified.
+- dumper: support the `{class}` variable in config's `path` param.
 
 ### Fixed
 - init: do not start termination if the memory tracker fails to read files.

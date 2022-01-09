@@ -11,7 +11,7 @@ use fxhash::FxHashSet;
 use metrics::counter;
 use parking_lot::Mutex;
 use tokio::{task, time::Duration};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
@@ -59,7 +59,7 @@ impl Dumper {
     }
 
     async fn main(mut self) -> Result<()> {
-        let mut file = open_file(self.ctx.config()).await;
+        let mut file = open_file(self.ctx.config(), self.ctx.key()).await;
 
         let class = Box::leak(self.ctx.key().clone().into_boxed_str());
         let registry = { self.storage.lock().registry(class) };
@@ -74,15 +74,17 @@ impl Dumper {
 
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
+                // TODO: open on `ValidateConfig`
                 ReopenDumpFile | ConfigUpdated => {
                     let config = ctx.config();
                     interval.set_period(config.interval);
-                    file = open_file(config).await;
+                    file = open_file(config, self.ctx.key()).await;
                 }
                 DumpingTick => {
                     let registry = registry.clone();
                     let timeout = ctx.config().interval;
 
+                    // TODO: run inside scope?
                     let report = task::spawn_blocking(move || -> Result<Report> {
                         let mut errors = Vec::new();
                         let mut written = 0;
@@ -214,13 +216,13 @@ pub(crate) fn new(storage: Arc<Mutex<Storage>>) -> Schema {
         .exec(move |ctx| Dumper::new(ctx, storage_1.clone()).main())
 }
 
-async fn open_file(config: &Config) -> BufWriter<File> {
+async fn open_file(config: &Config, class: &str) -> BufWriter<File> {
     use tokio::fs::OpenOptions;
 
     let file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&config.path)
+        .open(&config.path(class))
         .await
         .expect("cannot open the dump file")
         .into_std()
