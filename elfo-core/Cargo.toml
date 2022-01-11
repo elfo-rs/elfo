@@ -40,8 +40,7 @@ arc-swap = "1.2.0"
 erased-serde = "0.3.16"
 pin-project = "1.0.8"
 sealed = "0.3.0"
-#stability = "0.1.0"
-stability = { git = "https://github.com/loyd/stability" }
+stability = "0.1.1"
 once_cell = { version = "1.8.0", features = ["parking_lot"] }
 
 [dev-dependencies]
