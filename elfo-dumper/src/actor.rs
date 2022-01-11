@@ -1,4 +1,4 @@
-use std::{error::Error as StdError, fs::File, io::Write, iter, sync::Arc};
+use std::{error::Error as StdError, iter, sync::Arc};
 
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
 
-use elfo_utils::cooldown;
+use elfo_utils::{cooldown, ward};
 
 use elfo::{
     dumping::{self, INTERNAL_CLASS},
@@ -25,7 +25,8 @@ use elfo::{
 use crate::{
     config::Config,
     dump_buffer::{AppendError, DumpBuffer},
-    storage::Storage,
+    dump_storage::{DumpRegistry, DumpStorage},
+    file_registry::FileRegistry,
 };
 
 #[message(elfo = elfo_core)]
@@ -39,33 +40,53 @@ struct DumpingTick;
 
 struct Dumper {
     ctx: Context<Config, String>,
-    storage: Arc<Mutex<Storage>>,
+    dump_registry: Arc<DumpRegistry>,
+    file_registry: Arc<FileRegistry>,
 
-    // Used only by the master actor.
+    // Used only by the manager actor.
+    manager: Option<Manager>,
+}
+
+struct Manager {
+    dump_storage: Arc<Mutex<DumpStorage>>,
     known_classes: FxHashSet<&'static str>,
 }
 
 impl Dumper {
-    fn new(ctx: Context<Config, String>, storage: Arc<Mutex<Storage>>) -> Self {
+    fn new(
+        ctx: Context<Config, String>,
+        dump_storage: Arc<Mutex<DumpStorage>>,
+        file_registry: Arc<FileRegistry>,
+    ) -> Self {
+        // TODO: avoid leaking here.
+        let class = Box::leak(ctx.key().clone().into_boxed_str());
+        let dump_registry = dump_storage.lock().registry(class);
+
+        let manager = if ctx.key() == INTERNAL_CLASS {
+            Some(Manager {
+                dump_storage,
+                known_classes: iter::once(INTERNAL_CLASS).collect(),
+            })
+        } else {
+            None
+        };
+
         Self {
             ctx,
-            storage,
-            known_classes: iter::once(INTERNAL_CLASS).collect(),
+            dump_registry,
+            file_registry,
+            manager,
         }
     }
 
-    fn is_manager(&self) -> bool {
-        // Now we use a dumper for the `internal` class as a manager.
-        self.ctx.key() == INTERNAL_CLASS
-    }
-
     async fn main(mut self) -> Result<()> {
-        let mut file = open_file(self.ctx.config(), self.ctx.key()).await;
+        let mut path = self.ctx.config().path(self.ctx.key());
+        self.file_registry
+            .open(&path, false)
+            .await
+            .wrap_err("cannot open the dump file")?;
+
         let mut buffer = DumpBuffer::new(self.ctx.config().max_dump_size);
-
-        let class = Box::leak(self.ctx.key().clone().into_boxed_str());
-        let registry = { self.storage.lock().registry(class) };
-
         let mut need_to_terminate = false;
 
         let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);
@@ -77,20 +98,36 @@ impl Dumper {
 
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
-                // TODO: open on `ValidateConfig`
-                ReopenDumpFile | ConfigUpdated => {
+                // TODO: check the file on `ValidateConfig`
+                ConfigUpdated => {
                     let config = ctx.config();
                     interval.set_period(config.interval);
-                    file = open_file(config, self.ctx.key()).await;
                     buffer.configure(config.max_dump_size);
 
-                    if self.is_manager() {
-                        self.storage.lock().configure(config.registry_capacity);
+                    path = config.path(ctx.key());
+                    self.file_registry
+                        .open(&path, false)
+                        .await
+                        .wrap_err("cannot open the dump file")?;
+
+                    if let Some(m) = &self.manager {
+                        m.dump_storage.lock().configure(config.registry_capacity);
                     }
                 }
+                ReopenDumpFile => {
+                    // TODO: reopen the dump file at most once.
+                    // It's possible to reopen the file multiple times,
+                    // if the same file is used for multiple classes.
+                    // It's ok for now, but should be fixed later.
+                    self.file_registry
+                        .open(&path, true)
+                        .await
+                        .wrap_err("cannot reopen the dump file")?;
+                }
                 DumpingTick => {
-                    let registry = registry.clone();
                     let timeout = ctx.config().interval;
+                    let dump_registry = self.dump_registry.clone();
+                    let file = self.file_registry.acquire(&path).await;
 
                     // TODO: run inside scope?
                     let report = task::spawn_blocking(move || -> Result<Report> {
@@ -99,13 +136,13 @@ impl Dumper {
 
                         dumping::set_in_dumping(true);
 
-                        for dump in registry.drain(timeout) {
+                        for dump in dump_registry.drain(timeout) {
                             match buffer.append(&dump) {
                                 Ok(buf) => {
                                     written += 1;
 
                                     if let Some(buf) = buf {
-                                        file.write_all(buf).context("cannot write")?;
+                                        file.write(buf).context("cannot write to the dump file")?;
                                     }
                                 }
                                 Err(AppendError::LimitExceeded(_limit)) => {
@@ -125,14 +162,12 @@ impl Dumper {
                         }
 
                         if let Some(buf) = buffer.take() {
-                            file.write_all(buf).context("cannot write")?;
+                            file.write(buf).context("cannot write to the dump file")?;
                         }
 
-                        file.flush().context("cannot flush")?;
                         dumping::set_in_dumping(false);
 
                         Ok(Report {
-                            file,
                             buffer,
                             errors,
                             written,
@@ -142,7 +177,6 @@ impl Dumper {
                     .expect("failed to dump")?;
 
                     counter!("elfo_written_dumps_total", report.written);
-                    file = report.file;
                     buffer = report.buffer;
 
                     // TODO: add a metrics for failed dumps.
@@ -160,9 +194,7 @@ impl Dumper {
                         break;
                     }
 
-                    if self.is_manager() {
-                        self.spawn_dumpers_if_needed();
-                    }
+                    self.spawn_dumpers_if_needed();
                 }
                 Terminate => {
                     // TODO: use phases instead of a hardcoded delay.
@@ -172,26 +204,30 @@ impl Dumper {
             });
         }
 
-        info!("flushing the buffer and synchronizing the file");
-        file.flush().context("cannot flush")?;
-        file.sync_all().context("cannot sync")?;
+        info!("synchronizing the file");
+        self.file_registry
+            .sync(&path)
+            .await
+            .context("cannot sync the dump file")?;
 
         Ok(())
     }
 
     fn spawn_dumpers_if_needed(&mut self) {
-        let storage = self.storage.lock();
-        let classes = storage.classes();
+        let m = ward!(self.manager.as_mut());
+
+        let dump_storage = m.dump_storage.lock();
+        let classes = dump_storage.classes();
 
         // Classes cannot be removed if created.
-        if classes.len() == self.known_classes.len() {
+        if classes.len() == m.known_classes.len() {
             return;
         }
 
         info!("new classes are found, starting more dumpers");
 
         // Create more dumpers for new classes.
-        for class in self.known_classes.difference(classes) {
+        for class in m.known_classes.difference(classes) {
             let msg = StartDumperForClass(class.to_string());
 
             if let Err(err) = self.ctx.try_send_to(self.ctx.group(), msg) {
@@ -199,12 +235,11 @@ impl Dumper {
             }
         }
 
-        self.known_classes = classes.clone();
+        m.known_classes = classes.clone();
     }
 }
 
 struct Report {
-    file: File,
     buffer: DumpBuffer,
     errors: Vec<(&'static str, serde_json::Error)>,
     written: u64,
@@ -214,8 +249,9 @@ fn collect_classes(map: &FxHashSet<&'static str>) -> Vec<String> {
     map.iter().map(|s| s.to_string()).collect()
 }
 
-pub(crate) fn new(storage: Arc<Mutex<Storage>>) -> Schema {
-    let storage_1 = storage.clone();
+pub(crate) fn new(dump_storage: Arc<Mutex<DumpStorage>>) -> Schema {
+    let storage_1 = dump_storage.clone();
+    let file_registry = Arc::new(FileRegistry::default());
 
     ActorGroup::new()
         .config::<Config>()
@@ -224,22 +260,9 @@ pub(crate) fn new(storage: Arc<Mutex<Storage>>) -> Schema {
             msg!(match envelope {
                 // TODO: there is a rare race condition here,
                 //       use `Broadcast & Unicast(INTERNAL_CLASS)` instead.
-                UpdateConfig => Outcome::Multicast(collect_classes(storage.lock().classes())),
+                UpdateConfig => Outcome::Multicast(collect_classes(dump_storage.lock().classes())),
                 _ => Outcome::Default,
             })
         }))
-        .exec(move |ctx| Dumper::new(ctx, storage_1.clone()).main())
-}
-
-async fn open_file(config: &Config, class: &str) -> File {
-    use tokio::fs::OpenOptions;
-
-    OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&config.path(class))
-        .await
-        .expect("cannot open the dump file")
-        .into_std()
-        .await
+        .exec(move |ctx| Dumper::new(ctx, storage_1.clone(), file_registry.clone()).main())
 }

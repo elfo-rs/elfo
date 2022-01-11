@@ -3,9 +3,9 @@ use elfo_core::{
     scope,
 };
 
-use crate::storage::Registry;
+use crate::dump_storage::DumpRegistry;
 
-impl Recorder for Registry {
+impl Recorder for DumpRegistry {
     fn enabled(&self) -> bool {
         scope::try_with(|scope| match scope.dumping().check(self.class()) {
             CheckResult::Passed => {

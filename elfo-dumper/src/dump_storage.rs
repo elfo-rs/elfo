@@ -15,22 +15,22 @@ use elfo_utils::CachePadded;
 type ShardNo = usize;
 
 #[derive(Debug, Clone)]
-struct RegistryConfig {
+struct DumpRegistryConfig {
     max_part_count: usize,
 }
 
-// === Storage ===
+// === DumpStorage ===
 
-pub(crate) struct Storage {
-    registry_config: RegistryConfig,
-    registries: FxHashMap<&'static str, Arc<Registry>>,
+pub(crate) struct DumpStorage {
+    registry_config: DumpRegistryConfig,
+    registries: FxHashMap<&'static str, Arc<DumpRegistry>>,
     classes: FxHashSet<&'static str>,
 }
 
-impl Storage {
+impl DumpStorage {
     pub(crate) fn new() -> Self {
         Self {
-            registry_config: RegistryConfig {
+            registry_config: DumpRegistryConfig {
                 // At startup we doesn't limit dumping at all.
                 // The dumper reconfigure the storage at startup.
                 max_part_count: usize::max_value(),
@@ -41,7 +41,7 @@ impl Storage {
     }
 
     pub(crate) fn configure(&mut self, registry_capacity: usize) {
-        self.registry_config = RegistryConfig {
+        self.registry_config = DumpRegistryConfig {
             max_part_count: registry_capacity / PART_CAPACITY,
         };
 
@@ -50,12 +50,12 @@ impl Storage {
         }
     }
 
-    pub(crate) fn registry(&mut self, class: &'static str) -> Arc<Registry> {
+    pub(crate) fn registry(&mut self, class: &'static str) -> Arc<DumpRegistry> {
         let config = self.registry_config.clone();
         self.classes.insert(class);
         self.registries
             .entry(class)
-            .or_insert_with(|| Arc::new(Registry::new(class, config)))
+            .or_insert_with(|| Arc::new(DumpRegistry::new(class, config)))
             .clone()
     }
 
@@ -64,9 +64,9 @@ impl Storage {
     }
 }
 
-// === Registry ===
+// === DumpRegistry ===
 
-pub(crate) struct Registry {
+pub(crate) struct DumpRegistry {
     class: &'static str,
     fund: Mutex<Fund>,
     shards: ThreadLocal<Shard>,
@@ -77,8 +77,8 @@ struct Shard {
     active_part: CachePadded<Mutex<Part>>,
 }
 
-impl Registry {
-    fn new(class: &'static str, config: RegistryConfig) -> Self {
+impl DumpRegistry {
+    fn new(class: &'static str, config: DumpRegistryConfig) -> Self {
         Self {
             class,
             fund: Mutex::new(Fund::new(config)),
@@ -107,7 +107,7 @@ impl Registry {
         Drain::new(self, timeout)
     }
 
-    fn configure(&self, config: RegistryConfig) {
+    fn configure(&self, config: DumpRegistryConfig) {
         self.fund.lock().configure(config);
     }
 
@@ -150,7 +150,7 @@ impl Registry {
 
 // TODO: NUMA awareness.
 struct Fund {
-    config: RegistryConfig,
+    config: DumpRegistryConfig,
     // Empty + filled + active + used by `Drain`.
     part_count: usize,
     empty_parts: Vec<Part>,
@@ -158,7 +158,7 @@ struct Fund {
 }
 
 impl Fund {
-    fn new(config: RegistryConfig) -> Self {
+    fn new(config: DumpRegistryConfig) -> Self {
         Self {
             config,
             part_count: 0,
@@ -167,7 +167,7 @@ impl Fund {
         }
     }
 
-    fn configure(&mut self, config: RegistryConfig) {
+    fn configure(&mut self, config: DumpRegistryConfig) {
         while self.part_count > config.max_part_count && self.empty_parts.pop().is_some() {
             self.part_count -= 1;
         }
@@ -274,14 +274,14 @@ impl Part {
 /// to ensure fairness. The iterator returns `None` if all shards are empty or
 /// a specified timeout is reached.
 pub(crate) struct Drain<'a> {
-    registry: &'a Registry,
+    registry: &'a DumpRegistry,
     shard_iter: thread_local::Iter<'a, Shard>,
     current: Option<(&'a Shard, Part)>,
     until: Instant,
 }
 
 impl<'a> Drain<'a> {
-    fn new(registry: &'a Registry, timeout: Duration) -> Self {
+    fn new(registry: &'a DumpRegistry, timeout: Duration) -> Self {
         Drain {
             registry,
             shard_iter: registry.shards(),

@@ -10,18 +10,19 @@ use elfo_core::{
     Schema,
 };
 
-use self::storage::Storage;
+use self::dump_storage::DumpStorage;
 
 mod actor;
 mod config;
 mod dump_buffer;
+mod dump_storage;
 mod extract_name;
+mod file_registry;
 mod recorder;
-mod storage;
 
 /// Installs a global dump recorder and returns a group to handle dumps.
 pub fn new() -> Schema {
-    let storage = Arc::new(Mutex::new(Storage::new()));
+    let storage = Arc::new(Mutex::new(DumpStorage::new()));
     let schema = actor::new(storage.clone());
 
     let is_ok = dumping::set_make_recorder(Box::new(move |class| {

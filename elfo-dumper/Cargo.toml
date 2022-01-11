@@ -11,7 +11,7 @@ elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
 elfo-core = { version = "0.1.19", path = "../elfo-core", features = ["unstable"] }
 elfo-utils = { version = "0.1.1", path = "../elfo-utils" }
 
-tokio = { version = "1", features = ["fs", "io-util"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync"] }
 serde = { version = "1.0.120", features = ["derive"] }
 derive_more = "0.99.11"
 serde-value = "0.7.0"
