@@ -133,13 +133,88 @@ impl<C, K, S> Context<C, K, S> {
     /// ctx.send(SomethingHappened).await?;
     ///
     /// // Fire or log.
-    /// if let Some(err) = ctx.send(SomethingHappened).await {
+    /// if let Ok(err) = ctx.send(SomethingHappened).await {
     ///     warn!("...", error = err);
     /// }
     /// ```
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::Regular { sender: self.addr };
         self.do_send(message, kind).await
+    }
+
+    /// Tries to send a message using the routing system.
+    ///
+    /// Returns
+    /// * `Ok(())` if the message has been added to any mailbox.
+    /// * `Err(Full(_))` if some mailboxes are full.
+    /// * `Err(Closed(_))` otherwise.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Fire and forget.
+    /// let _ = ctx.try_send(SomethingHappened);
+    ///
+    /// // Fire or fail.
+    /// ctx.try_send(SomethingHappened)?;
+    ///
+    /// // Fire or log.
+    /// if let Err(err) = ctx.try_send(SomethingHappened) {
+    ///     warn!("...", error = err);
+    /// }
+    /// ```
+    pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
+        let kind = MessageKind::Regular { sender: self.addr };
+
+        // XXX: unify with `do_send`.
+        self.stats.sent_messages_total::<M>();
+
+        trace!("> {:?}", message);
+        if self.dumper.is_enabled() {
+            self.dumper.dump_message(&message, &kind, Direction::Out);
+        }
+
+        let envelope = Envelope::new(message, kind).upcast();
+        let addrs = self.demux.filter(&envelope);
+
+        if addrs.is_empty() {
+            return Err(TrySendError::Closed(e2m(envelope)));
+        }
+
+        if addrs.len() == 1 {
+            return match self.book.get(addrs[0]) {
+                Some(object) => object.try_send(envelope).map_err(|err| err.map(e2m)),
+                None => Err(TrySendError::Closed(e2m(envelope))),
+            };
+        }
+
+        let mut unused = None;
+        let mut has_full = false;
+        let mut success = false;
+
+        // TODO: use the visitor pattern in order to avoid extra cloning.
+        for addr in addrs {
+            let envelope = unused.take().or_else(|| envelope.duplicate(&self.book));
+            let envelope = ward!(envelope, break);
+
+            match self.book.get(addr) {
+                Some(object) => match object.try_send(envelope) {
+                    Ok(()) => success = true,
+                    Err(err) => {
+                        has_full |= err.is_full();
+                        unused = Some(err.into_inner());
+                    }
+                },
+                None => unused = Some(envelope),
+            };
+        }
+
+        if success {
+            Ok(())
+        } else if has_full {
+            Err(TrySendError::Full(e2m(envelope)))
+        } else {
+            Err(TrySendError::Closed(e2m(envelope)))
+        }
     }
 
     /// Returns a request builder.
@@ -192,7 +267,7 @@ impl<C, K, S> Context<C, K, S> {
         let addrs = self.demux.filter(&envelope);
 
         if addrs.is_empty() {
-            return Err(SendError(envelope.do_downcast().into_message()));
+            return Err(SendError(e2m(envelope)));
         }
 
         if addrs.len() == 1 {
@@ -200,8 +275,8 @@ impl<C, K, S> Context<C, K, S> {
                 Some(object) => object
                     .send(self, envelope)
                     .await
-                    .map_err(|err| SendError(err.0.do_downcast().into_message())),
-                None => Err(SendError(envelope.do_downcast().into_message())),
+                    .map_err(|err| SendError(e2m(err.0))),
+                None => Err(SendError(e2m(envelope))),
             };
         }
 
@@ -228,7 +303,7 @@ impl<C, K, S> Context<C, K, S> {
         if success {
             Ok(())
         } else {
-            Err(SendError(envelope.do_downcast().into_message()))
+            Err(SendError(e2m(envelope)))
         }
     }
 
@@ -276,7 +351,7 @@ impl<C, K, S> Context<C, K, S> {
         let envelope = Envelope::new(message, kind);
         let fut = object.send(self, envelope.upcast());
         let result = fut.await;
-        result.map_err(|err| SendError(err.0.do_downcast().into_message()))
+        result.map_err(|err| SendError(e2m(err.0)))
     }
 
     /// Tries to send a message to the specified recipient.
@@ -310,18 +385,13 @@ impl<C, K, S> Context<C, K, S> {
             self.dumper.dump_message(&message, &kind, Direction::Out);
         }
 
-        let entry = self.book.get_owned(recipient);
+        let entry = self.book.get(recipient);
         let object = ward!(entry, return Err(TrySendError::Closed(message)));
         let envelope = Envelope::new(message, kind);
 
-        object.try_send(envelope.upcast()).map_err(|err| match err {
-            TrySendError::Full(envelope) => {
-                TrySendError::Full(envelope.do_downcast().into_message())
-            }
-            TrySendError::Closed(envelope) => {
-                TrySendError::Closed(envelope.do_downcast().into_message())
-            }
-        })
+        object
+            .try_send(envelope.upcast())
+            .map_err(|err| err.map(e2m))
     }
 
     /// Responds to the requester with the provided response.
@@ -617,6 +687,10 @@ impl<C, K, S> Context<C, K, S> {
     }
 }
 
+fn e2m<M: Message>(envelope: Envelope) -> M {
+    envelope.do_downcast::<M>().into_message()
+}
+
 #[cold]
 fn on_first_recv(stage: &mut Stage, actor: &Actor) {
     if actor.is_initializing() {
@@ -761,7 +835,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
         let mut data = actor.request_table().wait(request_id).await;
         if let Some(Some(envelope)) = data.pop() {
             // TODO: increase a counter.
-            let message = envelope.do_downcast::<R::Wrapper>().into_message().into();
+            let message = e2m::<R::Wrapper>(envelope).into();
             trace!("< {:?}", message);
             if self.context.dumper.is_enabled() {
                 self.context
@@ -805,7 +879,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             .await
             .into_iter()
             .map(|opt| match opt {
-                Some(envelope) => Ok(envelope.do_downcast::<R::Wrapper>().into_message().into()),
+                Some(envelope) => Ok(e2m::<R::Wrapper>(envelope).into()),
                 None => Err(RequestError::Ignored),
             })
             .inspect(|res| {
