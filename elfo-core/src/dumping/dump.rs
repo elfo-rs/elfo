@@ -1,19 +1,16 @@
-use std::{fmt, sync::Arc};
+use std::{fmt, ops::Deref, sync::Arc};
 
 use erased_serde::Serialize as ErasedSerialize;
-use serde::{
-    ser::{SerializeStruct, Serializer},
-    Serialize,
-};
+use serde::Serialize;
 use smallbox::{smallbox, SmallBox};
 
 use elfo_macros::message;
 
-use super::sequence_no::SequenceNoGenerator;
-use crate::{
-    actor::ActorMeta, dumping::sequence_no::SequenceNo, envelope, message::Message, node, scope,
-    trace_id::TraceId,
+use super::{
+    extract_name::extract_name,
+    sequence_no::{SequenceNo, SequenceNoGenerator},
 };
+use crate::{actor::ActorMeta, envelope, message::Message, scope, trace_id::TraceId};
 
 // === Dump ===
 
@@ -25,8 +22,7 @@ pub struct Dump {
     pub timestamp: Timestamp,
     pub trace_id: TraceId,
     pub direction: Direction,
-    pub class: &'static str, // TODO: remove?
-    pub message_name: &'static str,
+    pub message_name: MessageName,
     pub message_protocol: &'static str,
     pub message_kind: MessageKind,
     pub message: ErasedMessage,
@@ -41,7 +37,7 @@ impl Dump {
         DumpBuilder {
             direction: Direction::Out,
             message_name: None,
-            message_protocol: None,
+            message_protocol: "",
             message_kind: MessageKind::Regular,
         }
     }
@@ -65,8 +61,8 @@ impl Dump {
 #[stability::unstable]
 pub struct DumpBuilder {
     direction: Direction,
-    message_name: Option<&'static str>,
-    message_protocol: Option<&'static str>,
+    message_name: Option<MessageName>,
+    message_protocol: &'static str,
     message_kind: MessageKind,
 }
 
@@ -78,14 +74,14 @@ impl DumpBuilder {
     }
 
     #[stability::unstable]
-    pub fn message_name(&mut self, name: &'static str) -> &mut Self {
-        self.message_name = Some(name);
+    pub fn message_name(&mut self, name: impl Into<MessageName>) -> &mut Self {
+        self.message_name = Some(name.into());
         self
     }
 
     #[stability::unstable]
     pub fn message_protocol(&mut self, protocol: &'static str) -> &mut Self {
-        self.message_protocol = Some(protocol);
+        self.message_protocol = protocol;
         self
     }
 
@@ -100,8 +96,15 @@ impl DumpBuilder {
         self.do_finish(smallbox!(message))
     }
 
-    pub(crate) fn do_finish(&mut self, message: impl Into<ErasedMessage>) -> Dump {
+    pub(crate) fn do_finish(&mut self, message: ErasedMessage) -> Dump {
         let (meta, trace_id) = scope::with(|scope| (scope.meta().clone(), scope.trace_id()));
+
+        if self.message_name.is_none() {
+            // If the simplest serializer fails, the actual serialization will fail too.
+            if let Ok(name) = extract_name(&message.deref()) {
+                self.message_name = Some(name);
+            }
+        }
 
         Dump {
             meta,
@@ -109,11 +112,10 @@ impl DumpBuilder {
             timestamp: Timestamp::now(),
             trace_id,
             direction: self.direction,
-            class: "KEK",                                          // TODO
-            message_name: self.message_name.unwrap_or(""),         // TODO
-            message_protocol: self.message_protocol.unwrap_or(""), // TODO
+            message_name: self.message_name.take().unwrap_or_default(),
+            message_protocol: self.message_protocol,
             message_kind: self.message_kind,
-            message: message.into(),
+            message,
         }
     }
 }
@@ -164,7 +166,7 @@ pub enum Direction {
 
 // === MessageName ===
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq)]
 #[stability::unstable]
 pub struct MessageName(&'static str, Option<&'static str>);
 
@@ -233,47 +235,5 @@ impl MessageKind {
             }
             MK::Response { request_id, .. } => Self::Response(request_id.data().as_ffi()),
         }
-    }
-}
-
-// TODO: move to elfo-dumper
-impl Serialize for Dump {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let field_count = 11
-            + !self.meta.key.is_empty() as usize // "k"
-            + !matches!(self.message_kind, MessageKind::Regular) as usize; // "c"
-
-        let mut s = serializer.serialize_struct("Dump", field_count)?;
-
-        // Dump `ts` firstly to make it possible to use `sort`.
-        s.serialize_field("ts", &self.timestamp)?;
-        s.serialize_field("g", &self.meta.group)?;
-
-        if !self.meta.key.is_empty() {
-            s.serialize_field("k", &self.meta.key)?;
-        }
-
-        s.serialize_field("n", &node::node_no())?;
-        s.serialize_field("s", &self.sequence_no)?;
-        s.serialize_field("t", &self.trace_id)?;
-        s.serialize_field("d", &self.direction)?;
-        s.serialize_field("cl", &self.class)?;
-        s.serialize_field("mn", &self.message_name)?;
-        s.serialize_field("mp", &self.message_protocol)?;
-
-        let (message_kind, correlation_id) = match self.message_kind {
-            MessageKind::Regular => ("Regular", None),
-            MessageKind::Request(c) => ("Request", Some(c)),
-            MessageKind::Response(c) => ("Response", Some(c)),
-        };
-
-        s.serialize_field("mk", message_kind)?;
-        s.serialize_field("m", &*self.message)?;
-
-        if let Some(correlation_id) = correlation_id {
-            s.serialize_field("c", &correlation_id)?;
-        }
-
-        s.end()
     }
 }

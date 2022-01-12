@@ -13,6 +13,7 @@ use elfo_core::{
 use self::dump_storage::DumpStorage;
 
 mod actor;
+mod compact_dump;
 mod config;
 mod dump_buffer;
 mod dump_storage;

@@ -8,14 +8,12 @@ use super::{
 #[derive(Clone)]
 #[stability::unstable]
 pub struct Dumper {
-    class: &'static str,
     recorder: Option<Arc<dyn Recorder>>,
 }
 
 impl Dumper {
     pub fn new(class: &'static str) -> Self {
         Self {
-            class,
             recorder: recorder::make_recorder(class),
         }
     }

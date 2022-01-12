@@ -7,7 +7,7 @@ use std::{
 use serde::Serialize;
 
 // TODO: make it just type alias (or not?)
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct SequenceNo(NonZeroU64);
 
 impl TryFrom<u64> for SequenceNo {

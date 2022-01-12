@@ -13,7 +13,7 @@ use elfo_macros::{message, msg_raw as msg};
 use elfo_utils::{cooldown, ward};
 
 use elfo::{
-    dumping::{self, INTERNAL_CLASS},
+    dumping::{self, MessageName, INTERNAL_CLASS},
     group::TerminationPolicy,
     messages::{ConfigUpdated, Terminate, UpdateConfig},
     routers::{MapRouter, Outcome},
@@ -23,6 +23,7 @@ use elfo::{
 };
 
 use crate::{
+    compact_dump::CompactDump,
     config::Config,
     dump_buffer::{AppendError, DumpBuffer},
     dump_storage::{DumpRegistry, DumpStorage},
@@ -131,13 +132,17 @@ impl Dumper {
 
                     // TODO: run inside scope?
                     let report = task::spawn_blocking(move || -> Result<Report> {
+                        let mut name_buffer = String::new();
                         let mut errors = Vec::new();
                         let mut written = 0;
 
                         dumping::set_in_dumping(true);
 
                         for dump in dump_registry.drain(timeout) {
-                            match buffer.append(&dump) {
+                            let d =
+                                CompactDump::new(&dump, dump_registry.class(), &mut name_buffer);
+
+                            match buffer.append(&d) {
                                 Ok(buf) => {
                                     written += 1;
 
@@ -183,7 +188,7 @@ impl Dumper {
                     cooldown!(Duration::from_secs(15), {
                         for (message_name, error) in report.errors {
                             warn!(
-                                message = message_name,
+                                message = %message_name,
                                 error = &error as &(dyn StdError),
                                 "cannot serialize"
                             );
@@ -241,7 +246,7 @@ impl Dumper {
 
 struct Report {
     buffer: DumpBuffer,
-    errors: Vec<(&'static str, serde_json::Error)>,
+    errors: Vec<(MessageName, serde_json::Error)>,
     written: u64,
 }
 
