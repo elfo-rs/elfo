@@ -9,6 +9,7 @@ pub use self::{
     control::{CheckResult, DumpingControl},
     dump::{Direction, Dump, ErasedMessage, MessageKind, Timestamp},
     dumper::Dumper,
+    extract_name::extract_name,
     recorder::{set_make_recorder, Recorder},
     sequence_no::SequenceNo,
 };
@@ -23,6 +24,7 @@ mod config;
 mod control;
 mod dump;
 mod dumper;
+mod extract_name;
 mod hider;
 mod recorder;
 mod sequence_no;

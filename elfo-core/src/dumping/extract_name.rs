@@ -3,11 +3,13 @@ use std::fmt;
 use derive_more::{Display, Error};
 use serde::{ser, Serialize, Serializer};
 
+use super::dump::MessageName;
+
 // === Outcome ===
 
 #[derive(Debug, Display, Error)]
 enum Outcome {
-    Done,
+    Done(#[error(not(source))] MessageName),
     Inapplicable,
     Error(#[error(not(source))] String),
 }
@@ -23,19 +25,7 @@ impl ser::Error for Outcome {
 type Result<T = (), E = Outcome> = std::result::Result<T, E>;
 type Impossible = ser::Impossible<(), Outcome>;
 
-struct NameExtractor<'a>(&'a mut String);
-
-impl<'a> NameExtractor<'a> {
-    fn struct_name(&mut self, name: &str) {
-        self.0.push_str(name);
-    }
-
-    fn variant_name(&mut self, enum_name: &str, variant_name: &str) {
-        self.0.push_str(enum_name);
-        self.0.push_str("::");
-        self.0.push_str(variant_name);
-    }
-}
+struct NameExtractor;
 
 macro_rules! inapplicable {
     ($ser_method:ident($ty:ty) -> $ret:ty, $($other:tt)*) => {
@@ -58,7 +48,7 @@ macro_rules! inapplicable {
     () => {};
 }
 
-impl<'a> Serializer for NameExtractor<'a> {
+impl Serializer for NameExtractor {
     type Error = Outcome;
     type Ok = ();
     type SerializeMap = Impossible;
@@ -99,82 +89,70 @@ impl<'a> Serializer for NameExtractor<'a> {
     }
 
     #[inline]
-    fn serialize_unit_struct(mut self, name: &'static str) -> Result {
-        self.struct_name(name);
-        Err(Outcome::Done)
+    fn serialize_unit_struct(self, name: &'static str) -> Result {
+        Err(Outcome::Done(name.into()))
     }
 
     #[inline]
     fn serialize_unit_variant(
-        mut self,
+        self,
         name: &'static str,
         _variant_index: u32,
         variant: &'static str,
     ) -> Result {
-        self.variant_name(name, variant);
-        Err(Outcome::Done)
+        Err(Outcome::Done((name, variant).into()))
     }
 
     #[inline]
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
-        mut self,
+        self,
         name: &'static str,
         _value: &T,
     ) -> Result {
-        self.struct_name(name);
-        Err(Outcome::Done)
+        Err(Outcome::Done(name.into()))
     }
 
     #[inline]
     fn serialize_newtype_variant<T: Serialize + ?Sized>(
-        mut self,
+        self,
         name: &'static str,
         _variant_index: u32,
         variant: &'static str,
         _value: &T,
     ) -> Result {
-        self.variant_name(name, variant);
-        Err(Outcome::Done)
+        Err(Outcome::Done((name, variant).into()))
     }
 
     #[inline]
-    fn serialize_tuple_struct(mut self, name: &'static str, _len: usize) -> Result<Impossible> {
-        self.struct_name(name);
-        Err(Outcome::Done)
+    fn serialize_tuple_struct(self, name: &'static str, _len: usize) -> Result<Impossible> {
+        Err(Outcome::Done(name.into()))
     }
 
     #[inline]
     fn serialize_tuple_variant(
-        mut self,
+        self,
         name: &'static str,
         _variant_index: u32,
         variant: &'static str,
         _len: usize,
     ) -> Result<Impossible> {
-        self.variant_name(name, variant);
-        Err(Outcome::Done)
+        Err(Outcome::Done((name, variant).into()))
     }
 
     #[inline]
-    fn serialize_struct(
-        mut self,
-        name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct> {
-        self.struct_name(name);
-        Err(Outcome::Done)
+    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        Err(Outcome::Done(name.into()))
     }
 
     #[inline]
     fn serialize_struct_variant(
-        mut self,
+        self,
         name: &'static str,
         _variant_index: u32,
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        self.variant_name(name, variant);
-        Err(Outcome::Done)
+        Err(Outcome::Done((name, variant).into()))
     }
 
     #[inline]
@@ -189,10 +167,11 @@ impl<'a> Serializer for NameExtractor<'a> {
 /// * `Ok(true)` if the name is extracted successfully.
 /// * `Ok(false)` if the name cannot be extracted.
 /// * `Err(err)` if a custom error occurs.
-pub(crate) fn extract_name_into(s: &mut String, value: &impl Serialize) -> Result<bool, String> {
-    match value.serialize(NameExtractor(s)).unwrap_err() {
-        Outcome::Done => Ok(true),
-        Outcome::Inapplicable => Ok(false),
+#[stability::unstable]
+pub fn extract_name(value: &impl Serialize) -> Result<MessageName, String> {
+    match value.serialize(NameExtractor).unwrap_err() {
+        Outcome::Done(name) => Ok(name),
+        Outcome::Inapplicable => Ok("".into()),
         Outcome::Error(err) => Err(err),
     }
 }
@@ -205,42 +184,38 @@ mod tests {
 
     use super::*;
 
+    fn extract_name_pretty(value: &impl Serialize) -> String {
+        extract_name(value).unwrap().to_string()
+    }
+
     #[test]
     fn struct_() {
         #[derive(Serialize)]
         struct Struct {
             n: u8,
         }
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &Struct { n: 42 }), Ok(true));
-        assert_eq!(s, "Struct");
+        assert_eq!(extract_name_pretty(&Struct { n: 42 }), "Struct");
     }
 
     #[test]
     fn unit_struct() {
         #[derive(Serialize)]
         struct UnitStruct;
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &UnitStruct), Ok(true));
-        assert_eq!(s, "UnitStruct");
+        assert_eq!(extract_name_pretty(&UnitStruct), "UnitStruct");
     }
 
     #[test]
     fn newtype_struct() {
         #[derive(Serialize)]
         struct NewtypeStruct(u8);
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &NewtypeStruct(42)), Ok(true));
-        assert_eq!(s, "NewtypeStruct");
+        assert_eq!(extract_name_pretty(&NewtypeStruct(42)), "NewtypeStruct");
     }
 
     #[test]
     fn tuple_struct() {
         #[derive(Serialize)]
         struct TupleStruct(u8, u8);
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &TupleStruct(42, 42)), Ok(true));
-        assert_eq!(s, "TupleStruct");
+        assert_eq!(extract_name_pretty(&TupleStruct(42, 42)), "TupleStruct");
     }
 
     #[test]
@@ -253,47 +228,29 @@ mod tests {
             D,
         }
 
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &Enum::A(42)), Ok(true));
-        assert_eq!(s, "Enum::A");
-
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &Enum::B { n: 42 }), Ok(true));
-        assert_eq!(s, "Enum::B");
-
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &Enum::C(42, 42)), Ok(true));
-        assert_eq!(s, "Enum::C");
-
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &Enum::D), Ok(true));
-        assert_eq!(s, "Enum::D");
+        assert_eq!(extract_name_pretty(&Enum::A(42)), "Enum::A");
+        assert_eq!(extract_name_pretty(&Enum::B { n: 42 }), "Enum::B");
+        assert_eq!(extract_name_pretty(&Enum::C(42, 42)), "Enum::C");
+        assert_eq!(extract_name_pretty(&Enum::D), "Enum::D");
     }
 
     #[test]
     fn some() {
         #[derive(Serialize)]
         struct Struct;
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &Some(Struct)), Ok(true));
-        assert_eq!(s, "Struct");
+        assert_eq!(extract_name_pretty(&Some(Struct)), "Struct");
     }
 
     #[test]
     fn inapplicable() {
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &42u8), Ok(false));
-        assert_eq!(extract_name_into(&mut s, &42f64), Ok(false));
-        assert_eq!(extract_name_into(&mut s, &"foobar"), Ok(false));
-        assert_eq!(extract_name_into(&mut s, &[42]), Ok(false));
-        assert_eq!(extract_name_into(&mut s, &None::<u32>), Ok(false));
-        assert_eq!(
-            extract_name_into(&mut s, &HashMap::<u32, u32>::default()),
-            Ok(false)
-        );
-        assert_eq!(extract_name_into(&mut s, &()), Ok(false));
-        assert_eq!(extract_name_into(&mut s, &(42, 42)), Ok(false));
-        assert!(s.is_empty());
+        assert_eq!(extract_name_pretty(&42u8), "");
+        assert_eq!(extract_name_pretty(&42f64), "");
+        assert_eq!(extract_name_pretty(&"foobar"), "");
+        assert_eq!(extract_name_pretty(&[42]), "");
+        assert_eq!(extract_name_pretty(&None::<u32>), "");
+        assert_eq!(extract_name_pretty(&HashMap::<u32, u32>::default()), "");
+        assert_eq!(extract_name_pretty(&()), "");
+        assert_eq!(extract_name_pretty(&(42, 42)), "");
     }
 
     #[test]
@@ -305,8 +262,6 @@ mod tests {
             }
         }
 
-        let mut s = String::new();
-        assert_eq!(extract_name_into(&mut s, &Foo), Err("oops".to_string()));
-        assert!(s.is_empty());
+        assert_eq!(extract_name(&Foo).unwrap_err(), "oops");
     }
 }

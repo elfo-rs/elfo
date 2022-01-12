@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use erased_serde::Serialize as ErasedSerialize;
 use serde::{
@@ -14,6 +14,8 @@ use crate::{
     actor::ActorMeta, dumping::sequence_no::SequenceNo, envelope, message::Message, node, scope,
     trace_id::TraceId,
 };
+
+// === Dump ===
 
 #[doc(hidden)]
 #[stability::unstable]
@@ -57,6 +59,8 @@ impl Dump {
             .finish(message)
     }
 }
+
+// === DumpBuilder ===
 
 #[stability::unstable]
 pub struct DumpBuilder {
@@ -114,6 +118,8 @@ impl DumpBuilder {
     }
 }
 
+// === Timestamp ===
+
 // TODO: move to `time`.
 /// Timestamp in nanos since Unix epoch.
 #[message(part, elfo = crate)]
@@ -147,7 +153,8 @@ impl Timestamp {
 #[doc(hidden)]
 pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 136]>;
 
-// Reexported in `elfo::_priv`.
+// === Direction ===
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[stability::unstable]
 pub enum Direction {
@@ -155,7 +162,56 @@ pub enum Direction {
     Out,
 }
 
-// Reexported in `elfo::_priv`.
+// === MessageName ===
+
+#[derive(Debug, Clone)]
+#[stability::unstable]
+pub struct MessageName(&'static str, Option<&'static str>);
+
+impl fmt::Display for MessageName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(variant) = self.1 {
+            write!(f, "{}::{}", self.0, variant)
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
+}
+
+impl From<&'static str> for MessageName {
+    #[inline]
+    fn from(struct_name: &'static str) -> Self {
+        Self(struct_name, None)
+    }
+}
+
+impl From<(&'static str, &'static str)> for MessageName {
+    #[inline]
+    fn from((enum_name, variant): (&'static str, &'static str)) -> Self {
+        Self(enum_name, Some(variant))
+    }
+}
+
+impl MessageName {
+    // TODO: methods to expose static strings. It can be useful for metrics.
+
+    #[doc(hidden)]
+    #[stability::unstable]
+    pub fn to_str<'a>(&self, buffer: &'a mut String) -> &'a str {
+        if let Some(variant) = self.1 {
+            buffer.clear();
+            buffer.push_str(self.0);
+            buffer.push_str("::");
+            buffer.push_str(variant);
+            &buffer[..]
+        } else {
+            self.0
+        }
+    }
+}
+
+// === MessageKind ===
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[stability::unstable]
 pub enum MessageKind {

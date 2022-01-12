@@ -16,7 +16,6 @@ mod actor;
 mod config;
 mod dump_buffer;
 mod dump_storage;
-mod extract_name;
 mod file_registry;
 mod recorder;
 
