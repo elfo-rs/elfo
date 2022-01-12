@@ -7,7 +7,7 @@ pub use self::hider::hide;
 // Unstable.
 pub use self::{
     control::{CheckResult, DumpingControl},
-    dump_item::{Direction, DumpItem, ErasedMessage, MessageKind, Timestamp},
+    dump::{Direction, Dump, ErasedMessage, MessageKind, Timestamp},
     dumper::Dumper,
     recorder::{set_make_recorder, Recorder},
     sequence_no::SequenceNo,
@@ -21,7 +21,7 @@ pub const INTERNAL_CLASS: &str = "internal";
 
 mod config;
 mod control;
-mod dump_item;
+mod dump;
 mod dumper;
 mod hider;
 mod recorder;

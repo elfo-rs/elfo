@@ -12,7 +12,7 @@ use crate::{
     address_book::AddressBook,
     config::AnyConfig,
     demux::Demux,
-    dumping::{self, Direction, Dumper, INTERNAL_CLASS},
+    dumping::{self, Direction, Dump, Dumper, INTERNAL_CLASS},
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     mailbox::RecvResult,
@@ -169,8 +169,8 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!("> {:?}", message);
-        if self.dumper.is_enabled() {
-            self.dumper.dump_message(&message, &kind, Direction::Out);
+        if let Some(permit) = self.dumper.acquire() {
+            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
         let envelope = Envelope::new(message, kind).upcast();
@@ -259,8 +259,8 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!("> {:?}", message);
-        if self.dumper.is_enabled() {
-            self.dumper.dump_message(&message, &kind, Direction::Out);
+        if let Some(permit) = self.dumper.acquire() {
+            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
         let envelope = Envelope::new(message, kind).upcast();
@@ -342,8 +342,8 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!(to = %recipient, "> {:?}", message);
-        if self.dumper.is_enabled() {
-            self.dumper.dump_message(&message, &kind, Direction::Out);
+        if let Some(permit) = self.dumper.acquire() {
+            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
         let entry = self.book.get_owned(recipient);
@@ -381,8 +381,8 @@ impl<C, K, S> Context<C, K, S> {
         let kind = MessageKind::Regular { sender: self.addr };
 
         trace!(to = %recipient, "> {:?}", message);
-        if self.dumper.is_enabled() {
-            self.dumper.dump_message(&message, &kind, Direction::Out);
+        if let Some(permit) = self.dumper.acquire() {
+            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
         let entry = self.book.get(recipient);
@@ -413,15 +413,18 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<R::Wrapper>();
 
         let sender = token.sender;
+        let message = R::Wrapper::from(message);
+        let kind = MessageKind::Response {
+            sender: self.addr(),
+            request_id: token.request_id,
+        };
 
         trace!(to = %sender, "> {:?}", message);
-        if self.dumper.is_enabled() {
-            self.dumper
-                .dump_response::<R>(&message, token.request_id, Direction::Out);
+        if let Some(permit) = self.dumper.acquire() {
+            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
-        let message = R::Wrapper::from(message);
-        let envelope = Envelope::new(message, MessageKind::Regular { sender }).upcast();
+        let envelope = Envelope::new(message, kind).upcast();
         let object = ward!(self.book.get(token.sender));
         let actor = ward!(object.as_actor());
         actor
@@ -569,14 +572,18 @@ impl<C, K, S> Context<C, K, S> {
         let message = envelope.message();
         trace!("< {:?}", message);
 
-        if self.dumper.is_enabled() {
-            self.dumper.dump(
-                dumping::Direction::In,
-                message.name(),
-                message.protocol(),
-                dumping::MessageKind::from_message_kind(envelope.message_kind()),
-                message.erase(),
-            )
+        if let Some(permit) = self.dumper.acquire() {
+            // TODO: reuse `Dump::message`, it requires `AnyMessage: Message`.
+            let dump = Dump::builder()
+                .direction(Direction::In)
+                .message_name(message.name())
+                .message_protocol(message.protocol())
+                .message_kind(dumping::MessageKind::from_message_kind(
+                    envelope.message_kind(),
+                ))
+                .do_finish(message.erase());
+
+            permit.record(dump);
         }
 
         // We should change the status after dumping the original message
@@ -829,15 +836,18 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
 
         let mut data = actor.request_table().wait(request_id).await;
         if let Some(Some(envelope)) = data.pop() {
+            let envelope = envelope.do_downcast::<R::Wrapper>();
+
             // TODO: increase a counter.
-            let message = e2m::<R::Wrapper>(envelope).into();
-            trace!("< {:?}", message);
-            if self.context.dumper.is_enabled() {
-                self.context
-                    .dumper
-                    .dump_response::<R>(&message, request_id, Direction::In);
+            trace!("< {:?}", envelope.message());
+            if let Some(permit) = self.context.dumper.acquire() {
+                permit.record(Dump::message(
+                    envelope.message().clone(),
+                    envelope.message_kind(),
+                    Direction::In,
+                ));
             }
-            Ok(message)
+            Ok(envelope.into_message().into())
         } else {
             // TODO: should we dump it and increase a counter?
             Err(RequestError::Ignored)
@@ -868,36 +878,34 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             return vec![Err(RequestError::Closed(err.0))];
         }
 
-        let responses = actor
+        let dumper = &self.context.dumper;
+
+        actor
             .request_table()
             .wait(request_id)
             .await
             .into_iter()
             .map(|opt| match opt {
-                Some(envelope) => Ok(e2m::<R::Wrapper>(envelope).into()),
+                Some(envelope) => Ok(envelope.do_downcast::<R::Wrapper>()),
                 None => Err(RequestError::Ignored),
             })
-            .inspect(|res| {
+            .map(|res| {
+                let envelope = res?;
+
                 // TODO: increase a counter.
-                if let Ok(message) = res {
-                    trace!("< {:?}", message);
+                trace!("< {:?}", envelope.message());
+
+                // TODO: `acquire_many` or even unconditionally?
+                if let Some(permit) = dumper.acquire() {
+                    permit.record(Dump::message(
+                        envelope.message().clone(),
+                        envelope.message_kind(),
+                        Direction::In,
+                    ));
                 }
+                Ok(envelope.into_message().into())
             })
-            .collect::<Vec<_>>();
-
-        if self.context.dumper.is_enabled() {
-            #[allow(clippy::manual_flatten)]
-            for response in &responses {
-                // TODO: dump errors.
-                if let Ok(res) = response {
-                    self.context
-                        .dumper
-                        .dump_response::<R>(res, request_id, Direction::In);
-                }
-            }
-        }
-
-        responses
+            .collect()
     }
 }
 

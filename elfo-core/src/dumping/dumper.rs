@@ -1,18 +1,8 @@
-use std::{sync::Arc, time::Duration};
-
-use smallbox::smallbox;
-use tracing::error;
+use std::sync::Arc;
 
 use super::{
-    dump_item::*,
+    dump::*,
     recorder::{self, Recorder},
-    sequence_no::SequenceNoGenerator,
-};
-use crate::{
-    envelope,
-    message::{Message, Request},
-    request_table::RequestId,
-    scope,
 };
 
 #[derive(Clone)]
@@ -30,79 +20,23 @@ impl Dumper {
         }
     }
 
-    // TODO: naming
     #[inline]
     #[stability::unstable]
-    pub fn is_enabled(&self) -> bool {
-        self.recorder.as_ref().map_or(false, |r| r.enabled())
+    pub fn acquire(&self) -> Option<DumpingPermit<'_>> {
+        let r = self.recorder.as_deref().filter(|r| r.enabled())?;
+        Some(DumpingPermit { recorder: &*r })
     }
+}
 
-    #[inline(always)]
-    pub(crate) fn dump_message<M: Message>(
-        &self,
-        message: &M,
-        kind: &envelope::MessageKind,
-        direction: Direction,
-    ) {
-        self.dump(
-            direction,
-            M::NAME,
-            M::PROTOCOL,
-            MessageKind::from_message_kind(kind),
-            smallbox!(message.clone()),
-        );
-    }
+#[must_use]
+#[stability::unstable]
+pub struct DumpingPermit<'a> {
+    recorder: &'a dyn Recorder,
+}
 
-    #[inline(always)]
-    pub(crate) fn dump_response<R: Request>(
-        &self,
-        message: &R::Response,
-        request_id: RequestId,
-        direction: Direction,
-    ) {
-        use slotmap::Key;
-
-        self.dump(
-            direction,
-            R::Wrapper::NAME,
-            R::Wrapper::PROTOCOL,
-            MessageKind::Response(request_id.data().as_ffi()),
-            smallbox!(message.clone()),
-        );
-    }
-
+impl DumpingPermit<'_> {
     #[stability::unstable]
-    pub fn dump(
-        &self,
-        direction: Direction,
-        message_name: &'static str,
-        message_protocol: &'static str,
-        message_kind: MessageKind,
-        message: ErasedMessage,
-    ) {
-        let d = scope::try_with(|scope| (scope.meta().clone(), scope.trace_id()));
-
-        let (meta, trace_id) = ward!(d, {
-            cooldown!(Duration::from_secs(15), {
-                error!("attempt to dump outside the actor scope");
-            });
-            return;
-        });
-
-        let item = DumpItem {
-            meta,
-            sequence_no: SequenceNoGenerator::default().generate(), // TODO
-            timestamp: Timestamp::now(),
-            trace_id,
-            direction,
-            class: self.class,
-            message_name,
-            message_protocol,
-            message_kind,
-            message,
-        };
-
-        let recorder = self.recorder.as_ref().expect("dump() without is_enabled()");
-        recorder.record(item);
+    pub fn record(self, dump: Dump) {
+        self.recorder.record(dump);
     }
 }

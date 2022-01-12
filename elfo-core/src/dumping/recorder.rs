@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
 
-use super::DumpItem;
+use super::Dump;
 
 static MAKE_RECORDER: OnceCell<MakeRecorder> = OnceCell::new();
 
@@ -11,7 +11,7 @@ type MakeRecorder = Box<dyn Fn(&'static str) -> Arc<dyn Recorder> + Sync + Send>
 #[stability::unstable]
 pub trait Recorder: Send + Sync {
     fn enabled(&self) -> bool;
-    fn record(&self, dump: DumpItem);
+    fn record(&self, dump: Dump);
 }
 
 #[stability::unstable]

@@ -5,7 +5,6 @@ use serde::Deserialize;
 pub(crate) struct DumpingConfig {
     pub(crate) disabled: bool,
     pub(crate) max_rate: u64,
-
     // TODO: per class overrides.
 }
 

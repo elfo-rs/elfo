@@ -9,7 +9,7 @@ use fxhash::{FxHashMap, FxHashSet};
 use parking_lot::{Mutex, MutexGuard};
 use thread_local::ThreadLocal;
 
-use elfo_core::dumping::DumpItem;
+use elfo_core::dumping::Dump;
 use elfo_utils::CachePadded;
 
 type ShardNo = usize;
@@ -90,7 +90,7 @@ impl DumpRegistry {
         self.class
     }
 
-    pub(crate) fn add(&self, dump: DumpItem) {
+    pub(crate) fn add(&self, dump: Dump) {
         let shard = self.shards.get_or(|| self.make_shard());
         let need_to_renew = {
             let mut active_part = shard.active_part.lock();
@@ -235,7 +235,7 @@ impl Fund {
 const PART_CAPACITY: usize = 8191; // must be `N^2 - 1`
 
 struct Part {
-    items: VecDeque<DumpItem>,
+    items: VecDeque<Dump>,
 }
 
 impl Part {
@@ -253,11 +253,11 @@ impl Part {
         self.items.len() == PART_CAPACITY
     }
 
-    fn push(&mut self, dump: DumpItem) {
+    fn push(&mut self, dump: Dump) {
         self.items.push_back(dump);
     }
 
-    fn pop(&mut self) -> Option<DumpItem> {
+    fn pop(&mut self) -> Option<Dump> {
         self.items.pop_front()
     }
 
@@ -330,9 +330,9 @@ impl<'a> Drain<'a> {
 }
 
 impl<'a> Iterator for Drain<'a> {
-    type Item = DumpItem;
+    type Item = Dump;
 
-    fn next(&mut self) -> Option<DumpItem> {
+    fn next(&mut self) -> Option<Dump> {
         if self.current.is_none() && Instant::now() < self.until {
             self.next_shard();
         }

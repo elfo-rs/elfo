@@ -99,6 +99,7 @@ impl DumpingControl {
     }
 }
 
+#[stability::unstable]
 pub enum CheckResult {
     Passed,
     NotInterested,

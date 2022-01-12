@@ -1,5 +1,5 @@
 use elfo_core::{
-    dumping::{CheckResult, DumpItem, Recorder},
+    dumping::{CheckResult, Dump, Recorder},
     scope,
 };
 
@@ -23,7 +23,7 @@ impl Recorder for DumpRegistry {
         .unwrap_or(false)
     }
 
-    fn record(&self, dump: DumpItem) {
+    fn record(&self, dump: Dump) {
         self.add(dump);
     }
 }

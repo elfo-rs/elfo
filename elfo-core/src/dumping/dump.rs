@@ -5,25 +5,113 @@ use serde::{
     ser::{SerializeStruct, Serializer},
     Serialize,
 };
-use smallbox::SmallBox;
+use smallbox::{smallbox, SmallBox};
 
 use elfo_macros::message;
 
-use crate::{actor::ActorMeta, dumping::sequence_no::SequenceNo, node, trace_id::TraceId};
+use super::sequence_no::SequenceNoGenerator;
+use crate::{
+    actor::ActorMeta, dumping::sequence_no::SequenceNo, envelope, message::Message, node, scope,
+    trace_id::TraceId,
+};
 
 #[doc(hidden)]
 #[stability::unstable]
-pub struct DumpItem {
+pub struct Dump {
     pub meta: Arc<ActorMeta>,
     pub sequence_no: SequenceNo,
     pub timestamp: Timestamp,
     pub trace_id: TraceId,
     pub direction: Direction,
-    pub class: &'static str,
+    pub class: &'static str, // TODO: remove?
     pub message_name: &'static str,
     pub message_protocol: &'static str,
     pub message_kind: MessageKind,
     pub message: ErasedMessage,
+}
+
+assert_impl_all!(Dump: Send);
+assert_eq_size!(Dump, [u8; 256]);
+
+impl Dump {
+    #[stability::unstable]
+    pub fn builder() -> DumpBuilder {
+        DumpBuilder {
+            direction: Direction::Out,
+            message_name: None,
+            message_protocol: None,
+            message_kind: MessageKind::Regular,
+        }
+    }
+
+    pub(crate) fn message<M: Message>(
+        message: M,
+        kind: &envelope::MessageKind,
+        direction: Direction,
+    ) -> Self {
+        Self::builder()
+            .direction(direction)
+            .message_name(M::NAME)
+            .message_protocol(M::PROTOCOL)
+            .message_kind(MessageKind::from_message_kind(kind))
+            .finish(message)
+    }
+}
+
+#[stability::unstable]
+pub struct DumpBuilder {
+    direction: Direction,
+    message_name: Option<&'static str>,
+    message_protocol: Option<&'static str>,
+    message_kind: MessageKind,
+}
+
+impl DumpBuilder {
+    #[stability::unstable]
+    pub fn direction(&mut self, direction: Direction) -> &mut Self {
+        self.direction = direction;
+        self
+    }
+
+    #[stability::unstable]
+    pub fn message_name(&mut self, name: &'static str) -> &mut Self {
+        self.message_name = Some(name);
+        self
+    }
+
+    #[stability::unstable]
+    pub fn message_protocol(&mut self, protocol: &'static str) -> &mut Self {
+        self.message_protocol = Some(protocol);
+        self
+    }
+
+    #[stability::unstable]
+    pub fn message_kind(&mut self, kind: MessageKind) -> &mut Self {
+        self.message_kind = kind;
+        self
+    }
+
+    #[stability::unstable]
+    pub fn finish(&mut self, message: impl Serialize + Send + 'static) -> Dump {
+        self.do_finish(smallbox!(message))
+    }
+
+    pub(crate) fn do_finish(&mut self, message: impl Into<ErasedMessage>) -> Dump {
+        let (meta, trace_id) = scope::with(|scope| (scope.meta().clone(), scope.trace_id()));
+
+        Dump {
+            meta,
+            sequence_no: SequenceNoGenerator::default().generate(), // TODO
+            timestamp: Timestamp::now(),
+            trace_id,
+            direction: self.direction,
+            class: "KEK",                                          // TODO
+            message_name: self.message_name.unwrap_or(""),         // TODO
+            message_protocol: self.message_protocol.unwrap_or(""), // TODO
+            message_kind: self.message_kind,
+            message: message.into(),
+        }
+    }
 }
 
 // TODO: move to `time`.
@@ -59,11 +147,8 @@ impl Timestamp {
 #[doc(hidden)]
 pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 136]>;
 
-assert_impl_all!(DumpItem: Send);
-assert_eq_size!(DumpItem, [u8; 256]);
-
 // Reexported in `elfo::_priv`.
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[stability::unstable]
 pub enum Direction {
     In,
@@ -71,7 +156,7 @@ pub enum Direction {
 }
 
 // Reexported in `elfo::_priv`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[stability::unstable]
 pub enum MessageKind {
     Regular,
@@ -90,11 +175,13 @@ impl MessageKind {
             MK::RequestAny(token) | MK::RequestAll(token) => {
                 Self::Request(token.request_id.data().as_ffi())
             }
+            MK::Response { request_id, .. } => Self::Response(request_id.data().as_ffi()),
         }
     }
 }
 
-impl Serialize for DumpItem {
+// TODO: move to elfo-dumper
+impl Serialize for Dump {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let field_count = 11
             + !self.meta.key.is_empty() as usize // "k"
