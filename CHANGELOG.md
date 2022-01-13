@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - dumper: don't dump partially invalid messages. Previously, it could lead to file corruption.
+- Avoid rare `invalid LTID` errors.
 
 ### Fixed
 - init: do not start termination if the memory tracker fails to read files.
