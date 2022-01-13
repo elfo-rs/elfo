@@ -1,4 +1,4 @@
-use std::{fmt, ops::Deref, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Serialize;
@@ -90,6 +90,13 @@ impl DumpBuilder {
 
     #[stability::unstable]
     pub fn finish(&mut self, message: impl Serialize + Send + 'static) -> Dump {
+        if self.message_name.is_none() {
+            // If the simplest serializer fails, the actual serialization will fail too.
+            if let Ok(name) = extract_name(&message) {
+                self.message_name = Some(name);
+            }
+        }
+
         self.do_finish(smallbox!(message))
     }
 
@@ -101,13 +108,6 @@ impl DumpBuilder {
                 scope.dumping().next_sequence_no(),
             )
         });
-
-        if self.message_name.is_none() {
-            // If the simplest serializer fails, the actual serialization will fail too.
-            if let Ok(name) = extract_name(&message.deref()) {
-                self.message_name = Some(name);
-            }
-        }
 
         Dump {
             meta,
