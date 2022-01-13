@@ -6,10 +6,7 @@ use smallbox::{smallbox, SmallBox};
 
 use elfo_macros::message;
 
-use super::{
-    extract_name::extract_name,
-    sequence_no::{SequenceNo, SequenceNoGenerator},
-};
+use super::{extract_name::extract_name, sequence_no::SequenceNo};
 use crate::{actor::ActorMeta, envelope, message::Message, scope, trace_id::TraceId};
 
 // === Dump ===
@@ -97,7 +94,13 @@ impl DumpBuilder {
     }
 
     pub(crate) fn do_finish(&mut self, message: ErasedMessage) -> Dump {
-        let (meta, trace_id) = scope::with(|scope| (scope.meta().clone(), scope.trace_id()));
+        let (meta, trace_id, sequence_no) = scope::with(|scope| {
+            (
+                scope.meta().clone(),
+                scope.trace_id(),
+                scope.dumping().next_sequence_no(),
+            )
+        });
 
         if self.message_name.is_none() {
             // If the simplest serializer fails, the actual serialization will fail too.
@@ -108,7 +111,7 @@ impl DumpBuilder {
 
         Dump {
             meta,
-            sequence_no: SequenceNoGenerator::default().generate(), // TODO
+            sequence_no,
             timestamp: Timestamp::now(),
             trace_id,
             direction: self.direction,

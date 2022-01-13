@@ -4,14 +4,18 @@ use arc_swap::ArcSwap;
 use parking_lot::Mutex;
 use smallvec::SmallVec;
 
-use elfo_utils::RateLimiter;
+use elfo_utils::{CachePadded, RateLimiter};
 
-use super::config::DumpingConfig;
+use super::{
+    config::DumpingConfig,
+    sequence_no::{SequenceNo, SequenceNoGenerator},
+};
 
 #[stability::unstable]
 #[derive(Default)]
 pub struct DumpingControl {
     config: Mutex<DumpingConfig>,
+    sequence_no_gen: CachePadded<SequenceNoGenerator>,
     classes: ArcSwap<SmallVec<[PerClass; 1]>>, // TODO: use `SecondaryMap`?
 }
 
@@ -19,7 +23,7 @@ pub struct DumpingControl {
 struct PerClass {
     class: &'static str,
     disabled: bool,
-    limiter: Arc<RateLimiter>, // TODO: use `CachePadded`?
+    limiter: Arc<CachePadded<RateLimiter>>,
 }
 
 impl PerClass {
@@ -67,6 +71,10 @@ impl DumpingControl {
             .collect();
 
         self.classes.store(Arc::new(new_classes));
+    }
+
+    pub(crate) fn next_sequence_no(&self) -> SequenceNo {
+        self.sequence_no_gen.generate()
     }
 
     #[stability::unstable]
