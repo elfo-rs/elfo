@@ -229,10 +229,13 @@ impl Dumper {
             return;
         }
 
+        let classes = classes.clone();
+        drop(dump_storage);
+
         info!("new classes are found, starting more dumpers");
 
         // Create more dumpers for new classes.
-        for class in m.known_classes.difference(classes) {
+        for class in classes.difference(&m.known_classes) {
             let msg = StartDumperForClass(class.to_string());
 
             if let Err(err) = self.ctx.try_send_to(self.ctx.group(), msg) {
@@ -240,7 +243,7 @@ impl Dumper {
             }
         }
 
-        m.known_classes = classes.clone();
+        m.known_classes = classes;
     }
 }
 
@@ -266,6 +269,7 @@ pub(crate) fn new(dump_storage: Arc<Mutex<DumpStorage>>) -> Schema {
                 // TODO: there is a rare race condition here,
                 //       use `Broadcast & Unicast(INTERNAL_CLASS)` instead.
                 UpdateConfig => Outcome::Multicast(collect_classes(dump_storage.lock().classes())),
+                StartDumperForClass(class) => Outcome::Unicast(class.clone()),
                 _ => Outcome::Default,
             })
         }))
