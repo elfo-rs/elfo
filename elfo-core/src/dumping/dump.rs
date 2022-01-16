@@ -1,5 +1,6 @@
 use std::{fmt, sync::Arc};
 
+use derive_more::From;
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Serialize;
 use smallbox::{smallbox, SmallBox};
@@ -7,7 +8,7 @@ use smallbox::{smallbox, SmallBox};
 use elfo_macros::message;
 
 use super::{extract_name::extract_name, sequence_no::SequenceNo};
-use crate::{actor::ActorMeta, envelope, message::Message, scope, trace_id::TraceId};
+use crate::{actor::ActorMeta, envelope, scope, trace_id::TraceId};
 
 // === Dump ===
 
@@ -22,11 +23,22 @@ pub struct Dump {
     pub message_name: MessageName,
     pub message_protocol: &'static str,
     pub message_kind: MessageKind,
-    pub message: ErasedMessage,
+    pub message: Message,
+}
+
+#[doc(hidden)]
+#[stability::unstable]
+pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 192]>;
+
+#[derive(From)]
+#[stability::unstable]
+pub enum Message {
+    Raw(String),
+    Structural(ErasedMessage),
 }
 
 assert_impl_all!(Dump: Send);
-assert_eq_size!(Dump, [u8; 256]);
+assert_eq_size!(Dump, [u8; 320]);
 
 impl Dump {
     #[stability::unstable]
@@ -39,7 +51,7 @@ impl Dump {
         }
     }
 
-    pub(crate) fn message<M: Message>(
+    pub(crate) fn message<M: crate::Message>(
         message: M,
         kind: &envelope::MessageKind,
         direction: Direction,
@@ -97,10 +109,15 @@ impl DumpBuilder {
             }
         }
 
-        self.do_finish(smallbox!(message))
+        self.do_finish(Message::Structural(smallbox!(message)))
     }
 
-    pub(crate) fn do_finish(&mut self, message: ErasedMessage) -> Dump {
+    #[stability::unstable]
+    pub fn finish_raw(&mut self, message: String) -> Dump {
+        self.do_finish(Message::Raw(message))
+    }
+
+    pub(crate) fn do_finish(&mut self, message: Message) -> Dump {
         let (meta, trace_id, sequence_no) = scope::with(|scope| {
             (
                 scope.meta().clone(),
@@ -154,9 +171,6 @@ impl Timestamp {
         Self(ns)
     }
 }
-
-#[doc(hidden)]
-pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 136]>;
 
 // === Direction ===
 

@@ -7,7 +7,7 @@ pub use self::hider::hide;
 // Unstable.
 pub use self::{
     control::{CheckResult, DumpingControl},
-    dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName, Timestamp},
+    dump::{Direction, Dump, ErasedMessage, Message, MessageKind, MessageName, Timestamp},
     dumper::Dumper,
     extract_name::extract_name,
     recorder::{set_make_recorder, Recorder},
