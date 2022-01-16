@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use futures::{future::poll_fn, pin_mut};
+use once_cell::sync::Lazy;
 use tracing::{error, info, trace};
 
 use crate::{self as elfo};
@@ -28,10 +29,11 @@ use self::stats::Stats;
 
 mod stats;
 
+static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
+
 /// An actor execution context.
 pub struct Context<C = (), K = Singleton, S = ()> {
     book: AddressBook,
-    dumper: Dumper,
     addr: Addr,
     group: Addr,
     demux: Demux,
@@ -88,7 +90,6 @@ impl<C, K, S> Context<C, K, S> {
     pub fn with<S1>(self, source: S1) -> Context<C, K, Combined<S, S1>> {
         Context {
             book: self.book,
-            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -169,7 +170,7 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!("> {:?}", message);
-        if let Some(permit) = self.dumper.acquire() {
+        if let Some(permit) = DUMPER.acquire() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -259,7 +260,7 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!("> {:?}", message);
-        if let Some(permit) = self.dumper.acquire() {
+        if let Some(permit) = DUMPER.acquire() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -342,7 +343,7 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!(to = %recipient, "> {:?}", message);
-        if let Some(permit) = self.dumper.acquire() {
+        if let Some(permit) = DUMPER.acquire() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -381,7 +382,7 @@ impl<C, K, S> Context<C, K, S> {
         let kind = MessageKind::Regular { sender: self.addr };
 
         trace!(to = %recipient, "> {:?}", message);
-        if let Some(permit) = self.dumper.acquire() {
+        if let Some(permit) = DUMPER.acquire() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -420,7 +421,7 @@ impl<C, K, S> Context<C, K, S> {
         };
 
         trace!(to = %sender, "> {:?}", message);
-        if let Some(permit) = self.dumper.acquire() {
+        if let Some(permit) = DUMPER.acquire() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -572,7 +573,7 @@ impl<C, K, S> Context<C, K, S> {
         let message = envelope.message();
         trace!("< {:?}", message);
 
-        if let Some(permit) = self.dumper.acquire() {
+        if let Some(permit) = DUMPER.acquire() {
             // TODO: reuse `Dump::message`, it requires `AnyMessage: Message`.
             let dump = Dump::builder()
                 .direction(Direction::In)
@@ -581,7 +582,7 @@ impl<C, K, S> Context<C, K, S> {
                 .message_kind(dumping::MessageKind::from_message_kind(
                     envelope.message_kind(),
                 ))
-                .do_finish(message.erase());
+                .do_finish(message.erase().into());
 
             permit.record(dump);
         }
@@ -632,7 +633,6 @@ impl<C, K, S> Context<C, K, S> {
     pub fn pruned(&self) -> Context {
         Context {
             book: self.book.clone(),
-            dumper: self.dumper.clone(),
             addr: self.addr,
             group: self.group,
             demux: self.demux.clone(),
@@ -651,7 +651,6 @@ impl<C, K, S> Context<C, K, S> {
     pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K, S> {
         Context {
             book: self.book,
-            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -676,7 +675,6 @@ impl<C, K, S> Context<C, K, S> {
     pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1, S> {
         Context {
             book: self.book,
-            dumper: self.dumper,
             addr: self.addr,
             group: self.group,
             demux: self.demux,
@@ -720,7 +718,6 @@ impl Context {
     pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
         Self {
             book,
-            dumper: Dumper::new(INTERNAL_CLASS),
             addr: Addr::NULL,
             group: Addr::NULL,
             demux,
@@ -737,7 +734,6 @@ impl<C, K: Clone> Clone for Context<C, K> {
     fn clone(&self) -> Self {
         Self {
             book: self.book.clone(),
-            dumper: self.dumper.clone(),
             addr: self.addr,
             group: self.group,
             demux: self.demux.clone(),
@@ -840,7 +836,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
 
             // TODO: increase a counter.
             trace!("< {:?}", envelope.message());
-            if let Some(permit) = self.context.dumper.acquire() {
+            if let Some(permit) = DUMPER.acquire() {
                 permit.record(Dump::message(
                     envelope.message().clone(),
                     envelope.message_kind(),
@@ -878,8 +874,6 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
             return vec![Err(RequestError::Closed(err.0))];
         }
 
-        let dumper = &self.context.dumper;
-
         actor
             .request_table()
             .wait(request_id)
@@ -896,7 +890,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
                 trace!("< {:?}", envelope.message());
 
                 // TODO: `acquire_many` or even unconditionally?
-                if let Some(permit) = dumper.acquire() {
+                if let Some(permit) = DUMPER.acquire() {
                     permit.record(Dump::message(
                         envelope.message().clone(),
                         envelope.message_kind(),
