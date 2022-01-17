@@ -168,7 +168,10 @@ impl Serializer for NameExtractor {
 /// * `Ok(false)` if the name cannot be extracted.
 /// * `Err(err)` if a custom error occurs.
 #[stability::unstable]
-pub fn extract_name(value: &impl Serialize) -> Result<MessageName, String> {
+pub fn extract_name<S>(value: &S) -> Result<MessageName, String>
+where
+    S: Serialize + ?Sized,
+{
     match value.serialize(NameExtractor).unwrap_err() {
         Outcome::Done(name) => Ok(name),
         Outcome::Inapplicable => Ok("".into()),
