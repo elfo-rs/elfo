@@ -161,18 +161,30 @@ async fn termination(ctx: Context, topology: Topology) {
         .with(&ctrl_c_signal)
         .with(&memory_usage_interval);
 
-    let memory_tracker = MemoryTracker::new(MAX_MEMORY_USAGE_RATIO);
-    if memory_tracker.is_some() {
-        memory_usage_interval.set_period(CHECK_MEMORY_USAGE_INTERVAL);
-    }
+    let memory_tracker = match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
+        Ok(tracker) => {
+            memory_usage_interval.set_period(CHECK_MEMORY_USAGE_INTERVAL);
+            Some(tracker)
+        }
+        Err(err) => {
+            warn!(error = %err, "memory tracker is unavailable, disabled");
+            None
+        }
+    };
 
     while let Some(envelope) = ctx.recv().await {
         msg!(match envelope {
             TerminateSystem => break,
             CheckMemoryUsageTick => {
-                if !memory_tracker.as_ref().map_or(true, |mt| mt.check()) {
-                    error!("maximum memory usage is reached, forcibly terminating");
-                    let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
+                match memory_tracker.as_ref().map(|mt| mt.check()) {
+                    Some(Ok(true)) | None => {}
+                    Some(Ok(false)) => {
+                        error!("maximum memory usage is reached, forcibly terminating");
+                        let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
+                    }
+                    Some(Err(err)) => {
+                        error!(error = %err, "memory tracker cannot check memory usage");
+                    }
                 }
             }
         });

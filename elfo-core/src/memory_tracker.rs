@@ -1,7 +1,6 @@
 //! Contains `MemoryTracker` that tracks memory usage of the process.
 
 use metrics::gauge;
-use tracing::{error, warn};
 
 /// Checks memory usage to prevent OOM.
 pub(crate) struct MemoryTracker {
@@ -9,27 +8,14 @@ pub(crate) struct MemoryTracker {
 }
 
 impl MemoryTracker {
-    pub(crate) fn new(threshold: f64) -> Option<Self> {
+    pub(crate) fn new(threshold: f64) -> Result<Self, String> {
         let tracker = Self { threshold };
-
-        match tracker.do_check() {
-            Ok(_) => Some(tracker),
-            Err(err) => {
-                warn!(reason = %err, "memory tracker is unavailable, disabled");
-                None
-            }
-        }
+        tracker.check()?;
+        Ok(tracker)
     }
 
-    /// Returns `false` if the threshold is reached.
-    pub(crate) fn check(&self) -> bool {
-        self.do_check().unwrap_or_else(|err| {
-            error!(error = %err, "memory tracker cannot check memory usage");
-            false
-        })
-    }
-
-    fn do_check(&self) -> Result<bool, String> {
+    /// Returns `Ok(false)` if the threshold is reached.
+    pub(crate) fn check(&self) -> Result<bool, String> {
         let stats = get_stats()?;
         let used_pct = stats.used as f64 / stats.total as f64;
 
@@ -115,24 +101,24 @@ mod mock_stats {
 
 #[test]
 fn it_works() {
-    assert!(MemoryTracker::new(0.5).is_none());
+    assert!(MemoryTracker::new(0.5).is_err());
     mock_stats::set(Ok(MemoryStats {
         total: 1000,
         used: 100,
     }));
 
     let memory_tracker = MemoryTracker::new(0.5);
-    assert!(memory_tracker.as_ref().unwrap().check());
+    assert!(memory_tracker.as_ref().unwrap().check().unwrap());
 
     mock_stats::set(Ok(MemoryStats {
         total: 1000,
         used: 499,
     }));
-    assert!(memory_tracker.as_ref().unwrap().check());
+    assert!(memory_tracker.as_ref().unwrap().check().unwrap());
 
     mock_stats::set(Ok(MemoryStats {
         total: 1000,
         used: 500,
     }));
-    assert!(!memory_tracker.as_ref().unwrap().check());
+    assert!(!memory_tracker.as_ref().unwrap().check().unwrap());
 }
