@@ -141,6 +141,11 @@ impl Serializer for NameExtractor {
 
     #[inline]
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        // Skip private types (`$serde_json::private::{RawValue, Number}`)
+        if name.starts_with("$serde_json") {
+            return Err(Outcome::Inapplicable);
+        }
+
         Err(Outcome::Done(name.into()))
     }
 
@@ -162,11 +167,6 @@ impl Serializer for NameExtractor {
 }
 
 /// Extract a name from the provided `Serialize` instance.
-///
-/// Returns
-/// * `Ok(true)` if the name is extracted successfully.
-/// * `Ok(false)` if the name cannot be extracted.
-/// * `Err(err)` if a custom error occurs.
 #[stability::unstable]
 pub fn extract_name<S>(value: &S) -> Result<MessageName, String>
 where
@@ -174,7 +174,7 @@ where
 {
     match value.serialize(NameExtractor).unwrap_err() {
         Outcome::Done(name) => Ok(name),
-        Outcome::Inapplicable => Ok("".into()),
+        Outcome::Inapplicable => Ok(MessageName::default()),
         Outcome::Error(err) => Err(err),
     }
 }
@@ -254,6 +254,9 @@ mod tests {
         assert_eq!(extract_name_pretty(&HashMap::<u32, u32>::default()), "");
         assert_eq!(extract_name_pretty(&()), "");
         assert_eq!(extract_name_pretty(&(42, 42)), "");
+
+        use crate::dumping::Raw;
+        assert_eq!(extract_name_pretty(&Raw("52".into())), "");
     }
 
     #[test]
