@@ -93,12 +93,13 @@ impl DumpBuilder {
     }
 
     #[stability::unstable]
-    pub fn finish(&mut self, message: impl Serialize + Send + 'static) -> Dump {
+    pub fn finish<M>(&mut self, message: M) -> Dump
+    where
+        M: Serialize + Send + 'static,
+    {
         if self.message_name.is_none() {
             // If the simplest serializer fails, the actual serialization will fail too.
-            if let Ok(name) = extract_name(&message) {
-                self.message_name = Some(name);
-            }
+            self.message_name = Some(extract_name(&message));
         }
 
         self.do_finish(smallbox!(message))

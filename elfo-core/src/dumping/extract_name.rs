@@ -166,17 +166,87 @@ impl Serializer for NameExtractor {
     }
 }
 
-/// Extract a name from the provided `Serialize` instance.
+/// Extract a name from the provided `Serialize` instance:
+/// * for structs it returns the struct's name;
+/// * for enums it returns `EnumName::VariantName`;
+/// * fallback to [`extract_name_by_type`].
 #[stability::unstable]
-pub fn extract_name<S>(value: &S) -> Result<MessageName, String>
+pub fn extract_name<S>(value: &S) -> MessageName
 where
     S: Serialize + ?Sized,
 {
     match value.serialize(NameExtractor).unwrap_err() {
-        Outcome::Done(name) => Ok(name),
-        Outcome::Inapplicable => Ok(MessageName::default()),
-        Outcome::Error(err) => Err(err),
+        Outcome::Done(name) => name,
+        Outcome::Inapplicable => extract_name_by_type::<S>(),
+        Outcome::Error(_err) => extract_name_by_type::<S>(),
     }
+}
+
+/// Extract a name using [`std::any::type_name`] and some heuristics:
+/// * known wrappers (`Option`, `Result`, `Box` and so on) are removed;
+/// * for known collections returns an empty name;
+/// * for primitives (integers and so on) returns an empty name;
+/// * paths are stripped;
+///
+/// Prefer [`extract_name`] if possible.
+#[stability::unstable]
+pub fn extract_name_by_type<T: ?Sized>() -> MessageName {
+    let s = std::any::type_name::<T>();
+
+    let s = strip_known_wrappers(s);
+
+    // Forbid collections.
+    if should_be_forbidden(s) {
+        return MessageName::default();
+    }
+
+    let s = extract_path(s);
+
+    // Remove prefix (`prefix::LocalName`).
+    let s = s.rsplit_once("::").map_or(s, |(_, s)| s);
+
+    // Forbid primitives.
+    if s.starts_with(char::is_lowercase) {
+        return MessageName::default();
+    }
+
+    s.into()
+}
+
+fn strip_known_wrappers(mut s: &str) -> &str {
+    while {
+        let orig_len = s.len();
+
+        s = s.strip_prefix('&').unwrap_or(s);
+        s = s.strip_prefix("core::option::Option<").unwrap_or(s);
+        s = s.strip_prefix("core::result::Result<").unwrap_or(s);
+        s = s.strip_prefix("alloc::boxed::Box<").unwrap_or(s);
+        s = s.strip_prefix("alloc::sync::Arc<").unwrap_or(s);
+        s = s.strip_prefix("alloc::rc::Rc<").unwrap_or(s);
+        s = s.strip_prefix("core::cell::Cell<").unwrap_or(s);
+        s = s.strip_prefix("core::cell::RefCell<").unwrap_or(s);
+
+        s.len() != orig_len
+    } {}
+    s
+}
+
+fn extract_path(s: &str) -> &str {
+    if let Some(idx) = s.find(|c| c == '<' || c == '>' || c == ',') {
+        &s[..idx]
+    } else {
+        s
+    }
+}
+
+fn should_be_forbidden(s: &str) -> bool {
+    s.starts_with("elfo_core::dumping::raw::Raw")
+        || s.starts_with('[')
+        || s.starts_with('(')
+        || s.starts_with("std::collections::")
+        || s.starts_with("alloc::vec::")
+
+    // TODO: indexmap and so on?
 }
 
 #[cfg(test)]
@@ -188,7 +258,11 @@ mod tests {
     use super::*;
 
     fn extract_name_pretty(value: &impl Serialize) -> String {
-        extract_name(value).unwrap().to_string()
+        extract_name(value).to_string()
+    }
+
+    fn extract_name_by_type_pretty<T: ?Sized>() -> String {
+        extract_name_by_type::<T>().to_string()
     }
 
     #[test]
@@ -268,6 +342,68 @@ mod tests {
             }
         }
 
-        assert_eq!(extract_name(&Foo).unwrap_err(), "oops");
+        // Should fallback to `extract_name_by_type`.
+        assert_eq!(extract_name_pretty(&Foo), "Foo");
+    }
+
+    #[test]
+    fn by_type() {
+        struct Simple;
+        assert_eq!(extract_name_by_type_pretty::<Simple>(), "Simple");
+        assert_eq!(extract_name_by_type_pretty::<&Simple>(), "Simple");
+        assert_eq!(extract_name_by_type_pretty::<Option<Simple>>(), "Simple");
+        assert_eq!(extract_name_by_type_pretty::<Option<&Simple>>(), "Simple");
+        assert_eq!(extract_name_by_type_pretty::<&Option<&Simple>>(), "Simple");
+        assert_eq!(
+            extract_name_by_type_pretty::<Option<Option<Simple>>>(),
+            "Simple"
+        );
+        assert_eq!(
+            extract_name_by_type_pretty::<Option<Box<Simple>>>(),
+            "Simple"
+        );
+        assert_eq!(
+            extract_name_by_type_pretty::<&Option<&std::sync::Arc<&Simple>>>(),
+            "Simple"
+        );
+        assert_eq!(
+            extract_name_by_type_pretty::<Option<&std::rc::Rc<&std::cell::Cell<Simple>>>>(),
+            "Simple"
+        );
+        assert_eq!(
+            extract_name_by_type_pretty::<Option<&std::cell::RefCell<Simple>>>(),
+            "Simple"
+        );
+        assert_eq!(
+            extract_name_by_type_pretty::<&Result<&std::sync::Arc<&Simple>, Option<u32>>>(),
+            "Simple"
+        );
+
+        // Parametrized.
+        struct Param<P>(P);
+        assert_eq!(extract_name_by_type_pretty::<Param<Simple>>(), "Param");
+        assert_eq!(
+            extract_name_by_type_pretty::<Option<Param<Simple>>>(),
+            "Param"
+        );
+        assert_eq!(
+            extract_name_by_type_pretty::<Option<Option<Param<Simple>>>>(),
+            "Param"
+        );
+
+        // Primitives.
+        assert_eq!(extract_name_by_type_pretty::<u8>(), "");
+        assert_eq!(extract_name_by_type_pretty::<f64>(), "");
+
+        // Collections.
+        assert_eq!(extract_name_by_type_pretty::<&[u8]>(), "");
+        assert_eq!(extract_name_by_type_pretty::<[u8]>(), "");
+        assert_eq!(extract_name_by_type_pretty::<(Simple, Simple)>(), "");
+        assert_eq!(
+            extract_name_by_type_pretty::<Option<(Simple, Simple)>>(),
+            ""
+        );
+        assert_eq!(extract_name_by_type_pretty::<HashMap<Simple, u32>>(), "");
+        assert_eq!(extract_name_by_type_pretty::<Vec<Simple>>(), "");
     }
 }
