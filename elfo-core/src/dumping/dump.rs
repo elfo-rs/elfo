@@ -1,6 +1,5 @@
 use std::{fmt, sync::Arc};
 
-use derive_more::From;
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Serialize;
 use smallbox::{smallbox, SmallBox};
@@ -23,19 +22,12 @@ pub struct Dump {
     pub message_name: MessageName,
     pub message_protocol: &'static str,
     pub message_kind: MessageKind,
-    pub message: Message,
+    pub message: ErasedMessage,
 }
 
 #[doc(hidden)]
 #[stability::unstable]
-pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 192]>;
-
-#[derive(From)]
-#[stability::unstable]
-pub enum Message {
-    Raw(String),
-    Structural(ErasedMessage),
-}
+pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 200]>;
 
 assert_impl_all!(Dump: Send);
 assert_eq_size!(Dump, [u8; 320]);
@@ -109,15 +101,10 @@ impl DumpBuilder {
             }
         }
 
-        self.do_finish(Message::Structural(smallbox!(message)))
+        self.do_finish(smallbox!(message))
     }
 
-    #[stability::unstable]
-    pub fn finish_raw(&mut self, message: String) -> Dump {
-        self.do_finish(Message::Raw(message))
-    }
-
-    pub(crate) fn do_finish(&mut self, message: Message) -> Dump {
+    pub(crate) fn do_finish(&mut self, message: ErasedMessage) -> Dump {
         let (meta, trace_id, sequence_no) = scope::with(|scope| {
             (
                 scope.meta().clone(),

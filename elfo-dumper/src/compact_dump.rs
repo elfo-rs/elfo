@@ -1,10 +1,7 @@
-use std::{borrow::Cow, ops::Deref};
-
 use serde::ser::{Serialize, SerializeStruct, Serializer};
-use serde_json::value::RawValue;
 
 use elfo_core::{
-    dumping::{Direction, Dump, Message, MessageKind, SequenceNo, Timestamp},
+    dumping::{Direction, Dump, ErasedMessage, MessageKind, SequenceNo, Timestamp},
     node,
     tracing::TraceId,
     ActorMeta,
@@ -20,7 +17,7 @@ pub(crate) struct CompactDump<'a> {
     message_name: &'a str,
     message_protocol: &'a str,
     message_kind: MessageKind,
-    message: &'a Message,
+    message: &'a ErasedMessage,
 }
 
 impl<'a> CompactDump<'a> {
@@ -71,8 +68,7 @@ impl<'a> Serialize for CompactDump<'a> {
         };
 
         s.serialize_field("mk", message_kind)?;
-
-        serialize_payload(&mut s, self.message)?;
+        s.serialize_field("m", &**self.message)?;
 
         if let Some(correlation_id) = correlation_id {
             s.serialize_field("c", &correlation_id)?;
@@ -80,37 +76,4 @@ impl<'a> Serialize for CompactDump<'a> {
 
         s.end()
     }
-}
-
-fn serialize_payload<S: SerializeStruct>(s: &mut S, message: &Message) -> Result<(), S::Error> {
-    match message {
-        Message::Raw(raw) => {
-            let r = replace_newline(raw);
-
-            if let Some(value) = as_raw_value(&r) {
-                s.serialize_field("m", value)?;
-            } else {
-                s.serialize_field("m", raw)?
-            }
-        }
-        Message::Structural(message) => {
-            s.serialize_field("m", &message.deref())?;
-        }
-    }
-
-    Ok(())
-}
-
-fn replace_newline(raw: &str) -> Cow<'_, str> {
-    if raw.contains('\n') {
-        // TODO: should we escape instead of replacing for non JSON?
-        Cow::from(raw.replace('\n', " "))
-    } else {
-        Cow::from(raw)
-    }
-}
-
-fn as_raw_value(raw: &str) -> Option<&RawValue> {
-    let raw = raw.trim();
-    serde_json::from_str(raw).ok()
 }
