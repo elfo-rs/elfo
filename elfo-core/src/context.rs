@@ -582,7 +582,7 @@ impl<C, K, S> Context<C, K, S> {
                 .message_kind(dumping::MessageKind::from_message_kind(
                     envelope.message_kind(),
                 ))
-                .do_finish(message.erase().into());
+                .do_finish(message.erase());
 
             permit.record(dump);
         }

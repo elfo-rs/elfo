@@ -1,4 +1,4 @@
-use std::{fmt, sync::Arc};
+use std::{borrow::Cow, fmt, sync::Arc};
 
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Serialize;
@@ -177,11 +177,14 @@ pub struct MessageName(&'static str, Option<&'static str>);
 
 impl fmt::Display for MessageName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)?;
+
         if let Some(variant) = self.1 {
-            write!(f, "{}::{}", self.0, variant)
-        } else {
-            write!(f, "{}", self.0)
+            f.write_str("::")?;
+            f.write_str(variant)?;
         }
+
+        Ok(())
     }
 }
 
@@ -199,9 +202,31 @@ impl From<(&'static str, &'static str)> for MessageName {
     }
 }
 
-impl MessageName {
-    // TODO: methods to expose static strings. It can be useful for metrics.
+/// Useful for metrics.
+impl From<MessageName> for Cow<'static, str> {
+    #[inline]
+    fn from(name: MessageName) -> Self {
+        Self::from(&name)
+    }
+}
 
+impl From<&MessageName> for Cow<'static, str> {
+    #[inline]
+    fn from(name: &MessageName) -> Self {
+        match name.1 {
+            Some(variant) => {
+                let mut string = String::with_capacity(name.0.len() + 2 + variant.len());
+                string.push_str(name.0);
+                string.push_str("::");
+                string.push_str(variant);
+                Self::Owned(string)
+            }
+            None => Self::Borrowed(name.0),
+        }
+    }
+}
+
+impl MessageName {
     #[doc(hidden)]
     #[stability::unstable]
     pub fn to_str<'a>(&self, buffer: &'a mut String) -> &'a str {
