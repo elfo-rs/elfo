@@ -312,10 +312,16 @@ mod tests {
     }
 
     #[test]
-    fn some() {
+    fn option() {
         #[derive(Serialize)]
-        struct Struct;
-        assert_eq!(extract_name_pretty(&Some(Struct)), "Struct");
+        enum Enum {
+            A,
+        }
+
+        assert_eq!(extract_name_pretty(&Some(Enum::A)), "Enum::A");
+
+        // Should fallback to `extract_name_by_type`.
+        assert_eq!(extract_name_pretty(&None::<Enum>), "Enum");
     }
 
     #[test]
