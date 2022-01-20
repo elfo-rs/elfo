@@ -265,33 +265,25 @@ mod tests {
         extract_name_by_type::<T>().to_string()
     }
 
+    #[derive(Serialize)]
+    struct Struct {
+        n: u8,
+    }
+
+    #[derive(Serialize)]
+    struct UnitStruct;
+
+    #[derive(Serialize)]
+    struct NewtypeStruct(u8);
+
+    #[derive(Serialize)]
+    struct TupleStruct(u8, u8);
+
     #[test]
     fn struct_() {
-        #[derive(Serialize)]
-        struct Struct {
-            n: u8,
-        }
         assert_eq!(extract_name_pretty(&Struct { n: 42 }), "Struct");
-    }
-
-    #[test]
-    fn unit_struct() {
-        #[derive(Serialize)]
-        struct UnitStruct;
         assert_eq!(extract_name_pretty(&UnitStruct), "UnitStruct");
-    }
-
-    #[test]
-    fn newtype_struct() {
-        #[derive(Serialize)]
-        struct NewtypeStruct(u8);
         assert_eq!(extract_name_pretty(&NewtypeStruct(42)), "NewtypeStruct");
-    }
-
-    #[test]
-    fn tuple_struct() {
-        #[derive(Serialize)]
-        struct TupleStruct(u8, u8);
         assert_eq!(extract_name_pretty(&TupleStruct(42, 42)), "TupleStruct");
     }
 
@@ -300,15 +292,106 @@ mod tests {
         #[derive(Serialize)]
         enum Enum {
             A(u8),
+            A2(NewtypeStruct),
             B { n: u8 },
+            B2(Struct),
             C(u8, u8),
+            C2(TupleStruct),
             D,
+            D2(UnitStruct),
         }
 
         assert_eq!(extract_name_pretty(&Enum::A(42)), "Enum::A");
+        assert_eq!(
+            extract_name_pretty(&Enum::A2(NewtypeStruct(42))),
+            "Enum::A2"
+        );
         assert_eq!(extract_name_pretty(&Enum::B { n: 42 }), "Enum::B");
+        assert_eq!(extract_name_pretty(&Enum::B2(Struct { n: 42 })), "Enum::B2");
         assert_eq!(extract_name_pretty(&Enum::C(42, 42)), "Enum::C");
+        assert_eq!(
+            extract_name_pretty(&Enum::C2(TupleStruct(42, 42))),
+            "Enum::C2"
+        );
         assert_eq!(extract_name_pretty(&Enum::D), "Enum::D");
+        assert_eq!(extract_name_pretty(&Enum::D2(UnitStruct)), "Enum::D2");
+    }
+
+    #[test]
+    fn internally_tagged_enum() {
+        #[derive(Serialize)]
+        #[serde(tag = "kind")]
+        enum Enum {
+            A(u8),
+            A2(NewtypeStruct),
+            B { n: u8 },
+            B2(Struct),
+            C2(TupleStruct),
+            D,
+            D2(UnitStruct),
+        }
+
+        assert_eq!(extract_name_pretty(&Enum::A(42)), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::A2(NewtypeStruct(42))), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::B { n: 42 }), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::B2(Struct { n: 42 })), "Struct");
+        assert_eq!(extract_name_pretty(&Enum::C2(TupleStruct(42, 42))), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::D), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::D2(UnitStruct)), "Enum");
+    }
+
+    #[test]
+    fn externally_tagged_enum() {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", content = "data")]
+        enum Enum {
+            A(u8),
+            A2(NewtypeStruct),
+            B { n: u8 },
+            B2(Struct),
+            C2(TupleStruct),
+            D,
+            D2(UnitStruct),
+        }
+
+        assert_eq!(extract_name_pretty(&Enum::A(42)), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::A2(NewtypeStruct(42))), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::B { n: 42 }), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::B2(Struct { n: 42 })), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::C2(TupleStruct(42, 42))), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::D), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::D2(UnitStruct)), "Enum");
+    }
+
+    #[test]
+    fn untagged_enum() {
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum Enum {
+            A(u8),
+            A2(NewtypeStruct),
+            B { n: u8 },
+            B2(Struct),
+            C(u8, u8),
+            C2(TupleStruct),
+            D,
+            D2(UnitStruct),
+        }
+
+        assert_eq!(extract_name_pretty(&Enum::A(42)), "Enum");
+        assert_eq!(
+            extract_name_pretty(&Enum::A2(NewtypeStruct(42))),
+            "NewtypeStruct"
+        );
+        assert_eq!(extract_name_pretty(&Enum::B { n: 42 }), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::B2(Struct { n: 42 })), "Struct");
+        assert_eq!(extract_name_pretty(&Enum::C(42, 42)), "Enum");
+        assert_eq!(
+            extract_name_pretty(&Enum::C2(TupleStruct(42, 42))),
+            "TupleStruct"
+        );
+        assert_eq!(extract_name_pretty(&Enum::D), "Enum");
+        assert_eq!(extract_name_pretty(&Enum::D2(UnitStruct)), "UnitStruct");
     }
 
     #[test]
