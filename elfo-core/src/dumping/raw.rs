@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, convert::AsRef};
 
 use serde::{Serialize, Serializer};
 use serde_json::value::RawValue;
@@ -9,24 +9,23 @@ use serde_json::value::RawValue;
 /// with saving formatting, but without newlines (replaced with a space).
 ///
 /// Otherwise, the dump is serialized as JSON string.
-///
-/// Now only `Raw<String>` makes sense.
 #[derive(Debug)]
 #[stability::unstable]
 pub struct Raw<T>(pub T);
 
-impl Serialize for Raw<String> {
+impl<T: AsRef<str>> Serialize for Raw<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let r = replace_newline(&self.0);
+        let s = self.0.as_ref();
+        let r = replace_newline(s);
 
         if let Some(value) = as_raw_json(&r) {
             value.serialize(serializer)
         } else {
             // Will be serialized as a JSON string with escaping.
-            self.0.serialize(serializer)
+            s.serialize(serializer)
         }
     }
 }
