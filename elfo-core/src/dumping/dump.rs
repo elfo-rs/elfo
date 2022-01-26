@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt, sync::Arc};
+use std::{borrow::Cow, fmt, sync::Arc, time::SystemTime};
 
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Serialize;
@@ -36,6 +36,7 @@ impl Dump {
     #[stability::unstable]
     pub fn builder() -> DumpBuilder {
         DumpBuilder {
+            timestamp: None,
             direction: Direction::Out,
             message_name: None,
             message_protocol: "",
@@ -61,6 +62,7 @@ impl Dump {
 
 #[stability::unstable]
 pub struct DumpBuilder {
+    timestamp: Option<Timestamp>,
     direction: Direction,
     message_name: Option<MessageName>,
     message_protocol: &'static str,
@@ -68,6 +70,12 @@ pub struct DumpBuilder {
 }
 
 impl DumpBuilder {
+    #[stability::unstable]
+    pub fn timestamp(&mut self, timestamp: impl Into<Timestamp>) -> &mut Self {
+        self.timestamp = Some(timestamp.into());
+        self
+    }
+
     #[stability::unstable]
     pub fn direction(&mut self, direction: Direction) -> &mut Self {
         self.direction = direction;
@@ -117,7 +125,7 @@ impl DumpBuilder {
         Dump {
             meta,
             sequence_no,
-            timestamp: Timestamp::now(),
+            timestamp: self.timestamp.unwrap_or_else(Timestamp::now),
             trace_id,
             direction: self.direction,
             message_name: self.message_name.take().unwrap_or_default(),
@@ -142,11 +150,7 @@ impl Timestamp {
     #[inline]
     #[stability::unstable]
     pub fn now() -> Self {
-        let ns = std::time::UNIX_EPOCH
-            .elapsed()
-            .expect("invalid system time")
-            .as_nanos() as u64;
-        Self(ns)
+        SystemTime::now().into()
     }
 
     #[cfg(test)]
@@ -156,6 +160,17 @@ impl Timestamp {
 
     #[inline]
     pub fn from_nanos(ns: u64) -> Self {
+        Self(ns)
+    }
+}
+
+impl From<SystemTime> for Timestamp {
+    fn from(sys_time: SystemTime) -> Self {
+        let ns = sys_time
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+
         Self(ns)
     }
 }
