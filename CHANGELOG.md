@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - context: add `Context::try_send`.
 - errors: add `TrySendError::map` and `RequestError::map`.
 - dumping: write `ts` firstly to support the `sort` utility.
+- dumping: support multiple dump classes.
+- dumping: expose unstable API for external dumping.
 - dumper: extract a dump's name if it's not specified.
 - dumper: support the `{class}` variable in config's `path` param.
 - dumper: don't dump large messages, configurable by `max_dump_size` param (64KiB by default).
