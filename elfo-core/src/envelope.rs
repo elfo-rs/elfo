@@ -4,7 +4,7 @@ use crate::{
     addr::Addr,
     address_book::AddressBook,
     message::{AnyMessage, Message},
-    request_table::ResponseToken,
+    request_table::{RequestId, ResponseToken},
     trace_id::TraceId,
 };
 
@@ -25,6 +25,7 @@ pub(crate) enum MessageKind {
     Regular { sender: Addr },
     RequestAny(ResponseToken<()>),
     RequestAll(ResponseToken<()>),
+    Response { sender: Addr, request_id: RequestId },
 }
 
 impl<M> Envelope<M> {
@@ -52,6 +53,7 @@ impl<M> Envelope<M> {
             MessageKind::Regular { sender } => *sender,
             MessageKind::RequestAny(token) => token.sender,
             MessageKind::RequestAll(token) => token.sender,
+            MessageKind::Response { sender, .. } => *sender,
         }
     }
 }
@@ -119,6 +121,10 @@ impl Envelope {
                     let token = object.as_actor()?.request_table().clone_token(token)?;
                     MessageKind::RequestAll(token)
                 }
+                MessageKind::Response { sender, request_id } => MessageKind::Response {
+                    sender: *sender,
+                    request_id: *request_id,
+                },
             },
             message: self.message.clone(),
         })

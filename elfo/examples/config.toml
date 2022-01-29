@@ -34,7 +34,7 @@ address = "0.0.0.0:9042"
 #quantiles = [0.75, 0.9, 0.95, 0.99]
 
 [system.dumpers]
-path = "example.dump"
+path = "example.{class}.dump"
 
 [producers]
 group_count = 3

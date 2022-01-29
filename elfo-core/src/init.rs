@@ -106,8 +106,7 @@ pub async fn do_start<F: Future>(
 
     let entry = topology.book.vacant_entry();
     let addr = entry.addr();
-    let dumper = topology.dumper.for_group(false); // TODO: should we dump the starter?
-    let ctx = Context::new(topology.book.clone(), dumper, Demux::default()).with_addr(addr);
+    let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
 
     let meta = Arc::new(ActorMeta {
         group: "system.init".into(),

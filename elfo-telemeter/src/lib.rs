@@ -14,7 +14,6 @@
 //! I'm going to extend the original crate to reuse code.
 
 #![warn(rust_2018_idioms, unreachable_pub, missing_docs)]
-#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::sync::Arc;
 

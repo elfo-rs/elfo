@@ -233,6 +233,11 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     #internal::metrics::Label::from_static_parts("message", Self::NAME),
                     #internal::metrics::Label::from_static_parts("protocol", Self::PROTOCOL),
                 ];
+
+                #[inline(always)]
+                fn _touch(&self) {
+                    #mod_name::touch();
+                }
             }
 
             #[doc(hidden)]
@@ -244,7 +249,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 use std::fmt;
 
                 use #internal::{
-                    MESSAGE_LIST, MessageVTable, AnyMessage, dumping,
+                    MESSAGE_LIST, MessageVTable, AnyMessage,
                     smallbox::smallbox, linkme
                 };
 
@@ -262,7 +267,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     fmt::Debug::fmt(cast_ref(message), f)
                 }
 
-                fn erase(message: &AnyMessage) -> dumping::ErasedMessage {
+                fn erase(message: &AnyMessage) -> #crate_::dumping::ErasedMessage {
                     smallbox!(Clone::clone(cast_ref(message)))
                 }
 
@@ -280,8 +285,8 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
                 // See [rust#47384](https://github.com/rust-lang/rust/issues/47384).
                 #[doc(hidden)]
+                #[inline(never)]
                 pub fn touch() {}
-                impl #name { #[doc(hidden)] pub fn _elfo_touch() { #mod_name::touch(); } }
             }
         }
     } else {

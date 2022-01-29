@@ -231,8 +231,8 @@ impl Configurer {
             .filter_map(|(group, result)| match result {
                 Ok(Ok(_)) | Err(_) => None,
                 Ok(Err(reject)) => Some((group, reject.reason)),
-                /* TODO: it's meaningful, but doesn't work well with empty groups.
-                 * Err(RequestError::Closed(_)) => Some((group, "some group is closed".into())), */
+                // TODO: it's meaningful, but doesn't work well with empty groups.
+                // Err(RequestError::Closed(_)) => Some((group, "some group is closed".into())),
             })
             // TODO: provide more info.
             .inspect(|(group, reason)| error!(%group, %reason, "invalid config"))

@@ -22,6 +22,11 @@ pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deseri
 
     #[doc(hidden)]
     const LABELS: &'static [Label];
+
+    // Called while upcasting/downcasting to avoid
+    // [rust#47384](https://github.com/rust-lang/rust/issues/47384).
+    #[doc(hidden)]
+    fn _touch(&self);
 }
 
 pub trait Request: Message {
@@ -39,6 +44,8 @@ pub struct AnyMessage {
 impl AnyMessage {
     #[inline]
     pub fn new<M: Message>(message: M) -> Self {
+        message._touch();
+
         AnyMessage {
             ltid: M::_LTID,
             data: smallbox!(message),
@@ -62,13 +69,16 @@ impl AnyMessage {
     }
 
     #[inline]
-    pub fn is<T: 'static>(&self) -> bool {
-        self.data.is::<T>()
+    pub fn is<M: Message>(&self) -> bool {
+        self.data.is::<M>()
     }
 
     #[inline]
-    pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
-        self.data.downcast_ref()
+    pub fn downcast_ref<M: Message>(&self) -> Option<&M> {
+        self.data.downcast_ref::<M>().map(|message| {
+            message._touch();
+            message
+        })
     }
 
     #[inline]
@@ -77,11 +87,14 @@ impl AnyMessage {
             return Err(self);
         }
 
-        Ok(self
+        let message = self
             .data
             .downcast::<M>()
             .expect("cannot downcast")
-            .into_inner())
+            .into_inner();
+
+        message._touch();
+        Ok(message)
     }
 
     #[inline]

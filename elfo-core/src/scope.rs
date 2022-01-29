@@ -4,6 +4,7 @@ use crate::{
     actor::ActorMeta,
     addr::Addr,
     config::SystemConfig,
+    dumping::DumpingControl,
     logging::_priv::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
     tracing::TraceId,
@@ -97,6 +98,13 @@ impl Scope {
         &self.shared.logging
     }
 
+    /// Private API for now.
+    #[inline]
+    #[doc(hidden)]
+    pub fn dumping(&self) -> &DumpingControl {
+        &self.shared.dumping
+    }
+
     /// Wraps the provided future with the current scope.
     pub async fn within<F: Future>(self, f: F) -> F::Output {
         SCOPE.scope(self, f).await
@@ -112,6 +120,7 @@ pub(crate) struct ScopeShared {
     group: Addr,
     permissions: AtomicPermissions,
     logging: LoggingControl,
+    dumping: DumpingControl,
 }
 
 impl ScopeShared {
@@ -120,6 +129,7 @@ impl ScopeShared {
             group,
             permissions: Default::default(), // everything is disabled
             logging: Default::default(),
+            dumping: Default::default(),
         }
     }
 
@@ -128,9 +138,13 @@ impl ScopeShared {
         self.logging.configure(&config.logging);
         let max_level = self.logging.max_level_hint().into_level();
 
+        // Update the dumping subsystem.
+        self.dumping.configure(&config.dumping);
+
         // Update permissions.
         let mut perm = self.permissions.load();
         perm.set_logging_enabled(max_level);
+        perm.set_dumping_enabled(!config.dumping.disabled);
         perm.set_telemetry_per_actor_group_enabled(config.telemetry.per_actor_group);
         perm.set_telemetry_per_actor_key_enabled(config.telemetry.per_actor_key);
         self.permissions.store(perm);

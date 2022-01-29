@@ -1,175 +1,37 @@
 #![warn(rust_2018_idioms, unreachable_pub)]
 
-use std::{
-    error::Error as StdError,
-    fs::File,
-    io::{BufWriter, Write},
+use std::sync::Arc;
+
+use parking_lot::Mutex;
+use tracing::error;
+
+use elfo_core::{
+    dumping::{self, Recorder},
+    Schema,
 };
 
-use eyre::{Result, WrapErr};
-use metrics::counter;
-use tokio::{task, time::Duration};
-use tracing::warn;
+use self::dump_storage::DumpStorage;
 
-use elfo_core as elfo;
-use elfo_macros::{message, msg_raw as msg};
-
-use elfo_utils::cooldown;
-
-use elfo::{
-    ActorGroup, Context, Schema,
-    _priv::dumping,
-    group::TerminationPolicy,
-    messages::{ConfigUpdated, Terminate},
-    signal::{Signal, SignalKind},
-    time::Interval,
-};
-
-use self::config::Config;
-
+mod actor;
+mod compact_dump;
 mod config;
+mod dump_buffer;
+mod dump_storage;
+mod file_registry;
+mod recorder;
 
-const BUFFER_CAPACITY: usize = 128 * 1024;
-
-#[message(elfo = elfo_core)]
-pub struct ReopenDumpFile;
-
-#[message(elfo = elfo_core)]
-struct DumpingTick;
-
-struct Dumper {
-    ctx: Context<Config>,
-}
-
-impl Dumper {
-    fn new(ctx: Context<Config>) -> Self {
-        Self { ctx }
-    }
-
-    async fn main(self) -> Result<()> {
-        let mut file = open_file(self.ctx.config()).await;
-
-        // TODO: use the grant system instead.
-        let dumper = dumping::of(&self.ctx);
-        let mut need_to_terminate = false;
-
-        let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);
-        let interval = Interval::new(|| DumpingTick);
-        interval.set_period(self.ctx.config().interval);
-
-        let mut ctx = self.ctx.clone().with(&signal).with(&interval);
-
-        while let Some(envelope) = ctx.recv().await {
-            msg!(match envelope {
-                ReopenDumpFile | ConfigUpdated => {
-                    let config = ctx.config();
-                    interval.set_period(config.interval);
-                    file = open_file(config).await;
-                }
-                DumpingTick => {
-                    let dumper = dumper.clone();
-                    let timeout = ctx.config().interval;
-
-                    let report = task::spawn_blocking(move || -> Result<Report> {
-                        let mut errors = Vec::new();
-                        let mut written = 0;
-
-                        dumping::set_in_dumping(true);
-
-                        for dump in dumper.drain(timeout) {
-                            match serde_json::to_writer(&mut file, &dump) {
-                                Ok(()) => {
-                                    written += 1;
-                                }
-                                Err(err) if err.is_io() => {
-                                    Err(err).context("cannot write")?;
-                                }
-                                Err(err) => {
-                                    // TODO: avoid this hardcode.
-                                    if errors.len() < 3
-                                        && !errors
-                                            .iter()
-                                            .any(|(name, _)| name == &dump.message_name)
-                                    {
-                                        errors.push((dump.message_name, err));
-                                    }
-
-                                    // TODO: the last line is probably invalid,
-                                    //       should we use custom buffer?
-                                }
-                            };
-                            file.write_all(b"\n").context("cannot write")?;
-                        }
-                        file.flush().context("cannot flush")?;
-
-                        dumping::set_in_dumping(false);
-
-                        Ok(Report {
-                            file,
-                            errors,
-                            written,
-                        })
-                    })
-                    .await
-                    .expect("failed to dump")?;
-
-                    counter!("elfo_written_dumps_total", report.written);
-                    file = report.file;
-
-                    // TODO: add a metrics for failed dumps.
-                    cooldown!(Duration::from_secs(15), {
-                        for (message_name, error) in report.errors {
-                            warn!(
-                                message = message_name,
-                                error = &error as &(dyn StdError),
-                                "cannot serialize"
-                            );
-                        }
-                    });
-
-                    if need_to_terminate {
-                        break;
-                    }
-                }
-                Terminate => {
-                    // TODO: use phases instead of a hardcoded delay.
-                    interval.set_period(Duration::from_millis(250));
-                    need_to_terminate = true;
-                }
-            });
-        }
-
-        file.flush().context("cannot flush")?;
-        file.get_ref().sync_all().context("cannot sync")?;
-
-        Ok(())
-    }
-}
-
-struct Report {
-    file: BufWriter<File>,
-    errors: Vec<(&'static str, serde_json::Error)>,
-    written: u64,
-}
-
+/// Installs a global dump recorder and returns a group to handle dumps.
 pub fn new() -> Schema {
-    ActorGroup::new()
-        .config::<Config>()
-        .termination_policy(TerminationPolicy::manually())
-        .exec(|ctx| Dumper::new(ctx).main())
-}
+    let storage = Arc::new(Mutex::new(DumpStorage::new()));
+    let schema = actor::new(storage.clone());
 
-async fn open_file(config: &Config) -> BufWriter<File> {
-    use tokio::fs::OpenOptions;
+    let is_ok = dumping::set_make_recorder(Box::new(move |class| {
+        storage.lock().registry(class) as Arc<dyn Recorder>
+    }));
 
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&config.path)
-        .await
-        .expect("cannot open the dump file")
-        .into_std()
-        .await;
+    if !is_ok {
+        error!("failed to set a dump recorder");
+    }
 
-    BufWriter::with_capacity(BUFFER_CAPACITY, file)
+    schema
 }

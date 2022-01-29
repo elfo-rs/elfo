@@ -8,11 +8,12 @@ license = "MIT"
 
 [dependencies]
 elfo-macros = { version = "0.1.9", path = "../elfo-macros" }
-elfo-core = { version = "0.1.19", path = "../elfo-core" }
+elfo-core = { version = "0.1.19", path = "../elfo-core", features = ["unstable"] }
 elfo-utils = { version = "0.1.1", path = "../elfo-utils" }
 
-tokio = { version = "1", features = ["fs", "io-util"] }
-serde = { version = "1.0.120", features = ["derive", "rc"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync"] }
+serde = { version = "1.0.120", features = ["derive"] }
+derive_more = "0.99.11"
 serde-value = "0.7.0"
 futures = "0.3.12"
 tracing = "0.1.25"
@@ -21,3 +22,5 @@ fxhash = "0.2.1"
 humantime-serde = "1"
 serde_json = "1.0.64"
 eyre = "0.6.5"
+parking_lot = "0.11.1"
+thread_local = "1.1.3"
