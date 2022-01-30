@@ -8,6 +8,9 @@ pub(crate) struct Config {
     pub(crate) sink: Sink,
     /// The address to expose for scraping.
     pub(crate) address: SocketAddr,
+    /// How long samples should be considered in summaries.
+    #[serde(default)]
+    pub(crate) retention: Retention,
     /// Quantiles to use for aggregating distribution metrics into a summary.
     #[serde(default = "default_quantiles")]
     pub(crate) quantiles: Vec<f64>,
@@ -22,6 +25,19 @@ pub(crate) struct Config {
 #[derive(Debug, PartialEq, Deserialize)]
 pub(crate) enum Sink {
     Prometheus,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+pub(crate) enum Retention {
+    Forever,
+    ResetOnScrape,
+    // TODO: `SlidingWindow`
+}
+
+impl Default for Retention {
+    fn default() -> Self {
+        Self::ResetOnScrape
+    }
 }
 
 fn default_quantiles() -> Vec<f64> {

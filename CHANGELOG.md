@@ -15,12 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - dumper: extract a dump's name if it's not specified.
 - dumper: support the `{class}` variable in config's `path` param.
 - dumper: don't dump large messages, configurable by `max_dump_size` param (64KiB by default).
+- telemeter: add `Retention::ResetOnScrape` policy as the simplest way to protect against stabilization with time.
+
+### Changed
+- telemeter: use `Retention::ResetOnScrape` by default.
 
 ### Fixed
 - dumper: don't dump partially invalid messages. Previously, it could lead to file corruption.
 - Avoid rare `invalid LTID` errors.
-
-### Fixed
 - init: do not start termination if the memory tracker fails to read files.
 
 ## [0.1.32] - 2021-12-21

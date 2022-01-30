@@ -23,6 +23,22 @@ pub struct Snapshot {
     pub per_actor: FxHashMap<Arc<ActorMeta>, Metrics>,
 }
 
+impl Snapshot {
+    pub(crate) fn distributions_mut(&mut self) -> impl Iterator<Item = &mut Distribution> {
+        let per_group = self
+            .per_group
+            .values_mut()
+            .flat_map(|m| m.distributions.values_mut());
+
+        let per_actor = self
+            .per_actor
+            .values_mut()
+            .flat_map(|m| m.distributions.values_mut());
+
+        per_group.chain(per_actor)
+    }
+}
+
 /// Actual values of all metrics grouped by a metric type.
 #[derive(Default, Clone)]
 pub struct Metrics {
@@ -39,6 +55,7 @@ pub struct Metrics {
 pub struct Distribution {
     summary: Arc<Summary>,
     sum: f64,
+    count: usize,
 }
 
 impl Default for Distribution {
@@ -47,6 +64,7 @@ impl Default for Distribution {
         Self {
             summary: Arc::new(summary),
             sum: 0.0,
+            count: 0,
         }
     }
 }
@@ -58,25 +76,25 @@ impl Distribution {
     /// than 1.0, then the result will be `None`.
     #[inline]
     pub fn quantile(&self, q: f64) -> Option<f64> {
-        self.summary.quantile(q)
+        self.summary.quantile(q).filter(|f| f.is_finite())
     }
 
     /// Gets the minimum value this summary has seen so far.
     #[inline]
-    pub fn min(&self) -> f64 {
-        self.summary.min()
+    pub fn min(&self) -> Option<f64> {
+        Some(self.summary.min()).filter(|f| f.is_finite())
     }
 
     /// Gets the maximum value this summary has seen so far.
     #[inline]
-    pub fn max(&self) -> f64 {
-        self.summary.max()
+    pub fn max(&self) -> Option<f64> {
+        Some(self.summary.max()).filter(|f| f.is_finite())
     }
 
     /// Gets the number of samples in this distribution.
     #[inline]
     pub fn count(&self) -> usize {
-        self.summary.count()
+        self.count
     }
 
     /// Gets the maximum value this summary has seen so far.
@@ -85,11 +103,17 @@ impl Distribution {
         self.sum
     }
 
+    pub(crate) fn reset(&mut self) {
+        self.summary = Arc::new(Summary::with_defaults());
+        // Do not reset `count` and `sum` fields.
+    }
+
     pub(crate) fn record_samples(&mut self, samples: &[f64]) {
         let summary = Arc::make_mut(&mut self.summary);
         for sample in samples {
             summary.add(*sample);
             self.sum += *sample;
+            self.count += 1;
         }
     }
 

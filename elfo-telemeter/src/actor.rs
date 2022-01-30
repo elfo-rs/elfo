@@ -13,7 +13,7 @@ use elfo::{
 };
 
 use crate::{
-    config::{Config, Sink},
+    config::{Config, Retention, Sink},
     protocol::{GetSnapshot, Snapshot},
     render::Renderer,
     storage::Storage,
@@ -97,7 +97,13 @@ impl Telemeter {
                     self.fill_snapshot(/* only_histograms = */ false);
                     let descriptions = self.storage.descriptions();
                     let output = self.renderer.render(&self.snapshot, &descriptions);
+                    drop(descriptions);
+
                     ctx.respond(token, Rendered(output));
+
+                    if ctx.config().retention == Retention::ResetOnScrape {
+                        self.reset_distributions();
+                    }
                 }
                 CompactionTick => {
                     self.fill_snapshot(/* only_histograms = */ true);
@@ -120,6 +126,12 @@ impl Telemeter {
         if !only_histograms {
             gauge!("elfo_metrics_usage_bytes", size as f64);
         }
+    }
+
+    fn reset_distributions(&mut self) {
+        // Reuse the latest snapshot if possible.
+        let snapshot = Arc::make_mut(&mut self.snapshot);
+        snapshot.distributions_mut().for_each(|d| d.reset());
     }
 }
 

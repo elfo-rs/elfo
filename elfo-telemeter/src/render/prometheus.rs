@@ -74,13 +74,11 @@ fn render(
                 }
                 MetricValue::Distribution(distribution) => {
                     for (quantile, label) in options.quantiles {
-                        let value = distribution.quantile(quantile.value()).unwrap_or(0.0);
-                        let all_labels = labels.clone().chain(iter::once(label));
-                        write_metric_line(buffer, name, None, all_labels, value);
+                        if let Some(value) = distribution.quantile(quantile.value()) {
+                            let all_labels = labels.clone().chain(iter::once(label));
+                            write_metric_line(buffer, name, None, all_labels, value);
+                        }
                     }
-
-                    let min = distribution.min();
-                    let max = distribution.max();
 
                     let (sum, count) = if known_counters.insert(fxhash::hash64(&meta)) {
                         (0., 0)
@@ -88,11 +86,17 @@ fn render(
                         (distribution.sum(), distribution.count())
                     };
 
-                    // TODO: write types for this.
+                    // TODO: should we write types for these values? Check the spec.
                     write_metric_line(buffer, name, Some("sum"), labels.clone(), sum);
                     write_metric_line(buffer, name, Some("count"), labels.clone(), count);
-                    write_metric_line(buffer, name, Some("min"), labels.clone(), min);
-                    write_metric_line(buffer, name, Some("max"), labels.clone(), max);
+
+                    if let Some(min) = distribution.min() {
+                        write_metric_line(buffer, name, Some("min"), labels.clone(), min);
+                    }
+
+                    if let Some(max) = distribution.max() {
+                        write_metric_line(buffer, name, Some("max"), labels.clone(), max);
+                    }
                 }
             }
         }
