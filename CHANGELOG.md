@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.33] - 2022-02-07
 ### Added
 - context: add `Context::try_send`.
 - errors: add `TrySendError::map` and `RequestError::map`.
@@ -291,7 +293,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.32...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.33...HEAD
+[0.1.33]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.32...elfo-0.1.33
 [0.1.32]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.31...elfo-0.1.32
 [0.1.31]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.30...elfo-0.1.31
 [0.1.30]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.29...elfo-0.1.30
