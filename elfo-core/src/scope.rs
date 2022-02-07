@@ -206,6 +206,15 @@ pub fn set_trace_id(trace_id: TraceId) {
     with(|scope| scope.set_trace_id(trace_id));
 }
 
+/// Replaces the current trace id with the provided one
+/// if inside the actor system.
+///
+/// Returns `true` if the trace id has been replaced.
+#[inline]
+pub fn try_set_trace_id(trace_id: TraceId) -> bool {
+    try_with(|scope| scope.set_trace_id(trace_id)).is_some()
+}
+
 /// Returns the current object's meta.
 ///
 /// # Panics
