@@ -419,7 +419,7 @@ mod tests {
         assert_eq!(extract_name_pretty(&(42, 42)), "");
 
         use crate::dumping::Raw;
-        assert_eq!(extract_name_pretty(&Raw("52".into())), "");
+        assert_eq!(extract_name_pretty(&Raw("52".to_string())), "");
     }
 
     #[test]
