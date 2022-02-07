@@ -5,7 +5,18 @@
 pub use self::hider::hide;
 
 // Unstable.
+#[cfg(feature = "unstable")] // TODO: patch `stability`, again.
 pub use self::{
+    control::{CheckResult, DumpingControl},
+    dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName, Timestamp},
+    dumper::Dumper,
+    extract_name::{extract_name, extract_name_by_type},
+    raw::Raw,
+    recorder::{set_make_recorder, Recorder},
+    sequence_no::SequenceNo,
+};
+#[cfg(not(feature = "unstable"))] // TODO: patch `stability`, again.
+pub(crate) use self::{
     control::{CheckResult, DumpingControl},
     dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName, Timestamp},
     dumper::Dumper,

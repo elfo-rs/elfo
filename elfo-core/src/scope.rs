@@ -93,6 +93,7 @@ impl Scope {
 
     /// Private API for now.
     #[inline]
+    #[stability::unstable]
     #[doc(hidden)]
     pub fn logging(&self) -> &LoggingControl {
         &self.shared.logging
@@ -100,6 +101,7 @@ impl Scope {
 
     /// Private API for now.
     #[inline]
+    #[stability::unstable]
     #[doc(hidden)]
     pub fn dumping(&self) -> &DumpingControl {
         &self.shared.dumping

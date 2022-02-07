@@ -9,6 +9,7 @@ use elfo_utils::{CachePadded, RateLimiter};
 use super::{config::LoggingConfig, filter::LogFilter};
 
 #[derive(Default)]
+#[stability::unstable]
 pub struct LoggingControl {
     filter: ArcSwap<LogFilter>,
     limiters: [CachePadded<RateLimiter>; 5],
