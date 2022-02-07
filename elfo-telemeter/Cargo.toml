@@ -9,7 +9,7 @@ keywords = ["metrics", "telemetry", "prometheus"]
 
 [dependencies]
 elfo-macros = { version = "0.1.11", path = "../elfo-macros" }
-elfo-core = { version = "0.1.28", path = "../elfo-core" }
+elfo-core = { version = "0.1.28", path = "../elfo-core", features = ["unstable"] } # TODO: do not need
 
 tokio = "1"
 hyper = { version = "0.14", default-features = false, features = ["server", "tcp", "http1"] }
