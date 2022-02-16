@@ -66,6 +66,7 @@ mod request_table;
 mod source;
 mod subscription;
 mod supervisor;
+mod thread;
 
 #[doc(hidden)]
 pub mod _priv {

@@ -12,6 +12,7 @@ pub(crate) struct CompactDump<'a> {
     sequence_no: SequenceNo,
     timestamp: Timestamp,
     trace_id: TraceId,
+    thread_id: u64,
     direction: Direction,
     class: &'a str,
     message_name: &'a str,
@@ -27,6 +28,7 @@ impl<'a> CompactDump<'a> {
             sequence_no: dump.sequence_no,
             timestamp: dump.timestamp,
             trace_id: dump.trace_id,
+            thread_id: dump.thread_id,
             direction: dump.direction,
             class,
             message_name: dump.message_name.to_str(buffer),
@@ -56,6 +58,7 @@ impl<'a> Serialize for CompactDump<'a> {
         s.serialize_field("n", &node::node_no())?;
         s.serialize_field("s", &self.sequence_no)?;
         s.serialize_field("t", &self.trace_id)?;
+        s.serialize_field("th", &self.thread_id)?;
         s.serialize_field("d", &self.direction)?;
         s.serialize_field("cl", &self.class)?;
         s.serialize_field("mn", &self.message_name)?;
