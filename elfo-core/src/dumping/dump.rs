@@ -7,7 +7,7 @@ use smallbox::{smallbox, SmallBox};
 use elfo_macros::message;
 
 use super::{extract_name::extract_name, sequence_no::SequenceNo};
-use crate::{actor::ActorMeta, envelope, scope, trace_id::TraceId};
+use crate::{actor::ActorMeta, envelope, scope, thread::ThreadId, trace_id::TraceId};
 
 // === Dump ===
 
@@ -18,6 +18,7 @@ pub struct Dump {
     pub sequence_no: SequenceNo,
     pub timestamp: Timestamp,
     pub trace_id: TraceId,
+    pub thread_id: ThreadId,
     pub direction: Direction,
     pub message_name: MessageName,
     pub message_protocol: &'static str,
@@ -27,7 +28,7 @@ pub struct Dump {
 
 #[doc(hidden)]
 #[stability::unstable]
-pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 200]>;
+pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 192]>;
 
 assert_impl_all!(Dump: Send);
 assert_eq_size!(Dump, [u8; 320]);
@@ -127,6 +128,7 @@ impl DumpBuilder {
             sequence_no,
             timestamp: self.timestamp.unwrap_or_else(Timestamp::now),
             trace_id,
+            thread_id: crate::thread::id(),
             direction: self.direction,
             message_name: self.message_name.take().unwrap_or_default(),
             message_protocol: self.message_protocol,

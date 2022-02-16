@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- dumping, dumper: add `thread_id` to dumps (as the `th` field).
 
 ## [0.1.33] - 2022-02-07
 ### Added
