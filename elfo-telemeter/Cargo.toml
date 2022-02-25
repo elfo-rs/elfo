@@ -7,6 +7,9 @@ edition = "2018"
 license = "MIT"
 keywords = ["metrics", "telemetry", "prometheus"]
 
+[features]
+unstable = []
+
 [dependencies]
 elfo-macros = { version = "0.1.11", path = "../elfo-macros" }
 elfo-core = { version = "0.1.28", path = "../elfo-core", features = ["unstable"] } # TODO: do not need
@@ -23,3 +26,4 @@ thiserror = "1.0"
 quanta = "0.9.2"
 humantime-serde = "1"
 cow-utils = "0.1.2"
+stability = "0.1.1"
