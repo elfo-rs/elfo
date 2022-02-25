@@ -1,4 +1,7 @@
-use std::alloc::{GlobalAlloc, Layout};
+use std::{
+    alloc::{GlobalAlloc, Layout},
+    cell::Cell,
+};
 
 use metrics::counter;
 
@@ -34,31 +37,53 @@ where
 {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc(layout);
-        if !ptr.is_null() {
-            counter!(ALLOCATED, layout.size() as u64);
-        }
+        without_alloc_metrics(|| {
+            if !ptr.is_null() {
+                counter!(ALLOCATED, layout.size() as u64);
+            }
+        });
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.inner.dealloc(ptr, layout);
-        counter!(DEALLOCATED, layout.size() as u64);
+        without_alloc_metrics(|| {
+            counter!(DEALLOCATED, layout.size() as u64);
+        });
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc_zeroed(layout);
-        if !ptr.is_null() {
-            counter!(ALLOCATED, layout.size() as u64);
-        }
+        without_alloc_metrics(|| {
+            if !ptr.is_null() {
+                counter!(ALLOCATED, layout.size() as u64);
+            }
+        });
         ptr
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let ptr = self.inner.realloc(ptr, layout, new_size);
-        if !ptr.is_null() {
-            counter!(DEALLOCATED, layout.size() as u64);
-            counter!(ALLOCATED, new_size as u64);
-        }
+        without_alloc_metrics(|| {
+            if !ptr.is_null() {
+                counter!(DEALLOCATED, layout.size() as u64);
+                counter!(ALLOCATED, new_size as u64);
+            }
+        });
         ptr
     }
+}
+
+fn without_alloc_metrics(f: impl FnOnce()) {
+    thread_local! {
+        static NESTED: Cell<bool> = Cell::new(false);
+    }
+
+    NESTED.with(|nested| {
+        if !nested.get() {
+            nested.set(true);
+            f();
+            nested.set(false);
+        }
+    })
 }
