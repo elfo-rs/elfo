@@ -1,12 +1,4 @@
-use std::{
-    alloc::{GlobalAlloc, Layout},
-    cell::Cell,
-};
-
-use metrics::counter;
-
-const ALLOCATED: &str = "elfo_allocated_memory";
-const DEALLOCATED: &str = "elfo_deallocated_memory";
+use std::alloc::{GlobalAlloc, Layout};
 
 /// Global allocator providing metrics on allocated memory
 ///
@@ -17,8 +9,8 @@ const DEALLOCATED: &str = "elfo_deallocated_memory";
 /// ```
 ///
 /// Setting this as the global allocator provides two counters:
-/// `elfo_allocated_memory` and `elfo_deallocated_memory`, tracking total
-/// allocated and deallocated memory in bytes.
+/// `elfo_allocated_bytes_total` and `elfo_deallocated_bytes_total`, tracking
+/// total allocated and deallocated memory in bytes.
 #[stability::unstable]
 pub struct AllocatorStats<A> {
     inner: A,
@@ -37,53 +29,39 @@ where
 {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc(layout);
-        without_alloc_metrics(|| {
-            if !ptr.is_null() {
-                counter!(ALLOCATED, layout.size() as u64);
-            }
-        });
+        if !ptr.is_null() {
+            elfo_core::scope::try_with(|scope| {
+                scope.increment_allocated_bytes(layout.size());
+            });
+        }
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.inner.dealloc(ptr, layout);
-        without_alloc_metrics(|| {
-            counter!(DEALLOCATED, layout.size() as u64);
+        elfo_core::scope::try_with(|scope| {
+            scope.increment_deallocated_bytes(layout.size());
         });
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc_zeroed(layout);
-        without_alloc_metrics(|| {
-            if !ptr.is_null() {
-                counter!(ALLOCATED, layout.size() as u64);
-            }
-        });
+        if !ptr.is_null() {
+            elfo_core::scope::try_with(|scope| {
+                scope.increment_allocated_bytes(layout.size());
+            });
+        }
         ptr
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let ptr = self.inner.realloc(ptr, layout, new_size);
-        without_alloc_metrics(|| {
-            if !ptr.is_null() {
-                counter!(DEALLOCATED, layout.size() as u64);
-                counter!(ALLOCATED, new_size as u64);
-            }
-        });
+        if !ptr.is_null() {
+            elfo_core::scope::try_with(|scope| {
+                scope.increment_deallocated_bytes(layout.size());
+                scope.increment_allocated_bytes(new_size);
+            });
+        }
         ptr
     }
-}
-
-fn without_alloc_metrics(f: impl FnOnce()) {
-    thread_local! {
-        static NESTED: Cell<bool> = Cell::new(false);
-    }
-
-    NESTED.with(|nested| {
-        if !nested.get() {
-            nested.set(true);
-            f();
-            nested.set(false);
-        }
-    })
 }
