@@ -6,8 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.34] - 2022-02-25
 ### Added
 - dumping, dumper: add `thread_id` to dumps (as the `th` field).
+- telemetry: produce `elfo_allocated_bytes_total` and `elfo_deallocated_bytes_total` metrics (@msiling).
 
 ## [0.1.33] - 2022-02-07
 ### Added
@@ -295,7 +298,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.33...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.34...HEAD
+[0.1.34]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.33...elfo-0.1.34
 [0.1.33]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.32...elfo-0.1.33
 [0.1.32]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.31...elfo-0.1.32
 [0.1.31]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.30...elfo-0.1.31

@@ -124,12 +124,10 @@ impl Scope {
             .set(self.deallocated_bytes.get() + by);
     }
 
-    #[cfg(feature = "unstable")]
     pub(crate) fn take_allocated_bytes(&self) -> usize {
         self.allocated_bytes.take()
     }
 
-    #[cfg(feature = "unstable")]
     pub(crate) fn take_deallocated_bytes(&self) -> usize {
         self.deallocated_bytes.take()
     }

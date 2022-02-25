@@ -1,6 +1,6 @@
 [package]
 name = "elfo-telemeter"
-version = "0.1.7"
+version = "0.1.8"
 description = "A telemeter collecting metrics"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 edition = "2018"
@@ -12,7 +12,7 @@ unstable = []
 
 [dependencies]
 elfo-macros = { version = "0.1.11", path = "../elfo-macros" }
-elfo-core = { version = "0.1.28", path = "../elfo-core", features = ["unstable"] } # TODO: do not need
+elfo-core = { version = "0.1.29", path = "../elfo-core", features = ["unstable"] } # TODO: do not need
 
 tokio = "1"
 hyper = { version = "0.14", default-features = false, features = ["server", "tcp", "http1"] }
