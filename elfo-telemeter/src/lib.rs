@@ -31,6 +31,12 @@ mod recorder;
 mod render;
 mod storage;
 
+#[cfg(feature = "unstable")]
+mod allocator;
+
+#[cfg(feature = "unstable")]
+pub use allocator::AllocatorStats;
+
 /// Installs a global metric recorder and returns a group to handle metrics.
 pub fn new() -> Schema {
     let storage = Arc::new(Storage::new());
