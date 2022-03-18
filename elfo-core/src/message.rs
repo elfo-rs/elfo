@@ -23,6 +23,9 @@ pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deseri
     #[doc(hidden)]
     const LABELS: &'static [Label];
 
+    #[doc(hidden)]
+    const DUMPING_ALLOWED: bool; // TODO: introduce `DumpingMode`.
+
     // Called while upcasting/downcasting to avoid
     // [rust#47384](https://github.com/rust-lang/rust/issues/47384).
     #[doc(hidden)]
@@ -66,6 +69,12 @@ impl AnyMessage {
     #[doc(hidden)]
     pub fn labels(&self) -> &'static [Label] {
         with_vtable(self.ltid, |vtable| vtable.labels)
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn dumping_allowed(&self) -> bool {
+        with_vtable(self.ltid, |vtable| vtable.dumping_allowed)
     }
 
     #[inline]
@@ -126,6 +135,7 @@ pub struct MessageVTable {
     pub name: &'static str,
     pub protocol: &'static str,
     pub labels: &'static [Label],
+    pub dumping_allowed: bool,
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,

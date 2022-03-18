@@ -63,6 +63,7 @@ mod message;
 mod object;
 mod permissions;
 mod request_table;
+mod runtime;
 mod source;
 mod subscription;
 mod supervisor;

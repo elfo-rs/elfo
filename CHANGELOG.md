@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- topology: unstable support for multiple runtimes.
+- dumping: support `#[message(dumping = "disabled")]`.
 
 ## [0.1.34] - 2022-02-25
 ### Added

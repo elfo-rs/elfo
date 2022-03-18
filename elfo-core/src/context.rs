@@ -170,7 +170,7 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!("> {:?}", message);
-        if let Some(permit) = DUMPER.acquire() {
+        if let Some(permit) = DUMPER.acquire_m::<M>() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -260,7 +260,7 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!("> {:?}", message);
-        if let Some(permit) = DUMPER.acquire() {
+        if let Some(permit) = DUMPER.acquire_m::<M>() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -343,7 +343,7 @@ impl<C, K, S> Context<C, K, S> {
         self.stats.sent_messages_total::<M>();
 
         trace!(to = %recipient, "> {:?}", message);
-        if let Some(permit) = DUMPER.acquire() {
+        if let Some(permit) = DUMPER.acquire_m::<M>() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -382,7 +382,7 @@ impl<C, K, S> Context<C, K, S> {
         let kind = MessageKind::Regular { sender: self.addr };
 
         trace!(to = %recipient, "> {:?}", message);
-        if let Some(permit) = DUMPER.acquire() {
+        if let Some(permit) = DUMPER.acquire_m::<M>() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -421,7 +421,7 @@ impl<C, K, S> Context<C, K, S> {
         };
 
         trace!(to = %sender, "> {:?}", message);
-        if let Some(permit) = DUMPER.acquire() {
+        if let Some(permit) = DUMPER.acquire_m::<R>() {
             permit.record(Dump::message(message.clone(), &kind, Direction::Out));
         }
 
@@ -573,18 +573,20 @@ impl<C, K, S> Context<C, K, S> {
         let message = envelope.message();
         trace!("< {:?}", message);
 
-        if let Some(permit) = DUMPER.acquire() {
-            // TODO: reuse `Dump::message`, it requires `AnyMessage: Message`.
-            let dump = Dump::builder()
-                .direction(Direction::In)
-                .message_name(message.name())
-                .message_protocol(message.protocol())
-                .message_kind(dumping::MessageKind::from_message_kind(
-                    envelope.message_kind(),
-                ))
-                .do_finish(message.erase());
+        if message.dumping_allowed() {
+            if let Some(permit) = DUMPER.acquire() {
+                // TODO: reuse `Dump::message`, it requires `AnyMessage: Message`.
+                let dump = Dump::builder()
+                    .direction(Direction::In)
+                    .message_name(message.name())
+                    .message_protocol(message.protocol())
+                    .message_kind(dumping::MessageKind::from_message_kind(
+                        envelope.message_kind(),
+                    ))
+                    .do_finish(message.erase());
 
-            permit.record(dump);
+                permit.record(dump);
+            }
         }
 
         // We should change the status after dumping the original message
@@ -836,7 +838,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
 
             // TODO: increase a counter.
             trace!("< {:?}", envelope.message());
-            if let Some(permit) = DUMPER.acquire() {
+            if let Some(permit) = DUMPER.acquire_m::<R>() {
                 permit.record(Dump::message(
                     envelope.message().clone(),
                     envelope.message_kind(),
@@ -890,7 +892,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
                 trace!("< {:?}", envelope.message());
 
                 // TODO: `acquire_many` or even unconditionally?
-                if let Some(permit) = DUMPER.acquire() {
+                if let Some(permit) = DUMPER.acquire_m::<R>() {
                     permit.record(Dump::message(
                         envelope.message().clone(),
                         envelope.message_kind(),

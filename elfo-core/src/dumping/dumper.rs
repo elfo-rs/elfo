@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::Message;
+
 use super::{
     dump::*,
     recorder::{self, Recorder},
@@ -23,6 +25,14 @@ impl Dumper {
     pub fn acquire(&self) -> Option<DumpingPermit<'_>> {
         let r = self.recorder.as_deref().filter(|r| r.enabled())?;
         Some(DumpingPermit { recorder: &*r })
+    }
+
+    pub(crate) fn acquire_m<M: Message>(&self) -> Option<DumpingPermit<'_>> {
+        if !M::DUMPING_ALLOWED {
+            return None;
+        }
+
+        self.acquire()
     }
 }
 

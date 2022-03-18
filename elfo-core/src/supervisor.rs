@@ -26,6 +26,7 @@ use crate::{
     messages,
     object::{Object, ObjectArc},
     routers::{Outcome, Router},
+    runtime::RuntimeManager,
     scope::{self, Scope, ScopeShared},
     subscription::SubscriptionManager,
     tracing::TraceId,
@@ -47,6 +48,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     control: CachePadded<RwLock<ControlBlock<C>>>,
     scope_shared: Arc<ScopeShared>,
     status_subscription: Arc<SubscriptionManager>,
+    rt_manager: RuntimeManager,
 }
 
 struct ControlBlock<C> {
@@ -85,6 +87,7 @@ where
         router: R,
         restart_policy: RestartPolicy,
         termination_policy: TerminationPolicy,
+        rt_manager: RuntimeManager,
     ) -> Self {
         let control = ControlBlock {
             config: None,
@@ -109,6 +112,7 @@ where
             scope_shared: Arc::new(ScopeShared::new(ctx.group())),
             status_subscription: Arc::new(status_subscription),
             context: ctx,
+            rt_manager,
         }
     }
 
@@ -312,7 +316,9 @@ where
 
         // TODO: move to `harness.rs`.
         let fut = async move {
-            info!(%addr, "started");
+            let thread = std::thread::current();
+
+            info!(%addr, thread = %thread.name().unwrap_or("?"), "started");
 
             sv.objects
                 .get(&key)
@@ -379,6 +385,8 @@ where
             key: key_str,
         });
 
+        let rt = self.rt_manager.get(&meta);
+
         let actor = Actor::new(
             meta.clone(),
             addr,
@@ -389,7 +397,8 @@ where
 
         let scope = Scope::new(scope::trace_id(), addr, meta, self.scope_shared.clone());
         let fut = MeasurePoll::new(fut.instrument(span));
-        tokio::spawn(scope.within(fut));
+
+        rt.spawn(scope.within(fut));
         let object = self.context.book().get_owned(addr).expect("just created");
         Some(object)
     }
