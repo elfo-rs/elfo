@@ -8,6 +8,7 @@ use crate::{
     exec::ExecResult,
     object::{Group, Object},
     routers::Router,
+    runtime::RuntimeManager,
     supervisor::Supervisor,
 };
 
@@ -72,7 +73,7 @@ impl<R, C> ActorGroup<R, C> {
         ER: ExecResult,
         C: Config,
     {
-        let run = move |ctx: Context, name: String| {
+        let run = move |ctx: Context, name: String, rt_manager: RuntimeManager| {
             let addr = ctx.addr();
             let sv = Arc::new(Supervisor::new(
                 ctx,
@@ -81,6 +82,7 @@ impl<R, C> ActorGroup<R, C> {
                 self.router,
                 self.restart_policy,
                 self.termination_policy,
+                rt_manager,
             ));
             let sv1 = sv.clone();
             let router = smallbox!(move |envelope| { sv.handle(envelope) });
@@ -93,7 +95,7 @@ impl<R, C> ActorGroup<R, C> {
 }
 
 pub struct Schema {
-    pub(crate) run: Box<dyn FnOnce(Context, String) -> Object>,
+    pub(crate) run: Box<dyn FnOnce(Context, String, RuntimeManager) -> Object>,
 }
 
 /// The behaviour on the `Terminate` message.

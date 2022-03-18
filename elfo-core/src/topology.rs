@@ -1,6 +1,7 @@
 use std::{cell::RefCell, sync::Arc};
 
 use parking_lot::RwLock;
+use tokio::runtime::Handle;
 
 use crate::{
     addr::Addr,
@@ -9,6 +10,7 @@ use crate::{
     demux::{Demux, Filter as DemuxFilter},
     envelope::Envelope,
     group::Schema,
+    runtime::RuntimeManager,
 };
 
 #[derive(Clone)]
@@ -21,6 +23,7 @@ pub struct Topology {
 struct Inner {
     groups: Vec<ActorGroup>,
     connections: Vec<Connection>,
+    rt_manager: RuntimeManager,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +47,15 @@ impl Topology {
             book: AddressBook::new(),
             inner: Arc::new(RwLock::new(Inner::default())),
         }
+    }
+
+    #[stability::unstable]
+    pub fn add_dedicated_rt<F: Fn(&crate::ActorMeta) -> bool + Send + Sync + 'static>(
+        &self,
+        filter: F,
+        handle: Handle,
+    ) {
+        self.inner.write().rt_manager.add(filter, handle);
     }
 
     pub fn local(&self, name: impl Into<String>) -> Local<'_> {
@@ -128,7 +140,8 @@ impl<'t> Local<'t> {
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
         let ctx = Context::new(book, self.demux.into_inner()).with_group(addr);
-        let object = (schema.run)(ctx, self.name);
+        let rt_manager = self.topology.inner.read().rt_manager.clone();
+        let object = (schema.run)(ctx, self.name, rt_manager);
         self.entry.insert(object);
     }
 }

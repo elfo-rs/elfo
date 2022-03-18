@@ -15,6 +15,7 @@ struct MessageArgs {
     ret: Option<Type>,
     part: bool,
     transparent: bool,
+    dumping_allowed: bool,
     crate_: Path,
     not: Vec<String>,
 }
@@ -26,6 +27,7 @@ impl Parse for MessageArgs {
             name: None,
             part: false,
             transparent: false,
+            dumping_allowed: true,
             crate_: parse_quote!(::elfo),
             not: Vec::new(),
         };
@@ -37,6 +39,7 @@ impl Parse for MessageArgs {
         // `#[message(part, transparent)]`
         // `#[message(elfo = some)]`
         // `#[message(not(Debug))]`
+        // `#[message(dumping = "disabled")]`
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
 
@@ -51,6 +54,19 @@ impl Parse for MessageArgs {
                 }
                 "part" => args.part = true,
                 "transparent" => args.transparent = true,
+                "dumping" => {
+                    // TODO: introduce `DumpingMode`.
+                    let _: Token![=] = input.parse()?;
+                    let s: LitStr = input.parse()?;
+
+                    assert_eq!(
+                        s.value(),
+                        "disabled",
+                        "only `dumping = \"disabled\"` is supported"
+                    );
+
+                    args.dumping_allowed = false;
+                }
                 // TODO: call it `crate` like in linkme?
                 "elfo" => {
                     let _: Token![=] = input.parse()?;
@@ -223,6 +239,9 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    // TODO: pass to `Wrapper`.
+    let dumping_allowed = args.dumping_allowed;
+
     let impl_message = if !args.part {
         quote! {
             impl #crate_::Message for #name {
@@ -233,6 +252,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     #internal::metrics::Label::from_static_parts("message", Self::NAME),
                     #internal::metrics::Label::from_static_parts("protocol", Self::PROTOCOL),
                 ];
+                const DUMPING_ALLOWED: bool = #dumping_allowed;
 
                 #[inline(always)]
                 fn _touch(&self) {
@@ -278,6 +298,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     name: #name::NAME,
                     protocol: #name::PROTOCOL,
                     labels: #name::LABELS,
+                    dumping_allowed: #name::DUMPING_ALLOWED,
                     clone,
                     debug,
                     erase,

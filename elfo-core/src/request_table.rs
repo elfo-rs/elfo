@@ -61,6 +61,8 @@ impl RequestTable {
     }
 
     pub(crate) async fn wait(&self, request_id: RequestId) -> Data {
+        let mut n = 0;
+
         loop {
             self.notifier.wait().await;
 
@@ -80,7 +82,13 @@ impl RequestTable {
                 }
             }
 
-            tokio::task::yield_now().await;
+            // XXX: dirty fix to avoid high CPU usage.
+            n += 1;
+            if n % 10 == 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            } else {
+                tokio::task::yield_now().await;
+            }
         }
     }
 
