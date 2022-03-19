@@ -40,7 +40,7 @@ pub trait Request: Message {
 }
 
 pub struct AnyMessage {
-    ltid: LocalTypeId,
+    vtable: &'static MessageVTable,
     data: SmallBox<dyn Any + Send, [u8; 184]>,
 }
 
@@ -50,31 +50,31 @@ impl AnyMessage {
         message._touch();
 
         AnyMessage {
-            ltid: M::_LTID,
+            vtable: get_vtable(M::_LTID),
             data: smallbox!(message),
         }
     }
 
     #[inline]
     pub fn name(&self) -> &'static str {
-        with_vtable(self.ltid, |vtable| vtable.name)
+        self.vtable.name
     }
 
     #[inline]
     pub fn protocol(&self) -> &'static str {
-        with_vtable(self.ltid, |vtable| vtable.protocol)
+        self.vtable.protocol
     }
 
     #[inline]
     #[doc(hidden)]
     pub fn labels(&self) -> &'static [Label] {
-        with_vtable(self.ltid, |vtable| vtable.labels)
+        self.vtable.labels
     }
 
     #[inline]
     #[doc(hidden)]
     pub fn dumping_allowed(&self) -> bool {
-        with_vtable(self.ltid, |vtable| vtable.dumping_allowed)
+        self.vtable.dumping_allowed
     }
 
     #[inline]
@@ -92,7 +92,7 @@ impl AnyMessage {
 
     #[inline]
     pub fn downcast<M: Message>(self) -> Result<M, AnyMessage> {
-        if M::_LTID != self.ltid {
+        if M::_LTID != self.vtable.ltid {
             return Err(self);
         }
 
@@ -109,20 +109,20 @@ impl AnyMessage {
     #[inline]
     #[doc(hidden)]
     pub fn erase(&self) -> dumping::ErasedMessage {
-        with_vtable(self.ltid, |vtable| (vtable.erase)(self))
+        (self.vtable.erase)(self)
     }
 }
 
 impl Clone for AnyMessage {
     #[inline]
     fn clone(&self) -> Self {
-        with_vtable(self.ltid, |vtable| (vtable.clone)(self))
+        (self.vtable.clone)(self)
     }
 }
 
 impl fmt::Debug for AnyMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        with_vtable(self.ltid, |vtable| (vtable.debug)(self, f))
+        (self.vtable.debug)(self, f)
     }
 }
 
@@ -147,15 +147,15 @@ pub static MESSAGE_LIST: [MessageVTable] = [..];
 thread_local! {
     // TODO: access it speculatively during initialization.
     // TODO: use simd + `SmallVec<[Vec<MessageVTable>; N]>` and sequential LTIDs.
-    static MESSAGE_BY_LTID: FxHashMap<LocalTypeId, MessageVTable> = {
+    static MESSAGE_BY_LTID: FxHashMap<LocalTypeId, &'static MessageVTable> = {
         MESSAGE_LIST.iter()
-            .map(|vtable| (vtable.ltid, vtable.clone()))
+            .map(|vtable| (vtable.ltid, vtable))
             .collect()
     };
 }
 
-fn with_vtable<R>(ltid: LocalTypeId, f: impl FnOnce(&MessageVTable) -> R) -> R {
-    MESSAGE_BY_LTID.with(|map| f(map.get(&ltid).expect("invalid LTID")))
+fn get_vtable(ltid: LocalTypeId) -> &'static MessageVTable {
+    MESSAGE_BY_LTID.with(|map| *map.get(&ltid).expect("invalid LTID"))
 }
 
 pub(crate) fn init() {
