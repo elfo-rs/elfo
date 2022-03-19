@@ -25,8 +25,9 @@ use crate::{
     source::{Combined, Source},
 };
 
-use self::stats::Stats;
+use self::{budget::Budget, stats::Stats};
 
+mod budget;
 mod stats;
 
 static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
@@ -42,6 +43,7 @@ pub struct Context<C = (), K = Singleton, S = ()> {
     source: S,
     stage: Stage,
     stats: Stats,
+    budget: Budget,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -98,6 +100,7 @@ impl<C, K, S> Context<C, K, S> {
             source: Combined::new(self.source, source),
             stage: Stage::PreRecv,
             stats: Stats::default(),
+            budget: self.budget,
         }
     }
 
@@ -451,6 +454,9 @@ impl<C, K, S> Context<C, K, S> {
         C: 'static,
         S: Source,
     {
+        // TODO: reset if the mailbox is empty.
+        self.budget.acquire().await;
+
         loop {
             self.stats.message_handling_time_seconds();
 
@@ -643,6 +649,7 @@ impl<C, K, S> Context<C, K, S> {
             source: (),
             stage: self.stage,
             stats: Stats::default(),
+            budget: self.budget.clone(),
         }
     }
 
@@ -661,6 +668,7 @@ impl<C, K, S> Context<C, K, S> {
             source: self.source,
             stage: self.stage,
             stats: Stats::default(),
+            budget: self.budget,
         }
     }
 
@@ -685,6 +693,7 @@ impl<C, K, S> Context<C, K, S> {
             source: self.source,
             stage: self.stage,
             stats: Stats::default(),
+            budget: self.budget,
         }
     }
 }
@@ -728,6 +737,7 @@ impl Context {
             source: (),
             stage: Stage::PreRecv,
             stats: Stats::default(),
+            budget: Budget::default(),
         }
     }
 }
@@ -744,6 +754,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             source: (),
             stage: self.stage,
             stats: Stats::default(),
+            budget: self.budget.clone(),
         }
     }
 }

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - topology: unstable support for multiple runtimes.
 - dumping: support `#[message(dumping = "disabled")]`.
+- context: run `task::yield_now()` after many `recv()` calls to prevent starving other actors.
 
 ## [0.1.34] - 2022-02-25
 ### Added
