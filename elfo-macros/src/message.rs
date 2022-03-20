@@ -1,5 +1,3 @@
-use std::time::UNIX_EPOCH;
-
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, ToTokens};
@@ -93,12 +91,6 @@ impl Parse for MessageArgs {
     }
 }
 
-fn gen_ltid() -> u32 {
-    // TODO
-    let elapsed = UNIX_EPOCH.elapsed().expect("invalid system time");
-    elapsed.as_nanos() as u32
-}
-
 fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream2) -> TokenStream2 {
     let tokens = if blacklist.iter().all(|x| x != name) {
         quote! { #[derive(#path)] }
@@ -148,7 +140,6 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
     let mod_name = format_ident!("_elfo_{}", name);
-    let ltid = gen_ltid();
     let serde_crate = format!("{}::_priv::serde", args.crate_.to_token_stream());
     let crate_ = args.crate_;
     let internal = quote![#crate_::_priv];
@@ -245,14 +236,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let impl_message = if !args.part {
         quote! {
             impl #crate_::Message for #name {
-                const _LTID: #internal::LocalTypeId = #ltid;
-                const PROTOCOL: &'static str = #protocol;
-                const NAME: &'static str = #name_str;
-                const LABELS: &'static [#internal::metrics::Label] = &[
-                    #internal::metrics::Label::from_static_parts("message", Self::NAME),
-                    #internal::metrics::Label::from_static_parts("protocol", Self::PROTOCOL),
-                ];
-                const DUMPING_ALLOWED: bool = #dumping_allowed;
+                const VTABLE: &'static #internal::MessageVTable = #mod_name::VTABLE;
 
                 #[inline(always)]
                 fn _touch(&self) {
@@ -270,7 +254,7 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
                 use #internal::{
                     MESSAGE_LIST, MessageVTable, AnyMessage,
-                    smallbox::smallbox, linkme
+                    smallbox::smallbox, linkme, metrics,
                 };
 
                 #ret_wrapper
@@ -291,18 +275,22 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     smallbox!(Clone::clone(cast_ref(message)))
                 }
 
-                #[linkme::distributed_slice(MESSAGE_LIST)]
-                #[linkme(crate = #internal::linkme)]
-                static VTABLE: MessageVTable = MessageVTable {
-                    ltid: #name::_LTID,
-                    name: #name::NAME,
-                    protocol: #name::PROTOCOL,
-                    labels: #name::LABELS,
-                    dumping_allowed: #name::DUMPING_ALLOWED,
+                pub(crate) const VTABLE: &'static MessageVTable = &MessageVTable {
+                    name: #name_str,
+                    protocol: #protocol,
+                    labels: &[
+                        metrics::Label::from_static_parts("message", #name_str),
+                        metrics::Label::from_static_parts("protocol", #protocol),
+                    ],
+                    dumping_allowed: #dumping_allowed,
                     clone,
                     debug,
                     erase,
                 };
+
+                #[linkme::distributed_slice(MESSAGE_LIST)]
+                #[linkme(crate = linkme)]
+                static VTABLE_STATIC: &'static MessageVTable = #name::VTABLE;
 
                 // See [rust#47384](https://github.com/rust-lang/rust/issues/47384).
                 #[doc(hidden)]

@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - dumping: support `#[message(dumping = "disabled")]`.
 - context: run `task::yield_now()` after many `recv()` calls to prevent starving other actors.
 
+### Changed
+- message: use vtable directly instead of LTID.
+
 ## [0.1.34] - 2022-02-25
 ### Added
 - dumping, dumper: add `thread_id` to dumps (as the `th` field).

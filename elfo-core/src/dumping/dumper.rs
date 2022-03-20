@@ -28,7 +28,7 @@ impl Dumper {
     }
 
     pub(crate) fn acquire_m<M: Message>(&self) -> Option<DumpingPermit<'_>> {
-        if !M::DUMPING_ALLOWED {
+        if !M::VTABLE.dumping_allowed {
             return None;
         }
 

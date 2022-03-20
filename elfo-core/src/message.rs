@@ -8,23 +8,9 @@ use smallbox::{smallbox, SmallBox};
 
 use crate::dumping;
 
-pub type LocalTypeId = u32;
-
 pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deserialize<'de> {
     #[doc(hidden)]
-    const _LTID: LocalTypeId;
-
-    /// A protocol's name.
-    /// Usually, it's a crate name where the message is defined.
-    const PROTOCOL: &'static str;
-    /// Just a message's name.
-    const NAME: &'static str;
-
-    #[doc(hidden)]
-    const LABELS: &'static [Label];
-
-    #[doc(hidden)]
-    const DUMPING_ALLOWED: bool; // TODO: introduce `DumpingMode`.
+    const VTABLE: &'static MessageVTable;
 
     // Called while upcasting/downcasting to avoid
     // [rust#47384](https://github.com/rust-lang/rust/issues/47384).
@@ -50,7 +36,7 @@ impl AnyMessage {
         message._touch();
 
         AnyMessage {
-            vtable: get_vtable(M::_LTID),
+            vtable: M::VTABLE,
             data: smallbox!(message),
         }
     }
@@ -92,7 +78,7 @@ impl AnyMessage {
 
     #[inline]
     pub fn downcast<M: Message>(self) -> Result<M, AnyMessage> {
-        if M::_LTID != self.vtable.ltid {
+        if !self.is::<M>() {
             return Err(self);
         }
 
@@ -131,33 +117,29 @@ impl fmt::Debug for AnyMessage {
 // Reexported in `elfo::_priv`.
 #[derive(Clone)]
 pub struct MessageVTable {
-    pub ltid: LocalTypeId,
+    /// Just a message's name.
     pub name: &'static str,
+    /// A protocol's name.
+    /// Usually, it's a crate name where the message is defined.
     pub protocol: &'static str,
     pub labels: &'static [Label],
-    pub dumping_allowed: bool,
+    pub dumping_allowed: bool, // TODO: introduce `DumpingMode`.
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
 }
 
 #[distributed_slice]
-pub static MESSAGE_LIST: [MessageVTable] = [..];
+pub static MESSAGE_LIST: [&'static MessageVTable] = [..];
 
 thread_local! {
-    // TODO: access it speculatively during initialization.
-    // TODO: use simd + `SmallVec<[Vec<MessageVTable>; N]>` and sequential LTIDs.
-    static MESSAGE_BY_LTID: FxHashMap<LocalTypeId, &'static MessageVTable> = {
+    static MESSAGE_BY_NAME: FxHashMap<(&'static str, &'static str), &'static MessageVTable> = {
         MESSAGE_LIST.iter()
-            .map(|vtable| (vtable.ltid, vtable))
+            .map(|vtable| ((vtable.protocol, vtable.name), *vtable))
             .collect()
     };
 }
 
-fn get_vtable(ltid: LocalTypeId) -> &'static MessageVTable {
-    MESSAGE_BY_LTID.with(|map| *map.get(&ltid).expect("invalid LTID"))
-}
-
 pub(crate) fn init() {
-    MESSAGE_BY_LTID.with(|_| ());
+    MESSAGE_BY_NAME.with(|_| ());
 }

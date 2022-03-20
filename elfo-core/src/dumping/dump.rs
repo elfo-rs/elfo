@@ -52,8 +52,8 @@ impl Dump {
     ) -> Self {
         Self::builder()
             .direction(direction)
-            .message_name(M::NAME)
-            .message_protocol(M::PROTOCOL)
+            .message_name(M::VTABLE.name)
+            .message_protocol(M::VTABLE.protocol)
             .message_kind(MessageKind::from_message_kind(kind))
             .finish(message)
     }

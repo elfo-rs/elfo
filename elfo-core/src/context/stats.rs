@@ -38,7 +38,7 @@ impl Stats {
 
     pub(super) fn sent_messages_total<M: Message>(&self) {
         let recorder = ward!(metrics::try_recorder());
-        let key = Key::from_static_parts("elfo_sent_messages_total", M::LABELS);
+        let key = Key::from_static_parts("elfo_sent_messages_total", M::VTABLE.labels);
         recorder.increment_counter(&key, 1);
     }
 }

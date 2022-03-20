@@ -80,7 +80,7 @@ pub mod _priv {
     pub use crate::{
         envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
         init::do_start,
-        message::{AnyMessage, LocalTypeId, MessageVTable, MESSAGE_LIST},
+        message::{AnyMessage, MessageVTable, MESSAGE_LIST},
         permissions::{AtomicPermissions, Permissions},
     };
     pub use linkme;
