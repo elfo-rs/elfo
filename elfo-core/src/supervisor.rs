@@ -362,13 +362,18 @@ where
                     decrement_gauge!("elfo_restarting_actors", 1.);
                 }
 
-                // Restarted actors should have a new trace id.
-                scope::set_trace_id(TraceId::generate());
+                if !sv.control.read().stop_spawning {
+                    // Restarted actors should have a new trace id.
+                    scope::set_trace_id(TraceId::generate());
 
-                backoff.start();
-                if let Some(object) = sv.spawn(key.clone(), backoff) {
-                    sv.objects.insert(key.clone(), object)
+                    backoff.start();
+                    if let Some(object) = sv.spawn(key.clone(), backoff) {
+                        sv.objects.insert(key.clone(), object)
+                    } else {
+                        sv.objects.remove(&key).map(|(_, v)| v)
+                    }
                 } else {
+                    debug!("group is terminating, actor restart cancelled");
                     sv.objects.remove(&key).map(|(_, v)| v)
                 }
             } else {
