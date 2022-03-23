@@ -226,8 +226,7 @@ impl Configurer {
         let errors = future::join_all(futures)
             .await
             .into_iter()
-            .map(|(group, results)| results.into_iter().map(move |res| (group.clone(), res)))
-            .flatten()
+            .flat_map(|(group, results)| results.into_iter().map(move |res| (group.clone(), res)))
             .filter_map(|(group, result)| match result {
                 Ok(Ok(_)) | Err(_) => None,
                 Ok(Err(reject)) => Some((group, reject.reason)),
