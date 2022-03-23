@@ -32,16 +32,16 @@ fn transparent() {
 
 #[test]
 fn name() {
-    assert_eq!(SimpleMessage::NAME, "SimpleMessage");
-    assert_eq!(SimpleRequest::NAME, "SimpleRequest");
+    assert_eq!(SimpleMessage::VTABLE.name, "SimpleMessage");
+    assert_eq!(SimpleRequest::VTABLE.name, "SimpleRequest");
 
-    assert_eq!(elfo::messages::UpdateConfig::NAME, "UpdateConfig");
+    assert_eq!(elfo::messages::UpdateConfig::VTABLE.name, "UpdateConfig");
 }
 
 #[test]
 fn protocol() {
-    assert_eq!(SimpleMessage::PROTOCOL, "elfo");
-    assert_eq!(SimpleRequest::PROTOCOL, "elfo");
+    assert_eq!(SimpleMessage::VTABLE.protocol, "elfo");
+    assert_eq!(SimpleRequest::VTABLE.protocol, "elfo");
 
-    assert_eq!(elfo::messages::UpdateConfig::PROTOCOL, "elfo-core");
+    assert_eq!(elfo::messages::UpdateConfig::VTABLE.protocol, "elfo-core");
 }
