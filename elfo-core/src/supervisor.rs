@@ -311,9 +311,6 @@ where
 
         let sv = self.clone();
 
-        // TODO: protect against panics (for `fn(..) -> impl Future`).
-        let fut = self.exec.exec(ctx);
-
         // TODO: move to `harness.rs`.
         let fut = async move {
             let thread = std::thread::current();
@@ -327,7 +324,7 @@ where
                 .expect("a supervisor stores only actors")
                 .on_start();
 
-            let fut = AssertUnwindSafe(async { fut.await.unify() }).catch_unwind();
+            let fut = AssertUnwindSafe(async { sv.exec.exec(ctx).await.unify() }).catch_unwind();
             let new_status = match fut.await {
                 Ok(Ok(())) => ActorStatus::TERMINATED,
                 Ok(Err(err)) => ActorStatus::FAILED.with_details(ErrorChain(&*err)),
