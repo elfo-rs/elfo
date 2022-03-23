@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.35] - 2022-03-23
 ### Added
 - topology: unstable support for multiple runtimes.
 - dumping: support `#[message(dumping = "disabled")]`.
@@ -305,7 +307,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.34...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.35...HEAD
+[0.1.35]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.34...elfo-0.1.35
 [0.1.34]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.33...elfo-0.1.34
 [0.1.33]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.32...elfo-0.1.33
 [0.1.32]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.31...elfo-0.1.32
