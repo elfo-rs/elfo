@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - message: use vtable directly instead of LTID.
+- dumping: use human-friendly size for `max_dump_size`.
 
 ## [0.1.34] - 2022-02-25
 ### Added

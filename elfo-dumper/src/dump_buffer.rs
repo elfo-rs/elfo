@@ -1,5 +1,6 @@
 use std::io;
 
+use bytesize::ByteSize;
 use serde::Serialize;
 
 const MIN_CHUNK_SIZE: usize = 128 * 1024;
@@ -11,18 +12,18 @@ const INITIAL_CAPACITY: usize = MIN_CHUNK_SIZE * 3 / 2;
 
 pub(crate) struct DumpBuffer {
     buffer: Vec<u8>,
-    max_dump_size: usize,
+    max_dump_size: ByteSize,
     need_to_clear: bool,
 }
 
 #[derive(Debug)]
 pub(crate) enum AppendError {
-    LimitExceeded(usize),
+    LimitExceeded(ByteSize),
     SerializationFailed(serde_json::Error),
 }
 
 impl DumpBuffer {
-    pub(crate) fn new(max_dump_size: usize) -> Self {
+    pub(crate) fn new(max_dump_size: ByteSize) -> Self {
         Self {
             buffer: Vec::with_capacity(INITIAL_CAPACITY),
             max_dump_size,
@@ -30,7 +31,7 @@ impl DumpBuffer {
         }
     }
 
-    pub(crate) fn configure(&mut self, max_dump_size: usize) {
+    pub(crate) fn configure(&mut self, max_dump_size: ByteSize) {
         assert!(self.buffer.is_empty() || self.need_to_clear);
 
         if max_dump_size != self.max_dump_size {
@@ -69,7 +70,7 @@ impl DumpBuffer {
 
     fn do_append(&mut self, dump: &impl Serialize) -> Result<(), AppendError> {
         let limit = self.max_dump_size;
-        let wr = LimitedWrite(&mut self.buffer, limit);
+        let wr = LimitedWrite(&mut self.buffer, limit.as_u64() as usize);
 
         match serde_json::to_writer(wr, dump) {
             Ok(()) => Ok(()),

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use bytesize::ByteSize;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -19,8 +20,8 @@ pub(crate) struct Config {
     /// The allowed size of a serialized dump.
     /// If exceeded, the dump is lost with limited logging.
     /// 64KiB by default.
-    #[serde(default = "default_max_dump_size")]
-    pub(crate) max_dump_size: usize,
+    #[serde(default = "default_max_dump_size", with = "bytesize_serde")]
+    pub(crate) max_dump_size: ByteSize,
 }
 
 impl Config {
@@ -37,6 +38,6 @@ fn default_registry_capacity() -> usize {
     3_000_000
 }
 
-fn default_max_dump_size() -> usize {
-    64 * 1024
+fn default_max_dump_size() -> ByteSize {
+    ByteSize::kib(64)
 }
