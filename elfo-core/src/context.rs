@@ -480,7 +480,7 @@ impl<C, K, S> Context<C, K, S> {
             let source_fut = poll_fn(|cx| self.source.poll_recv(cx));
             pin_mut!(source_fut);
 
-            tokio::select! { biased;
+            tokio::select! {
                 result = mailbox_fut => match result {
                     RecvResult::Data(envelope) => {
                         if let Some(envelope) = self.post_recv(envelope) {
