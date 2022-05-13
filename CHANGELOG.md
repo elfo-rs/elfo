@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.36] - 2022-05-13
+### Changed
+- context: now `recv()` polls sources and the mailbox fairly ([@Leonqn](https://github.com/Leonqn)).
+
 ## [0.1.35] - 2022-03-23
 ### Added
 - topology: unstable support for multiple runtimes.
@@ -19,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.34] - 2022-02-25
 ### Added
 - dumping, dumper: add `thread_id` to dumps (as the `th` field).
-- telemetry: produce `elfo_allocated_bytes_total` and `elfo_deallocated_bytes_total` metrics (@msiling).
+- telemetry: produce `elfo_allocated_bytes_total` and `elfo_deallocated_bytes_total` metrics ([@GoldsteinE](https://github.com/GoldsteinE)).
 
 ## [0.1.33] - 2022-02-07
 ### Added
@@ -307,7 +311,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.35...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.36...HEAD
+[0.1.36]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.35...elfo-0.1.36
 [0.1.35]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.34...elfo-0.1.35
 [0.1.34]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.33...elfo-0.1.34
 [0.1.33]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.32...elfo-0.1.33
