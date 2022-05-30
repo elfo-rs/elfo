@@ -1,6 +1,10 @@
 #![cfg(feature = "test-util")]
 
-use std::{panic::AssertUnwindSafe, time::Duration};
+use std::{
+    panic::AssertUnwindSafe,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use futures::FutureExt;
 
@@ -58,4 +62,36 @@ async fn it_restarts_with_timeout_after_failures() {
         // https://github.com/tokio-rs/tokio/issues/3985
         tokio::time::sleep(Duration::from_millis(5000 * i + 1)).await;
     }
+}
+
+#[message(ret = ())]
+#[derive(Default)]
+struct GuardedMessage(Arc<Mutex<bool>>);
+
+impl Drop for GuardedMessage {
+    fn drop(&mut self) {
+        *self.0.lock().unwrap() = true;
+    }
+}
+
+// See #68.
+#[tokio::test]
+async fn mailbox_must_be_dropped() {
+    tokio::time::pause();
+
+    let schema = ActorGroup::new().exec(|_ctx| async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        anyhow::bail!("boom!");
+    });
+    let proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
+
+    let msg = GuardedMessage::default();
+    let flag = msg.0.clone();
+    proxy.send(msg).await;
+
+    assert!(!*flag.lock().unwrap());
+
+    // On failure, the mailbox must be dropped.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(*flag.lock().unwrap());
 }

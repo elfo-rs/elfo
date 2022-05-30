@@ -65,8 +65,13 @@ impl Mailbox {
     }
 
     #[cold]
+    pub(crate) fn drop_all(&self) {
+        while self.queue.try_receive().is_ok() {}
+    }
+
+    #[cold]
     fn on_close(&self) -> RecvResult {
-        let trace_id = self.close.lock().expect("TODO");
+        let trace_id = self.close.lock().expect("called before close()");
         RecvResult::Closed(trace_id)
     }
 }

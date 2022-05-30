@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Fixed
+- mailbox: drop all messages once an actor terminates (#68).
+
+[#68]: https://github.com/elfo-rs/elfo/issues/68
 
 ## [0.1.36] - 2022-05-13
 ### Changed

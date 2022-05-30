@@ -222,6 +222,8 @@ impl Actor {
 
         if status.is_finished() {
             self.close();
+            // Drop all messages to release requests immediately.
+            self.mailbox.drop_all();
             self.finished.set();
         }
 
