@@ -3,7 +3,9 @@ use std::{
     hash::Hash,
 };
 
-use crate::envelope::Envelope;
+use elfo_macros::msg_raw as msg;
+
+use crate::{self as elfo, envelope::Envelope};
 
 pub use self::map::MapRouter;
 
@@ -66,8 +68,15 @@ impl<C> Router<C> for () {
     type Key = Singleton;
 
     #[inline]
-    fn route(&self, _: &Envelope) -> Outcome<Self::Key> {
-        Outcome::Unicast(Singleton)
+    fn route(&self, envelope: &Envelope) -> Outcome<Self::Key> {
+        use crate::messages::*;
+
+        msg!(match envelope {
+            // These messages shouldn't spawn actors.
+            // TODO: maybe this logic should be in the supervisor.
+            ValidateConfig | Terminate | Ping => Outcome::Broadcast,
+            _ => Outcome::Unicast(Singleton),
+        })
     }
 }
 
