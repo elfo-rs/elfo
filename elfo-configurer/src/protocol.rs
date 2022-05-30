@@ -1,7 +1,7 @@
 use elfo_macros::message;
 
 /// The command to reload configs and send changed ones.
-/// By default, up-to-date configs isn't resent across the system.
+/// By default, up-to-date configs aren't resent across the system.
 /// Use `ReloadConfigs::with_force(true)` to change this behavior.
 #[message(elfo = elfo_core)]
 #[derive(Default)]

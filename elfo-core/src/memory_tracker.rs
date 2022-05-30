@@ -46,7 +46,7 @@ mod proc_stats {
         const PROC_MEMINFO: &str = "/proc/meminfo";
         const PAGE_SIZE: usize = 4096; // TODO: use `sysconf(_SC_PAGESIZE)`
 
-        // Get `used`.
+        // Get `total`.
         let proc_meminfo = fs::read_to_string(PROC_MEMINFO)
             .map_err(|err| format!("cannot read {}: {}", PROC_MEMINFO, err))?;
 
@@ -57,7 +57,7 @@ mod proc_stats {
             .ok_or_else(|| format!("cannot parse {}", PROC_MEMINFO))?
             * 1024; // always in KiB
 
-        // Get `total`.
+        // Get `used`.
         let proc_self_statm = fs::read_to_string(PROC_SELF_STATM)
             .map_err(|err| format!("cannot read {}: {}", PROC_SELF_STATM, err))?;
 
