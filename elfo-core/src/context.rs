@@ -99,7 +99,7 @@ impl<C, K, S> Context<C, K, S> {
             key: self.key,
             source: Combined::new(self.source, source),
             stage: Stage::PreRecv,
-            stats: Stats::default(),
+            stats: self.stats,
             budget: self.budget,
         }
     }
@@ -170,7 +170,7 @@ impl<C, K, S> Context<C, K, S> {
         let kind = MessageKind::Regular { sender: self.addr };
 
         // XXX: unify with `do_send`.
-        self.stats.sent_messages_total::<M>();
+        self.stats.on_sent_message::<M>();
 
         trace!("> {:?}", message);
         if let Some(permit) = DUMPER.acquire_m::<M>() {
@@ -260,7 +260,7 @@ impl<C, K, S> Context<C, K, S> {
     }
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
-        self.stats.sent_messages_total::<M>();
+        self.stats.on_sent_message::<M>();
 
         trace!("> {:?}", message);
         if let Some(permit) = DUMPER.acquire_m::<M>() {
@@ -343,7 +343,7 @@ impl<C, K, S> Context<C, K, S> {
         message: M,
         kind: MessageKind,
     ) -> Result<(), SendError<M>> {
-        self.stats.sent_messages_total::<M>();
+        self.stats.on_sent_message::<M>();
 
         trace!(to = %recipient, "> {:?}", message);
         if let Some(permit) = DUMPER.acquire_m::<M>() {
@@ -380,7 +380,7 @@ impl<C, K, S> Context<C, K, S> {
         recipient: Addr,
         message: M,
     ) -> Result<(), TrySendError<M>> {
-        self.stats.sent_messages_total::<M>();
+        self.stats.on_sent_message::<M>();
 
         let kind = MessageKind::Regular { sender: self.addr };
 
@@ -414,7 +414,7 @@ impl<C, K, S> Context<C, K, S> {
             return;
         }
 
-        self.stats.sent_messages_total::<R::Wrapper>();
+        self.stats.on_sent_message::<R::Wrapper>();
 
         let sender = token.sender;
         let message = R::Wrapper::from(message);
@@ -454,15 +454,15 @@ impl<C, K, S> Context<C, K, S> {
         C: 'static,
         S: Source,
     {
-        // TODO: reset if the mailbox is empty.
-        self.budget.acquire().await;
-
         loop {
-            self.stats.message_handling_time_seconds();
+            self.stats.on_recv();
 
             if self.stage == Stage::Closed {
                 on_recv_after_close();
             }
+
+            // TODO: reset if the mailbox is empty.
+            self.budget.acquire().await;
 
             // TODO: cache `OwnedEntry`?
             let object = self.book.get_owned(self.addr)?;
@@ -525,7 +525,7 @@ impl<C, K, S> Context<C, K, S> {
         C: 'static,
     {
         loop {
-            self.stats.message_handling_time_seconds();
+            self.stats.on_recv();
 
             if self.stage == Stage::Closed {
                 on_recv_after_close();
@@ -552,7 +552,10 @@ impl<C, K, S> Context<C, K, S> {
                     on_input_closed(&mut self.stage, actor);
                     return Err(TryRecvError::Closed);
                 }
-                None => return Err(TryRecvError::Empty),
+                None => {
+                    self.stats.on_empty_mailbox();
+                    return Err(TryRecvError::Empty);
+                }
             }
         }
     }
@@ -601,7 +604,7 @@ impl<C, K, S> Context<C, K, S> {
             self.set_status(ActorStatus::TERMINATING);
         }
 
-        self.stats.message_waiting_time_seconds(&envelope);
+        self.stats.on_received_envelope(&envelope);
 
         msg!(match envelope {
             (messages::Ping, token) => {
@@ -648,7 +651,7 @@ impl<C, K, S> Context<C, K, S> {
             key: Singleton,
             source: (),
             stage: self.stage,
-            stats: Stats::default(),
+            stats: Stats::empty(),
             budget: self.budget.clone(),
         }
     }
@@ -667,13 +670,14 @@ impl<C, K, S> Context<C, K, S> {
             key: self.key,
             source: self.source,
             stage: self.stage,
-            stats: Stats::default(),
+            stats: self.stats,
             budget: self.budget,
         }
     }
 
     pub(crate) fn with_addr(mut self, addr: Addr) -> Self {
         self.addr = addr;
+        self.stats = Stats::startup();
         self
     }
 
@@ -692,7 +696,7 @@ impl<C, K, S> Context<C, K, S> {
             key,
             source: self.source,
             stage: self.stage,
-            stats: Stats::default(),
+            stats: self.stats,
             budget: self.budget,
         }
     }
@@ -736,12 +740,13 @@ impl Context {
             key: Singleton,
             source: (),
             stage: Stage::PreRecv,
-            stats: Stats::default(),
+            stats: Stats::empty(),
             budget: Budget::default(),
         }
     }
 }
 
+// TODO(v0.2): remove this instance.
 impl<C, K: Clone> Clone for Context<C, K> {
     fn clone(&self) -> Self {
         Self {
@@ -753,7 +758,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             key: self.key.clone(),
             source: (),
             stage: self.stage,
-            stats: Stats::default(),
+            stats: self.stats.clone(),
             budget: self.budget.clone(),
         }
     }
