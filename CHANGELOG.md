@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - context: now `elfo_message_handling_time_seconds` includes pseudo messages `<Startup>` and `<EmptyMailbox>` ([#64]).
 
+### Changed
+- context: reduce the budget of `recv()` from `256` to `64`.
+
 ### Fixed
 - mailbox: drop all messages in a mailbox once an actor terminates ([#68]).
 - core: `ValidateConfig`, `Terminate` and `Ping` doesn't cause spawning singletons ([#63]).

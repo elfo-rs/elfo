@@ -3,7 +3,7 @@ pub(crate) struct Budget(u8);
 
 impl Default for Budget {
     fn default() -> Self {
-        Self(u8::MAX)
+        Self(64)
     }
 }
 
