@@ -239,9 +239,22 @@ where
                     Err(TrySendError::Closed(envelope)) => RouteReport::Closed(envelope),
                 }
             }
+            Outcome::GentleUnicast(key) => {
+                let object = ward!(self.objects.get(&key), return RouteReport::Closed(envelope));
+                let actor = object.as_actor().expect("supervisor stores only actors");
+                match actor.try_send(envelope) {
+                    Ok(()) => RouteReport::Done,
+                    Err(TrySendError::Full(envelope)) => RouteReport::Wait(object.addr(), envelope),
+                    Err(TrySendError::Closed(envelope)) => RouteReport::Closed(envelope),
+                }
+            }
             Outcome::Multicast(list) => self.do_handle_multiple(
                 envelope,
                 list.into_iter().filter_map(|key| get_or_spawn!(self, key)),
+            ),
+            Outcome::GentleMulticast(list) => self.do_handle_multiple(
+                envelope,
+                list.into_iter().filter_map(|key| self.objects.get(&key)),
             ),
             Outcome::Broadcast => self.do_handle_multiple(envelope, self.objects.iter()),
             Outcome::Discard => RouteReport::Closed(envelope),
@@ -410,7 +423,11 @@ where
                     get_or_spawn!(self, key);
                 }
             }
-            Outcome::Broadcast | Outcome::Discard | Outcome::Default => {}
+            Outcome::GentleUnicast(_)
+            | Outcome::GentleMulticast(_)
+            | Outcome::Broadcast
+            | Outcome::Discard
+            | Outcome::Default => {}
         }
     }
 
