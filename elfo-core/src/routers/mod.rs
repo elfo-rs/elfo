@@ -19,16 +19,25 @@ pub trait Router<C>: Send + Sync + 'static {
 }
 
 /// Specifies which actors will get a message.
-#[derive(Debug)] // TODO(v0.2): mark as `non_exhaustive`.
+#[derive(Debug)]
+#[non_exhaustive]
 pub enum Outcome<T> {
     /// Routes a message to an actor with the specified key.
-    /// If there is no active or restarting actor under this key,
-    /// such a actor will be started.
+    /// If there is no active or restarting actor for this key,
+    /// it will be started.
     Unicast(T),
+    /// Routes a message to an actor with the specified key.
+    /// If there is no active or restarting actor for this key,
+    /// the message will be discarded, no actors are started.
+    GentleUnicast(T),
     /// Routes a message to all actors with specified keys.
-    /// If there are no active or restarting actors under these keys,
-    /// corresponding actors will be started.
-    Multicast(Vec<T>), // TODO(v0.2): use `SmallVec`?
+    /// If there is no active or restarting actors for these keys,
+    /// they will be started.
+    Multicast(Vec<T>),
+    /// Routes a message to all actors with specified keys.
+    /// If there is no active or restarting actors for these keys,
+    /// the message will be descarded, no actors are started.
+    GentleMulticast(Vec<T>),
     /// Routes a message to all active actors.
     Broadcast,
     /// Discards a message.
@@ -47,7 +56,11 @@ impl<T> Outcome<T> {
     pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> Outcome<U> {
         match self {
             Outcome::Unicast(val) => Outcome::Unicast(f(val)),
+            Outcome::GentleUnicast(val) => Outcome::GentleUnicast(f(val)),
             Outcome::Multicast(list) => Outcome::Multicast(list.into_iter().map(f).collect()),
+            Outcome::GentleMulticast(list) => {
+                Outcome::GentleMulticast(list.into_iter().map(f).collect())
+            }
             Outcome::Broadcast => Outcome::Broadcast,
             Outcome::Discard => Outcome::Discard,
             Outcome::Default => Outcome::Default,
@@ -74,7 +87,7 @@ impl<C> Router<C> for () {
         msg!(match envelope {
             // These messages shouldn't spawn actors.
             // TODO: maybe this logic should be in the supervisor.
-            ValidateConfig | Terminate | Ping => Outcome::Broadcast,
+            ValidateConfig | Terminate | Ping => Outcome::GentleUnicast(Singleton),
             _ => Outcome::Unicast(Singleton),
         })
     }
