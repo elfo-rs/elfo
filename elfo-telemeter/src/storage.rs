@@ -20,28 +20,30 @@ pub(crate) struct Storage {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct ExtKey {
-    group: Addr,
+    group: Addr, // `Addr::NULL` if global.
     // XXX: we are forced to use hash here, because API of `Registry`
     //      isn't composable with composite keys for now.
     key_hash: u64,
 }
 
-fn make_ext_key(scope: &Scope, key: &Key, with_actor_key: bool) -> ExtKey {
-    let mut hash = key.get_hash();
+fn make_ext_key(scope: Option<&Scope>, key: &Key, with_actor_key: bool) -> ExtKey {
+    let mut key_hash = key.get_hash();
 
-    if with_actor_key {
+    if let Some(scope) = scope.filter(|_| with_actor_key) {
         debug_assert!(!scope.meta().key.is_empty());
         let mut hasher = KeyHasher::default();
         scope.meta().key.hash(&mut hasher);
-        hash ^= hasher.finish();
+        key_hash ^= hasher.finish();
     }
 
-    debug_assert_ne!(scope.group(), Addr::NULL);
+    let group = if let Some(scope) = scope {
+        debug_assert_ne!(scope.group(), Addr::NULL);
+        scope.group()
+    } else {
+        Addr::NULL
+    };
 
-    ExtKey {
-        group: scope.group(),
-        key_hash: hash,
-    }
+    ExtKey { group, key_hash }
 }
 
 impl Hashable for ExtKey {
@@ -56,15 +58,20 @@ impl Hashable for ExtKey {
 
 #[derive(Clone)]
 struct ExtHandle {
-    meta: Arc<ActorMeta>,
+    meta: Option<Arc<ActorMeta>>, // `None` if global.
     with_actor_key: bool,
     key: Key,
     handle: Handle,
 }
 
-fn make_ext_handle(scope: &Scope, key: &Key, handle: Handle, with_actor_key: bool) -> ExtHandle {
+fn make_ext_handle(
+    scope: Option<&Scope>,
+    key: &Key,
+    handle: Handle,
+    with_actor_key: bool,
+) -> ExtHandle {
     ExtHandle {
-        meta: scope.meta().clone(),
+        meta: scope.map(|scope| scope.meta().clone()),
         with_actor_key,
         key: key.clone(),
         handle,
@@ -92,7 +99,7 @@ impl Storage {
         }
     }
 
-    pub(crate) fn touch_counter(&self, scope: &Scope, key: &Key, with_actor_key: bool) {
+    pub(crate) fn touch_counter(&self, scope: Option<&Scope>, key: &Key, with_actor_key: bool) {
         let ext_key = make_ext_key(scope, key, with_actor_key);
         self.registry.op(
             MetricKind::Counter,
@@ -102,7 +109,7 @@ impl Storage {
         );
     }
 
-    pub(crate) fn touch_gauge(&self, scope: &Scope, key: &Key, with_actor_key: bool) {
+    pub(crate) fn touch_gauge(&self, scope: Option<&Scope>, key: &Key, with_actor_key: bool) {
         let ext_key = make_ext_key(scope, key, with_actor_key);
         self.registry.op(
             MetricKind::Gauge,
@@ -112,7 +119,7 @@ impl Storage {
         );
     }
 
-    pub(crate) fn touch_histogram(&self, scope: &Scope, key: &Key, with_actor_key: bool) {
+    pub(crate) fn touch_histogram(&self, scope: Option<&Scope>, key: &Key, with_actor_key: bool) {
         let ext_key = make_ext_key(scope, key, with_actor_key);
         self.registry.op(
             MetricKind::Histogram,
@@ -124,7 +131,7 @@ impl Storage {
 
     pub(crate) fn increment_counter(
         &self,
-        scope: &Scope,
+        scope: Option<&Scope>,
         key: &Key,
         value: u64,
         with_actor_key: bool,
@@ -140,7 +147,7 @@ impl Storage {
 
     pub(crate) fn update_gauge(
         &self,
-        scope: &Scope,
+        scope: Option<&Scope>,
         key: &Key,
         value: GaugeValue,
         with_actor_key: bool,
@@ -156,7 +163,7 @@ impl Storage {
 
     pub(crate) fn record_histogram(
         &self,
-        scope: &Scope,
+        scope: Option<&Scope>,
         key: &Key,
         value: f64,
         with_actor_key: bool,
@@ -221,14 +228,17 @@ fn fill_metric(snapshot: &mut Snapshot, handle: &ExtHandle) -> usize {
 }
 
 fn get_metrics<'a>(snapshot: &'a mut Snapshot, handle: &ExtHandle) -> &'a mut Metrics {
-    if handle.with_actor_key {
-        snapshot.per_actor.entry(handle.meta.clone()).or_default()
-    } else if snapshot.per_group.contains_key(&handle.meta.group) {
-        snapshot.per_group.get_mut(&handle.meta.group).unwrap()
+    // If meta is known, it's a per-actor or per-group metric.
+    if let Some(meta) = &handle.meta {
+        if handle.with_actor_key {
+            snapshot.per_actor.entry(meta.clone()).or_default()
+        } else if snapshot.per_group.contains_key(&meta.group) {
+            snapshot.per_group.get_mut(&meta.group).unwrap()
+        } else {
+            snapshot.per_group.entry(meta.group.clone()).or_default()
+        }
     } else {
-        snapshot
-            .per_group
-            .entry(handle.meta.group.clone())
-            .or_default()
+        // Otherwise, it's a global metric.
+        &mut snapshot.global
     }
 }

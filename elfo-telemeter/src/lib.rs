@@ -38,7 +38,7 @@ mod allocator;
 pub use allocator::AllocatorStats;
 
 /// Installs a global metric recorder and returns a group to handle metrics.
-pub fn new() -> Schema {
+pub fn init() -> Schema {
     let storage = Arc::new(Storage::new());
     let recorder = Recorder::new(storage.clone());
     let schema = actor::new(storage);
@@ -48,4 +48,10 @@ pub fn new() -> Schema {
     }
 
     schema
+}
+
+/// Installs a global metric recorder and returns a group to handle metrics.
+#[deprecated] // TODO(v0.2): revise this method.
+pub fn new() -> Schema {
+    init()
 }

@@ -15,16 +15,21 @@ impl Recorder {
         Self { storage }
     }
 
-    fn with_params(&self, f: impl Fn(&Storage, &Scope, bool)) {
-        scope::try_with(|scope| {
+    fn with_params(&self, f: impl Fn(&Storage, Option<&Scope>, bool)) {
+        let is_global = scope::try_with(|scope| {
             let perm = scope.permissions();
             if perm.is_telemetry_per_actor_group_enabled() {
-                f(&self.storage, scope, false)
+                f(&self.storage, Some(scope), false);
             }
             if perm.is_telemetry_per_actor_key_enabled() && !scope.meta().key.is_empty() {
-                f(&self.storage, scope, true)
+                f(&self.storage, Some(scope), true);
             }
-        });
+        })
+        .is_none();
+
+        if is_global {
+            f(&self.storage, None, false);
+        }
     }
 }
 
