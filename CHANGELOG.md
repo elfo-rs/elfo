@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - context: now `elfo_message_handling_time_seconds` includes pseudo messages `<Startup>` and `<EmptyMailbox>` ([#64]).
 - routers: add `Outcome::GentleUnicast` and `Outcome::GentleMulticast` ([#65]).
+- telemeter: support "global" metrics, produced outside the actor system ([#55]).
 
 ### Changed
 - context: reduce the budget of `recv()` from `256` to `64`.
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#65]: https://github.com/elfo-rs/elfo/issues/65
 [#64]: https://github.com/elfo-rs/elfo/issues/64
 [#63]: https://github.com/elfo-rs/elfo/issues/63
+[#55]: https://github.com/elfo-rs/elfo/issues/55
 
 ## [0.1.36] - 2022-05-13
 ### Changed

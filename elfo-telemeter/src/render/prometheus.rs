@@ -48,7 +48,9 @@ fn render(
         write_type_line(buffer, name, kind);
 
         for (meta, value) in by_labels {
-            let actor_group_label = Label::new("actor_group", meta.actor_group.to_string());
+            let actor_group_label = meta
+                .actor_group
+                .map(|g| Label::new("actor_group", g.to_string()));
             let actor_key_label = meta
                 .actor_key
                 .map(|k| Label::new("actor_key", k.to_string()));
@@ -56,7 +58,7 @@ fn render(
             let labels = options
                 .global_labels
                 .iter()
-                .chain(iter::once(&actor_group_label))
+                .chain(actor_group_label.as_ref())
                 .chain(actor_key_label.as_ref())
                 .chain(meta.key.labels());
 
@@ -109,7 +111,7 @@ type GroupedData<'a> = BTreeMap<(MetricKind, &'a str), BTreeMap<MetricMeta<'a>, 
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct MetricMeta<'a> {
-    actor_group: &'a str,
+    actor_group: Option<&'a str>,
     actor_key: Option<&'a str>,
     key: &'a Key,
 }
@@ -123,11 +125,22 @@ enum MetricValue<'a> {
 fn group_by_name(snapshot: &Snapshot) -> GroupedData<'_> {
     let mut data: GroupedData<'_> = BTreeMap::new();
 
+    for (key, value, kind) in iter_metrics(&snapshot.global) {
+        data.entry((kind, key.name())).or_default().insert(
+            MetricMeta {
+                actor_group: None,
+                actor_key: None,
+                key,
+            },
+            value,
+        );
+    }
+
     for (group, per_group) in &snapshot.per_group {
         for (key, value, kind) in iter_metrics(per_group) {
             data.entry((kind, key.name())).or_default().insert(
                 MetricMeta {
-                    actor_group: group,
+                    actor_group: Some(group),
                     actor_key: None,
                     key,
                 },
@@ -140,7 +153,7 @@ fn group_by_name(snapshot: &Snapshot) -> GroupedData<'_> {
         for (key, value, kind) in iter_metrics(per_actor) {
             data.entry((kind, key.name())).or_default().insert(
                 MetricMeta {
-                    actor_group: &actor_meta.group,
+                    actor_group: Some(&actor_meta.group),
                     actor_key: Some(&actor_meta.key),
                     key,
                 },

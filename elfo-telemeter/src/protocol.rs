@@ -17,6 +17,8 @@ pub struct GetSnapshot;
 /// Actual values of all metrics.
 #[derive(Default, Clone)]
 pub struct Snapshot {
+    /// Metrics ouside the actor system.
+    pub global: Metrics,
     /// Metrics aggregated per group.
     pub per_group: FxHashMap<String, Metrics>,
     /// Metrics aggregated per actor.
@@ -25,6 +27,8 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub(crate) fn distributions_mut(&mut self) -> impl Iterator<Item = &mut Distribution> {
+        let global = self.global.distributions.values_mut();
+
         let per_group = self
             .per_group
             .values_mut()
@@ -35,7 +39,7 @@ impl Snapshot {
             .values_mut()
             .flat_map(|m| m.distributions.values_mut());
 
-        per_group.chain(per_actor)
+        global.chain(per_group).chain(per_actor)
     }
 }
 

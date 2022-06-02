@@ -266,10 +266,9 @@ fn topology() -> elfo::Topology {
     // * `RUST_LOG=info,[{actor_group=aggregators}]`
     //
     // However, it's more useful to control logging in the config file.
-    //
-    // In the future, `elfo` will implement inexpensive dumping subsystem and tools
-    // for regression testing & tracing.
     let logger = elfo::logger::init();
+    // Setup up telemetry (based on the `metrics` crate).
+    let telemeter = elfo::telemeter::init();
 
     // Define actor groups.
     let producers = topology.local("producers");
@@ -292,7 +291,7 @@ fn topology() -> elfo::Topology {
     aggregators.mount(aggregator::new());
     reporters.mount(reporter::new());
     loggers.mount(logger);
-    telemeters.mount(elfo::telemeter::new());
+    telemeters.mount(telemeter);
     dumpers.mount(elfo::dumper::new());
     pingers.mount(elfo::pinger::new(&topology));
 
