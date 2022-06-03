@@ -301,7 +301,6 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
             // Keep this list as minimal as possible to avoid possible collisions with `#name`.
             // Especially avoid `PascalCase`.
             use ::std::fmt;
-            use #crate_::message;
             use #internal::{MESSAGE_LIST, smallbox::smallbox, linkme, metrics};
 
             #impl_message
