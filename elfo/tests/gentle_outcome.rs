@@ -8,17 +8,17 @@ use elfo::{
 };
 use futures::FutureExt;
 
-#[message]
-struct Start(u32);
-
-#[message]
-struct GentleUni(u32);
-
-#[message]
-struct GentleMulti(Vec<u32>);
-
 #[tokio::test]
 async fn it_doesnt_start_actors() {
+    #[message]
+    struct Start(u32);
+
+    #[message]
+    struct GentleUni(u32);
+
+    #[message]
+    struct GentleMulti(Vec<u32>);
+
     let schema = ActorGroup::new()
         .router(MapRouter::new(|e| {
             msg!(match e {
