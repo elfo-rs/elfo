@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.37] - 2022-06-03
 ### Added
 - context: now `elfo_message_handling_time_seconds` includes pseudo messages `<Startup>` and `<EmptyMailbox>` ([#64]).
 - routers: add `Outcome::GentleUnicast` and `Outcome::GentleMulticast` ([#65]).
@@ -339,7 +341,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.36...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.37...HEAD
+[0.1.37]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.36...elfo-0.1.37
 [0.1.36]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.35...elfo-0.1.36
 [0.1.35]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.34...elfo-0.1.35
 [0.1.34]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.33...elfo-0.1.34
