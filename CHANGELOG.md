@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - mailbox: drop all messages in a mailbox once an actor terminates ([#68]).
 - core: `ValidateConfig`, `Terminate` and `Ping` doesn't cause spawning singletons ([#63]).
+- macros: make it possible to use `#[message]` inside functions (#[69]).
 
+[#69]: https://github.com/elfo-rs/elfo/issues/69
 [#68]: https://github.com/elfo-rs/elfo/issues/68
 [#65]: https://github.com/elfo-rs/elfo/issues/65
 [#64]: https://github.com/elfo-rs/elfo/issues/64

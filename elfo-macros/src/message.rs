@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote, ToTokens};
+use quote::{quote, ToTokens};
 use syn::{
     parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
@@ -139,7 +139,6 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     // TODO: what about parsing into something cheaper?
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
-    let mod_name = format_ident!("_elfo_{}", name);
     let serde_crate = format!("{}::_priv::serde", args.crate_.to_token_stream());
     let crate_ = args.crate_;
     let internal = quote![#crate_::_priv];
@@ -152,44 +151,30 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         .map(LitStr::value)
         .unwrap_or_else(|| input.ident.to_string());
 
-    let impl_request = if let Some(ret) = &args.ret {
-        assert!(!args.part, "`part` and `ret` attributes are incompatible");
-
-        quote! {
-            impl #crate_::Request for #name {
-                type Response = #ret;
-                type Wrapper = #mod_name::Wrapper;
-            }
-        }
-    } else {
-        quote! {}
-    };
-
     let ret_wrapper = if let Some(ret) = &args.ret {
         let wrapper_name_str = format!("{}::Response", name_str);
 
         quote! {
-            // `message` is imported in the module.
             #[message(not(Debug), name = #wrapper_name_str, elfo = #crate_)]
-            pub struct Wrapper(#ret);
+            pub struct _elfo_Wrapper(#ret);
 
-            impl fmt::Debug for Wrapper {
+            impl fmt::Debug for _elfo_Wrapper {
                 #[inline]
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                     self.0.fmt(f)
                 }
             }
 
-            impl From<#ret> for Wrapper {
+            impl From<#ret> for _elfo_Wrapper {
                 #[inline]
                 fn from(inner: #ret) -> Self {
-                    Wrapper(inner)
+                    _elfo_Wrapper(inner)
                 }
             }
 
-            impl From<Wrapper> for #ret {
+            impl From<_elfo_Wrapper> for #ret {
                 #[inline]
-                fn from(wrapper: Wrapper) -> Self {
+                fn from(wrapper: _elfo_Wrapper) -> Self {
                     wrapper.0
                 }
             }
@@ -224,80 +209,79 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    let impl_debug = if args.transparent && args.not.iter().all(|x| x != "Debug") {
-        gen_impl_debug(&input)
-    } else {
-        quote! {}
-    };
-
-    // TODO: pass to `Wrapper`.
+    // TODO: pass to `_elfo_Wrapper`.
     let dumping_allowed = args.dumping_allowed;
 
     let impl_message = if !args.part {
         quote! {
             impl #crate_::Message for #name {
-                const VTABLE: &'static #internal::MessageVTable = #mod_name::VTABLE;
+                const VTABLE: &'static #internal::MessageVTable = VTABLE;
 
                 #[inline(always)]
                 fn _touch(&self) {
-                    #mod_name::touch();
+                    touch();
                 }
             }
 
+            #ret_wrapper
+
+            fn cast_ref(message: &#internal::AnyMessage) -> &#name {
+                message.downcast_ref::<#name>().expect("invalid vtable")
+            }
+
+            fn clone(message: &#internal::AnyMessage) -> #internal::AnyMessage {
+                #internal::AnyMessage::new(Clone::clone(cast_ref(message)))
+            }
+
+            fn debug(message: &#internal::AnyMessage, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt::Debug::fmt(cast_ref(message), f)
+            }
+
+            fn erase(message: &#internal::AnyMessage) -> #crate_::dumping::ErasedMessage {
+                smallbox!(Clone::clone(cast_ref(message)))
+            }
+
+            const VTABLE: &'static #internal::MessageVTable = &#internal::MessageVTable {
+                name: #name_str,
+                protocol: #protocol,
+                labels: &[
+                    metrics::Label::from_static_parts("message", #name_str),
+                    metrics::Label::from_static_parts("protocol", #protocol),
+                ],
+                dumping_allowed: #dumping_allowed,
+                clone,
+                debug,
+                erase,
+            };
+
+            #[linkme::distributed_slice(MESSAGE_LIST)]
+            #[linkme(crate = linkme)]
+            static VTABLE_STATIC: &'static #internal::MessageVTable = <#name as #crate_::Message>::VTABLE;
+
+            // See [rust#47384](https://github.com/rust-lang/rust/issues/47384).
             #[doc(hidden)]
-            #[allow(non_snake_case)]
-            mod #mod_name {
-                use super::*;
-                use #crate_::Message;
+            #[inline(never)]
+            pub fn touch() {}
+        }
+    } else {
+        quote! {}
+    };
 
-                use std::fmt;
+    let impl_request = if let Some(ret) = &args.ret {
+        assert!(!args.part, "`part` and `ret` attributes are incompatible");
 
-                use #internal::{
-                    MESSAGE_LIST, MessageVTable, AnyMessage,
-                    smallbox::smallbox, linkme, metrics,
-                };
-
-                #ret_wrapper
-
-                fn cast_ref(message: &AnyMessage) -> &#name {
-                    message.downcast_ref::<#name>().expect("invalid vtable")
-                }
-
-                fn clone(message: &AnyMessage) -> AnyMessage {
-                    AnyMessage::new(Clone::clone(cast_ref(message)))
-                }
-
-                fn debug(message: &AnyMessage, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    fmt::Debug::fmt(cast_ref(message), f)
-                }
-
-                fn erase(message: &AnyMessage) -> #crate_::dumping::ErasedMessage {
-                    smallbox!(Clone::clone(cast_ref(message)))
-                }
-
-                pub(crate) const VTABLE: &'static MessageVTable = &MessageVTable {
-                    name: #name_str,
-                    protocol: #protocol,
-                    labels: &[
-                        metrics::Label::from_static_parts("message", #name_str),
-                        metrics::Label::from_static_parts("protocol", #protocol),
-                    ],
-                    dumping_allowed: #dumping_allowed,
-                    clone,
-                    debug,
-                    erase,
-                };
-
-                #[linkme::distributed_slice(MESSAGE_LIST)]
-                #[linkme(crate = linkme)]
-                static VTABLE_STATIC: &'static MessageVTable = #name::VTABLE;
-
-                // See [rust#47384](https://github.com/rust-lang/rust/issues/47384).
-                #[doc(hidden)]
-                #[inline(never)]
-                pub fn touch() {}
+        quote! {
+            impl #crate_::Request for #name {
+                type Response = #ret;
+                type Wrapper = _elfo_Wrapper;
             }
         }
+    } else {
+        quote! {}
+    };
+
+    let impl_debug = if args.transparent && args.not.iter().all(|x| x != "Debug") {
+        gen_impl_debug(&input)
     } else {
         quote! {}
     };
@@ -310,8 +294,19 @@ pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
         #serde_crate_attr
         #serde_transparent_attr
         #input
-        #impl_message
-        #impl_request
-        #impl_debug
+
+        #[doc(hidden)]
+        #[allow(non_snake_case)]
+        const _: () = {
+            // Keep this list as minimal as possible to avoid possible collisions with `#name`.
+            // Especially avoid `PascalCase`.
+            use ::std::fmt;
+            use #crate_::message;
+            use #internal::{MESSAGE_LIST, smallbox::smallbox, linkme, metrics};
+
+            #impl_message
+            #impl_request
+            #impl_debug
+        };
     })
 }
