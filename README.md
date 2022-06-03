@@ -11,8 +11,8 @@
 [docs-url]: https://docs.rs/elfo
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://github.com/loyd/elfo/blob/master/LICENSE
-[actions-badge]: https://github.com/loyd/elfo/workflows/CI/badge.svg
-[actions-url]: https://github.com/loyd/elfo/actions?query=workflow%3ACI+branch%3Amaster
+[actions-badge]: https://github.com/elfo-rs/elfo/actions/workflows/ci.yml/badge.svg
+[actions-url]: https://github.com/elfo-rs/elfo/actions/workflows/ci.yml
 
 Elfo is another actor system. Check [The Actoromicon](http://actoromicon.rs/).
 
