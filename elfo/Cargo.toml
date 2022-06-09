@@ -24,6 +24,11 @@ name = "streams"
 path = "examples/streams.rs"
 required-features = ["full"]
 
+[[example]]
+name = "tokio_broadcast"
+path = "examples/tokio_broadcast.rs"
+required-features = ["full"]
+
 # TODO: ugly, duplicate.
 [[example]]
 name = "test"
