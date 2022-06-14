@@ -216,6 +216,28 @@ pub fn message_impl(
     // TODO: pass to `_elfo_Wrapper`.
     let dumping_allowed = args.dumping_allowed;
 
+    let network_fns = if cfg!(feature = "network") {
+        quote! {
+            use #internal::rmps;
+
+            fn write_msgpack(message: &#internal::AnyMessage, mut buffer: &mut [u8]) -> Result<(), rmps::encode::Error> {
+                rmps::encode::write_named(&mut buffer, cast_ref(message))
+            }
+
+            fn read_msgpack(buffer: &[u8]) -> Result<#internal::AnyMessage, rmps::decode::Error> {
+                rmps::decode::from_slice::<#name>(buffer).map(#internal::AnyMessage::new)
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let network_fns_ref = if cfg!(feature = "network") {
+        quote! { write_msgpack, read_msgpack }
+    } else {
+        quote! {}
+    };
+
     let impl_message = if !args.part {
         quote! {
             impl #crate_::Message for #name {
@@ -245,6 +267,8 @@ pub fn message_impl(
                 smallbox!(Clone::clone(cast_ref(message)))
             }
 
+            #network_fns
+
             const VTABLE: &'static #internal::MessageVTable = &#internal::MessageVTable {
                 name: #name_str,
                 protocol: #protocol,
@@ -256,6 +280,7 @@ pub fn message_impl(
                 clone,
                 debug,
                 erase,
+                #network_fns_ref
             };
 
             #[linkme::distributed_slice(MESSAGE_LIST)]
