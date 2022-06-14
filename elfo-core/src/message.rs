@@ -25,6 +25,7 @@ pub trait Request: Message {
     type Wrapper: Message + Into<Self::Response> + From<Self::Response>;
 }
 
+// Reexported in `elfo::_priv`.
 pub struct AnyMessage {
     vtable: &'static MessageVTable,
     data: SmallBox<dyn Any + Send, [usize; 23]>,
@@ -52,13 +53,11 @@ impl AnyMessage {
     }
 
     #[inline]
-    #[doc(hidden)]
     pub fn labels(&self) -> &'static [Label] {
         self.vtable.labels
     }
 
     #[inline]
-    #[doc(hidden)]
     pub fn dumping_allowed(&self) -> bool {
         self.vtable.dumping_allowed
     }
@@ -93,9 +92,26 @@ impl AnyMessage {
     }
 
     #[inline]
-    #[doc(hidden)]
     pub fn erase(&self) -> dumping::ErasedMessage {
         (self.vtable.erase)(self)
+    }
+
+    #[cfg(feature = "network")]
+    #[inline]
+    pub fn write_msgpack(&self, buffer: &mut [u8]) -> Result<(), rmp_serde::encode::Error> {
+        (self.vtable.write_msgpack)(self, buffer)
+    }
+
+    #[cfg(feature = "network")]
+    #[inline]
+    pub fn read_msgpack(
+        protocol: &str,
+        name: &str,
+        buffer: &[u8],
+    ) -> Result<Option<Self>, rmp_serde::decode::Error> {
+        lookup_vtable(protocol, name)
+            .map(|vtable| (vtable.read_msgpack)(buffer))
+            .transpose()
     }
 }
 
@@ -127,19 +143,38 @@ pub struct MessageVTable {
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
+    #[cfg(feature = "network")]
+    pub write_msgpack: fn(&AnyMessage, &mut [u8]) -> Result<(), rmp_serde::encode::Error>,
+    #[cfg(feature = "network")]
+    pub read_msgpack: fn(&[u8]) -> Result<AnyMessage, rmp_serde::decode::Error>,
 }
 
+// Reexported in `elfo::_priv`.
 #[distributed_slice]
 pub static MESSAGE_LIST: [&'static MessageVTable] = [..];
 
 thread_local! {
-    static MESSAGE_BY_NAME: FxHashMap<(&'static str, &'static str), &'static MessageVTable> = {
+    static MESSAGES: FxHashMap<(&'static str, &'static str), &'static MessageVTable> = {
         MESSAGE_LIST.iter()
             .map(|vtable| ((vtable.protocol, vtable.name), *vtable))
             .collect()
     };
 }
 
+#[cfg(feature = "network")]
+fn lookup_vtable(protocol: &str, name: &str) -> Option<&'static MessageVTable> {
+    // Extend lifetimes to static in order to get `(&'static str, &'static str)`.
+    // SAFETY: this pair doesn't overlive the function.
+    let (protocol, name) = unsafe {
+        (
+            std::mem::transmute::<_, &'static str>(protocol),
+            std::mem::transmute::<_, &'static str>(name),
+        )
+    };
+
+    MESSAGES.with(|messages| messages.get(&(protocol, name)).copied())
+}
+
 pub(crate) fn init() {
-    MESSAGE_BY_NAME.with(|_| ());
+    MESSAGES.with(|_| ());
 }

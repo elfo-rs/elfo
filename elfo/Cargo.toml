@@ -23,6 +23,7 @@ required-features = ["full"]
 [features]
 full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter", "elfo-pinger"]
 test-util = ["elfo-test", "elfo-core/test-util"]
+network = ["elfo-core/network", "elfo-macros/network"]
 unstable = ["elfo-core/unstable", "elfo-telemeter/unstable" ]
 unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
 

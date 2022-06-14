@@ -13,6 +13,9 @@ readme.workspace = true
 [lib]
 proc-macro = true
 
+[features]
+network = []
+
 [dependencies]
 elfo-macros-impl = { version = "0.2.0-alpha.4", path = "../elfo-macros-impl" }
 
