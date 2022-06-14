@@ -20,8 +20,9 @@ pub struct Envelope<M = AnyMessage> {
 assert_impl_all!(Envelope: Send);
 assert_eq_size!(Envelope, [u8; 256]);
 
+// Reexported in `elfo::_priv`.
 #[derive(Debug)]
-pub(crate) enum MessageKind {
+pub enum MessageKind {
     Regular { sender: Addr },
     RequestAny(ResponseToken<()>),
     RequestAll(ResponseToken<()>),
@@ -52,7 +53,9 @@ impl<M> Envelope<M> {
         &self.message
     }
 
-    pub(crate) fn message_kind(&self) -> &MessageKind {
+    /// Part of private API. Do not use it.
+    #[doc(hidden)]
+    pub fn message_kind(&self) -> &MessageKind {
         &self.kind
     }
 

@@ -74,7 +74,9 @@ pub mod _priv {
     }
 
     pub use crate::{
-        envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
+        envelope::{
+            AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned, MessageKind,
+        },
         init::do_start,
         message::{AnyMessage, MessageVTable, MESSAGE_LIST},
         permissions::{AtomicPermissions, Permissions},

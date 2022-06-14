@@ -11,6 +11,7 @@ members = [
     "elfo-dumper",
     "elfo-telemeter",
     "elfo-pinger",
+    "elfo-network",
     "examples",
 ]
 
