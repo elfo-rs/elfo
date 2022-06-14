@@ -98,7 +98,7 @@ impl AnyMessage {
 
     #[cfg(feature = "network")]
     #[inline]
-    pub fn write_msgpack(&self, buffer: &mut [u8]) -> Result<(), rmp_serde::encode::Error> {
+    pub fn write_msgpack(&self, buffer: &mut [u8]) -> Result<usize, rmp_serde::encode::Error> {
         (self.vtable.write_msgpack)(self, buffer)
     }
 
@@ -144,7 +144,7 @@ pub struct MessageVTable {
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
     #[cfg(feature = "network")]
-    pub write_msgpack: fn(&AnyMessage, &mut [u8]) -> Result<(), rmp_serde::encode::Error>,
+    pub write_msgpack: fn(&AnyMessage, &mut [u8]) -> Result<usize, rmp_serde::encode::Error>,
     #[cfg(feature = "network")]
     pub read_msgpack: fn(&[u8]) -> Result<AnyMessage, rmp_serde::decode::Error>,
 }

@@ -220,8 +220,10 @@ pub fn message_impl(
         quote! {
             use #internal::rmps;
 
-            fn write_msgpack(message: &#internal::AnyMessage, mut buffer: &mut [u8]) -> Result<(), rmps::encode::Error> {
-                rmps::encode::write_named(&mut buffer, cast_ref(message))
+            fn write_msgpack(message: &#internal::AnyMessage, mut buffer: &mut [u8]) -> Result<usize, rmps::encode::Error> {
+                let initial_size = buffer.len();
+                rmps::encode::write_named(&mut buffer, cast_ref(message))?;
+                Ok(initial_size - buffer.len())
             }
 
             fn read_msgpack(buffer: &[u8]) -> Result<#internal::AnyMessage, rmps::decode::Error> {
