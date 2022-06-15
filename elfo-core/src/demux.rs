@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use smallvec::SmallVec;
 
-use crate::{addr::Addr, envelope::Envelope};
+use crate::{envelope::Envelope, Addr};
 
 const OPTIMAL_COUNT: usize = 5;
 

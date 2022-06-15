@@ -14,7 +14,6 @@ use elfo_utils::CachePadded;
 use self::{backoff::Backoff, error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
-    addr::Addr,
     config::{AnyConfig, Config, SystemConfig},
     context::Context,
     envelope::Envelope,
@@ -28,6 +27,7 @@ use crate::{
     scope::{self, Scope, ScopeGroupShared},
     subscription::SubscriptionManager,
     tracing::TraceId,
+    Addr,
 };
 
 mod backoff;

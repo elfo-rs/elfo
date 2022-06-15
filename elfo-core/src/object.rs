@@ -3,11 +3,11 @@ use futures::future::{join_all, BoxFuture};
 
 use crate::{
     actor::Actor,
-    addr::Addr,
     context::Context,
     envelope::Envelope,
     errors::{SendError, TrySendError},
     supervisor::RouteReport,
+    Addr,
 };
 
 pub(crate) struct Object {

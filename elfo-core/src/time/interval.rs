@@ -10,12 +10,12 @@ use sealed::sealed;
 use tokio::time::{Duration, Instant, Sleep};
 
 use crate::{
-    addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
     source::{SourceArc, SourceStream, UnattachedSource},
     time::far_future,
     tracing::TraceId,
+    Addr,
 };
 
 /// A source that emits messages periodically.

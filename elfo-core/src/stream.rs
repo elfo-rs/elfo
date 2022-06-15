@@ -10,12 +10,12 @@ use pin_project::pin_project;
 use sealed::sealed;
 
 use crate::{
-    addr::Addr,
     envelope::{Envelope, MessageKind},
     message::{AnyMessage, Message},
     scope::{self, Scope},
     source::{SourceArc, SourceStream, UnattachedSource, UntypedSourceArc},
     tracing::TraceId,
+    Addr,
 };
 
 // === Stream ===
