@@ -10,7 +10,5 @@ members = [
     "elfo-dumper",
     "elfo-telemeter",
     "elfo-pinger",
+    "examples",
 ]
-
-[profile.release]
-debug = true

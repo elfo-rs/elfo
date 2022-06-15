@@ -1,0 +1,18 @@
+[package]
+name = "elfo-examples"
+version = "0.0.0"
+publish = false
+edition = "2018"
+
+[dev-dependencies]
+elfo = { version = "0.1", path = "../elfo", features = ["full", "test-util"] }
+
+anyhow = "1.0.40"
+futures = "0.3.12"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0.120", features = ["derive"] }
+derive_more = "0.99.11"
+metrics = "0.17"
+humantime-serde = "1"
+tracing = "0.1.25"
+toml = "0.5.8"

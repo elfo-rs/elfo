@@ -29,5 +29,4 @@ elfo = { version = "0.1", features = ["test-util"] }
 ```
 
 ## Examples
-* [Basic usage](elfo/examples/usage.rs)
-* [Testing](elfo/examples/test.rs)
+[Examples](examples).

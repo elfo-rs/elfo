@@ -297,7 +297,7 @@ fn topology() -> elfo::Topology {
 
     // Actors can use `topology` as an extended service locator.
     // Usually it should be used for utilities only.
-    let config_path = "elfo/examples/config.toml";
+    let config_path = "examples/examples/usage/config.toml";
     configurers.mount(elfo::configurer::from_path(&topology, config_path));
 
     topology
