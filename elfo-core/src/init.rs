@@ -9,7 +9,6 @@ use tracing::{error, info, level_filters::LevelFilter, warn};
 
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
-    addr::Addr,
     config::SystemConfig,
     context::Context,
     demux::Demux,
@@ -25,6 +24,7 @@ use crate::{
     time::Interval,
     topology::Topology,
     tracing::TraceId,
+    Addr,
 };
 
 type Result<T, E = StartError> = std::result::Result<T, E>;

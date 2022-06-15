@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use slotmap::{new_key_type, Key, SlotMap};
 use smallvec::SmallVec;
 
-use crate::{addr::Addr, address_book::AddressBook, envelope::Envelope};
+use crate::{address_book::AddressBook, envelope::Envelope, Addr};
 
 pub(crate) struct RequestTable {
     owner: Addr,

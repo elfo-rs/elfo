@@ -367,9 +367,7 @@ mod tests {
     use tokio::time;
 
     use super::*;
-    use crate::{
-        actor::ActorMeta, addr::Addr, dumping::SequenceNo, scope::Scope, trace_id::TraceId,
-    };
+    use crate::{actor::ActorMeta, dumping::SequenceNo, scope::Scope, trace_id::TraceId, Addr};
 
     fn dump_msg(dumper: &Dumper, name: &'static str) {
         dumper.dump(

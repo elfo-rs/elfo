@@ -11,13 +11,13 @@ use std::{
 
 use crate::{
     actor::ActorMeta,
-    addr::Addr,
     config::SystemConfig,
     dumping::DumpingControl,
     logging::_priv::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
     telemetry::TelemetryConfig,
     tracing::TraceId,
+    Addr,
 };
 
 tokio::task_local! {

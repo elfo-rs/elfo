@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::{
-    addr::Addr,
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::{RestartPolicy, TerminationPolicy},
@@ -17,6 +16,7 @@ use crate::{
     request_table::RequestTable,
     scope,
     subscription::SubscriptionManager,
+    Addr,
 };
 
 // === ActorMeta ===

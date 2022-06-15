@@ -60,7 +60,7 @@ impl PacketBuffer {
 
         let _ = buffer.write_u64::<LE>(u64::from(envelope.trace_id()));
 
-        let sender = envelope.sender().into_bits() as u64;
+        let sender = envelope.sender().into_remote().into_bits();
         let _ = buffer.write_u64::<LE>(sender);
 
         // TODO: support requests
@@ -85,7 +85,7 @@ pub(crate) fn unpack(mut data: &[u8]) -> Result<Envelope> {
     let name = str::from_utf8(name)?;
 
     let trace_id = TraceId::try_from(data.read_u64::<LE>()?)?;
-    let sender = Addr::from_bits(data.read_u64::<LE>()? as usize);
+    let sender = Addr::from_bits(data.read_u64::<LE>()?);
 
     // TODO: support requests
     let kind = data.read_u8()?;

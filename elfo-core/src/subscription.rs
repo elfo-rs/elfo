@@ -1,7 +1,7 @@
 use parking_lot::RwLock;
 use tracing::warn;
 
-use crate::{addr::Addr, context::Context, message::Message};
+use crate::{context::Context, message::Message, Addr};
 
 pub(crate) struct SubscriptionManager {
     ctx: Context,

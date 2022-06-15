@@ -1,11 +1,11 @@
 use quanta::Instant;
 
 use crate::{
-    addr::Addr,
     address_book::AddressBook,
     message::{AnyMessage, Message},
     request_table::{RequestId, ResponseToken},
     tracing::TraceId,
+    Addr,
 };
 
 // TODO: use granular messages instead of `SmallBox`.

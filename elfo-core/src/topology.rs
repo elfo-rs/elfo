@@ -6,13 +6,13 @@ use tokio::runtime::Handle;
 #[cfg(feature = "unstable-stuck-detection")]
 use crate::stuck_detection::StuckDetector;
 use crate::{
-    addr::Addr,
     address_book::{AddressBook, VacantEntry},
     context::Context,
     demux::{Demux, Filter as DemuxFilter},
     envelope::Envelope,
     group::Blueprint,
     runtime::RuntimeManager,
+    Addr,
 };
 
 #[derive(Clone)]
