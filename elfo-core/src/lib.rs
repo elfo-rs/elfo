@@ -12,7 +12,7 @@ extern crate self as elfo_core;
 // TODO: revise this list.
 pub use crate::{
     actor::{ActorMeta, ActorStatus, ActorStatusKind},
-    address_book::Addr,
+    address_book::{Addr, GroupNo},
     config::Config,
     context::{Context, RequestBuilder},
     envelope::Envelope,

@@ -102,7 +102,7 @@ pub async fn do_start<F: Future>(
 ) -> Result<F::Output> {
     message::init();
 
-    let entry = topology.book.vacant_entry();
+    let entry = topology.book.vacant_entry(0);
     let addr = entry.addr();
     let ctx = Context::new(topology.book.clone(), Demux::default());
 
