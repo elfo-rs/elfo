@@ -3,6 +3,7 @@ use futures::future::{join_all, BoxFuture};
 
 use crate::{
     actor::Actor,
+    address_book::SlabConfig,
     context::Context,
     envelope::Envelope,
     errors::{SendError, TrySendError},
@@ -19,8 +20,9 @@ assert_impl_all!(Object: Sync);
 // TODO: actually, `Slab::Entry<Object>` should be aligned.
 // assert_eq_size!(Object, [u8; 256]);
 
-pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object>;
-pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object>;
+// TODO: move to `address_book` and wrap to avoid calling the `key()` method.
+pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object, SlabConfig>;
+pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object, SlabConfig>;
 
 #[derive(From)]
 pub(crate) enum ObjectKind {

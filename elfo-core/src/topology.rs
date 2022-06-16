@@ -12,7 +12,7 @@ use crate::{
     envelope::Envelope,
     group::Blueprint,
     runtime::RuntimeManager,
-    Addr,
+    Addr, GroupNo,
 };
 
 #[derive(Clone)]
@@ -67,9 +67,16 @@ impl Topology {
 
     pub fn local(&self, name: impl Into<String>) -> Local<'_> {
         let name = name.into();
-        let entry = self.book.vacant_entry();
-
         let mut inner = self.inner.write();
+
+        let group_no = inner.groups.len() + 1; // 0 is reserved for `system.init`.
+
+        // `GroupNo::MAX` is reserved for `Addr::NULL`, so we cannot use it.
+        if group_no == usize::from(GroupNo::MAX) {
+            panic!("too many groups");
+        }
+
+        let entry = self.book.vacant_entry(group_no as GroupNo);
         inner.groups.push(ActorGroup {
             addr: entry.addr(),
             name: name.clone(),

@@ -301,7 +301,8 @@ where
             return None;
         }
 
-        let entry = self.context.book().vacant_entry();
+        let group_no = self.context.addr().group_no();
+        let entry = self.context.book().vacant_entry(group_no);
         let addr = entry.addr();
 
         let key_str = key.to_string();
