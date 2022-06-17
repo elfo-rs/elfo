@@ -45,7 +45,15 @@ pub struct Addr(u64);
 impl fmt::Display for Addr {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}v0", self.0)
+        let node_no = self.node_no();
+        let group_no = self.group_no();
+        let slot_addr = self.slot_addr();
+
+        if node_no == node::LOCAL_NODE_NO {
+            write!(f, "{}:{}", group_no, slot_addr)
+        } else {
+            write!(f, "{}:{}:{}", node_no, group_no, slot_addr)
+        }
     }
 }
 
@@ -86,21 +94,24 @@ impl Addr {
         (self.0 >> 40) as GroupNo
     }
 
-    #[stability::unstable]
-    #[inline]
-    pub fn into_remote(mut self) -> Self {
-        if self.node_no() == node::LOCAL_NODE_NO {
-            self.0 |= u64::from(node::node_no()) << 48;
-        }
-
-        self
+    fn slot_addr(self) -> usize {
+        (self.0 & 0x0000_00ff_ffff_ffff) as usize
     }
 
     #[stability::unstable]
     #[inline]
-    pub fn into_local(mut self) -> Self {
-        self.0 &= !0xffff_0000_0000_0000;
-        self
+    pub fn into_remote(self) -> Self {
+        if self.node_no() == node::LOCAL_NODE_NO {
+            Self(self.0 | u64::from(node::node_no()) << 48)
+        } else {
+            self
+        }
+    }
+
+    #[stability::unstable]
+    #[inline]
+    pub fn into_local(self) -> Self {
+        Self(self.0 & 0x0000_ffff_ffff_ffff)
     }
 }
 
