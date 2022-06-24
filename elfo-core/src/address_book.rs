@@ -101,7 +101,7 @@ impl Addr {
     #[stability::unstable]
     #[inline]
     pub fn into_remote(self) -> Self {
-        if self.node_no() == node::LOCAL_NODE_NO {
+        if self != Self::NULL && self.node_no() == node::LOCAL_NODE_NO {
             Self(self.0 | u64::from(node::node_no()) << 48)
         } else {
             self
