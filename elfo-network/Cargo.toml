@@ -11,6 +11,10 @@ elfo-macros = { version = "0.1.13", path = "../elfo-macros", features = ["networ
 elfo-core = { version = "0.1.32", path = "../elfo-core", features = ["unstable", "network"] }
 
 serde = { version = "1.0.120", features = ["derive"] }
-byteorder = "1.4.3"
 static_assertions = "1.1.0"
 eyre = "0.6.8"
+fxhash = "0.2.1"
+tokio = { version = "1.19.2", features = ["net"] }
+tokio-util = { version = "0.7.3", features = ["codec"] }
+bytes = "1.1.0"
+tracing = "0.1.25"
