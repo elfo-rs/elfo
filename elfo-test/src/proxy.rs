@@ -25,7 +25,6 @@ use elfo_core::{
 };
 use elfo_macros::{message, msg_raw as msg};
 
-const MAX_WAIT_TIME: Duration = Duration::from_millis(150);
 const SYNC_YIELD_COUNT: usize = 32;
 
 pub struct Proxy {
@@ -33,6 +32,7 @@ pub struct Proxy {
     scope: Scope,
     non_exhaustive: bool,
     subject_addr: Addr,
+    recv_timeout: Duration,
 }
 
 impl Proxy {
@@ -96,12 +96,12 @@ impl Proxy {
                 }
 
                 task::yield_now().await;
-                start.elapsed() < MAX_WAIT_TIME
+                start.elapsed() < self.recv_timeout
             } {}
 
             panic!(
                 "timeout ({:?}) while receiving a message at {}",
-                MAX_WAIT_TIME, location,
+                self.recv_timeout, location,
             );
         })
     }
@@ -128,6 +128,11 @@ impl Proxy {
         self.scope
             .clone()
             .sync_within(|| self.context.set_addr(addr))
+    }
+
+    /// Sets message wait time for `recv` call.
+    pub fn set_recv_timeout(&mut self, recv_timeout: Duration) {
+        self.recv_timeout = recv_timeout;
     }
 
     pub fn non_exhaustive(&mut self) {
@@ -158,6 +163,7 @@ impl Proxy {
             context,
             non_exhaustive: self.non_exhaustive,
             subject_addr: self.subject_addr,
+            recv_timeout: self.recv_timeout,
         }
     }
 
@@ -266,6 +272,7 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
         context,
         non_exhaustive: false,
         subject_addr,
+        recv_timeout: Duration::from_millis(150),
     }
 }
 
