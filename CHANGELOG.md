@@ -10,11 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - proxy: add `set_recv_timeout` method ([#76]).
 
 ### Changed
-- proxy: replace busy loop in recv with timer ([#76]).
+- proxy: replace busy loop in recv with timer ([#76], [#77]).
 
 ### Fixed
 - proxy: add the location of a caller to panics ([#75]).
 
+[#77]: https://github.com/elfo-rs/elfo/pull/77
 [#76]: https://github.com/elfo-rs/elfo/pull/76
 [#75]: https://github.com/elfo-rs/elfo/issues/75
 
