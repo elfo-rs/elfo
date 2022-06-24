@@ -7,10 +7,14 @@ use std::{
         Arc,
     },
     thread,
-    time::{Duration, Instant as StdInstant},
+    time::Duration,
 };
 
-use futures_intrusive::channel::shared;
+use futures_intrusive::{
+    channel::shared,
+    timer::{LocalTimer, LocalTimerService, StdClock},
+};
+use once_cell::sync::Lazy;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tokio::task;
@@ -83,26 +87,22 @@ impl Proxy {
 
     #[track_caller]
     pub fn recv(&mut self) -> impl Future<Output = Envelope> + '_ {
+        static STD_CLOCK: Lazy<StdClock> = Lazy::new(StdClock::new);
+
         let location = Location::caller();
         self.scope.clone().within(async move {
-            // We are forced to use `std::time::Instant` instead of `tokio::time::Instant`
-            // because we don't want to use mocked time by tokio here.
-            let start = StdInstant::now();
-
-            #[allow(clippy::blocks_in_if_conditions)]
-            while {
-                if let Some(envelope) = self.try_recv() {
-                    return envelope;
+            let timer_service = LocalTimerService::new(&*STD_CLOCK);
+            tokio::select! {
+                Some(envelope) = self.context.recv() => {
+                    envelope
+                },
+                _ = timer_service.delay(self.recv_timeout) => {
+                    panic!(
+                        "timeout ({:?}) while receiving a message at {}",
+                        self.recv_timeout, location,
+                    );
                 }
-
-                task::yield_now().await;
-                start.elapsed() < self.recv_timeout
-            } {}
-
-            panic!(
-                "timeout ({:?}) while receiving a message at {}",
-                self.recv_timeout, location,
-            );
+            }
         })
     }
 
