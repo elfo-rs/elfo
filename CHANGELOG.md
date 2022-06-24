@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Fixed
+- proxy: add the location of a caller to panics ([#75]).
+
+[#75]: https://github.com/elfo-rs/elfo/issues/75
 
 ## [0.1.37] - 2022-06-03
 ### Added

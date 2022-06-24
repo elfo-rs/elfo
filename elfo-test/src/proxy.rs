@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
-    future,
+    future::{self, Future},
+    panic::Location,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -34,34 +35,44 @@ pub struct Proxy {
     subject_addr: Addr,
 }
 
-// TODO: add `#[track_caller]` after https://github.com/rust-lang/rust/issues/78840.
 impl Proxy {
     pub fn addr(&self) -> Addr {
         self.context.addr()
     }
 
-    pub async fn send<M: Message>(&self, message: M) {
-        let f = async {
-            let res = self.context.send(message).await;
-            res.expect("cannot send message")
-        };
-        self.scope.clone().within(f).await
+    #[track_caller]
+    pub fn send<M: Message>(&self, message: M) -> impl Future<Output = ()> + '_ {
+        let location = Location::caller();
+        self.scope.clone().within(async move {
+            if let Err(err) = self.context.send(message).await {
+                panic!("cannot send {} ({}) at {}", M::VTABLE.name, err, location);
+            }
+        })
     }
 
-    pub async fn send_to<M: Message>(&self, recipient: Addr, message: M) {
-        let f = async {
-            let res = self.context.send_to(recipient, message).await;
-            res.expect("cannot send message")
-        };
-        self.scope.clone().within(f).await
+    #[track_caller]
+    pub fn send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+    ) -> impl Future<Output = ()> + '_ {
+        let location = Location::caller();
+        self.scope.clone().within(async move {
+            if let Err(err) = self.context.send_to(recipient, message).await {
+                panic!("cannot send {} ({}) at {}", M::VTABLE.name, err, location);
+            }
+        })
     }
 
-    pub async fn request<R: Request>(&self, request: R) -> R::Response {
-        let f = async {
-            let res = self.context.request(request).resolve().await;
-            res.expect("cannot send message")
-        };
-        self.scope.clone().within(f).await
+    #[track_caller]
+    pub fn request<R: Request>(&self, request: R) -> impl Future<Output = R::Response> + '_ {
+        let location = Location::caller();
+        self.scope.clone().within(async move {
+            match self.context.request(request).resolve().await {
+                Ok(response) => response,
+                Err(err) => panic!("cannot send {} ({}) at {}", R::VTABLE.name, err, location),
+            }
+        })
     }
 
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, response: R::Response) {
@@ -70,9 +81,10 @@ impl Proxy {
             .sync_within(|| self.context.respond(token, response))
     }
 
-    pub async fn recv(&mut self) -> Envelope {
-        let scope = self.scope.clone();
-        let f = async {
+    #[track_caller]
+    pub fn recv(&mut self) -> impl Future<Output = Envelope> + '_ {
+        let location = Location::caller();
+        self.scope.clone().within(async move {
             // We are forced to use `std::time::Instant` instead of `tokio::time::Instant`
             // because we don't want to use mocked time by tokio here.
             let start = StdInstant::now();
@@ -87,9 +99,11 @@ impl Proxy {
                 start.elapsed() < MAX_WAIT_TIME
             } {}
 
-            panic!("too long");
-        };
-        scope.within(f).await
+            panic!(
+                "timeout ({:?}) while receiving a message at {}",
+                MAX_WAIT_TIME, location,
+            );
+        })
     }
 
     pub fn try_recv(&mut self) -> Option<Envelope> {
