@@ -218,13 +218,17 @@ fn fill_metric(snapshot: &mut Snapshot, handle: &ExtHandle) -> usize {
             8
         }
         Handle::Histogram(_) => {
+            let mut bucket_len = 0;
             let d = m.distributions.entry(handle.key.clone()).or_default();
-            h.read_histogram_with_clear(|samples| d.record_samples(samples));
-            d.estimated_size()
+            h.read_histogram_with_clear(|samples| {
+                bucket_len += samples.len();
+                d.record_samples(samples);
+            });
+            d.estimated_size() + 8 * bucket_len
         }
     };
 
-    mem::size_of::<Key>() + estimated_size
+    mem::size_of::<ExtKey>() + mem::size_of::<ExtHandle>() + estimated_size
 }
 
 fn get_metrics<'a>(snapshot: &'a mut Snapshot, handle: &ExtHandle) -> &'a mut Metrics {
