@@ -12,7 +12,7 @@ use std::{
 
 use futures_intrusive::{
     channel::shared,
-    timer::{LocalTimer, LocalTimerService, StdClock},
+    timer::{LocalTimer, StdClock, TimerService},
 };
 use once_cell::sync::Lazy;
 use serde::{de::Deserializer, Deserialize};
@@ -88,15 +88,25 @@ impl Proxy {
     #[track_caller]
     pub fn recv(&mut self) -> impl Future<Output = Envelope> + '_ {
         static STD_CLOCK: Lazy<StdClock> = Lazy::new(StdClock::new);
+        static TIMER_SERVICE: Lazy<Arc<TimerService>> = Lazy::new(|| {
+            let timer_service = Arc::new(TimerService::new(&*STD_CLOCK));
+            thread::spawn({
+                let timer_service = timer_service.clone();
+                move || loop {
+                    std::thread::sleep(Duration::from_millis(25));
+                    timer_service.check_expirations();
+                }
+            });
+            timer_service
+        });
 
         let location = Location::caller();
         self.scope.clone().within(async move {
-            let timer_service = LocalTimerService::new(&*STD_CLOCK);
             tokio::select! {
                 Some(envelope) = self.context.recv() => {
                     envelope
                 },
-                _ = timer_service.delay(self.recv_timeout) => {
+                _ = TIMER_SERVICE.delay(self.recv_timeout) => {
                     panic!(
                         "timeout ({:?}) while receiving a message at {}",
                         self.recv_timeout, location,
