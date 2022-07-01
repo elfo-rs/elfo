@@ -10,10 +10,16 @@ impl Default for Budget {
 impl Budget {
     pub(crate) async fn acquire(&mut self) {
         if self.0 == 0 {
-            tokio::task::yield_now().await;
+            // We should reset the budget before `yield_now()` because
+            // `select! { _ => ctx.recv() .. }` above can lock the branch forever.
             *self = Self::default();
+            tokio::task::yield_now().await;
         }
+    }
 
-        self.0 -= 1;
+    pub(crate) fn decrement(&mut self) {
+        // We use a saturating operation here because `try_recv()`
+        // can be called many times without calling `Budget::acquire()`.
+        self.0 = self.0.saturating_sub(1);
     }
 }

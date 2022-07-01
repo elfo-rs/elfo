@@ -564,6 +564,8 @@ impl<C, K, S> Context<C, K, S> {
     where
         C: 'static,
     {
+        self.budget.decrement();
+
         scope::set_trace_id(envelope.trace_id());
 
         let envelope = msg!(match envelope {
