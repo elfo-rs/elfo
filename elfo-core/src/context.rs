@@ -760,7 +760,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             key: self.key.clone(),
             source: (),
             stage: self.stage,
-            stats: self.stats.clone(),
+            stats: Stats::empty(),
             budget: self.budget.clone(),
         }
     }

@@ -4,12 +4,11 @@ use quanta::Instant;
 
 use crate::{envelope::Envelope, message::Message};
 
-#[derive(Clone)]
 pub(super) struct Stats {
     in_handling: Option<InHandling>,
 }
 
-#[derive(Clone, Constructor)]
+#[derive(Constructor)]
 struct InHandling {
     labels: &'static [Label],
     start_time: quanta::Instant,
