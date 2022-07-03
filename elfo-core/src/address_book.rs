@@ -22,7 +22,7 @@ pub type GroupNo = u8;
 // - max active actors spawned by one thread    1048544
 // - slot generations to prevent ABA               1024
 // - max threads spawning actors                    256
-// - max groups                                     255 *
+// - max groups in node                             255 *
 //
 // Structure (32b platform):
 //        16b         8b       8b       7b      7b       18b
@@ -35,9 +35,9 @@ pub type GroupNo = u8;
 // - max active actors spawned by one thread     131040
 // - slot generations to prevent ABA                128
 // - max threads spawning actors                     64
-// - max groups                                     255 *
+// - max groups in node                             255 *
 //
-// * - `GroupNo::MAX` is reserved for `NULL`.
+// * - `GroupNo::MAX` is reserved to represent `Addr::NULL` unambiguously.
 //
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Addr(u64);
@@ -45,6 +45,10 @@ pub struct Addr(u64);
 impl fmt::Display for Addr {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if *self == Self::NULL {
+            return f.write_str("null");
+        }
+
         let node_no = self.node_no();
         let group_no = self.group_no();
         let slot_addr = self.slot_addr();
