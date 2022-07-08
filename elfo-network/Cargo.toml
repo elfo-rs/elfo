@@ -14,6 +14,7 @@ serde = { version = "1.0.120", features = ["derive"] }
 static_assertions = "1.1.0"
 eyre = "0.6.8"
 fxhash = "0.2.1"
+futures = "0.3.21"
 tokio = { version = "1.19.2", features = ["net"] }
 tokio-util = { version = "0.7.3", features = ["codec"] }
 bytes = "1.1.0"
