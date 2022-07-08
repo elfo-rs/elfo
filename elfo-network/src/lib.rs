@@ -5,5 +5,9 @@
 mod actor;
 mod codec;
 mod config;
+mod discovery;
+mod listener;
+mod node_map;
+mod protocol;
 
 pub use actor::new;

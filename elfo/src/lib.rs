@@ -23,6 +23,9 @@ pub mod batteries {
     #[cfg(feature = "elfo-logger")]
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
     pub use elfo_logger as logger;
+    #[cfg(feature = "elfo-network")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
+    pub use elfo_network as network;
     #[cfg(feature = "elfo-pinger")]
     #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
     pub use elfo_pinger as pinger;

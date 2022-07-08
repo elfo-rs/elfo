@@ -48,10 +48,10 @@ impl Encoder {
     }
 }
 
-impl codec::Encoder<(&Envelope, Addr)> for Encoder {
+impl codec::Encoder<(Envelope, Addr)> for Encoder {
     type Error = Error;
 
-    fn encode(&mut self, (envelope, target): (&Envelope, Addr), dst: &mut BytesMut) -> Result<()> {
+    fn encode(&mut self, (envelope, target): (Envelope, Addr), dst: &mut BytesMut) -> Result<()> {
         let message = envelope.message();
         let original_len = dst.len();
 
@@ -204,21 +204,22 @@ mod tests {
         let sender = Addr::NULL;
         let target = Addr::NULL;
 
+        let trace_id = TraceId::try_from(42).unwrap();
         let envelope = Envelope::with_trace_id(
             AnyMessage::new(test),
             MessageKind::Regular { sender },
-            TraceId::try_from(42).unwrap(),
+            trace_id,
         );
 
         let mut encoder = Encoder::new(1024);
         let mut decoder = Decoder::new(1024);
 
         let mut bytes = BytesMut::new();
-        encoder.encode((&envelope, target), &mut bytes).unwrap();
+        encoder.encode((envelope, target), &mut bytes).unwrap();
 
         let (actual_envelope, actual_target) = decoder.decode(&mut bytes).unwrap().unwrap();
 
-        assert_eq!(actual_envelope.trace_id(), envelope.trace_id());
+        assert_eq!(actual_envelope.trace_id(), trace_id);
         assert_eq!(actual_envelope.sender(), sender);
         assert_eq!(actual_target, target);
         assert_msg_eq!(actual_envelope, Test(42));
