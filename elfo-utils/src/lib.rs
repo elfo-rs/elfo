@@ -1,7 +1,5 @@
 #![warn(rust_2018_idioms, unreachable_pub)]
 
-use std::{error::Error, fmt};
-
 use derive_more::Deref;
 
 pub use self::rate_limiter::{RateLimit, RateLimiter};
@@ -68,42 +66,4 @@ macro_rules! cooldown {
             $body
         }
     }};
-}
-
-#[deprecated]
-#[doc(hidden)]
-pub struct ErrorChain<'a>(pub &'a dyn Error);
-
-#[allow(deprecated)]
-impl fmt::Display for ErrorChain<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)?;
-
-        let mut cursor = self.0;
-        while let Some(err) = cursor.source() {
-            write!(f, ": {}", err)?;
-            cursor = err;
-        }
-
-        Ok(())
-    }
-}
-
-#[test]
-#[allow(deprecated)]
-fn trivial_error_chain() {
-    let error = anyhow::anyhow!("oops");
-    assert_eq!(format!("{}", ErrorChain(&*error)), "oops");
-}
-
-#[test]
-#[allow(deprecated)]
-fn error_chain() {
-    let innermost = anyhow::anyhow!("innermost");
-    let inner = innermost.context("inner");
-    let outer = inner.context("outer");
-    assert_eq!(
-        format!("{}", ErrorChain(&*outer)),
-        "outer: inner: innermost"
-    );
 }
