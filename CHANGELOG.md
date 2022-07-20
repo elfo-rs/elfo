@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - proxy: replace busy loop in recv with timer ([#76], [#77]).
+- utils: now period in `RateLimiter` is configurable.
 
 ### Fixed
 - proxy: add the location of a caller to panics ([#75]).

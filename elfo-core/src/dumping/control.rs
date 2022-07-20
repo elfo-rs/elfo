@@ -4,7 +4,7 @@ use arc_swap::ArcSwap;
 use parking_lot::Mutex;
 use smallvec::SmallVec;
 
-use elfo_utils::{CachePadded, RateLimiter};
+use elfo_utils::{CachePadded, RateLimit, RateLimiter};
 
 use super::{
     config::DumpingConfig,
@@ -37,7 +37,7 @@ impl PerClass {
 
     fn with_config(&self, config: &DumpingConfig) -> Self {
         let limiter = self.limiter.clone();
-        limiter.configure(config.max_rate);
+        limiter.configure(RateLimit::Rps(config.max_rate));
 
         Self {
             class: self.class,

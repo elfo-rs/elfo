@@ -4,7 +4,7 @@ use std::{error::Error, fmt};
 
 use derive_more::Deref;
 
-pub use self::rate_limiter::RateLimiter;
+pub use self::rate_limiter::{RateLimit, RateLimiter};
 
 mod rate_limiter;
 

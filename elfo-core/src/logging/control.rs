@@ -4,7 +4,7 @@ use arc_swap::ArcSwap;
 use tracing::{level_filters::LevelFilter, Level, Metadata, Subscriber};
 use tracing_subscriber::layer::Context;
 
-use elfo_utils::{CachePadded, RateLimiter};
+use elfo_utils::{CachePadded, RateLimit, RateLimiter};
 
 use super::{config::LoggingConfig, filter::LogFilter};
 
@@ -20,7 +20,7 @@ impl LoggingControl {
         self.filter.store(Arc::new(LogFilter::new(config)));
 
         for limiter in &self.limiters {
-            limiter.configure(config.max_rate_per_level);
+            limiter.configure(RateLimit::Rps(config.max_rate_per_level));
         }
     }
 
