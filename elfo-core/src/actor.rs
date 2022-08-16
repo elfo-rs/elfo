@@ -34,7 +34,7 @@ pub struct ActorMeta {
 
 /// Represents the current status of an actor.
 /// See [The Actoromicon](https://actoromicon.rs/ch03-01-actor-lifecycle.html) for details.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActorStatus {
     kind: ActorStatusKind,
     details: Option<String>,
@@ -95,7 +95,7 @@ impl fmt::Display for ActorStatus {
 // === ActorStatusKind ===
 
 /// A list specifying statuses of actors. It's used with the [`ActorStatus`].
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ActorStatusKind {
     Normal,

@@ -179,7 +179,7 @@ impl From<SystemTime> for Timestamp {
 
 // === Direction ===
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[stability::unstable]
 pub enum Direction {
     In,
@@ -188,7 +188,7 @@ pub enum Direction {
 
 // === MessageName ===
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[stability::unstable]
 pub struct MessageName(&'static str, Option<&'static str>);
 
@@ -261,7 +261,7 @@ impl MessageName {
 
 // === MessageKind ===
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[stability::unstable]
 pub enum MessageKind {
     Regular,

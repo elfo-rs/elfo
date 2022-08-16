@@ -1,11 +1,6 @@
-use std::{cell::Cell, future::Future, sync::Arc};
+use std::{future::Future, sync::Arc};
 
 use crate::{actor::ActorMeta, addr::Addr, scope::ScopeShared, trace_id::TraceId};
-
-tokio::task_local! {
-    static META: Arc<ActorMeta>;
-    static TRACE_ID: Cell<TraceId>;
-}
 
 #[deprecated(note = "use `elfo::scope::trace_id()` instead")]
 pub fn trace_id() -> TraceId {

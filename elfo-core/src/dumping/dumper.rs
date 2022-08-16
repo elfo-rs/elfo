@@ -24,7 +24,7 @@ impl Dumper {
     #[stability::unstable]
     pub fn acquire(&self) -> Option<DumpingPermit<'_>> {
         let r = self.recorder.as_deref().filter(|r| r.enabled())?;
-        Some(DumpingPermit { recorder: &*r })
+        Some(DumpingPermit { recorder: r })
     }
 
     pub(crate) fn acquire_m<M: Message>(&self) -> Option<DumpingPermit<'_>> {

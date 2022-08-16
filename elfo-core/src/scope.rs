@@ -1,3 +1,5 @@
+#![allow(clippy::declare_interior_mutable_const)] // see tokio#4872
+
 use std::{cell::Cell, future::Future, sync::Arc};
 
 use crate::{
