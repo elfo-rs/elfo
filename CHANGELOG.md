@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - proxy: add `set_recv_timeout` method ([#76]).
+- utils: add `RateLimiter::reset` method.
 
 ### Changed
 - proxy: replace busy loop in recv with timer ([#76], [#77]).

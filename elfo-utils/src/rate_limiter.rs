@@ -44,6 +44,7 @@ const UNLIMITED: u64 = 0;
 const DISABLED: u64 = u64::MAX;
 
 impl RateLimiter {
+    /// Creates a new limiter.
     pub fn new(limit: RateLimit) -> Self {
         let (step, period) = limit.step_and_period();
 
@@ -55,6 +56,7 @@ impl RateLimiter {
         }
     }
 
+    /// Reconfigures a limiter.
     pub fn configure(&self, limit: RateLimit) {
         let (step, period) = limit.step_and_period();
 
@@ -63,6 +65,13 @@ impl RateLimiter {
         self.period.store(period, Relaxed);
     }
 
+    /// Resets a limiter.
+    pub fn reset(&self) {
+        self.vtime.store(0, Relaxed);
+    }
+
+    /// Acquires one permit.
+    /// Returns `true` if an operation is allowed.
     #[inline]
     pub fn acquire(&self) -> bool {
         let step = self.step.load(Relaxed);
@@ -197,5 +206,25 @@ mod tests {
                 assert_eq!(counter, 10 * limit, "{}", limit);
             });
         }
+    }
+
+    #[test]
+    fn reset() {
+        with_time_mock(|mock| {
+            let limit = 10;
+            let limiter = RateLimiter::new(RateLimit::Rps(limit));
+
+            for _ in 0..=5 {
+                for _ in 0..limit {
+                    assert!(limiter.acquire());
+                }
+                limiter.reset();
+                for _ in 0..limit {
+                    assert!(limiter.acquire());
+                }
+                assert!(!limiter.acquire());
+                mock.increment(SEC);
+            }
+        });
     }
 }
