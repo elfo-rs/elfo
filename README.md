@@ -16,7 +16,7 @@
 
 Elfo is another actor system. Check [The Actoromicon](http://actoromicon.rs/).
 
-**Note: this system is still in early development and is not for production.**
+**Note: although it's already actively used in production, it's still under development. Wait for v0.2 for public announcement.**
 
 ## Usage
 To use `elfo`, add this to your `Cargo.toml`:
