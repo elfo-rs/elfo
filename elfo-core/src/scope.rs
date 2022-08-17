@@ -16,6 +16,7 @@ use crate::{
     dumping::DumpingControl,
     logging::_priv::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
+    telemetry::TelemetryConfig,
     tracing::TraceId,
 };
 
@@ -23,10 +24,12 @@ tokio::task_local! {
     static SCOPE: Scope;
 }
 
+// TODO: wrap into `Arc`.
 #[derive(Clone)]
 pub struct Scope {
     actor: Addr,
     meta: Arc<ActorMeta>,
+    telemetry_key: Option<Arc<String>>,
     trace_id: Cell<TraceId>,
     shared: Arc<ScopeShared>,
 }
@@ -55,9 +58,15 @@ impl Scope {
         Self {
             actor,
             meta,
+            telemetry_key: None,
             trace_id: Cell::new(trace_id),
             shared,
         }
+    }
+
+    pub(crate) fn with_telemetry(mut self, config: &TelemetryConfig) -> Self {
+        self.telemetry_key = config.per_actor_key.key(&self.meta.key).map(Into::into);
+        self
     }
 
     #[inline]
@@ -98,6 +107,14 @@ impl Scope {
     #[inline]
     pub fn permissions(&self) -> Permissions {
         self.shared.permissions.load()
+    }
+
+    /// Private API for now.
+    #[inline]
+    #[stability::unstable]
+    #[doc(hidden)]
+    pub fn telemetry_key(&self) -> &Option<Arc<String>> {
+        &self.telemetry_key
     }
 
     /// Private API for now.
@@ -183,7 +200,7 @@ impl ScopeShared {
         perm.set_logging_enabled(max_level);
         perm.set_dumping_enabled(!config.dumping.disabled);
         perm.set_telemetry_per_actor_group_enabled(config.telemetry.per_actor_group);
-        perm.set_telemetry_per_actor_key_enabled(config.telemetry.per_actor_key);
+        perm.set_telemetry_per_actor_key_enabled(config.telemetry.per_actor_key.is_enabled());
         self.permissions.store(perm);
     }
 }

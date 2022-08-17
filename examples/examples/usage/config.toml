@@ -41,7 +41,8 @@ group_count = 3
 item_count = 10
 
 [aggregators]
-system.telemetry.per_actor_key = true
+#system.telemetry.per_actor_key = true
+system.telemetry.per_actor_key = ["(.*)", "${1}__a"]
 
 [reporters]
 interval = "2s"

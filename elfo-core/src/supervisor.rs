@@ -17,7 +17,7 @@ use self::{backoff::Backoff, error_chain::ErrorChain, measure_poll::MeasurePoll}
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
     addr::Addr,
-    config::{AnyConfig, Config},
+    config::{AnyConfig, Config, SystemConfig},
     context::Context,
     envelope::Envelope,
     errors::TrySendError,
@@ -52,7 +52,8 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
 }
 
 struct ControlBlock<C> {
-    config: Option<Arc<C>>,
+    system_config: Arc<SystemConfig>,
+    user_config: Option<Arc<C>>,
     is_started: bool,
     stop_spawning: bool,
 }
@@ -90,7 +91,8 @@ where
         rt_manager: RuntimeManager,
     ) -> Self {
         let control = ControlBlock {
-            config: None,
+            system_config: Default::default(),
+            user_config: None,
             is_started: false,
             stop_spawning: false,
         };
@@ -137,7 +139,7 @@ where
                     // Make all updates under lock, including telemetry/dumper ones.
                     let mut control = self.control.write();
 
-                    if control.config.is_none() {
+                    if control.user_config.is_none() {
                         // We should update configs before spawning any actors
                         // to avoid a race condition at startup.
                         // So, we update the config on `ValidateConfig` at the first time.
@@ -168,7 +170,7 @@ where
                     let mut control = self.control.write();
 
                     let only_spawn = !control.is_started;
-                    if !only_spawn || control.config.is_none() {
+                    if !only_spawn || control.user_config.is_none() {
                         // At the first time the config is updated on `ValidateConfig`.
                         self.update_config(&mut control, &config);
                     }
@@ -311,14 +313,19 @@ where
             actor_key = key_str.as_str()
         );
 
-        let config = control.config.as_ref().cloned().expect("config is unset");
+        let system_config = control.system_config.clone();
+        let user_config = control
+            .user_config
+            .as_ref()
+            .cloned()
+            .expect("config is unset");
 
         let ctx = self
             .context
             .clone()
             .with_addr(addr)
             .with_key(key.clone())
-            .with_config(config);
+            .with_config(user_config);
 
         drop(control);
 
@@ -405,7 +412,8 @@ where
         );
         entry.insert(Object::new(addr, actor));
 
-        let scope = Scope::new(scope::trace_id(), addr, meta, self.scope_shared.clone());
+        let scope = Scope::new(scope::trace_id(), addr, meta, self.scope_shared.clone())
+            .with_telemetry(&system_config.telemetry);
         let fut = MeasurePoll::new(fut.instrument(span));
 
         rt.spawn(scope.within(fut));
@@ -436,10 +444,11 @@ where
         self.scope_shared.configure(system);
 
         // Update user's config.
-        control.config = Some(config.get_user::<C>().clone());
+        control.system_config = config.get_system().clone();
+        control.user_config = Some(config.get_user::<C>().clone());
         self.router
-            .update(control.config.as_ref().expect("just saved"));
-        self.in_scope(|| info!(config = ?control.config.as_ref().unwrap(), "router updated"));
+            .update(control.user_config.as_ref().expect("just saved"));
+        self.in_scope(|| info!(config = ?control.user_config.as_ref().unwrap(), "router updated"));
     }
 
     fn subscribe_to_statuses(&self, addr: Addr) {
