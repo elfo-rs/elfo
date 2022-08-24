@@ -11,7 +11,7 @@ use fxhash::FxHashMap;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tokio::{fs, select, time};
-use tracing::{error, warn};
+use tracing::{debug, error, info, warn};
 
 use elfo_core as elfo;
 use elfo_macros::msg_raw as msg;
@@ -110,8 +110,14 @@ impl Configurer {
         force: bool,
     ) -> Result<(), Vec<ReloadConfigsError>> {
         let config = match &self.source {
-            ConfigSource::File(path) => load_raw_config(path).await,
-            ConfigSource::Fixture(value) => value.clone(),
+            ConfigSource::File(path) => {
+                info!(message = "loading a config", path = %path.to_string_lossy());
+                load_raw_config(path).await
+            }
+            ConfigSource::Fixture(value) => {
+                info!("using a fixture");
+                value.clone()
+            }
         };
 
         let config = match config {
@@ -132,10 +138,29 @@ impl Configurer {
             }
         };
 
-        self.update_configs(&configs, TopologyFilter::System, force)
-            .await?;
-        self.update_configs(&configs, TopologyFilter::User, force)
-            .await
+        let mut updated_groups = Vec::new();
+
+        debug!("updating configs of system groups");
+        updated_groups.extend(
+            self.update_configs(&configs, TopologyFilter::System, force)
+                .await?,
+        );
+        debug!("updating configs of user groups");
+        updated_groups.extend(
+            self.update_configs(&configs, TopologyFilter::User, force)
+                .await?,
+        );
+
+        if updated_groups.is_empty() {
+            info!("all groups' configs are up-to-date, nothing to update");
+        } else {
+            info!(
+                message = "groups' configs are updated",
+                groups = ?updated_groups,
+            );
+        }
+
+        Ok(())
     }
 
     async fn update_configs(
@@ -143,7 +168,7 @@ impl Configurer {
         configs: &FxHashMap<String, Value>,
         filter: TopologyFilter,
         force: bool,
-    ) -> Result<(), Vec<ReloadConfigsError>> {
+    ) -> Result<Vec<String>, Vec<ReloadConfigsError>> {
         let mut config_list = match_configs(&self.topology, configs, filter);
 
         // Filter up-to-date configs if needed.
@@ -153,7 +178,10 @@ impl Configurer {
                     .get(&c.group_name)
                     .map_or(true, |v| c.hash != *v)
             });
-            return Ok(());
+        }
+
+        if config_list.is_empty() {
+            return Ok(Vec::new());
         }
 
         // Validation.
@@ -183,20 +211,13 @@ impl Configurer {
             return Err(errors);
         }
 
-        // TODO: enable this.
-        // if !ping(ctx, &config_list).await {
-        // error!("ping failed");
-        // ctx.set_status(ActorStatus::ALARMING.with_details("possibly incosistent
-        // configs")); return false;
-        // }
-
         self.ctx.set_status(ActorStatus::NORMAL);
 
         // Update versions.
         self.versions
-            .extend(config_list.into_iter().map(|c| (c.group_name, c.hash)));
+            .extend(config_list.iter().map(|c| (c.group_name.clone(), c.hash)));
 
-        Ok(())
+        Ok(config_list.into_iter().map(|c| c.group_name).collect())
     }
 
     async fn request_all<R>(

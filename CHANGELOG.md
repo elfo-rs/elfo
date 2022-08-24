@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - proxy: add the location of a caller to panics ([#75]).
 - telemeter: make `elfo_metrics_usage_bytes` more accurate.
 - context: decrement a budget only when an envelope has been actually received.
+- configurer: check up-to-date on SIGHUP right way.
 
 [#77]: https://github.com/elfo-rs/elfo/pull/77
 [#76]: https://github.com/elfo-rs/elfo/pull/76
