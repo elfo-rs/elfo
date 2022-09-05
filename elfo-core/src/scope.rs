@@ -1,6 +1,13 @@
 #![allow(clippy::declare_interior_mutable_const)] // see tokio#4872
 
-use std::{cell::Cell, future::Future, sync::Arc};
+use std::{
+    cell::Cell,
+    future::Future,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use crate::{
     actor::ActorMeta,
@@ -22,8 +29,6 @@ pub struct Scope {
     meta: Arc<ActorMeta>,
     trace_id: Cell<TraceId>,
     shared: Arc<ScopeShared>,
-    allocated_bytes: Cell<usize>,
-    deallocated_bytes: Cell<usize>,
 }
 
 assert_impl_all!(Scope: Send);
@@ -52,8 +57,6 @@ impl Scope {
             meta,
             trace_id: Cell::new(trace_id),
             shared,
-            allocated_bytes: Cell::new(0),
-            deallocated_bytes: Cell::new(0),
         }
     }
 
@@ -116,22 +119,23 @@ impl Scope {
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_allocated_bytes(&self, by: usize) {
-        self.allocated_bytes.set(self.allocated_bytes.get() + by);
+        self.shared.allocated_bytes.fetch_add(by, Ordering::Relaxed);
     }
 
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_deallocated_bytes(&self, by: usize) {
-        self.deallocated_bytes
-            .set(self.deallocated_bytes.get() + by);
+        self.shared
+            .deallocated_bytes
+            .fetch_add(by, Ordering::Relaxed);
     }
 
     pub(crate) fn take_allocated_bytes(&self) -> usize {
-        self.allocated_bytes.take()
+        self.shared.allocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     pub(crate) fn take_deallocated_bytes(&self) -> usize {
-        self.deallocated_bytes.take()
+        self.shared.deallocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     /// Wraps the provided future with the current scope.
@@ -150,6 +154,8 @@ pub(crate) struct ScopeShared {
     permissions: AtomicPermissions,
     logging: LoggingControl,
     dumping: DumpingControl,
+    allocated_bytes: AtomicUsize,
+    deallocated_bytes: AtomicUsize,
 }
 
 impl ScopeShared {
@@ -159,6 +165,8 @@ impl ScopeShared {
             permissions: Default::default(), // everything is disabled
             logging: Default::default(),
             dumping: Default::default(),
+            allocated_bytes: AtomicUsize::new(0),
+            deallocated_bytes: AtomicUsize::new(0),
         }
     }
 
