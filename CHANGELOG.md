@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - telemeter: make `elfo_metrics_usage_bytes` more accurate.
 - context: decrement a budget only when an envelope has been actually received.
 - configurer: check up-to-date on SIGHUP right way.
+- scope: calculate allocations of cloned scopes ([#79]).
 
+[#79]: https://github.com/elfo-rs/elfo/pull/79
 [#77]: https://github.com/elfo-rs/elfo/pull/77
 [#76]: https://github.com/elfo-rs/elfo/pull/76
 [#75]: https://github.com/elfo-rs/elfo/issues/75
