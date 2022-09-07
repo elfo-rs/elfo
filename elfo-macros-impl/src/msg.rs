@@ -117,7 +117,7 @@ fn is_binding_with_type(ident: &PatIdent) -> bool {
     ident
         .subpat
         .as_ref()
-        .map_or(false, |sp| is_likely_type(&*sp.1))
+        .map_or(false, |sp| is_likely_type(&sp.1))
 }
 
 fn refine_pat(pat: &mut Pat) {
