@@ -4,6 +4,7 @@ members = [
     "elfo-core",
     "elfo-utils",
     "elfo-macros",
+    "elfo-macros-impl",
     "elfo-test",
     "elfo-configurer",
     "elfo-logger",

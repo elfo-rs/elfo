@@ -135,7 +135,7 @@ impl DumpRegistry {
     fn renew_active_part(&self, shard: &Shard, predicate: impl FnOnce(&Part) -> bool) -> bool {
         let mut fund = self.fund.lock();
 
-        if !predicate(&*shard.active_part.lock()) {
+        if !predicate(&shard.active_part.lock()) {
             return false;
         }
 

@@ -1,0 +1,12 @@
+[package]
+name = "elfo-macros-impl"
+version = "0.1.0"
+description = "Macros for matching and deriving messages, implementation internals"
+authors = ["Paul Loyd <pavelko95@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+proc-macro2 = "1.0.24"
+quote = "1.0.9"
+syn = { version = "1.0.60", features = ["full", "extra-traits"] }

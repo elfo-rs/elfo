@@ -4,7 +4,7 @@ use quote::{quote, ToTokens};
 use syn::{
     parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
-    parse_macro_input, parse_quote, Data, DeriveInput, Ident, LitStr, Path, Token, Type,
+    parse_macro_input, Data, DeriveInput, Ident, LitStr, Path, Token, Type,
 };
 
 #[derive(Debug)]
@@ -14,7 +14,7 @@ struct MessageArgs {
     part: bool,
     transparent: bool,
     dumping_allowed: bool,
-    crate_: Path,
+    crate_: Option<Path>,
     not: Vec<String>,
 }
 
@@ -26,7 +26,7 @@ impl Parse for MessageArgs {
             part: false,
             transparent: false,
             dumping_allowed: true,
-            crate_: parse_quote!(::elfo),
+            crate_: None,
             not: Vec::new(),
         };
 
@@ -68,7 +68,7 @@ impl Parse for MessageArgs {
                 // TODO: call it `crate` like in linkme?
                 "elfo" => {
                     let _: Token![=] = input.parse()?;
-                    args.crate_ = input.parse()?;
+                    args.crate_ = Some(input.parse()?);
                 }
                 "not" => {
                     let content;
@@ -133,14 +133,18 @@ fn gen_impl_debug(input: &DeriveInput) -> TokenStream2 {
     }
 }
 
-pub fn message_impl(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn message_impl(
+    args: TokenStream,
+    input: TokenStream,
+    default_path_to_elfo: Path,
+) -> TokenStream {
     let args = parse_macro_input!(args as MessageArgs);
+    let crate_ = args.crate_.unwrap_or(default_path_to_elfo);
 
     // TODO: what about parsing into something cheaper?
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
-    let serde_crate = format!("{}::_priv::serde", args.crate_.to_token_stream());
-    let crate_ = args.crate_;
+    let serde_crate = format!("{}::_priv::serde", crate_.to_token_stream());
     let internal = quote![#crate_::_priv];
 
     let protocol = std::env::var("CARGO_PKG_NAME").expect("building without cargo?");
