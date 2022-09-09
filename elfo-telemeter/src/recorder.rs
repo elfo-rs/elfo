@@ -21,7 +21,7 @@ impl Recorder {
             if perm.is_telemetry_per_actor_group_enabled() {
                 f(&self.storage, Some(scope), false);
             }
-            if perm.is_telemetry_per_actor_key_enabled() && !scope.meta().key.is_empty() {
+            if perm.is_telemetry_per_actor_key_enabled() && !scope.telemetry_meta().key.is_empty() {
                 f(&self.storage, Some(scope), true);
             }
         })

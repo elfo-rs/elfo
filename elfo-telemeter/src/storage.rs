@@ -30,14 +30,9 @@ fn make_ext_key(scope: Option<&Scope>, key: &Key, with_actor_key: bool) -> ExtKe
     let mut key_hash = key.get_hash();
 
     if let Some(scope) = scope.filter(|_| with_actor_key) {
-        debug_assert!(!scope.meta().key.is_empty());
+        debug_assert!(!scope.telemetry_meta().key.is_empty());
         let mut hasher = KeyHasher::default();
-
-        if let Some(telemetry_key) = scope.telemetry_key() {
-            telemetry_key.hash(&mut hasher);
-        } else {
-            scope.meta().key.hash(&mut hasher);
-        }
+        scope.telemetry_meta().key.hash(&mut hasher);
         key_hash ^= hasher.finish();
     }
 
@@ -64,7 +59,6 @@ impl Hashable for ExtKey {
 #[derive(Clone)]
 struct ExtHandle {
     meta: Option<Arc<ActorMeta>>, // `None` if global.
-    telemetry_key: Option<Arc<String>>,
     with_actor_key: bool,
     key: Key,
     handle: Handle,
@@ -77,8 +71,7 @@ fn make_ext_handle(
     with_actor_key: bool,
 ) -> ExtHandle {
     ExtHandle {
-        meta: scope.map(|scope| scope.meta().clone()),
-        telemetry_key: scope.and_then(|scope| scope.telemetry_key().clone()),
+        meta: scope.map(|scope| scope.telemetry_meta().clone()),
         with_actor_key,
         key: key.clone(),
         handle,
@@ -242,17 +235,7 @@ fn get_metrics<'a>(snapshot: &'a mut Snapshot, handle: &ExtHandle) -> &'a mut Me
     // If meta is known, it's a per-actor or per-group metric.
     if let Some(meta) = &handle.meta {
         if handle.with_actor_key {
-            // TODO: avoid extra allocations.
-            let meta = if let Some(key) = &handle.telemetry_key {
-                Arc::new(ActorMeta {
-                    group: meta.group.clone(),
-                    key: (**key).clone(),
-                })
-            } else {
-                meta.clone()
-            };
-
-            snapshot.per_actor.entry(meta).or_default()
+            snapshot.per_actor.entry(meta.clone()).or_default()
         } else if snapshot.per_group.contains_key(&meta.group) {
             snapshot.per_group.get_mut(&meta.group).unwrap()
         } else {

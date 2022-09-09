@@ -86,6 +86,14 @@ impl Scope {
         &self.actor.meta
     }
 
+    /// Private API for now.
+    #[inline]
+    #[stability::unstable]
+    #[doc(hidden)]
+    pub fn telemetry_meta(&self) -> &Arc<ActorMeta> {
+        &self.actor.telemetry_meta
+    }
+
     /// Returns the current trace id.
     #[inline]
     pub fn trace_id(&self) -> TraceId {
@@ -102,14 +110,6 @@ impl Scope {
     #[inline]
     pub fn permissions(&self) -> Permissions {
         self.group.permissions.load()
-    }
-
-    /// Private API for now.
-    #[inline]
-    #[stability::unstable]
-    #[doc(hidden)]
-    pub fn telemetry_key(&self) -> &Option<Arc<String>> {
-        &self.actor.telemetry_key
     }
 
     /// Private API for now.
@@ -164,7 +164,7 @@ impl Scope {
 struct ScopeActorShared {
     addr: Addr,
     meta: Arc<ActorMeta>,
-    telemetry_key: Option<Arc<String>>,
+    telemetry_meta: Arc<ActorMeta>,
     allocated_bytes: AtomicUsize,
     deallocated_bytes: AtomicUsize,
 }
@@ -173,19 +173,27 @@ impl ScopeActorShared {
     fn new(addr: Addr, meta: Arc<ActorMeta>) -> Self {
         Self {
             addr,
-            meta,
-            telemetry_key: None,
+            meta: meta.clone(),
+            telemetry_meta: meta,
             allocated_bytes: AtomicUsize::new(0),
             deallocated_bytes: AtomicUsize::new(0),
         }
     }
 
     fn with_telemetry(&self, config: &TelemetryConfig) -> Self {
-        let telemetry_key = config.per_actor_key.key(&self.meta.key).map(Into::into);
         Self {
             addr: self.addr,
             meta: self.meta.clone(),
-            telemetry_key,
+            telemetry_meta: config
+                .per_actor_key
+                .key(&self.meta.key)
+                .map(|key| {
+                    Arc::new(ActorMeta {
+                        group: self.meta.group.clone(),
+                        key,
+                    })
+                })
+                .unwrap_or_else(|| self.meta.clone()),
             allocated_bytes: AtomicUsize::new(0),
             deallocated_bytes: AtomicUsize::new(0),
         }
