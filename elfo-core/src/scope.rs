@@ -9,8 +9,6 @@ use std::{
     },
 };
 
-use derive_more::Constructor;
-
 use crate::{
     actor::ActorMeta,
     addr::Addr,
@@ -56,7 +54,7 @@ impl Scope {
     ) -> Self {
         Self {
             trace_id: Cell::new(trace_id),
-            actor: Arc::new(ScopeActorShared::new(addr, meta, None)),
+            actor: Arc::new(ScopeActorShared::new(addr, meta)),
             group,
         }
     }
@@ -133,23 +131,23 @@ impl Scope {
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_allocated_bytes(&self, by: usize) {
-        self.group.allocated_bytes.fetch_add(by, Ordering::Relaxed);
+        self.actor.allocated_bytes.fetch_add(by, Ordering::Relaxed);
     }
 
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_deallocated_bytes(&self, by: usize) {
-        self.group
+        self.actor
             .deallocated_bytes
             .fetch_add(by, Ordering::Relaxed);
     }
 
     pub(crate) fn take_allocated_bytes(&self) -> usize {
-        self.group.allocated_bytes.swap(0, Ordering::Relaxed)
+        self.actor.allocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     pub(crate) fn take_deallocated_bytes(&self) -> usize {
-        self.group.deallocated_bytes.swap(0, Ordering::Relaxed)
+        self.actor.deallocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     /// Wraps the provided future with the current scope.
@@ -163,20 +161,33 @@ impl Scope {
     }
 }
 
-#[derive(Constructor)]
 struct ScopeActorShared {
     addr: Addr,
     meta: Arc<ActorMeta>,
     telemetry_key: Option<Arc<String>>,
+    allocated_bytes: AtomicUsize,
+    deallocated_bytes: AtomicUsize,
 }
 
 impl ScopeActorShared {
+    fn new(addr: Addr, meta: Arc<ActorMeta>) -> Self {
+        Self {
+            addr,
+            meta,
+            telemetry_key: None,
+            allocated_bytes: AtomicUsize::new(0),
+            deallocated_bytes: AtomicUsize::new(0),
+        }
+    }
+
     fn with_telemetry(&self, config: &TelemetryConfig) -> Self {
         let telemetry_key = config.per_actor_key.key(&self.meta.key).map(Into::into);
         Self {
             addr: self.addr,
             meta: self.meta.clone(),
             telemetry_key,
+            allocated_bytes: AtomicUsize::new(0),
+            deallocated_bytes: AtomicUsize::new(0),
         }
     }
 }
@@ -188,9 +199,6 @@ pub(crate) struct ScopeGroupShared {
     permissions: AtomicPermissions,
     logging: LoggingControl,
     dumping: DumpingControl,
-    // TODO: move to shared per actor part.
-    allocated_bytes: AtomicUsize,
-    deallocated_bytes: AtomicUsize,
 }
 
 assert_impl_all!(ScopeGroupShared: Send, Sync);
@@ -202,8 +210,6 @@ impl ScopeGroupShared {
             permissions: Default::default(), // everything is disabled
             logging: Default::default(),
             dumping: Default::default(),
-            allocated_bytes: AtomicUsize::new(0),
-            deallocated_bytes: AtomicUsize::new(0),
         }
     }
 
