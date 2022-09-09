@@ -9,6 +9,8 @@ use std::{
     },
 };
 
+use derive_more::Constructor;
+
 use crate::{
     actor::ActorMeta,
     addr::Addr,
@@ -26,10 +28,8 @@ tokio::task_local! {
 
 #[derive(Clone)]
 pub struct Scope {
-    actor: Addr,
-    meta: Arc<ActorMeta>,
-    telemetry_key: Option<Arc<String>>,
     trace_id: Cell<TraceId>,
+    actor: Arc<ScopeActorShared>,
     group: Arc<ScopeGroupShared>,
 }
 
@@ -50,33 +50,31 @@ impl Scope {
 
     pub(crate) fn new(
         trace_id: TraceId,
-        actor: Addr,
+        addr: Addr,
         meta: Arc<ActorMeta>,
         group: Arc<ScopeGroupShared>,
     ) -> Self {
         Self {
-            actor,
-            meta,
-            telemetry_key: None,
             trace_id: Cell::new(trace_id),
+            actor: Arc::new(ScopeActorShared::new(addr, meta, None)),
             group,
         }
     }
 
     pub(crate) fn with_telemetry(mut self, config: &TelemetryConfig) -> Self {
-        self.telemetry_key = config.per_actor_key.key(&self.meta.key).map(Into::into);
+        self.actor = Arc::new(self.actor.with_telemetry(config));
         self
     }
 
     #[inline]
     #[deprecated(note = "use `actor()` instead")]
     pub fn addr(&self) -> Addr {
-        self.actor
+        self.actor()
     }
 
     #[inline]
     pub fn actor(&self) -> Addr {
-        self.actor
+        self.actor.addr
     }
 
     #[inline]
@@ -87,7 +85,7 @@ impl Scope {
     /// Returns the current object's meta.
     #[inline]
     pub fn meta(&self) -> &Arc<ActorMeta> {
-        &self.meta
+        &self.actor.meta
     }
 
     /// Returns the current trace id.
@@ -113,7 +111,7 @@ impl Scope {
     #[stability::unstable]
     #[doc(hidden)]
     pub fn telemetry_key(&self) -> &Option<Arc<String>> {
-        &self.telemetry_key
+        &self.actor.telemetry_key
     }
 
     /// Private API for now.
@@ -164,6 +162,26 @@ impl Scope {
         SCOPE.sync_scope(self, f)
     }
 }
+
+#[derive(Constructor)]
+struct ScopeActorShared {
+    addr: Addr,
+    meta: Arc<ActorMeta>,
+    telemetry_key: Option<Arc<String>>,
+}
+
+impl ScopeActorShared {
+    fn with_telemetry(&self, config: &TelemetryConfig) -> Self {
+        let telemetry_key = config.per_actor_key.key(&self.meta.key).map(Into::into);
+        Self {
+            addr: self.addr,
+            meta: self.meta.clone(),
+            telemetry_key,
+        }
+    }
+}
+
+assert_impl_all!(ScopeGroupShared: Send, Sync);
 
 pub(crate) struct ScopeGroupShared {
     addr: Addr,
