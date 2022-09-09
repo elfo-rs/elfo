@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.38] - 2022-09-09
 ### Added
 - proxy: add `set_recv_timeout` method ([#76]).
 - utils: add `RateLimiter::reset` method.
@@ -361,7 +363,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.37...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.38...HEAD
+[0.1.38]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.37...elfo-0.1.38
 [0.1.37]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.36...elfo-0.1.37
 [0.1.36]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.35...elfo-0.1.36
 [0.1.35]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.34...elfo-0.1.35
