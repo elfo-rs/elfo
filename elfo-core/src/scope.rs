@@ -24,14 +24,13 @@ tokio::task_local! {
     static SCOPE: Scope;
 }
 
-// TODO: wrap into `Arc`.
 #[derive(Clone)]
 pub struct Scope {
     actor: Addr,
     meta: Arc<ActorMeta>,
     telemetry_key: Option<Arc<String>>,
     trace_id: Cell<TraceId>,
-    shared: Arc<ScopeShared>,
+    group: Arc<ScopeGroupShared>,
 }
 
 assert_impl_all!(Scope: Send);
@@ -45,7 +44,7 @@ impl Scope {
             TraceId::generate(),
             actor,
             meta,
-            Arc::new(ScopeShared::new(Addr::NULL)),
+            Arc::new(ScopeGroupShared::new(Addr::NULL)),
         )
     }
 
@@ -53,14 +52,14 @@ impl Scope {
         trace_id: TraceId,
         actor: Addr,
         meta: Arc<ActorMeta>,
-        shared: Arc<ScopeShared>,
+        group: Arc<ScopeGroupShared>,
     ) -> Self {
         Self {
             actor,
             meta,
             telemetry_key: None,
             trace_id: Cell::new(trace_id),
-            shared,
+            group,
         }
     }
 
@@ -82,7 +81,7 @@ impl Scope {
 
     #[inline]
     pub fn group(&self) -> Addr {
-        self.shared.group
+        self.group.addr
     }
 
     /// Returns the current object's meta.
@@ -106,7 +105,7 @@ impl Scope {
     /// Returns the current permissions (for logging, telemetry and so on).
     #[inline]
     pub fn permissions(&self) -> Permissions {
-        self.shared.permissions.load()
+        self.group.permissions.load()
     }
 
     /// Private API for now.
@@ -122,7 +121,7 @@ impl Scope {
     #[stability::unstable]
     #[doc(hidden)]
     pub fn logging(&self) -> &LoggingControl {
-        &self.shared.logging
+        &self.group.logging
     }
 
     /// Private API for now.
@@ -130,29 +129,29 @@ impl Scope {
     #[stability::unstable]
     #[doc(hidden)]
     pub fn dumping(&self) -> &DumpingControl {
-        &self.shared.dumping
+        &self.group.dumping
     }
 
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_allocated_bytes(&self, by: usize) {
-        self.shared.allocated_bytes.fetch_add(by, Ordering::Relaxed);
+        self.group.allocated_bytes.fetch_add(by, Ordering::Relaxed);
     }
 
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_deallocated_bytes(&self, by: usize) {
-        self.shared
+        self.group
             .deallocated_bytes
             .fetch_add(by, Ordering::Relaxed);
     }
 
     pub(crate) fn take_allocated_bytes(&self) -> usize {
-        self.shared.allocated_bytes.swap(0, Ordering::Relaxed)
+        self.group.allocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     pub(crate) fn take_deallocated_bytes(&self) -> usize {
-        self.shared.deallocated_bytes.swap(0, Ordering::Relaxed)
+        self.group.deallocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     /// Wraps the provided future with the current scope.
@@ -166,19 +165,22 @@ impl Scope {
     }
 }
 
-pub(crate) struct ScopeShared {
-    group: Addr,
+pub(crate) struct ScopeGroupShared {
+    addr: Addr,
     permissions: AtomicPermissions,
     logging: LoggingControl,
     dumping: DumpingControl,
+    // TODO: move to shared per actor part.
     allocated_bytes: AtomicUsize,
     deallocated_bytes: AtomicUsize,
 }
 
-impl ScopeShared {
-    pub(crate) fn new(group: Addr) -> Self {
+assert_impl_all!(ScopeGroupShared: Send, Sync);
+
+impl ScopeGroupShared {
+    pub(crate) fn new(addr: Addr) -> Self {
         Self {
-            group,
+            addr,
             permissions: Default::default(), // everything is disabled
             logging: Default::default(),
             dumping: Default::default(),

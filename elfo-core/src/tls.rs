@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc};
 
-use crate::{actor::ActorMeta, addr::Addr, scope::ScopeShared, trace_id::TraceId};
+use crate::{actor::ActorMeta, addr::Addr, scope::ScopeGroupShared, trace_id::TraceId};
 
 #[deprecated(note = "use `elfo::scope::trace_id()` instead")]
 pub fn trace_id() -> TraceId {
@@ -48,6 +48,6 @@ fn make_stupid_scope(meta: Arc<ActorMeta>) -> crate::scope::Scope {
         crate::scope::trace_id(),
         Addr::NULL,
         meta,
-        Arc::new(ScopeShared::new(Addr::NULL)),
+        Arc::new(ScopeGroupShared::new(Addr::NULL)),
     )
 }

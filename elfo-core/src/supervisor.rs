@@ -27,7 +27,7 @@ use crate::{
     object::{Object, ObjectArc},
     routers::{Outcome, Router},
     runtime::RuntimeManager,
-    scope::{self, Scope, ScopeShared},
+    scope::{self, Scope, ScopeGroupShared},
     subscription::SubscriptionManager,
     tracing::TraceId,
 };
@@ -46,7 +46,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     router: R,
     exec: X,
     control: CachePadded<RwLock<ControlBlock<C>>>,
-    scope_shared: Arc<ScopeShared>,
+    scope_shared: Arc<ScopeGroupShared>,
     status_subscription: Arc<SubscriptionManager>,
     rt_manager: RuntimeManager,
 }
@@ -111,7 +111,7 @@ where
             router,
             exec,
             control: CachePadded(RwLock::new(control)),
-            scope_shared: Arc::new(ScopeShared::new(ctx.group())),
+            scope_shared: Arc::new(ScopeGroupShared::new(ctx.group())),
             status_subscription: Arc::new(status_subscription),
             context: ctx,
             rt_manager,
