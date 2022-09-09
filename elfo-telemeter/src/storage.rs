@@ -30,9 +30,9 @@ fn make_ext_key(scope: Option<&Scope>, key: &Key, with_actor_key: bool) -> ExtKe
     let mut key_hash = key.get_hash();
 
     if let Some(scope) = scope.filter(|_| with_actor_key) {
-        debug_assert!(!scope.meta().key.is_empty());
+        debug_assert!(!scope.telemetry_meta().key.is_empty());
         let mut hasher = KeyHasher::default();
-        scope.meta().key.hash(&mut hasher);
+        scope.telemetry_meta().key.hash(&mut hasher);
         key_hash ^= hasher.finish();
     }
 
@@ -71,7 +71,7 @@ fn make_ext_handle(
     with_actor_key: bool,
 ) -> ExtHandle {
     ExtHandle {
-        meta: scope.map(|scope| scope.meta().clone()),
+        meta: scope.map(|scope| scope.telemetry_meta().clone()),
         with_actor_key,
         key: key.clone(),
         handle,

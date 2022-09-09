@@ -155,23 +155,7 @@ impl<'de> Deserializer<'de> for AnyConfig {
 pub(crate) struct SystemConfig {
     pub(crate) logging: crate::logging::LoggingConfig,
     pub(crate) dumping: crate::dumping::DumpingConfig,
-    pub(crate) telemetry: TelemetryConfig,
-}
-
-#[derive(Deserialize)]
-#[serde(default)]
-pub(crate) struct TelemetryConfig {
-    pub(crate) per_actor_group: bool,
-    pub(crate) per_actor_key: bool,
-}
-
-impl Default for TelemetryConfig {
-    fn default() -> Self {
-        Self {
-            per_actor_group: true,
-            per_actor_key: false,
-        }
-    }
+    pub(crate) telemetry: crate::telemetry::TelemetryConfig,
 }
 
 // === Secret ===

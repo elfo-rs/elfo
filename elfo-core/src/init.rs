@@ -21,7 +21,7 @@ use crate::{
     message,
     messages::{Ping, Terminate, UpdateConfig},
     object::Object,
-    scope::{Scope, ScopeShared},
+    scope::{Scope, ScopeGroupShared},
     signal::{Signal, SignalKind},
     subscription::SubscriptionManager,
     time::Interval,
@@ -121,7 +121,7 @@ pub async fn do_start<F: Future>(
         Arc::new(SubscriptionManager::new(ctx.clone())),
     );
 
-    let scope_shared = ScopeShared::new(addr);
+    let scope_shared = ScopeGroupShared::new(addr);
     let mut config = SystemConfig::default();
     config.logging.max_level = LevelFilter::INFO;
     scope_shared.configure(&config);

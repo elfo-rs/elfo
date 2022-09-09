@@ -16,6 +16,7 @@ use crate::{
     dumping::DumpingControl,
     logging::_priv::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
+    telemetry::TelemetryConfig,
     tracing::TraceId,
 };
 
@@ -25,10 +26,9 @@ tokio::task_local! {
 
 #[derive(Clone)]
 pub struct Scope {
-    actor: Addr,
-    meta: Arc<ActorMeta>,
     trace_id: Cell<TraceId>,
-    shared: Arc<ScopeShared>,
+    actor: Arc<ScopeActorShared>,
+    group: Arc<ScopeGroupShared>,
 }
 
 assert_impl_all!(Scope: Send);
@@ -42,44 +42,56 @@ impl Scope {
             TraceId::generate(),
             actor,
             meta,
-            Arc::new(ScopeShared::new(Addr::NULL)),
+            Arc::new(ScopeGroupShared::new(Addr::NULL)),
         )
     }
 
     pub(crate) fn new(
         trace_id: TraceId,
-        actor: Addr,
+        addr: Addr,
         meta: Arc<ActorMeta>,
-        shared: Arc<ScopeShared>,
+        group: Arc<ScopeGroupShared>,
     ) -> Self {
         Self {
-            actor,
-            meta,
             trace_id: Cell::new(trace_id),
-            shared,
+            actor: Arc::new(ScopeActorShared::new(addr, meta)),
+            group,
         }
+    }
+
+    pub(crate) fn with_telemetry(mut self, config: &TelemetryConfig) -> Self {
+        self.actor = Arc::new(self.actor.with_telemetry(config));
+        self
     }
 
     #[inline]
     #[deprecated(note = "use `actor()` instead")]
     pub fn addr(&self) -> Addr {
-        self.actor
+        self.actor()
     }
 
     #[inline]
     pub fn actor(&self) -> Addr {
-        self.actor
+        self.actor.addr
     }
 
     #[inline]
     pub fn group(&self) -> Addr {
-        self.shared.group
+        self.group.addr
     }
 
     /// Returns the current object's meta.
     #[inline]
     pub fn meta(&self) -> &Arc<ActorMeta> {
-        &self.meta
+        &self.actor.meta
+    }
+
+    /// Private API for now.
+    #[inline]
+    #[stability::unstable]
+    #[doc(hidden)]
+    pub fn telemetry_meta(&self) -> &Arc<ActorMeta> {
+        &self.actor.telemetry_meta
     }
 
     /// Returns the current trace id.
@@ -97,7 +109,7 @@ impl Scope {
     /// Returns the current permissions (for logging, telemetry and so on).
     #[inline]
     pub fn permissions(&self) -> Permissions {
-        self.shared.permissions.load()
+        self.group.permissions.load()
     }
 
     /// Private API for now.
@@ -105,7 +117,7 @@ impl Scope {
     #[stability::unstable]
     #[doc(hidden)]
     pub fn logging(&self) -> &LoggingControl {
-        &self.shared.logging
+        &self.group.logging
     }
 
     /// Private API for now.
@@ -113,29 +125,29 @@ impl Scope {
     #[stability::unstable]
     #[doc(hidden)]
     pub fn dumping(&self) -> &DumpingControl {
-        &self.shared.dumping
+        &self.group.dumping
     }
 
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_allocated_bytes(&self, by: usize) {
-        self.shared.allocated_bytes.fetch_add(by, Ordering::Relaxed);
+        self.actor.allocated_bytes.fetch_add(by, Ordering::Relaxed);
     }
 
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_deallocated_bytes(&self, by: usize) {
-        self.shared
+        self.actor
             .deallocated_bytes
             .fetch_add(by, Ordering::Relaxed);
     }
 
     pub(crate) fn take_allocated_bytes(&self) -> usize {
-        self.shared.allocated_bytes.swap(0, Ordering::Relaxed)
+        self.actor.allocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     pub(crate) fn take_deallocated_bytes(&self) -> usize {
-        self.shared.deallocated_bytes.swap(0, Ordering::Relaxed)
+        self.actor.deallocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     /// Wraps the provided future with the current scope.
@@ -149,24 +161,63 @@ impl Scope {
     }
 }
 
-pub(crate) struct ScopeShared {
-    group: Addr,
-    permissions: AtomicPermissions,
-    logging: LoggingControl,
-    dumping: DumpingControl,
+struct ScopeActorShared {
+    addr: Addr,
+    meta: Arc<ActorMeta>,
+    telemetry_meta: Arc<ActorMeta>,
     allocated_bytes: AtomicUsize,
     deallocated_bytes: AtomicUsize,
 }
 
-impl ScopeShared {
-    pub(crate) fn new(group: Addr) -> Self {
+impl ScopeActorShared {
+    fn new(addr: Addr, meta: Arc<ActorMeta>) -> Self {
         Self {
-            group,
+            addr,
+            meta: meta.clone(),
+            telemetry_meta: meta,
+            allocated_bytes: AtomicUsize::new(0),
+            deallocated_bytes: AtomicUsize::new(0),
+        }
+    }
+
+    fn with_telemetry(&self, config: &TelemetryConfig) -> Self {
+        Self {
+            addr: self.addr,
+            meta: self.meta.clone(),
+            telemetry_meta: config
+                .per_actor_key
+                .key(&self.meta.key)
+                .map(|key| {
+                    Arc::new(ActorMeta {
+                        group: self.meta.group.clone(),
+                        key,
+                    })
+                })
+                .unwrap_or_else(|| self.meta.clone()),
+            allocated_bytes: AtomicUsize::new(0),
+            deallocated_bytes: AtomicUsize::new(0),
+        }
+    }
+}
+
+assert_impl_all!(ScopeGroupShared: Send, Sync);
+
+pub(crate) struct ScopeGroupShared {
+    addr: Addr,
+    permissions: AtomicPermissions,
+    logging: LoggingControl,
+    dumping: DumpingControl,
+}
+
+assert_impl_all!(ScopeGroupShared: Send, Sync);
+
+impl ScopeGroupShared {
+    pub(crate) fn new(addr: Addr) -> Self {
+        Self {
+            addr,
             permissions: Default::default(), // everything is disabled
             logging: Default::default(),
             dumping: Default::default(),
-            allocated_bytes: AtomicUsize::new(0),
-            deallocated_bytes: AtomicUsize::new(0),
         }
     }
 
@@ -183,7 +234,7 @@ impl ScopeShared {
         perm.set_logging_enabled(max_level);
         perm.set_dumping_enabled(!config.dumping.disabled);
         perm.set_telemetry_per_actor_group_enabled(config.telemetry.per_actor_group);
-        perm.set_telemetry_per_actor_key_enabled(config.telemetry.per_actor_key);
+        perm.set_telemetry_per_actor_key_enabled(config.telemetry.per_actor_key.is_enabled());
         self.permissions.store(perm);
     }
 }
