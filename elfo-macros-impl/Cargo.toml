@@ -10,6 +10,9 @@ license.workspace = true
 edition.workspace = true
 readme.workspace = true
 
+[features]
+network = []
+
 [dependencies]
 proc-macro2 = "1.0.24"
 quote = "1.0.9"
