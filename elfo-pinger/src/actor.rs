@@ -1,10 +1,16 @@
-use tokio::time;
-use tracing::{debug, warn};
+use std::time::Duration;
+
+use tokio::{select, time};
+use tracing::{debug, info, warn};
 
 use elfo_core as elfo;
-use elfo_macros::{message, msg_raw as msg};
+use elfo_macros::message;
 
-use elfo::{messages::Ping, time::Interval, ActorStatus, Context, Topology};
+use elfo::{
+    messages::Ping, scope, time::Interval, topology::ActorGroup, ActorStatus, Addr, Context,
+    Topology,
+};
+use elfo_utils::ward;
 
 use crate::config::Config;
 
@@ -15,44 +21,84 @@ pub(crate) async fn exec(ctx: Context<Config>, topology: Topology) {
     let interval = Interval::new(|| PingTick);
     let mut ctx = ctx.with(&interval);
 
-    interval.set_period(ctx.config().ping_interval);
+    let mut groups = collect_groups(&topology, &[ctx.group()]);
+    let group_count = groups.len() as u32;
 
+    if groups.is_empty() {
+        info!("no groups to ping, terminating");
+        return;
+    }
+
+    let mut is_alarming = false;
     let mut timed_out = 0;
+    let mut pinging = None;
 
-    while let Some(envelope) = ctx.recv().await {
-        interval.set_period(ctx.config().ping_interval);
+    interval.set_period(ctx.config().ping_interval / group_count);
 
-        msg!(match envelope {
-            PingTick => {
-                // To avoid accumulating multiple ticks.
-                // TODO: alter the interval's behaviour instead.
-                interval.reset();
+    // Accept envelopes from the mailbox concurrently with pinging
+    // in order to avoid getting stuck with the configurer.
+    // TODO: replace it with async requests in the future.
+    loop {
+        select! {
+            envelope = ctx.recv() => {
+                let envelope = ward!(envelope, break);
+                interval.set_period(ctx.config().ping_interval / group_count);
 
-                let mut new_timed_out = 0;
+                if !envelope.is::<PingTick>() || pinging.is_some() {
+                    continue;
+                }
 
-                for group in topology.actor_groups().filter(|g| g.addr != ctx.group()) {
-                    debug!(group = %group.name, "checking a group");
-                    let fut = ctx.request_to(group.addr, Ping).all().resolve();
-                    let timeout = ctx.config().warn_threshold;
-                    if time::timeout(timeout, fut).await.is_err() {
-                        warn!(
-                            message = "group hasn't responded in the allowed time",
-                            group = %group.name,
-                            timeout = ?timeout,
-                        );
-                        new_timed_out += 1;
+                if groups.is_empty() {
+                    if timed_out == 0 && is_alarming {
+                        is_alarming = false;
+                        ctx.set_status(ActorStatus::NORMAL);
+                    }
+
+                    groups = collect_groups(&topology, &[ctx.group()]);
+                    timed_out = 0;
+                }
+
+                let group = groups.pop().unwrap();
+                let warn_threshold = ctx.config().warn_threshold;
+
+                // Expose a current scope to preserve an original trace id.
+                let fut = scope::expose().within(ping_group(ctx.pruned(), group, warn_threshold));
+                pinging = Some(Box::pin(fut));
+            },
+            responsive = async { pinging.as_mut().unwrap().await }, if pinging.is_some() => {
+                pinging = None;
+
+                if !responsive {
+                    timed_out += 1;
+
+                    if !is_alarming {
+                        is_alarming = true;
+                        ctx.set_status(ActorStatus::ALARMING);
                     }
                 }
+            },
+        }
+    }
+}
 
-                debug!("all groups are checked");
+fn collect_groups(topology: &Topology, exclude: &[Addr]) -> Vec<ActorGroup> {
+    topology
+        .actor_groups()
+        .filter(|group| !exclude.contains(&group.addr))
+        .collect()
+}
 
-                if new_timed_out > 0 {
-                    timed_out = new_timed_out;
-                    ctx.set_status(ActorStatus::ALARMING);
-                } else if timed_out > 0 {
-                    ctx.set_status(ActorStatus::NORMAL);
-                }
-            }
-        });
+async fn ping_group(ctx: Context, group: ActorGroup, warn_threshold: Duration) -> bool {
+    debug!(group = %group.name, "checking a group");
+    let fut = ctx.request_to(group.addr, Ping).all().resolve();
+    if time::timeout(warn_threshold, fut).await.is_err() {
+        warn!(
+            message = "group hasn't responded in the allowed time",
+            group = %group.name,
+            timeout = ?warn_threshold,
+        );
+        false
+    } else {
+        true
     }
 }

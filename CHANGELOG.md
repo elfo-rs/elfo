@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Fixed
+- pinger: avoid getting stuck during reconfiguration.
 
 ## [0.1.38] - 2022-09-09
 ### Added

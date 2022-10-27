@@ -9,6 +9,7 @@ license = "MIT"
 [dependencies]
 elfo-macros = { version = "0.1", path = "../elfo-macros" }
 elfo-core = { version = "0.1.26", path = "../elfo-core" }
+elfo-utils = { version = "0.2.0", path = "../elfo-utils" }
 
 tokio = { version = "1", features = ["time"] }
 serde = { version = "1.0.120", features = ["derive"] }
