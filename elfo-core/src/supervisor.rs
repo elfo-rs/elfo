@@ -414,6 +414,10 @@ where
 
         let scope = Scope::new(scope::trace_id(), addr, meta, self.scope_shared.clone())
             .with_telemetry(&system_config.telemetry);
+
+        #[cfg(feature = "unstable-stuck-detection")]
+        let fut = MeasurePoll::new(fut.instrument(span), self.rt_manager.stuck_detector());
+        #[cfg(not(feature = "unstable-stuck-detection"))]
         let fut = MeasurePoll::new(fut.instrument(span));
 
         rt.spawn(scope.within(fut));

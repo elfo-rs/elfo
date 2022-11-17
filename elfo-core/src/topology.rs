@@ -3,6 +3,8 @@ use std::{cell::RefCell, sync::Arc};
 use parking_lot::RwLock;
 use tokio::runtime::Handle;
 
+#[cfg(feature = "unstable-stuck-detection")]
+use crate::stuck_detection::StuckDetector;
 use crate::{
     addr::Addr,
     address_book::{AddressBook, VacantEntry},
@@ -56,6 +58,11 @@ impl Topology {
         handle: Handle,
     ) {
         self.inner.write().rt_manager.add(filter, handle);
+    }
+
+    #[cfg(feature = "unstable-stuck-detection")]
+    pub fn stuck_detector(&self) -> StuckDetector {
+        self.inner.read().rt_manager.stuck_detector()
     }
 
     pub fn local(&self, name: impl Into<String>) -> Local<'_> {
