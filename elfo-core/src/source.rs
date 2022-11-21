@@ -32,6 +32,17 @@ impl Source for () {
     }
 }
 
+#[sealed]
+impl<S: Source> Source for Option<S> {
+    #[inline]
+    fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
+        match self {
+            Some(s) => s.poll_recv(cx),
+            None => Poll::Pending,
+        }
+    }
+}
+
 #[derive(Constructor)]
 pub struct Combined<L, R> {
     left: L,
