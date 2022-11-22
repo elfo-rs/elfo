@@ -6,14 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.1.39] - 2022-11-22
 ### Added
 - stuck_detection: a basic detector under the `unstable-stuck-detection` feature.
 - source: `impl Source for Option<impl Source>` ([#82]).
 
-[#82]: https://github.com/elfo-rs/elfo/pull/82
-
 ### Fixed
 - pinger: avoid getting stuck during reconfiguration.
+
+[#82]: https://github.com/elfo-rs/elfo/pull/82
 
 ## [0.1.38] - 2022-09-09
 ### Added
@@ -371,7 +373,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.38...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...HEAD
+[0.1.39]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.38...elfo-0.1.39
 [0.1.38]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.37...elfo-0.1.38
 [0.1.37]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.36...elfo-0.1.37
 [0.1.36]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.35...elfo-0.1.36

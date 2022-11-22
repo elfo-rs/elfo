@@ -26,14 +26,14 @@ unstable = ["elfo-core/unstable", "elfo-telemeter/unstable" ]
 unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
 
 [dependencies]
-elfo-core = { version = "0.1.33", path = "../elfo-core" }
+elfo-core = { version = "0.1.34", path = "../elfo-core" }
 elfo-macros = { version = "0.1.14", path = "../elfo-macros" }
 elfo-test = { version = "0.1.19", path = "../elfo-test", optional = true }
 elfo-configurer = { version = "0.1.12", path = "../elfo-configurer", optional = true }
 elfo-logger = { version = "0.1.8", path = "../elfo-logger", optional = true }
 elfo-telemeter = { version = "0.1.10", path = "../elfo-telemeter", optional = true }
 elfo-dumper = { version = "0.1.7", path = "../elfo-dumper", optional = true }
-elfo-pinger = { version = "0.1", path = "../elfo-pinger", optional = true }
+elfo-pinger = { version = "0.1.1", path = "../elfo-pinger", optional = true }
 
 [dev-dependencies]
 elfo-test = { version = "0.1", path = "../elfo-test" }
