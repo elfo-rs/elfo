@@ -32,6 +32,8 @@ pub mod routers;
 pub mod scope;
 pub mod signal;
 pub mod stream;
+#[cfg(feature = "unstable-stuck-detection")]
+pub mod stuck_detection;
 pub mod time;
 #[deprecated(note = "use `elfo::scope` instead")]
 pub mod tls;

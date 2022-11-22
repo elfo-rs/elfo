@@ -23,6 +23,7 @@ required-features = ["full"]
 full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter", "elfo-pinger"]
 test-util = ["elfo-test", "elfo-core/test-util"]
 unstable = ["elfo-core/unstable", "elfo-telemeter/unstable" ]
+unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
 
 [dependencies]
 elfo-core = { version = "0.1.33", path = "../elfo-core" }
