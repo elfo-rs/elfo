@@ -29,7 +29,7 @@ pub struct Signal<F> {
 }
 
 enum SignalInner {
-    CtrlC(ReusableBoxFuture<io::Result<()>>),
+    CtrlC(ReusableBoxFuture<'static, io::Result<()>>),
     #[cfg(unix)]
     Unix(unix::Signal),
     Empty,

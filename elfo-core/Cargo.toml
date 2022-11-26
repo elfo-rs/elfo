@@ -16,10 +16,10 @@ elfo-macros = { version = "0.1.14", path = "../elfo-macros" }
 elfo-utils = { version = "0.2.0", path = "../elfo-utils" }
 
 tokio = { version = "1.16", features = ["rt", "sync", "time", "signal", "macros"] }
-tokio-util = "0.6.7"
+tokio-util = "0.7"
 sharded-slab = "0.1.1"
-futures-intrusive = "0.4.0"
-parking_lot = "0.11.1"
+futures-intrusive = "0.5"
+parking_lot = "0.12"
 smallbox = "0.8.0"
 # TODO: avoid the `rc` feature here?
 serde = { version = "1.0.120", features = ["derive", "rc"] }
@@ -27,19 +27,19 @@ derive_more = "0.99.11"
 tracing = "0.1.25"
 tracing-subscriber = { version = "0.3.2", default-features = false, features = ["std", "smallvec"] }
 metrics = "0.17"
-quanta = "0.9.2"
+quanta = "0.10"
 futures = "0.3.12"
 static_assertions = "1.1.0"
-dashmap = "4.0.2"
+dashmap = "5"
 fxhash = "0.2.1"
-linkme = "0.2.4"
+linkme = "0.3"
 smallvec = { version = "1.6.1", features = ["union"] }
 slotmap = "1.0.2"
 serde-value = "0.7.0"
 arc-swap = "1.2.0"
 erased-serde = "0.3.16"
 pin-project = "1.0.8"
-sealed = "0.3.0"
+sealed = "0.4"
 stability = "0.1.1"
 once_cell = { version = "1.8.0", features = ["parking_lot"] }
 serde_json = { version = "1.0.64", features = ["raw_value"] }

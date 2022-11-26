@@ -14,7 +14,7 @@ elfo-configurer = { version = "0.1", path = "../elfo-configurer" }
 tokio = "1"
 serde = { version = "1.0.120", features = ["derive", "rc"] }
 serde-value = "0.7.0"
-futures-intrusive = "0.4.0"
+futures-intrusive = "0.5"
 futures = "0.3.12"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 once_cell = { version = "1.8.0" }

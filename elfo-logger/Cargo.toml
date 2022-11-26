@@ -12,16 +12,16 @@ elfo-core = { version = "0.1.33", path = "../elfo-core", features = ["unstable"]
 elfo-utils = { version = "0.2.0", path = "../elfo-utils" }
 
 derive_more = "0.99.11"
-futures-intrusive = "0.4.0"
+futures-intrusive = "0.5"
 tokio = { version = "1.5", features = ["macros", "fs", "io-util"] }
 atty = "0.2.14"
 serde = { version = "1.0.120", features = ["derive"] }
-parking_lot = "0.11.1"
+parking_lot = "0.12"
 sharded-slab = "0.1.1"
 tracing = "0.1.25"
 tracing-subscriber = { version = "0.3.2", features = ["env-filter", "parking_lot"] }
 metrics = "0.17"
-dashmap = "4.0.2"
+dashmap = "5"
 fxhash = "0.2.1"
 humantime = "2.1.0"
 
