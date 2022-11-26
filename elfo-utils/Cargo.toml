@@ -15,5 +15,4 @@ derive_more = "0.99.11"
 quanta = "0.10"
 
 [dev-dependencies]
-anyhow = "1.0.40"
 criterion = "0.4"
