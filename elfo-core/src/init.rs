@@ -173,7 +173,7 @@ async fn termination(ctx: Context, topology: Topology) {
 
     while let Some(envelope) = ctx.recv().await {
         msg!(match envelope {
-            TerminateSystem => break,
+            TerminateSystem => break, // TODO: use `Terminate`?
             CheckMemoryUsageTick => {
                 match memory_tracker.as_ref().map(|mt| mt.check()) {
                     Some(Ok(true)) | None => {}
