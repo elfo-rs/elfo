@@ -205,7 +205,7 @@ impl<T: Hash, I: Formatter<T>> Formatter<T> for ColoredByHash<I> {
 }
 
 fn clamp(v: f64) -> u8 {
-    v.max(0.).min(255.) as u8
+    v.clamp(0., 255.) as u8
 }
 
 fn reduce_location(s: &str) -> &str {
