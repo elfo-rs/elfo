@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 - move to 2021 edition and v2 resolver ([#42]).
+- configurer: update the `toml` crate to v0.7.
 
 [#42]: https://github.com/elfo-rs/elfo/issues/42
 
