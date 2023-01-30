@@ -76,7 +76,7 @@ impl Logger {
                         // TODO: what about performance here?
                         file.write_all(buffer.as_ref()).await.expect("cannot write to the config file");
                     } else {
-                        print!("{}", buffer);
+                        print!("{buffer}");
                     }
 
                     increment_counter!("elfo_written_events_total");

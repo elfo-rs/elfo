@@ -14,7 +14,7 @@ use crate::node::NodeNo;
 // TODO(v0.2): remove `derive(Deserialize)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[derive(Serialize, Deserialize, Into, From, Display)]
-#[display(fmt = "{}", _0)]
+#[display(fmt = "{_0}")]
 pub struct TraceId(NonZeroU64);
 
 impl TraceId {
@@ -102,10 +102,7 @@ fn truncated_time_delta_secs() {
         assert_eq!(
             TruncatedTime(a).abs_delta(TruncatedTime(b)),
             expected,
-            "{} abs {} != {}",
-            a,
-            b,
-            expected
+            "{a} abs {b} != {expected}",
         );
     };
 

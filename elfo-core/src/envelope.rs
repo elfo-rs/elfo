@@ -183,7 +183,7 @@ impl AnyMessageOwned for AnyMessage {
     fn downcast2<M: Message>(self) -> M {
         match self.downcast::<M>() {
             Ok(message) => message,
-            Err(message) => panic!("unexpected message: {:?}", message),
+            Err(message) => panic!("unexpected message: {message:?}"),
         }
     }
 }
@@ -194,7 +194,7 @@ impl AnyMessageBorrowed for AnyMessage {
     fn downcast2<M: Message>(&self) -> &M {
         ward!(
             self.downcast_ref::<M>(),
-            panic!("unexpected message: {:?}", self)
+            panic!("unexpected message: {self:?}")
         )
     }
 }

@@ -55,7 +55,7 @@ impl Visit for Visitor<'_> {
             self.simplify_message = false;
             self.output.insert_str(0, value);
         } else {
-            let _ = write!(self.output, "\t{}={}", name, value);
+            let _ = write!(self.output, "\t{name}={value}");
         }
     }
 
@@ -82,14 +82,14 @@ impl Visit for Visitor<'_> {
         let result = match field.name() {
             "message" if self.simplify_message && self.output.is_empty() => {
                 self.simplify_message = false;
-                write!(self.output, "{:?}", value)
+                write!(self.output, "{value:?}")
             }
             "message" if self.simplify_message => {
                 self.simplify_message = false;
                 let mut result = Ok(());
 
                 if let Some(id) = self.pool.create_with(|tmp| {
-                    result = write!(tmp, "{:?}", value);
+                    result = write!(tmp, "{value:?}");
                     self.output.insert_str(0, tmp);
                 }) {
                     self.pool.clear(id);

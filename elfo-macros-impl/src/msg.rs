@@ -241,7 +241,7 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
                     }
                 }
             },
-            (GroupKind::Wild, &[ref arm]) => quote! {
+            (GroupKind::Wild, [arm]) => quote! {
                 else {
                     match #envelope_ident { #arm }
                 }

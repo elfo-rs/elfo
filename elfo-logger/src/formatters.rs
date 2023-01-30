@@ -57,7 +57,7 @@ impl Formatter<Level> for ColoredLevel {
 
 impl Formatter<TraceId> for TraceId {
     fn fmt(out: &mut String, v: &TraceId) {
-        let _ = write!(out, "{}", v);
+        let _ = write!(out, "{v}");
     }
 }
 
@@ -198,7 +198,7 @@ impl<T: Hash, I: Formatter<T>> Formatter<T> for ColoredByHash<I> {
         let b = clamp(y + 1.772 * (cb - 128.));
 
         // ANSI escape sequence to set 24-bit foreground font color.
-        let _ = write!(out, "\x1b[38;2;{};{};{}m", r, g, b);
+        let _ = write!(out, "\x1b[38;2;{r};{g};{b}m");
         I::fmt(out, v);
         out.push_str("\x1b[0m");
     }

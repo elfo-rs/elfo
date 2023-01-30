@@ -499,9 +499,9 @@ where
 
 fn panic_to_string(payload: Box<dyn Any>) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
-        format!("panic: {}", message)
+        format!("panic: {message}")
     } else if let Some(message) = payload.downcast_ref::<String>() {
-        format!("panic: {}", message)
+        format!("panic: {message}")
     } else {
         "panic: <unsupported payload>".to_string()
     }

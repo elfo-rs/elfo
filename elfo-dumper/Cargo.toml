@@ -2,9 +2,10 @@
 name = "elfo-dumper"
 version = "0.1.7"
 description = "Dumps messages on disk"
-authors = ["Paul Loyd <pavelko95@gmail.com>"]
-edition = "2018"
-license = "MIT"
+
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
 
 [dependencies]
 elfo-macros = { version = "0.1.14", path = "../elfo-macros" }

@@ -203,7 +203,7 @@ mod tests {
                     }
                 }
 
-                assert_eq!(counter, 10 * limit, "{}", limit);
+                assert_eq!(counter, 10 * limit, "{limit}");
             });
         }
     }

@@ -193,10 +193,7 @@ impl Drop for Proxy {
         if !self.non_exhaustive && !thread::panicking() {
             self.scope.clone().sync_within(|| {
                 if let Some(envelope) = self.try_recv() {
-                    panic!(
-                        "test ended, but not all messages have been consumed: {:?}",
-                        envelope
-                    );
+                    panic!("test ended, but not all messages have been consumed: {envelope:?}");
                 }
             });
         }
@@ -229,7 +226,7 @@ fn testers(tx: shared::OneshotSender<Context>) -> Schema {
                         (StealContext, token) => {
                             ctx.respond(token, Local::from(ctx.pruned()));
                         }
-                        envelope => panic!("unexpected message: {:?}", envelope),
+                        envelope => panic!("unexpected message: {envelope:?}"),
                     });
                 }
 

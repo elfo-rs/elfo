@@ -48,24 +48,24 @@ mod proc_stats {
 
         // Get `total`.
         let proc_meminfo = fs::read_to_string(PROC_MEMINFO)
-            .map_err(|err| format!("cannot read {}: {}", PROC_MEMINFO, err))?;
+            .map_err(|err| format!("cannot read {PROC_MEMINFO}: {err}"))?;
 
         let total = proc_meminfo
             .split_ascii_whitespace()
             .nth(1)
             .and_then(|s| s.parse::<usize>().ok())
-            .ok_or_else(|| format!("cannot parse {}", PROC_MEMINFO))?
+            .ok_or_else(|| format!("cannot parse {PROC_MEMINFO}"))?
             * 1024; // always in KiB
 
         // Get `used`.
         let proc_self_statm = fs::read_to_string(PROC_SELF_STATM)
-            .map_err(|err| format!("cannot read {}: {}", PROC_SELF_STATM, err))?;
+            .map_err(|err| format!("cannot read {PROC_SELF_STATM}: {err}"))?;
 
         let used = proc_self_statm
             .split(' ')
             .nth(1)
             .and_then(|s| s.parse::<usize>().ok())
-            .ok_or_else(|| format!("cannot parse {}", PROC_SELF_STATM))?
+            .ok_or_else(|| format!("cannot parse {PROC_SELF_STATM}"))?
             * PAGE_SIZE;
 
         Ok(MemoryStats { used, total })

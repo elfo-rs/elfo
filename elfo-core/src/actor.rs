@@ -59,7 +59,7 @@ impl ActorStatus {
     pub fn with_details(&self, details: impl fmt::Display) -> Self {
         ActorStatus {
             kind: self.kind,
-            details: Some(format!("{}", details)),
+            details: Some(details.to_string()),
         }
     }
 

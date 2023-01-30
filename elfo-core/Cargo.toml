@@ -2,9 +2,10 @@
 name = "elfo-core"
 version = "0.1.34"
 description = "The core of the system"
-authors = ["Paul Loyd <pavelko95@gmail.com>"]
-edition = "2018"
-license = "MIT"
+
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
 
 [features]
 test-util = ["tokio/test-util"]

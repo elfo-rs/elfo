@@ -2,10 +2,10 @@
 name = "elfo-telemeter"
 version = "0.1.10"
 description = "A telemeter collecting metrics"
-authors = ["Paul Loyd <pavelko95@gmail.com>"]
-edition = "2018"
-license = "MIT"
-keywords = ["metrics", "telemetry", "prometheus"]
+
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
 
 [features]
 unstable = []

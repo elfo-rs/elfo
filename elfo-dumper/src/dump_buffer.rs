@@ -131,7 +131,7 @@ mod tests {
         // Put dumps with exceeding the chunk's size;
         let one = "1".repeat(MIN_CHUNK_SIZE / 3 * 2);
         let two = "2".repeat(MIN_CHUNK_SIZE / 3 * 2);
-        let expected = format!("\"{}\"\n\"{}\"\n", one, two);
+        let expected = format!("\"{one}\"\n\"{two}\"\n");
         assert!(buffer.append(&one).unwrap().is_none());
         let buf = buffer.append(&two).unwrap().unwrap();
         assert_eq!(buf, expected.as_bytes());

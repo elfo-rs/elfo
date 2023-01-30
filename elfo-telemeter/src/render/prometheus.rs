@@ -228,7 +228,7 @@ fn write_metric_line<'a, V: Display>(
     }
 
     buffer.push(' ');
-    let _ = write!(buffer, "{}", value);
+    let _ = write!(buffer, "{value}");
     buffer.push('\n');
 }
 

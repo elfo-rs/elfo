@@ -2,9 +2,10 @@
 name = "elfo-configurer"
 version = "0.1.12"
 description = "Loads and distributes configs across the elfo system"
-authors = ["Paul Loyd <pavelko95@gmail.com>"]
-edition = "2018"
-license = "MIT"
+
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
 
 [dependencies]
 elfo-macros = { version = "0.1.14", path = "../elfo-macros" }

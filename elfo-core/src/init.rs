@@ -222,7 +222,7 @@ async fn terminate_groups(ctx: &Context, topology: &Topology, user: bool) {
     let futures = topology
         .actor_groups()
         .filter(|group| user ^ group.name.starts_with("system."))
-        .map(|group| async {
+        .map(|group| async move {
             select! {
                 _ = terminate_group(ctx, group.addr, group.name.clone()) => {},
                 _ = watch_group(ctx, group.addr, group.name) => {},

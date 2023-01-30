@@ -79,7 +79,7 @@ impl Parse for MessageArgs {
                         .map(|ident| ident.to_string())
                         .collect();
                 }
-                attr => panic!("invalid attribute: {}", attr),
+                attr => panic!("invalid attribute: {attr}"),
             }
 
             if !input.is_empty() {
@@ -156,7 +156,7 @@ pub fn message_impl(
         .unwrap_or_else(|| input.ident.to_string());
 
     let ret_wrapper = if let Some(ret) = &args.ret {
-        let wrapper_name_str = format!("{}::Response", name_str);
+        let wrapper_name_str = format!("{name_str}::Response");
 
         quote! {
             #[message(not(Debug), name = #wrapper_name_str, elfo = #crate_)]

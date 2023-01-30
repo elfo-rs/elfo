@@ -13,3 +13,8 @@ members = [
     "elfo-pinger",
     "examples",
 ]
+
+[workspace.package]
+authors = ["Paul Loyd <pavelko95@gmail.com>"]
+license = "MIT"
+edition = "2021"

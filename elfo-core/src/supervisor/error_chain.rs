@@ -8,7 +8,7 @@ impl fmt::Display for ErrorChain<'_> {
 
         let mut cursor = self.0;
         while let Some(err) = cursor.source() {
-            write!(f, ": {}", err)?;
+            write!(f, ": {err}")?;
             cursor = err;
         }
 

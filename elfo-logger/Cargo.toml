@@ -2,9 +2,10 @@
 name = "elfo-logger"
 version = "0.1.8"
 description = "Logging subsystem"
-authors = ["Paul Loyd <pavelko95@gmail.com>"]
-edition = "2018"
-license = "MIT"
+
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
 
 [dependencies]
 elfo-macros = { version = "0.1.14", path = "../elfo-macros" }
