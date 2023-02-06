@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - move to 2021 edition and v2 resolver ([#42]).
 - configurer: update the `toml` crate to v0.7.
 
+### Fixed
+- message: use smallbox right way, speedup messaging.
+
 [#42]: https://github.com/elfo-rs/elfo/issues/42
 
 ## [0.1.39] - 2022-11-22

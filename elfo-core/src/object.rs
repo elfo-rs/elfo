@@ -1,6 +1,5 @@
 use derive_more::From;
 use futures::future::{join_all, BoxFuture};
-use smallbox::SmallBox;
 
 use crate::{
     actor::Actor,
@@ -135,6 +134,5 @@ impl Group {
     }
 }
 
-// TODO: reconsider `220`.
-pub(crate) type GroupRouter = SmallBox<dyn Fn(Envelope) -> RouteReport + Send + Sync, [u8; 220]>;
+pub(crate) type GroupRouter = Box<dyn Fn(Envelope) -> RouteReport + Send + Sync>;
 type GroupFinished = Box<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;

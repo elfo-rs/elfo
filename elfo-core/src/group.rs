@@ -1,7 +1,5 @@
 use std::{fmt::Debug, future::Future, marker::PhantomData, sync::Arc};
 
-use smallbox::smallbox;
-
 use crate::{
     config::Config,
     context::Context,
@@ -85,7 +83,7 @@ impl<R, C> ActorGroup<R, C> {
                 rt_manager,
             ));
             let sv1 = sv.clone();
-            let router = smallbox!(move |envelope| { sv.handle(envelope) });
+            let router = Box::new(move |envelope| sv.handle(envelope));
             let finished = Box::new(move || sv1.finished());
             Object::new(addr, Group::new(router, finished))
         };

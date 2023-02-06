@@ -27,7 +27,7 @@ pub trait Request: Message {
 
 pub struct AnyMessage {
     vtable: &'static MessageVTable,
-    data: SmallBox<dyn Any + Send, [u8; 184]>,
+    data: SmallBox<dyn Any + Send, [usize; 23]>,
 }
 
 impl AnyMessage {

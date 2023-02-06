@@ -28,7 +28,7 @@ pub struct Dump {
 
 #[doc(hidden)]
 #[stability::unstable]
-pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [u8; 192]>;
+pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [usize; 24]>;
 
 assert_impl_all!(Dump: Send);
 assert_eq_size!(Dump, [u8; 320]);
