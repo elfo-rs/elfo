@@ -4,7 +4,7 @@ use futures::{future::poll_fn, pin_mut};
 use once_cell::sync::Lazy;
 use tracing::{error, info, trace};
 
-use crate::{self as elfo};
+use crate as elfo;
 use elfo_macros::msg_raw as msg;
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     request_table::ResponseToken,
     routers::Singleton,
     scope,
-    source::{Combined, Source},
+    source::{Combined, Source, Sources, Unattached},
 };
 
 use self::{budget::Budget, stats::Stats};
@@ -41,6 +41,7 @@ pub struct Context<C = (), K = Singleton, S = ()> {
     config: Arc<C>,
     key: K,
     source: S,
+    sources: Sources,
     stage: Stage,
     stats: Stats,
     budget: Budget,
@@ -98,10 +99,16 @@ impl<C, K, S> Context<C, K, S> {
             config: self.config,
             key: self.key,
             source: Combined::new(self.source, source),
+            sources: Sources::new(),
             stage: Stage::PreRecv,
             stats: self.stats,
             budget: self.budget,
         }
+    }
+
+    // TODO: S1 → S + docs
+    pub fn attach<S1>(&mut self, source: Unattached<S1>) -> S1 {
+        source.attach_to(&mut self.sources)
     }
 
     /// Updates the actor's status.
@@ -501,6 +508,15 @@ impl<C, K, S> Context<C, K, S> {
                         return Some(envelope);
                     }
                 },
+                option = self.sources.next(), if !self.sources.is_empty() => {
+                    // Sources cannot return `None` for now.
+                    // TODO: check unicycle again.
+                    let envelope = option.expect("source cannot return None");
+
+                    if let Some(envelope) = self.post_recv(envelope) {
+                        return Some(envelope);
+                    }
+                },
             }
         }
     }
@@ -652,6 +668,7 @@ impl<C, K, S> Context<C, K, S> {
             config: Arc::new(()),
             key: Singleton,
             source: (),
+            sources: Sources::new(),
             stage: self.stage,
             stats: Stats::empty(),
             budget: self.budget.clone(),
@@ -671,6 +688,7 @@ impl<C, K, S> Context<C, K, S> {
             config,
             key: self.key,
             source: self.source,
+            sources: self.sources,
             stage: self.stage,
             stats: self.stats,
             budget: self.budget,
@@ -697,6 +715,7 @@ impl<C, K, S> Context<C, K, S> {
             config: self.config,
             key,
             source: self.source,
+            sources: self.sources,
             stage: self.stage,
             stats: self.stats,
             budget: self.budget,
@@ -741,6 +760,7 @@ impl Context {
             config: Arc::new(()),
             key: Singleton,
             source: (),
+            sources: Sources::new(),
             stage: Stage::PreRecv,
             stats: Stats::empty(),
             budget: Budget::default(),
@@ -759,6 +779,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             config: self.config.clone(),
             key: self.key.clone(),
             source: (),
+            sources: Sources::new(),
             stage: self.stage,
             stats: Stats::empty(),
             budget: self.budget.clone(),
