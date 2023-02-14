@@ -95,11 +95,15 @@ impl Dumper {
         rule_set.configure(&self.ctx.config().rules);
 
         let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);
-        let interval = Interval::new(|| DumpingTick);
+
+        let mut ctx = self.ctx.clone();
+
+        let interval = ctx.attach(Interval::new(DumpingTick));
+
         // TODO: `interval.after` to set random time shift.
         interval.set_period(self.ctx.config().write_interval);
 
-        let mut ctx = self.ctx.clone().with(&signal).with(&interval);
+        let mut ctx = ctx.with(&signal);
 
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {

@@ -150,15 +150,13 @@ const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(45);
 const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
 const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(7);
 
-async fn termination(ctx: Context, topology: Topology) {
+async fn termination(mut ctx: Context, topology: Topology) {
     let term_signal = Signal::new(SignalKind::Terminate, || TerminateSystem);
     let ctrl_c_signal = Signal::new(SignalKind::CtrlC, || TerminateSystem);
-    let memory_usage_interval = Interval::new(|| CheckMemoryUsageTick);
 
-    let mut ctx = ctx
-        .with(&term_signal)
-        .with(&ctrl_c_signal)
-        .with(&memory_usage_interval);
+    let memory_usage_interval = ctx.attach(Interval::new(CheckMemoryUsageTick));
+
+    let mut ctx = ctx.with(&term_signal).with(&ctrl_c_signal);
 
     let memory_tracker = match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
         Ok(tracker) => {

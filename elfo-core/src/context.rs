@@ -99,7 +99,7 @@ impl<C, K, S> Context<C, K, S> {
             config: self.config,
             key: self.key,
             source: Combined::new(self.source, source),
-            sources: Sources::new(),
+            sources: self.sources,
             stage: Stage::PreRecv,
             stats: self.stats,
             budget: self.budget,

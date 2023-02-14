@@ -54,12 +54,11 @@ fn sender(broadcast_tx: broadcast::Sender<SomeMessage>) -> Schema {
     #[message]
     struct SomeTick;
 
-    ActorGroup::new().exec(move |ctx| {
+    ActorGroup::new().exec(move |mut ctx| {
         let broadcast_tx = broadcast_tx.clone();
         async move {
-            let interval = Interval::new(|| SomeTick);
+            let interval = ctx.attach(Interval::new(SomeTick));
             interval.set_period(Duration::from_secs(1));
-            let mut ctx = ctx.with(&interval);
 
             let mut num = 0;
 

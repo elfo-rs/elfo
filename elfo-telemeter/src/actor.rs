@@ -21,6 +21,7 @@ use crate::{
 
 struct Telemeter {
     ctx: Context<Config>,
+    interval: Interval<CompactionTick>,
     storage: Arc<Storage>,
     snapshot: Arc<Snapshot>,
     renderer: Renderer,
@@ -45,15 +46,16 @@ pub(crate) fn new(storage: Arc<Storage>) -> Schema {
 }
 
 impl Telemeter {
-    pub(crate) fn new(ctx: Context<Config>, storage: Arc<Storage>) -> Self {
+    pub(crate) fn new(mut ctx: Context<Config>, storage: Arc<Storage>) -> Self {
         let mut renderer = Renderer::default();
         renderer.configure(ctx.config());
 
         Self {
-            ctx,
+            interval: ctx.attach(Interval::new(CompactionTick)),
             storage,
             snapshot: Default::default(),
             renderer,
+            ctx,
         }
     }
 
@@ -61,18 +63,16 @@ impl Telemeter {
         // Now only prometheus is supported.
         assert_eq!(self.ctx.config().sink, Sink::Prometheus);
 
-        let interval = Interval::new(|| CompactionTick);
-        let mut ctx = self.ctx.clone().with(&interval);
-
-        let mut address = ctx.config().address;
+        let mut address = self.ctx.config().address;
         let mut server = start_server(&self.ctx);
 
-        interval.set_period(ctx.config().compaction_interval);
+        self.interval
+            .set_period(self.ctx.config().compaction_interval);
 
-        while let Some(envelope) = ctx.recv().await {
+        while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
                 ConfigUpdated => {
-                    let config = ctx.config();
+                    let config = self.ctx.config();
 
                     if config.address != address {
                         info!("address changed, rerun the server");
@@ -85,23 +85,23 @@ impl Telemeter {
                 }
                 (GetSnapshot, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
-                    interval.reset();
+                    self.interval.reset();
 
                     self.fill_snapshot(/* only_histograms = */ false);
-                    ctx.respond(token, self.snapshot.clone().into());
+                    self.ctx.respond(token, self.snapshot.clone().into());
                 }
                 (Render, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
-                    interval.reset();
+                    self.interval.reset();
 
                     self.fill_snapshot(/* only_histograms = */ false);
                     let descriptions = self.storage.descriptions();
                     let output = self.renderer.render(&self.snapshot, &descriptions);
                     drop(descriptions);
 
-                    ctx.respond(token, Rendered(output));
+                    self.ctx.respond(token, Rendered(output));
 
-                    if ctx.config().retention == Retention::ResetOnScrape {
+                    if self.ctx.config().retention == Retention::ResetOnScrape {
                         self.reset_distributions();
                     }
                 }

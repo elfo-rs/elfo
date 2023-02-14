@@ -17,9 +17,8 @@ use crate::config::Config;
 #[message(elfo = elfo_core)]
 struct PingTick;
 
-pub(crate) async fn exec(ctx: Context<Config>, topology: Topology) {
-    let interval = Interval::new(|| PingTick);
-    let mut ctx = ctx.with(&interval);
+pub(crate) async fn exec(mut ctx: Context<Config>, topology: Topology) {
+    let interval = ctx.attach(Interval::new(PingTick));
 
     let mut groups = collect_groups(&topology, &[ctx.group()]);
     let group_count = groups.len() as u32;

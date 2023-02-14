@@ -1,109 +1,113 @@
 use std::{
+    any::Any,
     future::Future,
     pin::Pin,
     task::{self, Poll},
 };
 
-use parking_lot::Mutex;
-use sealed::sealed;
-use tokio::time::{self, Duration, Instant, Sleep};
+use pin_project::pin_project;
+use tokio::time::{Duration, Instant, Sleep};
 
 use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
+    source::{SourceArc, SourceStream, Unattached},
     tracing::TraceId,
 };
 
-pub struct Interval<F> {
-    message_factory: F,
-    state: Mutex<State>,
+pub struct Interval<M> {
+    source: SourceArc<IntervalSource<M>>,
 }
 
-struct State {
-    sleep: Pin<Box<Sleep>>,
+#[pin_project]
+struct IntervalSource<M> {
+    message: M,
+    #[pin]
+    sleep: Sleep,
     start_at: Option<Instant>,
     period: Duration,
 }
 
-impl<F> Interval<F> {
-    pub fn new(f: F) -> Self {
-        Self {
-            message_factory: f,
-            state: Mutex::new(State {
-                sleep: Box::pin(time::sleep_until(Instant::now())),
-                start_at: None,
-                period: Duration::new(0, 0),
-            }),
-        }
+impl<M: Message> Interval<M> {
+    pub fn new(message: M) -> Unattached<Self> {
+        let source = SourceArc::new(IntervalSource {
+            message,
+            sleep: tokio::time::sleep_until(Instant::now()),
+            start_at: None,
+            period: Duration::new(0, 0),
+        });
+
+        Unattached::new(source.clone(), Self { source })
     }
 
     pub fn after(self, after: Duration) -> Self {
         let when = Instant::now() + after;
-        let mut state = self.state.lock();
-        state.start_at = Some(when);
-        state.sleep.as_mut().reset(when);
-        drop(state);
+        let mut guard = self.source.lock();
+        let source = guard.pinned().project();
+        *source.start_at = Some(when);
+        source.sleep.reset(when);
+        drop(guard);
         self
     }
 
     pub fn set_period(&self, new_period: Duration) {
         assert!(new_period > Duration::new(0, 0));
 
-        let mut state = self.state.lock();
+        let mut guard = self.source.lock();
+        let source = guard.pinned().project();
 
-        if new_period == state.period {
+        if new_period == *source.period {
             return;
         }
 
-        let old_period = state.period;
-        state.period = new_period;
+        *source.period = new_period;
 
-        if state.start_at.is_none() {
-            let new_deadline = state.sleep.deadline() - old_period + new_period;
-            state.sleep.as_mut().reset(new_deadline);
+        if source.start_at.is_none() {
+            let new_deadline = source.sleep.deadline() - *source.period + new_period;
+            source.sleep.reset(new_deadline);
         }
     }
 
     pub fn reset(&self) {
-        let mut state = self.state.lock();
-        let new_deadline = Instant::now() + state.period;
-        state.start_at = None;
-        state.sleep.as_mut().reset(new_deadline);
+        let mut guard = self.source.lock();
+        let source = guard.pinned().project();
+
+        let new_deadline = Instant::now() + *source.period;
+        *source.start_at = None;
+        source.sleep.reset(new_deadline);
     }
 }
 
-#[sealed]
-impl<M, F> crate::source::Source for Interval<F>
-where
-    F: Fn() -> M,
-    M: Message,
-{
-    fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
-        let mut state = self.state.lock();
+impl<M: Message> SourceStream for IntervalSource<M> {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 
-        if state.sleep.as_mut().poll(cx).is_ready() {
-            // It hasn't been configured, so just ignore it.
-            if state.period == Duration::new(0, 0) && state.start_at.is_none() {
-                return Poll::Pending;
-            }
+    fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
+        let mut this = self.project();
 
-            state.start_at = None;
-
-            // Now reset the underlying timer.
-            let period = state.period;
-            let sleep = state.sleep.as_mut();
-            let new_deadline = sleep.deadline() + period;
-            sleep.reset(new_deadline);
-
-            // Emit a message.
-            let message = (self.message_factory)();
-            let kind = MessageKind::Regular { sender: Addr::NULL };
-            let trace_id = TraceId::generate();
-            let envelope = Envelope::with_trace_id(message, kind, trace_id).upcast();
-            return Poll::Ready(Some(envelope));
+        if !this.sleep.as_mut().poll(cx).is_ready() {
+            return Poll::Pending;
         }
 
-        Poll::Pending
+        // It hasn't been configured, so just ignore it.
+        if *this.period == Duration::new(0, 0) && this.start_at.is_none() {
+            return Poll::Pending;
+        }
+
+        *this.start_at = None;
+
+        // Now reset the underlying timer.
+        let new_deadline = this.sleep.deadline() + *this.period;
+        this.sleep.reset(new_deadline);
+
+        // Emit a message.
+        let message = this.message.clone();
+        let kind = MessageKind::Regular { sender: Addr::NULL };
+        let trace_id = TraceId::generate();
+        let envelope = Envelope::with_trace_id(message, kind, trace_id).upcast();
+
+        Poll::Ready(Some(envelope))
     }
 }

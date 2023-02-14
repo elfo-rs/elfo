@@ -200,18 +200,16 @@ mod reporter {
 
     // Sometimes it's useful to define private messages.
     #[message]
-    struct TimerTick;
+    struct SummarizeTick;
 
     pub fn new() -> Schema {
         ActorGroup::new().config::<Config>().exec(reporter)
     }
 
-    async fn reporter(ctx: Context<Config>) {
-        let interval = Interval::new(|| TimerTick);
-        interval.set_period(ctx.config().interval);
-
+    async fn reporter(mut ctx: Context<Config>) {
         // It's possible to attach additional sources to handle everything the same way.
-        let mut ctx = ctx.with(&interval);
+        let interval = ctx.attach(Interval::new(SummarizeTick));
+        interval.set_period(ctx.config().interval);
 
         while let Some(envelope) = ctx.recv().await {
             // The setters of sources are cheap usually,
@@ -230,7 +228,7 @@ mod reporter {
                     // Sometimes config updates require more complex actions,
                     // e.g. reopen connections. Do it here.
                 }
-                TimerTick => {
+                SummarizeTick => {
                     // `request(..).resolve().await` returns the result
                     // ... or with error, if something went wrong.
                     // In the future, `request(..).id().await` will be able to be used
