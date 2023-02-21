@@ -222,7 +222,10 @@ mod reporter {
                     // If all actors pass or ignore the validation step,
                     // configs are updated (`ConfigUpdated` event).
                     let _config = ctx.unpack_config(&config);
-                    ctx.respond(token, Err("oops".into()));
+                    // Accept the update.
+                    ctx.respond(token, Ok(()));
+                    // Reject the update.
+                    // ctx.respond(token, Err("oops".into()));
                 }
                 ConfigUpdated => {
                     // Sometimes config updates require more complex actions,

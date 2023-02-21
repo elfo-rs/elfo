@@ -2,7 +2,7 @@ use std::{
     any::Any,
     future::Future,
     pin::Pin,
-    task::{self, Poll},
+    task::{self, Poll, Waker},
 };
 
 use pin_project::pin_project;
@@ -16,12 +16,14 @@ use crate::{
     tracing::TraceId,
 };
 
+// TODO: revise name and merge with `Stopwatch`.
 pub struct Interval<M> {
     source: SourceArc<IntervalSource<M>>,
 }
 
 #[pin_project]
 struct IntervalSource<M> {
+    waker: Option<Waker>,
     message: M,
     #[pin]
     sleep: Sleep,
@@ -32,6 +34,7 @@ struct IntervalSource<M> {
 impl<M: Message> Interval<M> {
     pub fn new(message: M) -> Unattached<Self> {
         let source = SourceArc::new(IntervalSource {
+            waker: None,
             message,
             sleep: tokio::time::sleep_until(Instant::now()),
             start_at: None,
@@ -41,12 +44,20 @@ impl<M: Message> Interval<M> {
         Unattached::new(source.clone(), Self { source })
     }
 
+    // TODO: set_message
+
+    // TODO: &self
     pub fn after(self, after: Duration) -> Self {
         let when = Instant::now() + after;
         let mut guard = self.source.lock();
         let source = guard.pinned().project();
         *source.start_at = Some(when);
         source.sleep.reset(when);
+
+        if let Some(waker) = source.waker.take() {
+            waker.wake();
+        }
+
         drop(guard);
         self
     }
@@ -66,6 +77,10 @@ impl<M: Message> Interval<M> {
         if source.start_at.is_none() {
             let new_deadline = source.sleep.deadline() - *source.period + new_period;
             source.sleep.reset(new_deadline);
+
+            if let Some(waker) = source.waker.take() {
+                waker.wake();
+            }
         }
     }
 
@@ -76,6 +91,10 @@ impl<M: Message> Interval<M> {
         let new_deadline = Instant::now() + *source.period;
         *source.start_at = None;
         source.sleep.reset(new_deadline);
+
+        if let Some(waker) = source.waker.take() {
+            waker.wake();
+        }
     }
 }
 
@@ -86,6 +105,8 @@ impl<M: Message> SourceStream for IntervalSource<M> {
 
     fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
         let mut this = self.project();
+
+        *this.waker = Some(cx.waker().clone());
 
         if !this.sleep.as_mut().poll(cx).is_ready() {
             return Poll::Pending;
