@@ -16,7 +16,34 @@ use crate::{
     tracing::TraceId,
 };
 
-/// A source that emits messages periodically.
+/// A source that emits messages periodically. Clones the message on every tick.
+///
+/// # Example
+/// ```
+/// # use std::time::Duration;
+/// # use elfo_core as elfo;
+/// # struct Config { period: Duration }
+/// # async fn exec(mut ctx: elfo::Context<Config>) {
+/// use elfo::{time::Interval, message, msg, messages::ConfigUpdated};
+///
+/// #[message]
+/// struct MyTick;
+///
+/// let interval = ctx.attach(Interval::new(MyTick));
+/// interval.start(ctx.config().period);
+///
+/// while let Some(envelope) = ctx.recv().await {
+///     msg!(match envelope {
+///         ConfigUpdated => {
+///             interval.set_period(ctx.config().period);
+///         },
+///         MyTick => {
+///             tracing::info!("tick!");
+///         },
+///     });
+/// }
+/// # }
+/// ```
 pub struct Interval<M> {
     source: SourceArc<IntervalSource<M>>,
 }
@@ -56,10 +83,23 @@ impl<M: Message> Interval<M> {
 
     // TODO: pub fn set_missed_tick_policy
 
-    /// Configures the period of ticks.
-    /// It differs from [`Interval::start`] because TODO
+    /// Configures the period of ticks. Intended to be called on
+    /// `ConfigUpdated`.
     ///
-    /// has no effect if not started
+    /// Does nothing if the timer is not started or the period hasn't been
+    /// changed.
+    ///
+    /// Unlike rescheduling (`start_*` methods), it only adjusts the current
+    /// period and doesn't change the time origin. For instance, if we have
+    /// a configured interval with period = 5s and try to call one of these
+    /// methods, the difference looks something like this:
+    ///
+    /// ```text
+    /// set_period(10s): | 5s | 5s | 5s |  # 10s  |   10s   |
+    /// start(10s):      | 5s | 5s | 5s |  #   10s   |   10s   |
+    ///                                    #
+    ///                               called here
+    /// ```
     ///
     /// # Panics
     /// If `period` is zero.
@@ -88,7 +128,10 @@ impl<M: Message> Interval<M> {
         *source.period = period;
     }
 
-    /// Schedules the interval to start emitting ticks after `period`.
+    /// Schedules the timer to start emitting ticks every `period`.
+    /// The first tick will be emitted also after `period`.
+    ///
+    /// Reschedules the timer if it's already started.
     ///
     /// # Panics
     /// If `period` is zero.
@@ -98,7 +141,10 @@ impl<M: Message> Interval<M> {
         self.schedule(None, period);
     }
 
-    /// Schedules the interval to start emitting ticks after `delay`.
+    /// Schedules the timer to start emitting ticks every `period`.
+    /// The first tick will be emitted after `delay`.
+    ///
+    /// Reschedules the timer if it's already started.
     ///
     /// # Panics
     /// If `period` is zero.
@@ -108,7 +154,10 @@ impl<M: Message> Interval<M> {
         self.schedule(Some(Instant::now() + delay), period);
     }
 
-    /// Schedules the interval to start emitting ticks at `when`.
+    /// Schedules the timer to start emitting ticks every `period`.
+    /// The first tick will be emitted at `when`.
+    ///
+    /// Reschedules the timer if it's already started.
     ///
     /// # Panics
     /// If `period` is zero.
@@ -123,7 +172,7 @@ impl<M: Message> Interval<M> {
         self.schedule(Some(when), period);
     }
 
-    /// Stops any ticks.
+    /// Stops any ticks. To resume ticks use one of `start_*` methods.
     pub fn stop(&self) {
         self.schedule(Some(far_future()), NEVER);
     }
