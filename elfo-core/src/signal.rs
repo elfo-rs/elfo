@@ -160,7 +160,7 @@ mod tests {
 
     use crate::{assert_msg, message, source::Source};
 
-    #[message(elfo = crate)]
+    #[message]
     struct SomeSignal;
 
     #[tokio::test]

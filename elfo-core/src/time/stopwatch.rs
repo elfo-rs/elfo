@@ -89,7 +89,7 @@ mod tests {
 
     use crate::{message, source::Source};
 
-    #[message(elfo = crate)]
+    #[message]
     struct Timeout;
 
     #[tokio::test]

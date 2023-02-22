@@ -136,10 +136,10 @@ pub async fn do_start<F: Future>(
     scope.within(f).await
 }
 
-#[message(elfo = crate)]
+#[message]
 struct TerminateSystem;
 
-#[message(elfo = crate)]
+#[message]
 struct CheckMemoryUsageTick;
 
 // TODO: make these values configurable.

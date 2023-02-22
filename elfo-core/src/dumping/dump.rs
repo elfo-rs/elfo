@@ -140,7 +140,7 @@ impl DumpBuilder {
 
 // TODO: move to `time`.
 /// Timestamp in nanos since Unix epoch.
-#[message(part, elfo = crate)]
+#[message(part)]
 #[derive(Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[stability::unstable]
 pub struct Timestamp(u64);

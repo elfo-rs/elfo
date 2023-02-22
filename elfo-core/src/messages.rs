@@ -10,22 +10,22 @@ use crate::{
 
 /// Checks that the actor is able to handle messages.
 /// Routed to all actors in a group by default and handled implicitly by actors.
-#[message(ret = (), elfo = crate)]
+#[message(ret = ())]
 pub struct Ping;
 
-#[message(ret = Result<(), ConfigRejected>, elfo = crate)]
+#[message(ret = Result<(), ConfigRejected>)]
 #[derive(Constructor)]
 pub struct ValidateConfig {
     pub config: AnyConfig,
 }
 
-#[message(ret = Result<(), ConfigRejected>, elfo = crate)]
+#[message(ret = Result<(), ConfigRejected>)]
 #[derive(Constructor)]
 pub struct UpdateConfig {
     pub config: AnyConfig,
 }
 
-#[message(elfo = crate)]
+#[message]
 pub struct ConfigRejected {
     pub reason: String,
 }
@@ -38,12 +38,12 @@ impl<R: Display> From<R> for ConfigRejected {
     }
 }
 
-#[message(elfo = crate)]
+#[message]
 pub struct ConfigUpdated {
     // TODO: add `old_config`.
 }
 
-#[message(elfo = crate)]
+#[message]
 #[derive(Default)]
 pub struct Terminate {
     pub(crate) closing: bool,
@@ -59,12 +59,12 @@ impl Terminate {
 // === Status ===
 
 // TODO: should it be a request?
-#[message(elfo = crate)]
+#[message]
 #[derive(Default)]
 #[non_exhaustive]
 pub struct SubscribeToActorStatuses {}
 
-#[message(elfo = crate)]
+#[message]
 #[non_exhaustive]
 pub struct ActorStatusReport {
     pub meta: Arc<ActorMeta>,
