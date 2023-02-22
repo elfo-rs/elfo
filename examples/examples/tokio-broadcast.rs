@@ -58,7 +58,7 @@ fn sender(broadcast_tx: broadcast::Sender<SomeMessage>) -> Schema {
         let broadcast_tx = broadcast_tx.clone();
         async move {
             let interval = ctx.attach(Interval::new(SomeTick));
-            interval.set_period(Duration::from_secs(1));
+            interval.start(Duration::from_secs(1));
 
             let mut num = 0;
 

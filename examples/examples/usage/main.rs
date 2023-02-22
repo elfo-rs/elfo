@@ -209,13 +209,10 @@ mod reporter {
     async fn reporter(mut ctx: Context<Config>) {
         // It's possible to attach additional sources to handle everything the same way.
         let interval = ctx.attach(Interval::new(SummarizeTick));
-        interval.set_period(ctx.config().interval);
+        // Some of them should be configured and started.
+        interval.start(ctx.config().interval);
 
         while let Some(envelope) = ctx.recv().await {
-            // The setters of sources are cheap usually,
-            // so it's possible to change it on each iteration.
-            interval.set_period(ctx.config().interval);
-
             msg!(match envelope {
                 (ValidateConfig { config, .. }, token) => {
                     // You can additionally validate a config against dynamic data.
@@ -228,6 +225,9 @@ mod reporter {
                     // ctx.respond(token, Err("oops".into()));
                 }
                 ConfigUpdated => {
+                    // Update sources, e.g. the active interval.
+                    interval.set_period(ctx.config().interval);
+
                     // Sometimes config updates require more complex actions,
                     // e.g. reopen connections. Do it here.
                 }

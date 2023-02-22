@@ -160,7 +160,7 @@ async fn termination(mut ctx: Context, topology: Topology) {
 
     let memory_tracker = match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
         Ok(tracker) => {
-            memory_usage_interval.set_period(CHECK_MEMORY_USAGE_INTERVAL);
+            memory_usage_interval.start(CHECK_MEMORY_USAGE_INTERVAL);
             Some(tracker)
         }
         Err(err) => {

@@ -16,80 +16,126 @@ use crate::{
     tracing::TraceId,
 };
 
-// TODO: revise name and merge with `Stopwatch`.
+/// A source that emits messages periodically.
 pub struct Interval<M> {
     source: SourceArc<IntervalSource<M>>,
 }
+
+const NEVER: Duration = Duration::new(0, 0);
 
 #[pin_project]
 struct IntervalSource<M> {
     waker: Option<Waker>,
     message: M,
+    period: Duration,
+    is_delayed: bool,
     #[pin]
     sleep: Sleep,
-    start_at: Option<Instant>,
-    period: Duration,
 }
 
 impl<M: Message> Interval<M> {
+    /// Creates an unattached instance of [`Interval`].
     pub fn new(message: M) -> Unattached<Self> {
         let source = SourceArc::new(IntervalSource {
             waker: None,
             message,
+            period: NEVER,
+            is_delayed: false,
             sleep: tokio::time::sleep_until(Instant::now()),
-            start_at: None,
-            period: Duration::new(0, 0),
         });
 
         Unattached::new(source.clone(), Self { source })
     }
 
-    // TODO: set_message
-
-    // TODO: &self
-    pub fn after(self, after: Duration) -> Self {
-        let when = Instant::now() + after;
+    /// Replaces a stored message with the provided one.
+    pub fn set_message(&self, message: M) {
         let mut guard = self.source.lock();
         let source = guard.pinned().project();
-        *source.start_at = Some(when);
-        source.sleep.reset(when);
-
-        if let Some(waker) = source.waker.take() {
-            waker.wake();
-        }
-
-        drop(guard);
-        self
+        *source.message = message;
     }
 
-    pub fn set_period(&self, new_period: Duration) {
-        assert!(new_period > Duration::new(0, 0));
+    // TODO: pub fn set_missed_tick_policy
+
+    /// Configures the period of ticks.
+    /// It differs from [`Interval::start`] because TODO
+    ///
+    /// has no effect if not started
+    ///
+    /// # Panics
+    /// If `period` is zero.
+    #[track_caller]
+    pub fn set_period(&self, period: Duration) {
+        assert_ne!(period, NEVER, "period must be non-zero");
 
         let mut guard = self.source.lock();
         let source = guard.pinned().project();
 
-        if new_period == *source.period {
+        // Do nothing if not started or the period hasn't been changed.
+        if *source.period == NEVER || period == *source.period {
             return;
         }
 
-        *source.period = new_period;
-
-        if source.start_at.is_none() {
-            let new_deadline = source.sleep.deadline() - *source.period + new_period;
+        // Reschedule if inside the period.
+        if !*source.is_delayed {
+            let new_deadline = source.sleep.deadline() - *source.period + period;
             source.sleep.reset(new_deadline);
 
             if let Some(waker) = source.waker.take() {
                 waker.wake();
             }
         }
+
+        *source.period = period;
     }
 
-    pub fn reset(&self) {
+    /// Schedules the interval to start emitting ticks after `period`.
+    ///
+    /// # Panics
+    /// If `period` is zero.
+    #[track_caller]
+    pub fn start(&self, period: Duration) {
+        assert_ne!(period, NEVER, "period must be non-zero");
+        self.schedule(None, period);
+    }
+
+    /// Schedules the interval to start emitting ticks after `delay`.
+    ///
+    /// # Panics
+    /// If `period` is zero.
+    #[track_caller]
+    pub fn start_after(&self, delay: Duration, period: Duration) {
+        assert_ne!(period, NEVER, "period must be non-zero");
+        self.schedule(Some(Instant::now() + delay), period);
+    }
+
+    /// Schedules the interval to start emitting ticks at `when`.
+    ///
+    /// # Panics
+    /// If `period` is zero.
+    ///
+    /// # Stability
+    /// This method is unstable, because it accepts [`tokio::time::Instant`],
+    /// which will be replaced in the future to support other runtimes.
+    #[stability::unstable]
+    #[track_caller]
+    pub fn start_at(&self, when: Instant, period: Duration) {
+        assert_ne!(period, NEVER, "period must be non-zero");
+        self.schedule(Some(when), period);
+    }
+
+    /// Stops any ticks.
+    pub fn stop(&self) {
+        self.schedule(Some(far_future()), NEVER);
+    }
+
+    fn schedule(&self, when: Option<Instant>, period: Duration) {
         let mut guard = self.source.lock();
         let source = guard.pinned().project();
 
-        let new_deadline = Instant::now() + *source.period;
-        *source.start_at = None;
+        *source.is_delayed = when.is_some();
+        *source.period = period;
+
+        let new_deadline = when.unwrap_or_else(|| Instant::now() + period);
         source.sleep.reset(new_deadline);
 
         if let Some(waker) = source.waker.take() {
@@ -108,18 +154,20 @@ impl<M: Message> SourceStream for IntervalSource<M> {
 
         *this.waker = Some(cx.waker().clone());
 
+        // Do nothing if stopped or not configured.
+        if *this.period == NEVER {
+            return Poll::Pending;
+        }
+
+        // Wait for a tick from implementation.
         if !this.sleep.as_mut().poll(cx).is_ready() {
             return Poll::Pending;
         }
 
-        // It hasn't been configured, so just ignore it.
-        if *this.period == Duration::new(0, 0) && this.start_at.is_none() {
-            return Poll::Pending;
-        }
+        // After first tick, the interval isn't delayed even if it was.
+        *this.is_delayed = false;
 
-        *this.start_at = None;
-
-        // Now reset the underlying timer.
+        // Reset the underlying timer.
         let new_deadline = this.sleep.deadline() + *this.period;
         this.sleep.reset(new_deadline);
 
@@ -131,4 +179,13 @@ impl<M: Message> SourceStream for IntervalSource<M> {
 
         Poll::Ready(Some(envelope))
     }
+}
+
+fn far_future() -> Instant {
+    // Copied from `tokio`.
+    // Roughly 30 years from now.
+    // API does not provide a way to obtain max `Instant`
+    // or convert specific date in the future to instant.
+    // 1000 years overflows on macOS, 100 years overflows on FreeBSD.
+    Instant::now() + Duration::from_secs(86400 * 365 * 30)
 }

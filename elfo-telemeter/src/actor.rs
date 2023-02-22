@@ -66,8 +66,7 @@ impl Telemeter {
         let mut address = self.ctx.config().address;
         let mut server = start_server(&self.ctx);
 
-        self.interval
-            .set_period(self.ctx.config().compaction_interval);
+        self.interval.start(self.ctx.config().compaction_interval);
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
@@ -85,14 +84,14 @@ impl Telemeter {
                 }
                 (GetSnapshot, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
-                    self.interval.reset();
+                    self.interval.start(self.ctx.config().compaction_interval);
 
                     self.fill_snapshot(/* only_histograms = */ false);
                     self.ctx.respond(token, self.snapshot.clone().into());
                 }
                 (Render, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
-                    self.interval.reset();
+                    self.interval.start(self.ctx.config().compaction_interval);
 
                     self.fill_snapshot(/* only_histograms = */ false);
                     let descriptions = self.storage.descriptions();

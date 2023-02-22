@@ -100,8 +100,8 @@ impl Dumper {
 
         let interval = ctx.attach(Interval::new(DumpingTick));
 
-        // TODO: `interval.after` to set random time shift.
-        interval.set_period(self.ctx.config().write_interval);
+        // TODO: use `interval.start_after` to set random time shift.
+        interval.start(self.ctx.config().write_interval);
 
         let mut ctx = ctx.with(&signal);
 

@@ -32,7 +32,7 @@ pub(crate) async fn exec(mut ctx: Context<Config>, topology: Topology) {
     let mut timed_out = 0;
     let mut pinging = None;
 
-    interval.set_period(ctx.config().ping_interval / group_count);
+    interval.start(ctx.config().ping_interval / group_count);
 
     // Accept envelopes from the mailbox concurrently with pinging
     // in order to avoid getting stuck with the configurer.
