@@ -7,9 +7,6 @@ use tokio::{
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
-use crate::{self as elfo};
-use elfo_macros::{message, msg_raw as msg};
-
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
     addr::Addr,
@@ -20,6 +17,7 @@ use crate::{
     memory_tracker::MemoryTracker,
     message,
     messages::{Ping, Terminate, UpdateConfig},
+    msg,
     object::Object,
     scope::{Scope, ScopeGroupShared},
     signal::{Signal, SignalKind},

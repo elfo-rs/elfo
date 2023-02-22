@@ -6,12 +6,11 @@ use fxhash::FxHashMap;
 use metrics::Key;
 use metrics_util::Summary;
 
-use elfo_core::{ActorMeta, Local};
-use elfo_macros::message;
+use elfo_core::{message, ActorMeta, Local};
 
 /// A command to get actual snapshot of all metrics.
 /// The response is restricted to be local only for now.
-#[message(ret = Local<Arc<Snapshot>>, elfo = elfo_core)]
+#[message(ret = Local<Arc<Snapshot>>)]
 pub struct GetSnapshot;
 
 /// Actual values of all metrics.

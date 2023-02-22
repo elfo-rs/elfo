@@ -13,13 +13,11 @@ use serde_value::Value;
 use tokio::{fs, select, time};
 use tracing::{debug, error, info, warn};
 
-use elfo_core as elfo;
-use elfo_macros::msg_raw as msg;
-
-use elfo::{
+use elfo_core::{
     config::AnyConfig,
     errors::RequestError,
     messages::{ConfigRejected, Ping, UpdateConfig, ValidateConfig},
+    msg,
     signal::{Signal, SignalKind},
     ActorGroup, ActorStatus, Addr, Context, Request, Schema, Topology,
 };

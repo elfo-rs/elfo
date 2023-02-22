@@ -8,12 +8,11 @@ use tokio::{
 };
 use tracing::Metadata;
 
-use elfo_core as elfo;
-use elfo_macros::{message, msg_raw as msg};
-
-use elfo::{
+use elfo_core::{
     group::TerminationPolicy,
+    message,
     messages::{ConfigUpdated, Terminate},
+    msg,
     signal::{Signal, SignalKind},
     ActorGroup, Context, Schema,
 };
@@ -31,7 +30,7 @@ pub(crate) struct Logger {
 
 /// Reload a log file, usually after rotation.
 #[non_exhaustive]
-#[message(elfo = elfo_core)]
+#[message]
 #[derive(Default)]
 pub struct ReopenLogFile {}
 

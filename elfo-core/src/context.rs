@@ -4,9 +4,6 @@ use futures::{future::poll_fn, pin_mut};
 use once_cell::sync::Lazy;
 use tracing::{error, info, trace};
 
-use crate as elfo;
-use elfo_macros::msg_raw as msg;
-
 use crate::{
     actor::{Actor, ActorStatus},
     addr::Addr,
@@ -18,7 +15,7 @@ use crate::{
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     mailbox::RecvResult,
     message::{Message, Request},
-    messages,
+    messages, msg,
     request_table::ResponseToken,
     routers::Singleton,
     scope,

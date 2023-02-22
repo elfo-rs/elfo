@@ -158,9 +158,7 @@ mod tests {
 
     use futures::{future::poll_fn, poll};
 
-    use elfo_macros::message;
-
-    use crate::{assert_msg, source::Source};
+    use crate::{assert_msg, message, source::Source};
 
     #[message(elfo = crate)]
     struct SomeSignal;

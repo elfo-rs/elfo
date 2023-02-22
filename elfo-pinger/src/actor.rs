@@ -3,18 +3,15 @@ use std::time::Duration;
 use tokio::{select, time};
 use tracing::{debug, info, warn};
 
-use elfo_core as elfo;
-use elfo_macros::message;
-
-use elfo::{
-    messages::Ping, scope, time::Interval, topology::ActorGroup, ActorStatus, Addr, Context,
-    Topology,
+use elfo_core::{
+    message, messages::Ping, scope, time::Interval, topology::ActorGroup, ActorStatus, Addr,
+    Context, Topology,
 };
 use elfo_utils::ward;
 
 use crate::config::Config;
 
-#[message(elfo = elfo_core)]
+#[message]
 struct PingTick;
 
 pub(crate) async fn exec(mut ctx: Context<Config>, topology: Topology) {

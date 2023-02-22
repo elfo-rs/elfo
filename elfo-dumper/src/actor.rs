@@ -6,13 +6,12 @@ use parking_lot::Mutex;
 use tokio::task;
 use tracing::{error, info};
 
-use elfo_core as elfo;
-use elfo_macros::{message, msg_raw as msg};
-
-use elfo::{
-    dumping::INTERNAL_CLASS,
+use elfo_core::{
+    dumping::{self, MessageName, INTERNAL_CLASS},
     group::TerminationPolicy,
+    message,
     messages::{ConfigUpdated, Terminate, UpdateConfig},
+    msg,
     routers::{MapRouter, Outcome},
     scope::{self, SerdeMode},
     signal::{Signal, SignalKind},
@@ -30,13 +29,13 @@ use crate::{
     serializer::Serializer,
 };
 
-#[message(elfo = elfo_core)]
+#[message]
 struct StartDumperForClass(String);
 
-#[message(elfo = elfo_core)]
+#[message]
 struct ReopenDumpFile;
 
-#[message(elfo = elfo_core)]
+#[message]
 struct DumpingTick;
 
 struct Dumper {

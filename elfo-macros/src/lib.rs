@@ -8,10 +8,9 @@ pub fn msg(input: TokenStream) -> TokenStream {
     msg_impl(input, parse_quote!(::elfo))
 }
 
-// TODO: is it enough to have only one `msg!` instead?
 #[proc_macro]
-pub fn msg_raw(input: TokenStream) -> TokenStream {
-    msg_impl(input, parse_quote!(elfo))
+pub fn msg_core(input: TokenStream) -> TokenStream {
+    msg_impl(input, parse_quote!(::elfo_core))
 }
 
 /// Derives required traits to use the type as a message or a message part.
@@ -26,4 +25,9 @@ pub fn msg_raw(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn message(attr: TokenStream, input: TokenStream) -> TokenStream {
     message_impl(attr, input, parse_quote!(::elfo))
+}
+
+#[proc_macro_attribute]
+pub fn message_core(attr: TokenStream, input: TokenStream) -> TokenStream {
+    message_impl(attr, input, parse_quote!(::elfo_core))
 }

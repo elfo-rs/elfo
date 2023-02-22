@@ -8,7 +8,6 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-elfo-macros = { version = "0.1.15", path = "../elfo-macros" }
 elfo-core = { version = "0.1.35", path = "../elfo-core", features = ["unstable"] }
 elfo-utils = { version = "0.2.1", path = "../elfo-utils" }
 

@@ -212,11 +212,9 @@ mod tests {
 
     use std::sync::Arc;
 
-    use elfo_macros::message;
+    use crate::{actor::ActorMeta, assert_msg_eq, envelope::MessageKind, message, scope::Scope};
 
-    use crate::{actor::ActorMeta, assert_msg_eq, envelope::MessageKind, scope::Scope};
-
-    #[message(elfo = crate)]
+    #[message]
     #[derive(PartialEq)]
     struct Num(u32);
 

@@ -87,9 +87,7 @@ mod tests {
     use futures::{future::poll_fn, poll};
     use tokio::time;
 
-    use elfo_macros::message;
-
-    use crate::source::Source;
+    use crate::{message, source::Source};
 
     #[message(elfo = crate)]
     struct Timeout;

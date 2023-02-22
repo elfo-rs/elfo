@@ -9,8 +9,6 @@ use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
 use tracing::{debug, error_span, info, warn, Instrument, Span};
 
-use crate::{self as elfo};
-use elfo_macros::msg_raw as msg;
 use elfo_utils::CachePadded;
 
 use self::{backoff::Backoff, error_chain::ErrorChain, measure_poll::MeasurePoll};
@@ -23,7 +21,7 @@ use crate::{
     errors::TrySendError,
     exec::{Exec, ExecResult},
     group::{RestartMode, RestartPolicy, TerminationPolicy},
-    messages,
+    messages, msg,
     object::{Object, ObjectArc},
     routers::{Outcome, Router},
     runtime::RuntimeManager,

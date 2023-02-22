@@ -3,9 +3,7 @@ use std::{
     hash::Hash,
 };
 
-use elfo_macros::msg_raw as msg;
-
-use crate::{self as elfo, envelope::Envelope};
+use crate::{envelope::Envelope, msg};
 
 pub use self::map::MapRouter;
 

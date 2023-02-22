@@ -4,12 +4,9 @@ use metrics::gauge;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use elfo_core as elfo;
-use elfo_macros::{message, msg_raw as msg};
-
-use elfo::{
-    messages::ConfigUpdated, scope, time::Interval, tracing::TraceId, ActorGroup, Context,
-    MoveOwnership, Schema,
+use elfo_core::{
+    message, messages::ConfigUpdated, msg, scope, time::Interval, tracing::TraceId, ActorGroup,
+    Context, MoveOwnership, Schema,
 };
 
 use crate::{
@@ -27,16 +24,16 @@ struct Telemeter {
     renderer: Renderer,
 }
 
-#[message(ret = Rendered, elfo = elfo_core)]
+#[message(ret = Rendered)]
 struct Render;
 
-#[message(elfo = elfo_core)]
-struct Rendered(#[serde(serialize_with = "elfo::dumping::hide")] String);
+#[message]
+struct Rendered(#[serde(serialize_with = "elfo_core::dumping::hide")] String);
 
-#[message(elfo = elfo_core)]
+#[message]
 struct CompactionTick;
 
-#[message(elfo = elfo_core)]
+#[message]
 struct ServerFailed(MoveOwnership<hyper::Error>);
 
 pub(crate) fn new(storage: Arc<Storage>) -> Schema {

@@ -2,11 +2,10 @@ use std::{fmt::Display, sync::Arc};
 
 use derive_more::Constructor;
 
-use elfo_macros::message;
-
 use crate::{
     actor::{ActorMeta, ActorStatus},
     config::AnyConfig,
+    message,
 };
 
 /// Checks that the actor is able to handle messages.
