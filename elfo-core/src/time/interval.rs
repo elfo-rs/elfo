@@ -2,7 +2,7 @@ use std::{
     any::Any,
     future::Future,
     pin::Pin,
-    task::{self, Poll, Waker},
+    task::{self, Poll},
 };
 
 use pin_project::pin_project;
@@ -24,7 +24,8 @@ use crate::{
 /// # use elfo_core as elfo;
 /// # struct Config { period: Duration }
 /// # async fn exec(mut ctx: elfo::Context<Config>) {
-/// use elfo::{time::Interval, message, msg, messages::ConfigUpdated};
+/// # use elfo::{message, msg};
+/// use elfo::{time::Interval, messages::ConfigUpdated};
 ///
 /// #[message]
 /// struct MyTick;
@@ -52,7 +53,6 @@ const NEVER: Duration = Duration::new(0, 0);
 
 #[pin_project]
 struct IntervalSource<M> {
-    waker: Option<Waker>,
     message: M,
     period: Duration,
     is_delayed: bool,
@@ -64,7 +64,6 @@ impl<M: Message> Interval<M> {
     /// Creates an unattached instance of [`Interval`].
     pub fn new(message: M) -> Unattached<Self> {
         let source = SourceArc::new(IntervalSource {
-            waker: None,
             message,
             period: NEVER,
             is_delayed: false,
@@ -119,13 +118,11 @@ impl<M: Message> Interval<M> {
         if !*source.is_delayed {
             let new_deadline = source.sleep.deadline() - *source.period + period;
             source.sleep.reset(new_deadline);
-
-            if let Some(waker) = source.waker.take() {
-                waker.wake();
-            }
+            *source.period = period;
+            guard.wake();
+        } else {
+            *source.period = period;
         }
-
-        *source.period = period;
     }
 
     /// Schedules the timer to start emitting ticks every `period`.
@@ -186,10 +183,7 @@ impl<M: Message> Interval<M> {
 
         let new_deadline = when.unwrap_or_else(|| Instant::now() + period);
         source.sleep.reset(new_deadline);
-
-        if let Some(waker) = source.waker.take() {
-            waker.wake();
-        }
+        guard.wake();
     }
 }
 
@@ -200,8 +194,6 @@ impl<M: Message> SourceStream for IntervalSource<M> {
 
     fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
         let mut this = self.project();
-
-        *this.waker = Some(cx.waker().clone());
 
         // Do nothing if stopped or not configured.
         if *this.period == NEVER {

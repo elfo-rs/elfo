@@ -1,9 +1,5 @@
-use std::task::{self, Poll};
-
 use derive_more::Constructor;
 use sealed::sealed;
-
-use crate::envelope::Envelope;
 
 /// Note that implementations must be fused.
 #[sealed(pub(crate))]
@@ -70,10 +66,19 @@ where
 
 // NEW API
 
-use std::{any::Any, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{
+    any::Any,
+    marker::PhantomData,
+    pin::Pin,
+    ptr,
+    sync::Arc,
+    task::{self, Poll, RawWaker, RawWakerVTable, Waker},
+};
 
 use parking_lot::{Mutex, MutexGuard};
 use unicycle::StreamsUnordered;
+
+use crate::envelope::Envelope;
 
 pub(crate) trait SourceStream: Send + 'static {
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -109,7 +114,7 @@ pub(crate) struct SourceArc<S> {
 impl<S: SourceStream> SourceArc<S> {
     pub(crate) fn new(source: S) -> Self {
         Self {
-            inner: UntypedSourceArc(Arc::new(Mutex::new(source))),
+            inner: UntypedSourceArc::new(source),
             marker: PhantomData,
         }
     }
@@ -134,14 +139,19 @@ impl<S> Clone for SourceArc<S> {
 // === SourceStreamGuard ===
 
 pub(crate) struct SourceStreamGuard<'a, S> {
-    inner: MutexGuard<'a, dyn SourceStream>,
+    inner: MutexGuard<'a, StreamWithWaker<dyn SourceStream>>,
     marker: PhantomData<S>,
 }
 
 impl<S: 'static> SourceStreamGuard<'_, S> {
+    pub(crate) fn wake(&mut self) {
+        self.inner.waker.wake_by_ref();
+    }
+
     pub(crate) fn pinned(&mut self) -> Pin<&mut S> {
         let stream = self
             .inner
+            .stream
             .as_any_mut()
             .downcast_mut::<S>()
             .expect("invalid source type");
@@ -154,7 +164,21 @@ impl<S: 'static> SourceStreamGuard<'_, S> {
 // === UntypedSourceArc ===
 
 #[derive(Clone)]
-pub(crate) struct UntypedSourceArc(Arc<Mutex<dyn SourceStream>>);
+pub(crate) struct UntypedSourceArc(Arc<Mutex<StreamWithWaker<dyn SourceStream>>>);
+
+struct StreamWithWaker<S: ?Sized> {
+    waker: Waker,
+    stream: S,
+}
+
+impl UntypedSourceArc {
+    fn new(stream: impl SourceStream) -> Self {
+        Self(Arc::new(Mutex::new(StreamWithWaker {
+            waker: noop_waker(),
+            stream,
+        })))
+    }
+}
 
 impl futures::Stream for UntypedSourceArc {
     type Item = Envelope;
@@ -163,8 +187,35 @@ impl futures::Stream for UntypedSourceArc {
         let mut guard = self.0.lock();
 
         // SAFETY: The data inside the `Mutex` is pinned and we don't move it out here.
-        unsafe { Pin::new_unchecked(&mut *guard) }.poll_recv(cx)
+        let result = unsafe { Pin::new_unchecked(&mut guard.stream) }.poll_recv(cx);
+
+        // Save the waker for reconfiguration if the stream isn't ready.
+        // NOTE: `unicycle` doesn't support `will_wake` for now:
+        // https://github.com/udoprog/unicycle/pull/15#issuecomment-1100680368
+        // But we use it anyway to get benefits in the future.
+        if result.is_pending() && !guard.waker.will_wake(cx.waker()) {
+            guard.waker = cx.waker().clone();
+        }
+
+        result
     }
+}
+
+fn noop_waker() -> Waker {
+    // SAFETY: it returns an object that upholds the right RawWaker contract.
+    unsafe { Waker::from_raw(noop_raw_waker()) }
+}
+
+fn noop_raw_waker() -> RawWaker {
+    fn noop_clone(_: *const ()) -> RawWaker {
+        noop_raw_waker()
+    }
+    fn noop_wake(_: *const ()) {}
+    fn noop_wake_by_ref(_: *const ()) {}
+    fn noop_drop(_: *const ()) {}
+
+    let vtable = &RawWakerVTable::new(noop_clone, noop_wake, noop_wake_by_ref, noop_drop);
+    RawWaker::new(ptr::null(), vtable)
 }
 
 pub(crate) type Sources = StreamsUnordered<UntypedSourceArc>;
