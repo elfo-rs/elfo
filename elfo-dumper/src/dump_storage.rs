@@ -148,7 +148,6 @@ impl DumpRegistry {
 
 // === Fund ===
 
-// TODO: NUMA awareness.
 struct Fund {
     config: DumpRegistryConfig,
     // Empty + filled + active + used by `Drain`.

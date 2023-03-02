@@ -13,12 +13,12 @@ use elfo_core::{
 use self::dump_storage::DumpStorage;
 
 mod actor;
-mod compact_dump;
 mod config;
-mod dump_buffer;
 mod dump_storage;
 mod file_registry;
 mod recorder;
+mod rule_set;
+mod serializer;
 
 /// Installs a global dump recorder and returns a group to handle dumps.
 pub fn new() -> Schema {
