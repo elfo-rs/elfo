@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use bytesize::ByteSize;
 use serde::{Deserialize, Deserializer};
 use tracing::level_filters::LevelFilter;
 
@@ -35,7 +36,7 @@ pub(crate) struct Rule {
     pub(crate) protocol: Option<String>,
     pub(crate) message: Option<String>,
     // Params.
-    pub(crate) max_size: Option<usize>,
+    pub(crate) max_size: Option<ByteSize>,
     pub(crate) on_overflow: Option<OnOverflow>,
     #[serde(deserialize_with = "deserialize_level_filter")]
     pub(crate) on_overflow_log: Option<LevelFilter>,

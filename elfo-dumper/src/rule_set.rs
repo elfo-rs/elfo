@@ -78,7 +78,7 @@ fn collect_params(rules: &[Rule], protocol: &'static str, message: &MessageName)
                 && r.message.as_ref().map_or(true, |m| &m.as_str() == message)
         })
         .for_each(|r| {
-            params.max_size = r.max_size.unwrap_or(params.max_size);
+            params.max_size = r.max_size.map(|s| s.0 as _).unwrap_or(params.max_size);
             params.on_overflow = r.on_overflow.unwrap_or(params.on_overflow);
             params.on_overflow_log = r.on_overflow_log.unwrap_or(params.on_overflow_log);
             params.on_failure_log = r.on_failure_log.unwrap_or(params.on_failure_log);
@@ -89,33 +89,35 @@ fn collect_params(rules: &[Rule], protocol: &'static str, message: &MessageName)
 
 #[test]
 fn it_works() {
+    use bytesize::ByteSize;
+
     let mut rules = vec![
         Rule {
             class: Some("another".into()),
-            max_size: Some(0),
+            max_size: Some(ByteSize(0)),
             ..Rule::default()
         },
         Rule {
             class: Some("some".into()),
             protocol: Some("proto_a".into()),
-            max_size: Some(1),
+            max_size: Some(ByteSize(1)),
             ..Rule::default()
         },
         Rule {
             message: Some("A".into()),
-            max_size: Some(2),
+            max_size: Some(ByteSize(2)),
             ..Rule::default()
         },
         Rule {
             protocol: Some("proto_b".into()),
             message: Some("B".into()),
-            max_size: Some(3),
+            max_size: Some(ByteSize(3)),
             on_overflow_log: Some(LevelFilter::INFO),
             ..Rule::default()
         },
         Rule {
             message: Some("B".into()),
-            max_size: Some(4),
+            max_size: Some(ByteSize(4)),
             on_failure_log: Some(LevelFilter::ERROR),
             ..Rule::default()
         },
