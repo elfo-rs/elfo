@@ -1,4 +1,4 @@
-use std::{error::Error as StdError, iter, panic, sync::Arc};
+use std::{error::Error as StdError, iter, mem, panic, sync::Arc};
 
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
@@ -90,6 +90,7 @@ impl Dumper {
 
         let mut serializer = Serializer::new(self.dump_registry.class());
         let mut rule_set = RuleSet::new(self.dump_registry.class());
+        let mut report = Report::default();
         let mut need_to_terminate = false;
 
         rule_set.configure(&self.ctx.config().rules);
@@ -136,9 +137,7 @@ impl Dumper {
 
                     // A blocking background task that writes a lot of dumps in batch.
                     // It's much faster than calling tokio's async functions.
-                    let background = move || -> Result<(Serializer, RuleSet)> {
-                        let mut report = Report::default();
-
+                    let background = move || -> Result<(Serializer, RuleSet, Report)> {
                         dumping::set_in_dumping(true);
                         let res = write_dumps(
                             dump_registry.drain(timeout),
@@ -149,18 +148,20 @@ impl Dumper {
                         );
                         dumping::set_in_dumping(false);
 
-                        handle_report(report);
+                        // Update metrics and print errors.
+                        handle_report(&mut report, res.is_err());
 
                         res?;
-                        Ok((serializer, rule_set))
+                        Ok((serializer, rule_set, report))
                     };
 
                     // Run the background task and wait until it's completed.
                     let scope = scope::expose();
                     match task::spawn_blocking(|| scope.sync_within(background)).await {
-                        Ok(Ok((s, r))) => {
-                            serializer = s;
-                            rule_set = r;
+                        Ok(Ok(state)) => {
+                            serializer = state.0;
+                            rule_set = state.1;
+                            report = state.2;
                         }
                         Ok(Err(err)) => return Err(err),
                         Err(err) => panic::resume_unwind(err.into_panic()),
@@ -237,8 +238,6 @@ fn write_dumps(
         report.merge(new_report);
     }
 
-    // TODO: `file.sync()`
-
     Ok(())
 }
 
@@ -259,11 +258,13 @@ macro_rules! event_dyn_level {
 }
 
 // TODO: add metrics for failed and lost dumps.
-fn handle_report(report: Report) {
+fn handle_report(report: &mut Report, force: bool) {
     counter!("elfo_written_dumps_total", report.appended as u64);
+    report.appended = 0;
 
-    // TODO: collect all reports.
-    if cooldown!(Duration::from_secs(60)) {
+    if force || cooldown!(Duration::from_secs(60)) {
+        let report = mem::take(report);
+
         for ((protocol, name), info) in report.failed {
             event_dyn_level!(
                 info.level,
