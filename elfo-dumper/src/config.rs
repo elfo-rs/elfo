@@ -39,9 +39,9 @@ pub(crate) struct Rule {
     pub(crate) max_size: Option<ByteSize>,
     pub(crate) on_overflow: Option<OnOverflow>,
     #[serde(deserialize_with = "deserialize_level_filter")]
-    pub(crate) on_overflow_log: Option<LevelFilter>,
+    pub(crate) log_on_overflow: Option<LevelFilter>,
     #[serde(deserialize_with = "deserialize_level_filter")]
-    pub(crate) on_failure_log: Option<LevelFilter>,
+    pub(crate) log_on_failure: Option<LevelFilter>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]

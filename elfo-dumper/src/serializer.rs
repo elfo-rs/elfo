@@ -193,7 +193,7 @@ pub(crate) struct OverflowDumpInfo {
 impl Report {
     #[cold]
     fn add_failed(&mut self, dump: &Dump, error: serde_json::Error, params: &DumpParams) {
-        let level = ward!(params.on_failure_log.into_level());
+        let level = ward!(params.log_on_failure.into_level());
 
         self.failed
             .entry((dump.message_protocol, dump.message_name.clone()))
@@ -210,7 +210,7 @@ impl Report {
 
     #[cold]
     fn add_overflow(&mut self, dump: &Dump, truncated: bool, params: &DumpParams) {
-        let level = ward!(params.on_failure_log.into_level());
+        let level = ward!(params.log_on_failure.into_level());
 
         self.overflow
             .entry((dump.message_protocol, dump.message_name.clone(), truncated))

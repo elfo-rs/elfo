@@ -11,8 +11,8 @@ use crate::config::{OnOverflow, Rule};
 pub(crate) struct DumpParams {
     pub(crate) max_size: usize,
     pub(crate) on_overflow: OnOverflow,
-    pub(crate) on_overflow_log: LevelFilter,
-    pub(crate) on_failure_log: LevelFilter,
+    pub(crate) log_on_overflow: LevelFilter,
+    pub(crate) log_on_failure: LevelFilter,
 }
 
 impl Default for DumpParams {
@@ -20,8 +20,8 @@ impl Default for DumpParams {
         Self {
             max_size: 64 * 1024,
             on_overflow: OnOverflow::Skip,
-            on_overflow_log: LevelFilter::WARN,
-            on_failure_log: LevelFilter::WARN,
+            log_on_overflow: LevelFilter::WARN,
+            log_on_failure: LevelFilter::WARN,
         }
     }
 }
@@ -80,8 +80,8 @@ fn collect_params(rules: &[Rule], protocol: &'static str, message: &MessageName)
         .for_each(|r| {
             params.max_size = r.max_size.map(|s| s.0 as _).unwrap_or(params.max_size);
             params.on_overflow = r.on_overflow.unwrap_or(params.on_overflow);
-            params.on_overflow_log = r.on_overflow_log.unwrap_or(params.on_overflow_log);
-            params.on_failure_log = r.on_failure_log.unwrap_or(params.on_failure_log);
+            params.log_on_overflow = r.log_on_overflow.unwrap_or(params.log_on_overflow);
+            params.log_on_failure = r.log_on_failure.unwrap_or(params.log_on_failure);
         });
 
     params
@@ -112,13 +112,13 @@ fn it_works() {
             protocol: Some("proto_b".into()),
             message: Some("B".into()),
             max_size: Some(ByteSize(3)),
-            on_overflow_log: Some(LevelFilter::INFO),
+            log_on_overflow: Some(LevelFilter::INFO),
             ..Rule::default()
         },
         Rule {
             message: Some("B".into()),
             max_size: Some(ByteSize(4)),
-            on_failure_log: Some(LevelFilter::ERROR),
+            log_on_failure: Some(LevelFilter::ERROR),
             ..Rule::default()
         },
     ];
@@ -169,8 +169,8 @@ fn it_works() {
             false,
             &DumpParams {
                 max_size: 4,
-                on_overflow_log: LevelFilter::INFO,
-                on_failure_log: LevelFilter::ERROR,
+                log_on_overflow: LevelFilter::INFO,
+                log_on_failure: LevelFilter::ERROR,
                 ..DumpParams::default()
             }
         )
