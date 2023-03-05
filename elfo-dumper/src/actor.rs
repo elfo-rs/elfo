@@ -10,7 +10,7 @@ use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
 
 use elfo::{
-    dumping::{self, INTERNAL_CLASS},
+    dumping::INTERNAL_CLASS,
     group::TerminationPolicy,
     messages::{ConfigUpdated, Terminate, UpdateConfig},
     routers::{MapRouter, Outcome},
@@ -89,7 +89,7 @@ impl Dumper {
 
         let mut serializer = Serializer::new(self.dump_registry.class());
         let mut rule_set = RuleSet::new(self.dump_registry.class());
-        let mut reporter = Reporter::default();
+        let mut reporter = Reporter::new(self.ctx.config().warn_cooldown);
         let mut need_to_terminate = false;
 
         rule_set.configure(&self.ctx.config().rules);
@@ -114,6 +114,7 @@ impl Dumper {
                         .wrap_err("cannot open the dump file")?;
 
                     rule_set.configure(&config.rules);
+                    reporter.configure(config.warn_cooldown);
 
                     if let Some(m) = &self.manager {
                         m.dump_storage.lock().configure(config.registry_capacity);

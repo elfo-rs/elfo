@@ -4,6 +4,7 @@ use std::{
 
 use fxhash::FxHashMap;
 use metrics::counter;
+use tokio::time::Instant;
 use tracing::{debug, error, info, trace, warn, Level};
 
 use elfo_core::dumping::{Dump, MessageName};
@@ -103,9 +104,10 @@ fn merge_maps<K: Eq + Hash, V>(
 
 // === Reporter ===
 
-#[derive(Default)]
 pub(crate) struct Reporter {
     report: Report,
+    last_report_time: Option<Instant>,
+    warn_cooldown: Duration,
 }
 
 macro_rules! event_dyn_level {
@@ -125,6 +127,18 @@ macro_rules! event_dyn_level {
 }
 
 impl Reporter {
+    pub(crate) fn new(warn_cooldown: Duration) -> Self {
+        Self {
+            report: Report::default(),
+            last_report_time: None,
+            warn_cooldown,
+        }
+    }
+
+    pub(crate) fn configure(&mut self, warn_cooldown: Duration) {
+        self.warn_cooldown = warn_cooldown;
+    }
+
     pub(crate) fn add(&mut self, report: Report) {
         self.report.merge(report);
         self.emit(false);
@@ -136,11 +150,7 @@ impl Reporter {
         self.report.appended = 0;
 
         // Throttle logs to produce less noise.
-        let produce_logs = force
-            || ((!self.report.failed.is_empty() || !self.report.overflow.is_empty())
-                && cooldown!(Duration::from_secs(60)));
-
-        if !produce_logs {
+        if !(force || self.should_log()) {
             return;
         }
 
@@ -170,6 +180,17 @@ impl Reporter {
                 count = info.count,
             );
         }
+
+        self.last_report_time = Some(Instant::now());
+    }
+
+    fn should_log(&self) -> bool {
+        if self.report.failed.is_empty() && self.report.overflow.is_empty() {
+            return false;
+        }
+
+        self.last_report_time
+            .map_or(true, |t| t.elapsed() >= self.warn_cooldown)
     }
 }
 

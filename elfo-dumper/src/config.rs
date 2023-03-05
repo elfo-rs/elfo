@@ -12,7 +12,9 @@ pub(crate) struct Config {
     /// How often dumpers should flush dumps to file.
     /// 500ms by default.
     #[serde(with = "humantime_serde", default = "default_interval")]
-    pub(crate) interval: Duration,
+    pub interval: Duration,
+    #[serde(with = "humantime_serde", default = "default_warn_cooldown")]
+    pub warn_cooldown: Duration,
     /// The maximum number of dumps in memory per class.
     /// 3_000_000 by default.
     #[serde(default = "default_registry_capacity")]
@@ -55,6 +57,10 @@ impl Config {
 
 fn default_interval() -> Duration {
     Duration::from_millis(500)
+}
+
+fn default_warn_cooldown() -> Duration {
+    Duration::from_secs(60)
 }
 
 fn default_registry_capacity() -> usize {
