@@ -1,4 +1,4 @@
-use std::{collections::hash_map::Entry, hash::Hash, io, mem};
+use std::{borrow::Cow, collections::hash_map::Entry, hash::Hash, io, mem};
 
 use fxhash::FxHashMap;
 use serde::ser::SerializeStruct;
@@ -8,7 +8,7 @@ use elfo_core::{
     dumping::{Dump, MessageKind, MessageName},
     node::{self, NodeNo},
 };
-use elfo_utils::ward;
+use elfo_utils::{unlikely, ward};
 
 use crate::{config::OnOverflow, rule_set::DumpParams};
 
@@ -90,18 +90,17 @@ impl Serializer {
         let prev_len = self.output.len();
 
         // Try to serialize directly into the output buffer.
-        match serde_json::to_writer(
-            LimitedWrite(&mut self.output, params.max_size),
-            &compact_dump,
-        ) {
+        let mut wr = LimitedWrite::new(&mut self.output, params.max_size);
+        match serde_json::to_writer(&mut wr, &compact_dump) {
             Ok(()) => return Ok(true),
             Err(err) => {
+                let limit_reached = wr.limit_reached;
+
                 // Either the limit is reached or the message is invalid.
                 // Anyway, rollback the output buffer.
                 self.output.truncate(prev_len);
 
-                // `is_io()` returns true iff the limit is reached.
-                if !err.is_io() {
+                if !limit_reached {
                     return Err(err);
                 }
             }
@@ -116,21 +115,28 @@ impl Serializer {
         self.message_buffer.clear();
 
         // Serialize the message into a temporary buffer with limitation.
-        let _ = serde_json::to_writer(
-            LimitedWrite(&mut self.message_buffer, params.max_size),
-            &*dump.message,
-        );
+        let mut wr = LimitedWrite::new(&mut self.message_buffer, params.max_size);
+        match serde_json::to_writer(&mut wr, &*dump.message) {
+            Ok(()) => {
+                // Initially, the serialization was limited, but not now. Why?
+                // We applied the limit to the whole buffer, not only to the
+                // message. That's not very accurate, but faster to do.
+                // Now we need simply to repeat serialization without the limit.
+            }
+            Err(err) if !wr.limit_reached => {
+                return Err(err);
+            }
+            Err(_) => {
+                self.message_buffer.extend_from_slice(b" TRUNCATED");
 
-        // TODO: It should be done only on `err.is_io()`.
-        //       However, `serde-json` returns `err.is_data()` here. Why?
-        self.message_buffer.extend_from_slice(b" TRUNCATED");
+                // Internally `serde-json` cannot write invalid UTF-8 if the limit is reached.
+                // However, I don't want to rely on internal details even in rare cases.
+                let message = String::from_utf8_lossy(&self.message_buffer);
 
-        // Internally `serde-json` cannot write invalid UTF-8 if the limit is reached.
-        // However, I don't want to rely on internal details even in rare cases.
-        let message = String::from_utf8_lossy(&self.message_buffer);
-
-        // Override the message and try to serialize into the output buffer again.
-        compact_dump.message = Some(&message);
+                // Override the message and try to serialize into the output buffer again.
+                compact_dump.message = Some(message);
+            }
+        }
 
         serde_json::to_writer(&mut self.output, &compact_dump)
             .map(|_| {
@@ -149,14 +155,14 @@ impl Serializer {
     }
 
     fn clear_if_needed(&mut self) {
-        if self.need_to_clear {
+        if unlikely(self.need_to_clear) {
             self.output.clear();
             self.need_to_clear = false;
         }
     }
 
     fn take_if_limit_exceeded(&mut self, limit: usize) -> Option<(&[u8], Report)> {
-        if self.output.len() > limit {
+        if unlikely(self.output.len() > limit) {
             self.need_to_clear = true;
             Some((&self.output, mem::take(&mut self.report)))
         } else {
@@ -257,7 +263,7 @@ struct CompactDump<'a> {
     class: &'a str,
     node_no: NodeNo,
     message_name: &'a str,
-    message: Option<&'a str>,
+    message: Option<Cow<'a, str>>,
 }
 
 impl<'a> serde::Serialize for CompactDump<'a> {
@@ -293,7 +299,7 @@ impl<'a> serde::Serialize for CompactDump<'a> {
 
         s.serialize_field("mk", message_kind)?;
 
-        if let Some(message) = self.message {
+        if let Some(message) = &self.message {
             s.serialize_field("m", message)?;
         } else {
             s.serialize_field("m", &*self.dump.message)?;
@@ -309,16 +315,32 @@ impl<'a> serde::Serialize for CompactDump<'a> {
 
 // === LimitedWrite ===
 
-struct LimitedWrite<W>(W, usize);
+struct LimitedWrite<W> {
+    inner: W,
+    left: usize,
+    limit_reached: bool,
+}
+
+impl<W> LimitedWrite<W> {
+    fn new(writer: W, limit: usize) -> Self {
+        Self {
+            inner: writer,
+            left: limit,
+            limit_reached: false,
+        }
+    }
+}
 
 impl<W: io::Write> io::Write for LimitedWrite<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if buf.len() > self.1 {
+        if unlikely(buf.len() > self.left) {
+            self.left = 0;
+            self.limit_reached = true;
             return Ok(0);
         }
 
-        self.1 -= buf.len();
-        self.0.write(buf)
+        self.left -= buf.len();
+        self.inner.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
