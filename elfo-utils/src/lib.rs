@@ -2,8 +2,12 @@
 
 use derive_more::Deref;
 
-pub use self::rate_limiter::{RateLimit, RateLimiter};
+pub use self::{
+    likely::*,
+    rate_limiter::{RateLimit, RateLimiter},
+};
 
+mod likely;
 mod rate_limiter;
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Deref)]
