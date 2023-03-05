@@ -6,13 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- dumper: add `Truncate` mode ([#85]).
+- dumper: add `rules` section to the config ([#85]).
+- dumper: add `log_cooldown` parameter ([#85]).
+- utils: add `likely()` and `unlikely()` hints ([#85]).
+- scope: add `with_serde_mode` ([#85]).
+
 ### Changed
 - move to 2021 edition and v2 resolver ([#42]).
 - configurer: update the `toml` crate to v0.7.
+- dumper: rename the `interval` parameter to `write_interval` ([#85]).
 
 ### Fixed
 - message: use smallbox right way, speedup messaging.
+- dumper: handle overflow right way ([#83]).
 
+[#85]: https://github.com/elfo-rs/elfo/pull/85
+[#83]: https://github.com/elfo-rs/elfo/issues/83
 [#42]: https://github.com/elfo-rs/elfo/issues/42
 
 ## [0.1.39] - 2022-11-22
