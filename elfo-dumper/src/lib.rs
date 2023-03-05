@@ -1,4 +1,11 @@
-#![warn(rust_2018_idioms, unreachable_pub)]
+//! The dumper writes dumps of messages to files.
+//!
+//! Each line is a valid JSON. Lines can be unordered.
+//!
+//! For more details about dumping see [The Actoromicon](https://actoromicon.rs/ch05-03-dumping.html).
+//!
+//! Configuration can be found in [`config::Config`].
+#![warn(rust_2018_idioms, unreachable_pub, missing_docs)]
 
 use std::sync::Arc;
 
@@ -13,13 +20,17 @@ use elfo_core::{
 use self::dump_storage::DumpStorage;
 
 mod actor;
-mod config;
 mod dump_storage;
 mod file_registry;
 mod recorder;
 mod reporter;
 mod rule_set;
 mod serializer;
+
+#[cfg(not(docsrs))]
+mod config;
+#[cfg(docsrs)]
+pub mod config;
 
 /// Installs a global dump recorder and returns a group to handle dumps.
 pub fn new() -> Schema {
