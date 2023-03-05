@@ -317,3 +317,75 @@ pub fn meta() -> Arc<ActorMeta> {
 pub fn try_meta() -> Option<Arc<ActorMeta>> {
     try_with(|scope| scope.meta().clone())
 }
+
+thread_local! {
+    static SERDE_MODE: Cell<SerdeMode> = Cell::new(SerdeMode::Normal);
+}
+
+/// A mode of (de)serialization.
+/// Useful to alternate a behavior depending on a context.
+#[stability::unstable]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SerdeMode {
+    /// A default mode, regular ser/de calls.
+    Normal,
+    /// Serialzation for dumping purposes.
+    Dumping,
+    // Network
+}
+
+/// Sets the specified serde mode and runs the function.
+///
+/// # Panics
+/// If the provided function panics.
+#[stability::unstable]
+#[inline]
+pub fn with_serde_mode<R>(mode: SerdeMode, f: impl FnOnce() -> R) -> R {
+    // We use a guard here to restore the current serde mode even on panics.
+    struct Guard(SerdeMode);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            SERDE_MODE.with(|cell| cell.set(self.0));
+        }
+    }
+
+    let mode = SERDE_MODE.with(|cell| cell.replace(mode));
+    let _guard = Guard(mode);
+    f()
+}
+
+/// Returns the current serde mode.
+#[stability::unstable]
+#[inline]
+pub fn serde_mode() -> SerdeMode {
+    SERDE_MODE.with(Cell::get)
+}
+
+#[test]
+fn serde_mode_works() {
+    #[derive(serde::Serialize)]
+    struct S {
+        #[serde(serialize_with = "crate::dumping::hide")]
+        f: u32,
+    }
+
+    let value = S { f: 42 };
+
+    // `Normal` mode
+    assert_eq!(serde_json::to_string(&value).unwrap(), r#"{"f":42}"#);
+
+    // `Dumping` mode
+    let json = with_serde_mode(SerdeMode::Dumping, || {
+        serde_json::to_string(&value).unwrap()
+    });
+    assert_eq!(json, r#"{"f":"<hidden>"}"#);
+
+    // Restored `Normal` mode
+    assert_eq!(serde_json::to_string(&value).unwrap(), r#"{"f":42}"#);
+
+    // `Normal` mode must be restored after panic
+    let res = std::panic::catch_unwind(|| with_serde_mode(SerdeMode::Dumping, || panic!("oops")));
+    assert!(res.is_err());
+    assert_eq!(serde_json::to_string(&value).unwrap(), r#"{"f":42}"#);
+}

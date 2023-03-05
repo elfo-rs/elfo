@@ -2,8 +2,12 @@
 
 use derive_more::Deref;
 
-pub use self::rate_limiter::{RateLimit, RateLimiter};
+pub use self::{
+    likely::*,
+    rate_limiter::{RateLimit, RateLimiter},
+};
 
+mod likely;
 mod rate_limiter;
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Deref)]
@@ -44,8 +48,8 @@ macro_rules! ward {
 
 #[macro_export]
 macro_rules! cooldown {
-    ($period:expr, $body:expr) => {{
-        use std::{
+    ($period:expr) => {{
+        use ::std::{
             sync::atomic::{AtomicU64, Ordering},
             time::UNIX_EPOCH,
         };
@@ -62,7 +66,14 @@ macro_rules! cooldown {
             }
         });
 
-        if res.is_ok() {
+        res.is_ok()
+    }};
+    ($period:expr, $body:expr) => {{
+        #[deprecated(note = "use `if cooldown!(duration) { .. }` instead")]
+        fn deprecation() {}
+
+        if $crate::cooldown!($period) {
+            deprecation();
             $body
         }
     }};

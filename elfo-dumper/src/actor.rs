@@ -1,33 +1,33 @@
-use std::{error::Error as StdError, iter, sync::Arc};
+use std::{iter, panic, sync::Arc, time::Duration};
 
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
-use metrics::counter;
 use parking_lot::Mutex;
-use tokio::{task, time::Duration};
-use tracing::{error, info, warn};
+use tokio::task;
+use tracing::{error, info};
 
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
 
-use elfo_utils::{cooldown, ward};
-
 use elfo::{
-    dumping::{self, MessageName, INTERNAL_CLASS},
+    dumping::INTERNAL_CLASS,
     group::TerminationPolicy,
     messages::{ConfigUpdated, Terminate, UpdateConfig},
     routers::{MapRouter, Outcome},
+    scope::{self, SerdeMode},
     signal::{Signal, SignalKind},
     time::Interval,
     ActorGroup, Context, Schema,
 };
+use elfo_utils::ward;
 
 use crate::{
-    compact_dump::CompactDump,
     config::Config,
-    dump_buffer::{AppendError, DumpBuffer},
-    dump_storage::{DumpRegistry, DumpStorage},
-    file_registry::FileRegistry,
+    dump_storage::{Drain, DumpRegistry, DumpStorage},
+    file_registry::{FileHandle, FileRegistry},
+    reporter::{Report, Reporter},
+    rule_set::RuleSet,
+    serializer::Serializer,
 };
 
 #[message(elfo = elfo_core)]
@@ -87,29 +87,34 @@ impl Dumper {
             .await
             .wrap_err("cannot open the dump file")?;
 
-        let mut buffer = DumpBuffer::new(self.ctx.config().max_dump_size);
+        let mut serializer = Serializer::new(self.dump_registry.class());
+        let mut rule_set = RuleSet::new(self.dump_registry.class());
+        let mut reporter = Reporter::new(self.ctx.config().log_cooldown);
         let mut need_to_terminate = false;
+
+        rule_set.configure(&self.ctx.config().rules);
 
         let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);
         let interval = Interval::new(|| DumpingTick);
         // TODO: `interval.after` to set random time shift.
-        interval.set_period(self.ctx.config().interval);
+        interval.set_period(self.ctx.config().write_interval);
 
         let mut ctx = self.ctx.clone().with(&signal).with(&interval);
 
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
-                // TODO: check the file on `ValidateConfig`
                 ConfigUpdated => {
                     let config = ctx.config();
-                    interval.set_period(config.interval);
-                    buffer.configure(config.max_dump_size);
+                    interval.set_period(config.write_interval);
 
                     path = config.path(ctx.key());
                     self.file_registry
                         .open(&path, false)
                         .await
                         .wrap_err("cannot open the dump file")?;
+
+                    rule_set.configure(&config.rules);
+                    reporter.configure(config.log_cooldown);
 
                     if let Some(m) = &self.manager {
                         m.dump_storage.lock().configure(config.registry_capacity);
@@ -126,74 +131,42 @@ impl Dumper {
                         .wrap_err("cannot reopen the dump file")?;
                 }
                 DumpingTick => {
-                    let timeout = ctx.config().interval;
+                    let timeout = ctx.config().write_interval;
                     let dump_registry = self.dump_registry.clone();
                     let file = self.file_registry.acquire(&path).await;
 
-                    // TODO: run inside scope?
-                    let report = task::spawn_blocking(move || -> Result<Report> {
-                        let mut name_buffer = String::new();
-                        let mut errors = Vec::new();
-                        let mut written = 0;
+                    // A blocking background task that writes a lot of dumps in batch.
+                    // It's much faster than calling tokio's async functions.
+                    let background = move || -> Result<(Serializer, RuleSet, Reporter)> {
+                        let mut report = Report::default();
 
-                        dumping::set_in_dumping(true);
+                        let res = scope::with_serde_mode(SerdeMode::Dumping, || {
+                            write_dumps(
+                                dump_registry.drain(timeout),
+                                &mut serializer,
+                                &mut rule_set,
+                                file,
+                                &mut report,
+                            )
+                        });
 
-                        for dump in dump_registry.drain(timeout) {
-                            let d =
-                                CompactDump::new(&dump, dump_registry.class(), &mut name_buffer);
+                        reporter.add(report);
 
-                            match buffer.append(&d) {
-                                Ok(buf) => {
-                                    written += 1;
+                        res?;
+                        Ok((serializer, rule_set, reporter))
+                    };
 
-                                    if let Some(buf) = buf {
-                                        file.write(buf).context("cannot write to the dump file")?;
-                                    }
-                                }
-                                Err(AppendError::LimitExceeded(_limit)) => {
-                                    // TODO: add to separate `errors`.
-                                }
-                                Err(AppendError::SerializationFailed(err)) => {
-                                    // TODO: avoid this hardcode.
-                                    if errors.len() < 3
-                                        && !errors
-                                            .iter()
-                                            .any(|(name, _)| name == &dump.message_name)
-                                    {
-                                        errors.push((dump.message_name, err));
-                                    }
-                                }
-                            }
+                    // Run the background task and wait until it's completed.
+                    let scope = scope::expose();
+                    match task::spawn_blocking(|| scope.sync_within(background)).await {
+                        Ok(Ok(state)) => {
+                            serializer = state.0;
+                            rule_set = state.1;
+                            reporter = state.2;
                         }
-
-                        if let Some(buf) = buffer.take() {
-                            file.write(buf).context("cannot write to the dump file")?;
-                        }
-
-                        dumping::set_in_dumping(false);
-
-                        Ok(Report {
-                            buffer,
-                            errors,
-                            written,
-                        })
-                    })
-                    .await
-                    .expect("failed to dump")?;
-
-                    counter!("elfo_written_dumps_total", report.written);
-                    buffer = report.buffer;
-
-                    // TODO: add a metrics for failed dumps.
-                    cooldown!(Duration::from_secs(15), {
-                        for (message_name, error) in report.errors {
-                            warn!(
-                                message = %message_name,
-                                error = &error as &(dyn StdError),
-                                "cannot serialize"
-                            );
-                        }
-                    });
+                        Ok(Err(err)) => return Err(err),
+                        Err(err) => panic::resume_unwind(err.into_panic()),
+                    }
 
                     if need_to_terminate {
                         break;
@@ -247,10 +220,27 @@ impl Dumper {
     }
 }
 
-struct Report {
-    buffer: DumpBuffer,
-    errors: Vec<(MessageName, serde_json::Error)>,
-    written: u64,
+fn write_dumps(
+    dumps: Drain<'_>,
+    serializer: &mut Serializer,
+    rule_set: &mut RuleSet,
+    file: FileHandle,
+    report: &mut Report,
+) -> Result<()> {
+    for dump in dumps {
+        let params = rule_set.get(dump.message_protocol, &dump.message_name);
+        let chunk = ward!(serializer.append(&dump, params), continue);
+        file.write(chunk).context("cannot write to the dump file")?;
+    }
+
+    let (chunk, new_report) = serializer.take();
+    report.merge(new_report);
+
+    if let Some(chunk) = chunk {
+        file.write(chunk).context("cannot write to the dump file")?;
+    }
+
+    Ok(())
 }
 
 fn collect_classes(map: &FxHashSet<&'static str>) -> Vec<String> {

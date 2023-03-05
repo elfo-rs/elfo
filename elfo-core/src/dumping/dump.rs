@@ -188,9 +188,26 @@ pub enum Direction {
 
 // === MessageName ===
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 #[stability::unstable]
 pub struct MessageName(&'static str, Option<&'static str>);
+
+impl<'a> PartialEq<&'a str> for MessageName {
+    fn eq(&self, s: &&'a str) -> bool {
+        if let Some(variant) = self.1 {
+            s.split_once("::")
+                .map_or(false, |(n, v)| n == self.0 && v == variant)
+        } else {
+            self.0 == *s
+        }
+    }
+}
+
+impl PartialEq<MessageName> for &'_ str {
+    fn eq(&self, s: &MessageName) -> bool {
+        s == self
+    }
+}
 
 impl fmt::Display for MessageName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -283,4 +300,23 @@ impl MessageKind {
             MK::Response { request_id, .. } => Self::Response(request_id.data().as_ffi()),
         }
     }
+}
+
+#[test]
+fn message_name() {
+    assert_eq!(MessageName::from("A"), "A");
+    assert_ne!(MessageName::from("A"), "AB");
+    assert_eq!(MessageName::from(("A", "B")), "A::B");
+    assert_ne!(MessageName::from(("A", "B")), "AB::B");
+    assert_eq!("A", MessageName::from("A"), "A");
+
+    assert_eq!(Cow::from(MessageName::from("A")), "A");
+    assert_eq!(Cow::from(MessageName::from(("A", "B"))), "A::B");
+
+    let mut buf = String::new();
+    assert_eq!(MessageName::from("A").to_str(&mut buf), "A");
+    assert_eq!(MessageName::from(("A", "B")).to_str(&mut buf), "A::B");
+
+    assert_eq!(MessageName::from("A").to_string(), "A");
+    assert_eq!(MessageName::from(("A", "B")).to_string(), "A::B");
 }

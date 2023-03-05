@@ -148,7 +148,6 @@ impl DumpRegistry {
 
 // === Fund ===
 
-// TODO: NUMA awareness.
 struct Fund {
     config: DumpRegistryConfig,
     // Empty + filled + active + used by `Drain`.
@@ -422,7 +421,7 @@ mod tests {
 
             let msg = drain.next().unwrap();
             assert_eq!(msg.sequence_no, SequenceNo::try_from(2).unwrap());
-            assert_eq!(msg.timestamp, Timestamp::from_nanos(42)); // TODO: improve the mock.
+            assert_eq!(msg.timestamp, Timestamp::from_nanos(42));
             assert_eq!(msg.message_name, "2");
             let msg = drain.next().unwrap();
             assert_eq!(msg.message_name, "3");
