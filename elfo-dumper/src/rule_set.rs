@@ -5,7 +5,7 @@ use tracing::level_filters::LevelFilter;
 
 use elfo_core::dumping::MessageName;
 
-use crate::config::{OnOverflow, Rule};
+use crate::config::{LogLevel, OnOverflow, Rule};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DumpParams {
@@ -80,11 +80,26 @@ fn collect_params(rules: &[Rule], protocol: &'static str, message: &MessageName)
         .for_each(|r| {
             params.max_size = r.max_size.map(|s| s.0 as _).unwrap_or(params.max_size);
             params.on_overflow = r.on_overflow.unwrap_or(params.on_overflow);
-            params.log_on_overflow = r.log_on_overflow.unwrap_or(params.log_on_overflow);
-            params.log_on_failure = r.log_on_failure.unwrap_or(params.log_on_failure);
+            params.log_on_overflow = r
+                .log_on_overflow
+                .map_or(params.log_on_overflow, convert_level);
+            params.log_on_failure = r
+                .log_on_failure
+                .map_or(params.log_on_failure, convert_level);
         });
 
     params
+}
+
+fn convert_level(level: LogLevel) -> LevelFilter {
+    match level {
+        LogLevel::Trace => LevelFilter::TRACE,
+        LogLevel::Debug => LevelFilter::DEBUG,
+        LogLevel::Info => LevelFilter::INFO,
+        LogLevel::Warn => LevelFilter::WARN,
+        LogLevel::Error => LevelFilter::ERROR,
+        LogLevel::Off => LevelFilter::OFF,
+    }
 }
 
 #[test]
@@ -112,13 +127,13 @@ fn it_works() {
             protocol: Some("proto_b".into()),
             message: Some("B".into()),
             max_size: Some(ByteSize(3)),
-            log_on_overflow: Some(LevelFilter::INFO),
+            log_on_overflow: Some(LogLevel::Info),
             ..Rule::default()
         },
         Rule {
             message: Some("B".into()),
             max_size: Some(ByteSize(4)),
-            log_on_failure: Some(LevelFilter::ERROR),
+            log_on_failure: Some(LogLevel::Error),
             ..Rule::default()
         },
     ];
