@@ -114,12 +114,13 @@ impl Serializer {
 
         // Serialize the message into a temporary buffer with limitation.
         let mut wr = LimitedWrite::new(&mut self.message_buffer, params.max_size);
-        match serde_json::to_writer(&mut wr, &*dump.message) {
+        let limit_reached = match serde_json::to_writer(&mut wr, &*dump.message) {
             Ok(()) => {
                 // Initially, the serialization was limited, but not now. Why?
                 // We applied the limit to the whole buffer, not only to the
                 // message. That's not very accurate, but faster to do.
                 // Now we need simply to repeat serialization without the limit.
+                false
             }
             Err(err) if !wr.limit_reached => {
                 return Err(err);
@@ -133,12 +134,15 @@ impl Serializer {
 
                 // Override the message and try to serialize into the output buffer again.
                 compact_dump.message = Some(message);
+                true
             }
-        }
+        };
 
         serde_json::to_writer(&mut self.output, &compact_dump)
             .map(|_| {
-                self.report.add_overflow(dump, true, params);
+                if limit_reached {
+                    self.report.add_overflow(dump, true, params);
+                }
                 true
             })
             .map_err(|err| {
