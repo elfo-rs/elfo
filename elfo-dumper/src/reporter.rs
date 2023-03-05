@@ -107,7 +107,7 @@ fn merge_maps<K: Eq + Hash, V>(
 pub(crate) struct Reporter {
     report: Report,
     last_report_time: Option<Instant>,
-    warn_cooldown: Duration,
+    log_cooldown: Duration,
 }
 
 macro_rules! event_dyn_level {
@@ -127,16 +127,16 @@ macro_rules! event_dyn_level {
 }
 
 impl Reporter {
-    pub(crate) fn new(warn_cooldown: Duration) -> Self {
+    pub(crate) fn new(log_cooldown: Duration) -> Self {
         Self {
             report: Report::default(),
             last_report_time: None,
-            warn_cooldown,
+            log_cooldown,
         }
     }
 
-    pub(crate) fn configure(&mut self, warn_cooldown: Duration) {
-        self.warn_cooldown = warn_cooldown;
+    pub(crate) fn configure(&mut self, log_cooldown: Duration) {
+        self.log_cooldown = log_cooldown;
     }
 
     pub(crate) fn add(&mut self, report: Report) {
@@ -190,7 +190,7 @@ impl Reporter {
         }
 
         self.last_report_time
-            .map_or(true, |t| t.elapsed() >= self.warn_cooldown)
+            .map_or(true, |t| t.elapsed() >= self.log_cooldown)
     }
 }
 

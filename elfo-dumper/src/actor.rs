@@ -89,7 +89,7 @@ impl Dumper {
 
         let mut serializer = Serializer::new(self.dump_registry.class());
         let mut rule_set = RuleSet::new(self.dump_registry.class());
-        let mut reporter = Reporter::new(self.ctx.config().warn_cooldown);
+        let mut reporter = Reporter::new(self.ctx.config().log_cooldown);
         let mut need_to_terminate = false;
 
         rule_set.configure(&self.ctx.config().rules);
@@ -97,7 +97,7 @@ impl Dumper {
         let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);
         let interval = Interval::new(|| DumpingTick);
         // TODO: `interval.after` to set random time shift.
-        interval.set_period(self.ctx.config().interval);
+        interval.set_period(self.ctx.config().write_interval);
 
         let mut ctx = self.ctx.clone().with(&signal).with(&interval);
 
@@ -105,7 +105,7 @@ impl Dumper {
             msg!(match envelope {
                 ConfigUpdated => {
                     let config = ctx.config();
-                    interval.set_period(config.interval);
+                    interval.set_period(config.write_interval);
 
                     path = config.path(ctx.key());
                     self.file_registry
@@ -114,7 +114,7 @@ impl Dumper {
                         .wrap_err("cannot open the dump file")?;
 
                     rule_set.configure(&config.rules);
-                    reporter.configure(config.warn_cooldown);
+                    reporter.configure(config.log_cooldown);
 
                     if let Some(m) = &self.manager {
                         m.dump_storage.lock().configure(config.registry_capacity);
@@ -131,7 +131,7 @@ impl Dumper {
                         .wrap_err("cannot reopen the dump file")?;
                 }
                 DumpingTick => {
-                    let timeout = ctx.config().interval;
+                    let timeout = ctx.config().write_interval;
                     let dump_registry = self.dump_registry.clone();
                     let file = self.file_registry.acquire(&path).await;
 

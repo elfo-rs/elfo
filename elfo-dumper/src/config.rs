@@ -43,15 +43,15 @@ pub struct Config {
     /// * `path/all.dump` - one file.
     /// * `path/{class}.dump` - file per class.
     pub path: String,
-    /// How often dumpers should flush dumps to files.
+    /// How often dumpers should write dumps to files.
     /// `500ms` by default.
-    #[serde(with = "humantime_serde", default = "default_interval")]
-    pub interval: Duration,
+    #[serde(with = "humantime_serde", default = "default_write_interval")]
+    pub write_interval: Duration,
     /// In order to avoid noisy logs about skipped, failed and truncated dumps,
     /// they are logged with this specified cooldown.
     /// `1m` by default.
-    #[serde(with = "humantime_serde", default = "default_warn_cooldown")]
-    pub warn_cooldown: Duration,
+    #[serde(with = "humantime_serde", default = "default_log_cooldown")]
+    pub log_cooldown: Duration,
     /// The maximum number of dumps in memory per class. If exceeded, old
     /// dumps are dropped.
     /// `3_000_000` by default.
@@ -113,11 +113,11 @@ impl Config {
     }
 }
 
-fn default_interval() -> Duration {
+fn default_write_interval() -> Duration {
     Duration::from_millis(500)
 }
 
-fn default_warn_cooldown() -> Duration {
+fn default_log_cooldown() -> Duration {
     Duration::from_secs(60)
 }
 
