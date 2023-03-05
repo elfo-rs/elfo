@@ -1,10 +1,8 @@
 //! Includes structs and functions to work with dumping.
 //! For more details see [The Actoromicon](https://actoromicon.rs/ch05-03-dumping.md.html).
 
-// Stable.
-pub use self::hider::hide;
+use serde::{Serialize, Serializer};
 
-// Unstable.
 #[cfg(feature = "unstable")] // TODO: patch `stability`, again.
 pub use self::{
     control::{CheckResult, DumpingControl},
@@ -37,14 +35,15 @@ mod control;
 mod dump;
 mod dumper;
 mod extract_name;
-mod hider;
 mod raw;
 mod recorder;
 mod sequence_no;
 
-// TODO: move to `scope::set_serde_env(SerdeMode::Dumping)`
-//#[doc(hidden)]
-#[stability::unstable]
-pub fn set_in_dumping(flag: bool) {
-    hider::set_in_dumping(flag);
+/// Dumps a field as `<hidden>`.
+pub fn hide<T: Serialize, S: Serializer>(value: &T, serializer: S) -> Result<S::Ok, S::Error> {
+    if crate::scope::serde_mode() == crate::scope::SerdeMode::Dumping {
+        serializer.serialize_str("<hidden>")
+    } else {
+        value.serialize(serializer)
+    }
 }

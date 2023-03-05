@@ -14,7 +14,7 @@ use elfo::{
     group::TerminationPolicy,
     messages::{ConfigUpdated, Terminate, UpdateConfig},
     routers::{MapRouter, Outcome},
-    scope,
+    scope::{self, SerdeMode},
     signal::{Signal, SignalKind},
     time::Interval,
     ActorGroup, Context, Schema,
@@ -139,15 +139,15 @@ impl Dumper {
                     let background = move || -> Result<(Serializer, RuleSet, Reporter)> {
                         let mut report = Report::default();
 
-                        dumping::set_in_dumping(true);
-                        let res = write_dumps(
-                            dump_registry.drain(timeout),
-                            &mut serializer,
-                            &mut rule_set,
-                            file,
-                            &mut report,
-                        );
-                        dumping::set_in_dumping(false);
+                        let res = scope::with_serde_mode(SerdeMode::Dumping, || {
+                            write_dumps(
+                                dump_registry.drain(timeout),
+                                &mut serializer,
+                                &mut rule_set,
+                                file,
+                                &mut report,
+                            )
+                        });
 
                         reporter.add(report);
 
