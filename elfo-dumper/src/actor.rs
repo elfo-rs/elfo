@@ -1,16 +1,13 @@
-use std::{error::Error as StdError, iter, mem, panic, sync::Arc};
+use std::{iter, panic, sync::Arc, time::Duration};
 
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
-use metrics::counter;
 use parking_lot::Mutex;
-use tokio::{task, time::Duration};
-use tracing::{debug, error, info, trace, warn, Level};
+use tokio::task;
+use tracing::{error, info};
 
 use elfo_core as elfo;
 use elfo_macros::{message, msg_raw as msg};
-
-use elfo_utils::{cooldown, ward};
 
 use elfo::{
     dumping::{self, INTERNAL_CLASS},
@@ -22,13 +19,15 @@ use elfo::{
     time::Interval,
     ActorGroup, Context, Schema,
 };
+use elfo_utils::ward;
 
 use crate::{
     config::Config,
     dump_storage::{Drain, DumpRegistry, DumpStorage},
     file_registry::{FileHandle, FileRegistry},
+    reporter::{Report, Reporter},
     rule_set::RuleSet,
-    serializer::{Report, Serializer},
+    serializer::Serializer,
 };
 
 #[message(elfo = elfo_core)]
@@ -90,7 +89,7 @@ impl Dumper {
 
         let mut serializer = Serializer::new(self.dump_registry.class());
         let mut rule_set = RuleSet::new(self.dump_registry.class());
-        let mut report = Report::default();
+        let mut reporter = Reporter::default();
         let mut need_to_terminate = false;
 
         rule_set.configure(&self.ctx.config().rules);
@@ -137,7 +136,9 @@ impl Dumper {
 
                     // A blocking background task that writes a lot of dumps in batch.
                     // It's much faster than calling tokio's async functions.
-                    let background = move || -> Result<(Serializer, RuleSet, Report)> {
+                    let background = move || -> Result<(Serializer, RuleSet, Reporter)> {
+                        let mut report = Report::default();
+
                         dumping::set_in_dumping(true);
                         let res = write_dumps(
                             dump_registry.drain(timeout),
@@ -148,11 +149,10 @@ impl Dumper {
                         );
                         dumping::set_in_dumping(false);
 
-                        // Update metrics and print errors.
-                        handle_report(&mut report, res.is_err());
+                        reporter.add(report);
 
                         res?;
-                        Ok((serializer, rule_set, report))
+                        Ok((serializer, rule_set, reporter))
                     };
 
                     // Run the background task and wait until it's completed.
@@ -161,7 +161,7 @@ impl Dumper {
                         Ok(Ok(state)) => {
                             serializer = state.0;
                             rule_set = state.1;
-                            report = state.2;
+                            reporter = state.2;
                         }
                         Ok(Err(err)) => return Err(err),
                         Err(err) => panic::resume_unwind(err.into_panic()),
@@ -239,57 +239,6 @@ fn write_dumps(
     }
 
     Ok(())
-}
-
-macro_rules! event_dyn_level {
-    ($level:expr, $($t:tt)*) => {
-        if $level == Level::ERROR {
-            error!($($t)*)
-        } else if $level == Level::WARN {
-            warn!($($t)*)
-        } else if $level == Level::INFO {
-            info!($($t)*)
-        } else if $level == Level::DEBUG {
-            debug!($($t)*)
-        } else if $level == Level::TRACE {
-            trace!($($t)*)
-        }
-    }
-}
-
-// TODO: add metrics for failed and lost dumps.
-fn handle_report(report: &mut Report, force: bool) {
-    counter!("elfo_written_dumps_total", report.appended as u64);
-    report.appended = 0;
-
-    if force || cooldown!(Duration::from_secs(60)) {
-        let report = mem::take(report);
-
-        for ((protocol, name), info) in report.failed {
-            event_dyn_level!(
-                info.level,
-                message = "cannot serialize message, skipped",
-                message_protocol = %protocol,
-                message_name = %name,
-                error = &info.error as &(dyn StdError),
-                count = info.count,
-            );
-        }
-
-        for ((protocol, name, truncated), info) in report.overflow {
-            event_dyn_level!(
-                info.level,
-                message = if truncated {
-                    "too big message, truncated"
-                } else {
-                    "too big message, skipped"
-                },
-                message_protocol = %protocol,
-                message_name = %name,
-                count = info.count,
-            );
-        }
-    }
 }
 
 fn collect_classes(map: &FxHashSet<&'static str>) -> Vec<String> {

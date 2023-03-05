@@ -1,16 +1,14 @@
-use std::{borrow::Cow, collections::hash_map::Entry, hash::Hash, io, mem};
+use std::{borrow::Cow, io, mem};
 
-use fxhash::FxHashMap;
 use serde::ser::SerializeStruct;
-use tracing::Level;
 
 use elfo_core::{
-    dumping::{Dump, MessageKind, MessageName},
+    dumping::{Dump, MessageKind},
     node::{self, NodeNo},
 };
-use elfo_utils::{unlikely, ward};
+use elfo_utils::unlikely;
 
-use crate::{config::OnOverflow, rule_set::DumpParams};
+use crate::{config::OnOverflow, reporter::Report, rule_set::DumpParams};
 
 // === Serializer ===
 
@@ -171,91 +169,6 @@ impl Serializer {
     }
 }
 
-// === Report ===
-
-type MessageProtocol = &'static str;
-
-#[derive(Debug, Default)]
-pub(crate) struct Report {
-    pub(crate) appended: usize,
-    pub(crate) failed: FxHashMap<(MessageProtocol, MessageName), FailedDumpInfo>,
-    pub(crate) overflow: FxHashMap<(MessageProtocol, MessageName, bool), OverflowDumpInfo>,
-    // If new fields are added, update `Report::merge()`.
-}
-
-#[derive(Debug)]
-pub(crate) struct FailedDumpInfo {
-    pub(crate) level: Level,
-    pub(crate) error: serde_json::Error,
-    pub(crate) count: usize,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct OverflowDumpInfo {
-    pub(crate) level: Level,
-    pub(crate) count: usize,
-}
-
-impl Report {
-    #[cold]
-    fn add_failed(&mut self, dump: &Dump, error: serde_json::Error, params: &DumpParams) {
-        let level = ward!(params.log_on_failure.into_level());
-
-        self.failed
-            .entry((dump.message_protocol, dump.message_name.clone()))
-            .and_modify(|info| {
-                info.level = level;
-                info.count += 1;
-            })
-            .or_insert_with(|| FailedDumpInfo {
-                level,
-                error,
-                count: 1,
-            });
-    }
-
-    #[cold]
-    fn add_overflow(&mut self, dump: &Dump, truncated: bool, params: &DumpParams) {
-        let level = ward!(params.log_on_failure.into_level());
-
-        self.overflow
-            .entry((dump.message_protocol, dump.message_name.clone(), truncated))
-            .and_modify(|info| {
-                info.level = level;
-                info.count += 1;
-            })
-            .or_insert_with(|| OverflowDumpInfo { level, count: 1 });
-    }
-
-    pub(crate) fn merge(&mut self, another: Report) {
-        self.appended += another.appended;
-
-        merge_maps(&mut self.failed, another.failed, |this, that| {
-            this.level = that.level;
-            this.count += that.count;
-        });
-        merge_maps(&mut self.overflow, another.overflow, |this, that| {
-            this.level = that.level;
-            this.count += that.count;
-        });
-    }
-}
-
-fn merge_maps<K: Eq + Hash, V>(
-    dest: &mut FxHashMap<K, V>,
-    src: FxHashMap<K, V>,
-    f: impl Fn(&mut V, V),
-) {
-    for (key, that) in src {
-        match dest.entry(key) {
-            Entry::Vacant(entry) => {
-                entry.insert(that);
-            }
-            Entry::Occupied(mut entry) => f(entry.get_mut(), that),
-        }
-    }
-}
-
 // === CompactDump ===
 
 struct CompactDump<'a> {
@@ -350,9 +263,13 @@ impl<W: io::Write> io::Write for LimitedWrite<W> {
 
 #[cfg(test)]
 mod tests {
+    use fxhash::FxHashMap;
+    use tracing::Level;
+
     use elfo_core::{dumping::Timestamp, scope::Scope, tracing::TraceId, ActorMeta, Addr};
 
     use super::*;
+    use crate::reporter::OverflowDumpInfo;
 
     fn dump(sequence_no: u64, length: usize, is_good: bool) -> Dump {
         #[derive(serde::Serialize)]

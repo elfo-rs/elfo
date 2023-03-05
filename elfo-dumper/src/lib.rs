@@ -17,6 +17,7 @@ mod config;
 mod dump_storage;
 mod file_registry;
 mod recorder;
+mod reporter;
 mod rule_set;
 mod serializer;
 
