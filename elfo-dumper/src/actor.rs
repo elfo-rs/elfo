@@ -229,14 +229,15 @@ fn write_dumps(
 ) -> Result<()> {
     for dump in dumps {
         let params = rule_set.get(dump.message_protocol, &dump.message_name);
-        let (chunk, new_report) = ward!(serializer.append(&dump, params), continue);
+        let chunk = ward!(serializer.append(&dump, params), continue);
         file.write(chunk).context("cannot write to the dump file")?;
-        report.merge(new_report);
     }
 
-    if let Some((chunk, new_report)) = serializer.take() {
+    let (chunk, new_report) = serializer.take();
+    report.merge(new_report);
+
+    if let Some(chunk) = chunk {
         file.write(chunk).context("cannot write to the dump file")?;
-        report.merge(new_report);
     }
 
     Ok(())

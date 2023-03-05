@@ -8,7 +8,7 @@ use tokio::time::Instant;
 use tracing::{debug, error, info, trace, warn, Level};
 
 use elfo_core::dumping::{Dump, MessageName};
-use elfo_utils::{cooldown, ward};
+use elfo_utils::ward;
 
 use crate::rule_set::DumpParams;
 

@@ -48,7 +48,7 @@ impl Serializer {
         }
     }
 
-    pub(crate) fn append(&mut self, dump: &Dump, params: &DumpParams) -> Option<(&[u8], Report)> {
+    pub(crate) fn append(&mut self, dump: &Dump, params: &DumpParams) -> Option<&[u8]> {
         self.clear_if_needed();
 
         #[cfg(debug_assertions)]
@@ -151,9 +151,10 @@ impl Serializer {
             })
     }
 
-    pub(crate) fn take(&mut self) -> Option<(&[u8], Report)> {
+    pub(crate) fn take(&mut self) -> (Option<&[u8]>, Report) {
         self.clear_if_needed();
-        self.take_if_limit_exceeded(0)
+        let report = mem::take(&mut self.report);
+        (self.take_if_limit_exceeded(0), report)
     }
 
     fn clear_if_needed(&mut self) {
@@ -163,10 +164,10 @@ impl Serializer {
         }
     }
 
-    fn take_if_limit_exceeded(&mut self, limit: usize) -> Option<(&[u8], Report)> {
+    fn take_if_limit_exceeded(&mut self, limit: usize) -> Option<&[u8]> {
         if unlikely(self.output.len() > limit) {
             self.need_to_clear = true;
-            Some((&self.output, mem::take(&mut self.report)))
+            Some(&self.output)
         } else {
             None
         }
@@ -334,14 +335,16 @@ mod tests {
                 assert!(serializer.append(&sample, &DumpParams::default()).is_none());
             }
 
-            let (chunk, report) = serializer.append(&sample, &DumpParams::default()).unwrap();
+            let chunk = serializer.append(&sample, &DumpParams::default()).unwrap();
             assert!(chunk.ends_with(b"\n"));
+            let chunk = std::str::from_utf8(chunk).unwrap();
+            assert_eq!(chunk, format!("{expected}\n").repeat(expected_lines));
+
+            let (empty_chunk, report) = serializer.take();
+            assert!(empty_chunk.is_none());
             assert_eq!(report.appended, expected_lines);
             assert!(report.failed.is_empty());
             assert!(report.overflow.is_empty());
-
-            let chunk = std::str::from_utf8(chunk).unwrap();
-            assert_eq!(chunk, format!("{expected}\n").repeat(expected_lines));
         }
     }
 
@@ -371,8 +374,13 @@ mod tests {
                 .is_none());
         }
 
-        let (chunk, report) = serializer.append(&sample, &DumpParams::default()).unwrap();
+        let chunk = serializer.append(&sample, &DumpParams::default()).unwrap();
         assert!(chunk.ends_with(b"\n"));
+        let chunk = std::str::from_utf8(chunk).unwrap();
+        assert_eq!(chunk, format!("{expected}\n").repeat(expected_lines));
+
+        let (empty_chunk, report) = serializer.take();
+        assert!(empty_chunk.is_none());
         assert_eq!(report.appended, expected_lines);
         assert_eq!(report.overflow.len(), 1);
         assert_eq!(
@@ -390,9 +398,6 @@ mod tests {
             .error
             .to_string()
             .contains("key must be a string"));
-
-        let chunk = std::str::from_utf8(chunk).unwrap();
-        assert_eq!(chunk, format!("{expected}\n").repeat(expected_lines));
     }
 
     #[test]
@@ -417,8 +422,13 @@ mod tests {
         }
 
         // Must be truncated, too restrictive.
-        let (chunk, report) = serializer.append(&sample, &params).unwrap();
+        let chunk = serializer.append(&sample, &params).unwrap();
         assert!(chunk.ends_with(b"\n"));
+        let chunk = std::str::from_utf8(chunk).unwrap();
+        assert_eq!(chunk, format!("{expected}\n").repeat(expected_lines));
+
+        let (empty_chunk, report) = serializer.take();
+        assert!(empty_chunk.is_none());
         assert_eq!(report.appended, expected_lines);
         assert_eq!(report.overflow.len(), 1);
         assert_eq!(
@@ -429,9 +439,6 @@ mod tests {
             }
         );
         assert_eq!(report.failed.len(), 0);
-
-        let chunk = std::str::from_utf8(chunk).unwrap();
-        assert_eq!(chunk, format!("{expected}\n").repeat(expected_lines));
     }
 
     #[test]
@@ -448,7 +455,8 @@ mod tests {
                 assert!(serializer.append(&sample, &DumpParams::default()).is_none());
             }
 
-            let (chunk, report) = serializer.take().unwrap();
+            let (chunk, report) = serializer.take();
+            let chunk = chunk.unwrap();
             assert!(chunk.ends_with(b"\n"));
             assert_eq!(report.appended, expected_lines);
             assert!(report.failed.is_empty());
