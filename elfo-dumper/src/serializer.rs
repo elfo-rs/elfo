@@ -51,7 +51,6 @@ impl Serializer {
     pub(crate) fn append(&mut self, dump: &Dump, params: &DumpParams) -> Option<&[u8]> {
         self.clear_if_needed();
 
-        #[cfg(debug_assertions)]
         let prev_len = self.output.len();
 
         match self.do_append(dump, params) {
