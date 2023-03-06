@@ -160,8 +160,8 @@ impl Reporter {
             event_dyn_level!(
                 info.level,
                 message = "cannot serialize message, skipped",
-                message_protocol = %protocol,
-                message_name = %name,
+                protocol = %protocol,
+                name = %name,
                 error = &info.error as &(dyn StdError),
                 count = info.count,
             );
@@ -171,12 +171,12 @@ impl Reporter {
             event_dyn_level!(
                 info.level,
                 message = if truncated {
-                    "too big message, truncated"
+                    "too big dump, truncated"
                 } else {
-                    "too big message, skipped"
+                    "too big dump, skipped"
                 },
-                message_protocol = %protocol,
-                message_name = %name,
+                protocol = %protocol,
+                name = %name,
                 count = info.count,
             );
         }
