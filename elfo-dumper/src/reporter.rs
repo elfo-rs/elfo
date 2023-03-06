@@ -62,7 +62,7 @@ impl Report {
 
     #[cold]
     pub(crate) fn add_overflow(&mut self, dump: &Dump, truncated: bool, params: &DumpParams) {
-        let level = ward!(params.log_on_failure.into_level());
+        let level = ward!(params.log_on_overflow.into_level());
 
         self.overflow
             .entry((dump.message_protocol, dump.message_name.clone(), truncated))

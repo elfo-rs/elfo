@@ -268,7 +268,7 @@ impl<W: io::Write> io::Write for LimitedWrite<W> {
 #[cfg(test)]
 mod tests {
     use fxhash::FxHashMap;
-    use tracing::Level;
+    use tracing::{level_filters::LevelFilter, Level};
 
     use elfo_core::{dumping::Timestamp, scope::Scope, tracing::TraceId, ActorMeta, Addr};
 
@@ -412,6 +412,7 @@ mod tests {
         let params = DumpParams {
             max_size: 10,
             on_overflow: OnOverflow::Truncate,
+            log_on_overflow: LevelFilter::ERROR,
             ..DumpParams::default()
         };
 
@@ -433,7 +434,7 @@ mod tests {
         assert_eq!(
             report.overflow.values().next().unwrap(),
             &OverflowDumpInfo {
-                level: Level::WARN,
+                level: Level::ERROR,
                 count: expected_lines,
             }
         );
