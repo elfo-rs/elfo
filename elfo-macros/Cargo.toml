@@ -1,6 +1,6 @@
 [package]
 name = "elfo-macros"
-version = "0.1.14"
+version = "0.1.15"
 description = "Macros for matching and deriving messages"
 
 authors.workspace = true
@@ -11,5 +11,6 @@ edition.workspace = true
 proc-macro = true
 
 [dependencies]
+elfo-macros-impl = { version = "0.1.1", path = "../elfo-macros-impl" }
+
 syn = { version = "1.0.60", features = ["parsing", "printing"] }
-elfo-macros-impl = { version = "0.1.0", path = "../elfo-macros-impl" }

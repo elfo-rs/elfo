@@ -1,6 +1,6 @@
 [package]
 name = "elfo-test"
-version = "0.1.19"
+version = "0.1.20"
 description = "Test utils"
 
 authors.workspace = true
@@ -8,8 +8,8 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-elfo-macros = { version = "0.1.14", path = "../elfo-macros" }
-elfo-core = { version = "0.1.33", path = "../elfo-core", features = ["test-util"] }
+elfo-macros = { version = "0.1.15", path = "../elfo-macros" }
+elfo-core = { version = "0.1.35", path = "../elfo-core", features = ["test-util"] }
 elfo-configurer = { version = "0.1", path = "../elfo-configurer" }
 
 tokio = "1"

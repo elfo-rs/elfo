@@ -1,6 +1,6 @@
 [package]
 name = "elfo-macros-impl"
-version = "0.1.0"
+version = "0.1.1"
 description = "Macros for matching and deriving messages, implementation internals"
 
 authors.workspace = true
