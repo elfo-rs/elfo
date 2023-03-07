@@ -4,7 +4,7 @@ use futures_intrusive::sync::ManualResetEvent;
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     addr::Addr,
@@ -227,22 +227,7 @@ impl Actor {
             self.finished.set();
         }
 
-        let is_bad_kind = matches!(
-            status.kind,
-            ActorStatusKind::Alarming | ActorStatusKind::Failed
-        );
-
-        if let Some(details) = status.details.as_deref() {
-            if is_bad_kind {
-                error!(status = ?status.kind, %details, "status changed");
-            } else {
-                info!(status = ?status.kind, %details, "status changed");
-            }
-        } else if is_bad_kind {
-            error!(status = ?status.kind, "status changed");
-        } else {
-            info!(status = ?status.kind, "status changed");
-        };
+        log_status(&status);
 
         if status.kind != prev_status.kind {
             if !prev_status.is_finished() {
@@ -295,6 +280,22 @@ impl Actor {
             meta: self.meta.clone(),
             status: control.status.clone(),
         });
+    }
+}
+
+fn log_status(status: &ActorStatus) {
+    if let Some(details) = status.details.as_deref() {
+        match status.kind {
+            ActorStatusKind::Failed => error!(status = ?status.kind, %details, "status changed"),
+            ActorStatusKind::Alarming => warn!(status = ?status.kind, %details, "status changed"),
+            _ => info!(status = ?status.kind, %details, "status changed"),
+        }
+    } else {
+        match status.kind {
+            ActorStatusKind::Failed => error!(status = ?status.kind, "status changed"),
+            ActorStatusKind::Alarming => warn!(status = ?status.kind, "status changed"),
+            _ => info!(status = ?status.kind, "status changed"),
+        }
     }
 }
 

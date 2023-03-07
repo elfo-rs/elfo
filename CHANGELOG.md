@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Changed
+- status: `Alarming` is logged with `Warn` level instead of `Error`.
 
 ## [0.1.40] - 2023-03-07
 ### Added
