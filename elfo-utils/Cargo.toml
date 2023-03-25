@@ -13,7 +13,7 @@ harness = false
 
 [dependencies]
 derive_more = "0.99.11"
-quanta = "0.10"
+quanta = "0.11"
 
 [dev-dependencies]
 criterion = "0.4"
