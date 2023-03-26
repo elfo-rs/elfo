@@ -128,8 +128,8 @@ impl Configurer {
             }
         };
 
-        let configs = match Deserialize::deserialize(config) {
-            Ok(configs) => configs,
+        let config = match Deserialize::deserialize(config) {
+            Ok(config) => config,
             Err(error) => {
                 error!(%error, "invalid config");
                 return Err(vec![ReloadConfigsError {
@@ -142,12 +142,12 @@ impl Configurer {
 
         debug!("updating configs of system groups");
         updated_groups.extend(
-            self.update_configs(&configs, TopologyFilter::System, force)
+            self.update_configs(&config, TopologyFilter::System, force)
                 .await?,
         );
         debug!("updating configs of user groups");
         updated_groups.extend(
-            self.update_configs(&configs, TopologyFilter::User, force)
+            self.update_configs(&config, TopologyFilter::User, force)
                 .await?,
         );
 
@@ -165,11 +165,11 @@ impl Configurer {
 
     async fn update_configs(
         &mut self,
-        configs: &FxHashMap<String, Value>,
+        config: &Value,
         filter: TopologyFilter,
         force: bool,
     ) -> Result<Vec<String>, Vec<ReloadConfigsError>> {
-        let mut config_list = match_configs(&self.topology, configs, filter);
+        let mut config_list = match_configs(&self.topology, config, filter);
 
         // Filter up-to-date configs if needed.
         if !force {
@@ -316,7 +316,7 @@ enum TopologyFilter {
 
 fn match_configs(
     topology: &Topology,
-    configs: &FxHashMap<String, Value>,
+    config: &Value,
     filter: TopologyFilter,
 ) -> Vec<ConfigWithMeta> {
     topology
@@ -329,15 +329,15 @@ fn match_configs(
         })
         .map(|group| {
             let empty = Value::Map(Default::default());
-            let common = helpers::get_config(configs, "common").unwrap_or(&empty);
-            let config = helpers::get_config(configs, &group.name).cloned();
-            let config = helpers::add_defaults(config, common);
+            let common = helpers::lookup_value(config, "common").unwrap_or(&empty);
+            let group_config = helpers::lookup_value(config, &group.name).cloned();
+            let group_config = helpers::add_defaults(group_config, common);
 
             ConfigWithMeta {
                 group_name: group.name.clone(),
                 addr: group.addr,
-                hash: fxhash::hash64(&config),
-                config: AnyConfig::new(config),
+                hash: fxhash::hash64(&group_config),
+                config: AnyConfig::new(group_config),
             }
         })
         .collect()
