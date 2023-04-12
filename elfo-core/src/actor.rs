@@ -24,7 +24,7 @@ use elfo_macros::msg_raw as msg;
 // === ActorMeta ===
 
 /// Represents meta information about actor: his group and key.
-#[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActorMeta {
     pub group: String,
     pub key: String,
