@@ -11,17 +11,12 @@ pub(crate) struct Config {
     pub(crate) format: Format,
 }
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, Default, PartialEq, Deserialize)]
 pub(crate) enum Sink {
     File,
+    #[default]
     Stdout,
     // TODO: stdout + stderr
-}
-
-impl Default for Sink {
-    fn default() -> Self {
-        Sink::Stdout
-    }
 }
 
 #[derive(Debug, Deserialize, Default)]
