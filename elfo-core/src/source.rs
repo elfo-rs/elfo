@@ -91,7 +91,7 @@ pub struct Unattached<H> {
 }
 
 impl<H> Unattached<H> {
-    pub(crate) fn new(source: SourceArc<impl SourceStream>, handle: H) -> Self {
+    pub(crate) fn new(source: SourceArc<impl SourceStream + ?Sized>, handle: H) -> Self {
         Self {
             source: source.inner,
             handle,
@@ -106,17 +106,22 @@ impl<H> Unattached<H> {
 
 // === SourceArc ===
 
-pub(crate) struct SourceArc<S> {
+pub(crate) struct SourceArc<S: ?Sized> {
     inner: UntypedSourceArc,
     marker: PhantomData<S>,
 }
 
+impl<S: ?Sized> SourceArc<S> {
+    /// TODO
+    pub(crate) fn from_untyped(inner: UntypedSourceArc) -> Self {
+        let marker = PhantomData;
+        Self { inner, marker }
+    }
+}
+
 impl<S: SourceStream> SourceArc<S> {
     pub(crate) fn new(source: S) -> Self {
-        Self {
-            inner: UntypedSourceArc::new(source),
-            marker: PhantomData,
-        }
+        Self::from_untyped(UntypedSourceArc::new(source))
     }
 
     pub(crate) fn lock(&self) -> SourceStreamGuard<'_, S> {
@@ -127,7 +132,7 @@ impl<S: SourceStream> SourceArc<S> {
     }
 }
 
-impl<S> Clone for SourceArc<S> {
+impl<S: ?Sized> Clone for SourceArc<S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -138,7 +143,7 @@ impl<S> Clone for SourceArc<S> {
 
 // === SourceStreamGuard ===
 
-pub(crate) struct SourceStreamGuard<'a, S> {
+pub(crate) struct SourceStreamGuard<'a, S: ?Sized> {
     inner: MutexGuard<'a, StreamWithWaker<dyn SourceStream>>,
     marker: PhantomData<S>,
 }
@@ -163,6 +168,7 @@ impl<S: 'static> SourceStreamGuard<'_, S> {
 
 // === UntypedSourceArc ===
 
+// TODO: visibility.
 #[derive(Clone)]
 pub(crate) struct UntypedSourceArc(Arc<Mutex<StreamWithWaker<dyn SourceStream>>>);
 
@@ -172,7 +178,7 @@ struct StreamWithWaker<S: ?Sized> {
 }
 
 impl UntypedSourceArc {
-    fn new(stream: impl SourceStream) -> Self {
+    pub(crate) fn new(stream: impl SourceStream) -> Self {
         Self(Arc::new(Mutex::new(StreamWithWaker {
             waker: noop_waker(),
             stream,

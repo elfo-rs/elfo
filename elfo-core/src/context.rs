@@ -506,9 +506,8 @@ impl<C, K, S> Context<C, K, S> {
                     }
                 },
                 option = self.sources.next(), if !self.sources.is_empty() => {
-                    // Sources cannot return `None` for now.
-                    // TODO: check unicycle again.
-                    let envelope = option.expect("source cannot return None");
+                    // TODO: is it required if mailbox becomes source?
+                    let envelope = ward!(option, continue);
 
                     if let Some(envelope) = self.post_recv(envelope) {
                         return Some(envelope);

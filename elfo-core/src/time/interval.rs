@@ -18,7 +18,13 @@ use crate::{
 
 /// A source that emits messages periodically. Clones the message on every tick.
 ///
+/// # Tracing
+///
+/// Every message starts a new trace, thus a new trace id is generated and
+/// assigned to the current scope.
+///
 /// # Example
+///
 /// ```
 /// # use std::time::Duration;
 /// # use elfo_core as elfo;
@@ -101,6 +107,7 @@ impl<M: Message> Interval<M> {
     /// ```
     ///
     /// # Panics
+    ///
     /// If `period` is zero.
     #[track_caller]
     pub fn set_period(&self, period: Duration) {
@@ -131,6 +138,7 @@ impl<M: Message> Interval<M> {
     /// Reschedules the timer if it's already started.
     ///
     /// # Panics
+    ///
     /// If `period` is zero.
     #[track_caller]
     pub fn start(&self, period: Duration) {
@@ -144,6 +152,7 @@ impl<M: Message> Interval<M> {
     /// Reschedules the timer if it's already started.
     ///
     /// # Panics
+    ///
     /// If `period` is zero.
     #[track_caller]
     pub fn start_after(&self, delay: Duration, period: Duration) {
@@ -157,9 +166,11 @@ impl<M: Message> Interval<M> {
     /// Reschedules the timer if it's already started.
     ///
     /// # Panics
+    ///
     /// If `period` is zero.
     ///
     /// # Stability
+    ///
     /// This method is unstable, because it accepts [`tokio::time::Instant`],
     /// which will be replaced in the future to support other runtimes.
     #[stability::unstable]

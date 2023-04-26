@@ -1,175 +1,291 @@
 use std::{
+    any::Any,
     future::Future,
-    mem,
     pin::Pin,
     task::{self, Poll},
 };
 
 use futures::{self, channel::mpsc, sink::SinkExt as _, stream, stream::StreamExt as _};
-use parking_lot::Mutex;
+use pin_project::pin_project;
 use sealed::sealed;
 
 use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
-    message::Message,
+    message::{AnyMessage, Message},
+    scope::{self, Scope},
+    source::{SourceArc, SourceStream, Unattached, UntypedSourceArc},
     tracing::TraceId,
 };
 
 // === Stream ===
 
-/// A wrapper around [`futures::Stream`] implementing `Source` trait.
+/// A source that emits messages from a provided stream or future.
 ///
-/// Stream items must implement [`Message`].
-pub struct Stream<S>(Mutex<StreamState<S>>);
-
-enum StreamState<S> {
-    Active(Pin<Box<S>>),
-    Closed,
+/// Possible items of a stream (the `M` parameter):
+/// * Any instance of [`Message`].
+/// * `Result<impl Message, impl Message>`.
+///
+/// Note: the `new()` constructor is reserved until `AsyncIterator` is
+/// [stabilized](https://github.com/rust-lang/rust/issues/79024).
+///
+/// # Tracing
+///
+/// * If the stream created using [`Stream::from_futures03()`], every message
+///   starts a new trace.
+/// * If created using [`Stream::once()`], the current trace is preserved.
+/// * If created using [`Stream::generate()`], the current trace is preserved.
+///
+/// You can always use [`scope::set_trace_id()`] to override the current trace.
+///
+/// # Examples
+///
+/// Create a stream based on [`futures::Stream`]:
+/// ```
+/// # use elfo_core as elfo;
+/// # async fn exec(mut ctx: elfo::Context) {
+/// # use elfo::{message, msg};
+/// use elfo::stream::Stream;
+///
+/// #[message]
+/// struct MyItem(u32);
+///
+/// let stream = futures::stream::iter(vec![MyItem(0), MyItem(1)]);
+/// ctx.attach(Stream::from_futures03(stream));
+///
+/// while let Some(envelope) = ctx.recv().await {
+///     msg!(match envelope {
+///         MyItem => { /* ... */ },
+///     });
+/// }
+/// # }
+/// ```
+///
+/// Perform a background request:
+/// ```
+/// # use elfo_core as elfo;
+/// # async fn exec(mut ctx: elfo::Context) {
+/// # use elfo::{message, msg};
+/// # #[message]
+/// # struct SomeEvent;
+/// use elfo::stream::Stream;
+///
+/// #[message]
+/// struct DataFetched(u32);
+///
+/// #[message]
+/// struct FetchDataFailed(String);
+///
+/// async fn fetch_data() -> Result<DataFetched, FetchDataFailed> {
+///     // ...
+/// # todo!()
+/// }
+///
+/// while let Some(envelope) = ctx.recv().await {
+///     msg!(match envelope {
+///         SomeEvent => {
+///             ctx.attach(Stream::once(fetch_data()));
+///         },
+///         DataFetched => { /* ... */ },
+///         FetchDataFailed => { /* ... */ },
+///     });
+/// }
+/// # }
+/// ```
+///
+/// Generate a stream (an alternative to `async-stream`):
+/// ```
+/// # use elfo_core as elfo;
+/// # async fn exec(mut ctx: elfo::Context) {
+/// # use elfo::{message, msg};
+/// use elfo::stream::Stream;
+///
+/// #[message]
+/// struct SomeMessage(u32);
+///
+/// #[message]
+/// struct AnotherMessage;
+///
+/// ctx.attach(Stream::generate(|mut e| async move {
+///     e.emit(SomeMessage(42)).await;
+///     e.emit(AnotherMessage).await;
+/// }));
+///
+/// while let Some(envelope) = ctx.recv().await {
+///     msg!(match envelope {
+///         SomeMessage(no) | AnotherMessage => { /* ... */ },
+///     });
+/// }
+/// # }
+/// ```
+pub struct Stream<M = AnyMessage> {
+    source: SourceArc<StreamSource<dyn futures::Stream<Item = M> + Send + 'static>>,
 }
 
-impl<S> Stream<S> {
-    /// Wraps [`futures::Stream`] into the source.
-    pub fn new(stream: S) -> Self {
-        Self(Mutex::new(StreamState::Active(Box::pin(stream))))
-    }
-
-    /// Drops the inner stream and uses the provided one instead.
-    pub fn set(&self, stream: S) {
-        *self.0.lock() = StreamState::Active(Box::pin(stream));
-    }
-
-    /// Replaces the inner stream with the provided one.
-    pub fn replace(&self, stream: S) -> Option<S>
+impl<M: StreamItem> Stream<M> {
+    /// Creates an unattached source based on the provided [`futures::Stream`].
+    pub fn from_futures03<S>(stream: S) -> Unattached<Self>
     where
-        S: Unpin,
+        S: futures::Stream<Item = M> + Send + 'static,
     {
-        let new_state = StreamState::Active(Box::pin(stream));
-        match mem::replace(&mut *self.0.lock(), new_state) {
-            StreamState::Active(stream) => Some(*Pin::into_inner(stream)),
-            StreamState::Closed => None,
-        }
+        Self::from_futures03_inner(stream, true)
     }
 
-    /// Drops the inner stream and stops emitting messages.
-    ///
-    /// [`Stream::set`] and [`Stream::replace`] can be used after this method.
-    pub fn close(&self) -> bool {
-        !matches!(
-            mem::replace(&mut *self.0.lock(), StreamState::Closed),
-            StreamState::Closed
-        )
-    }
-}
-
-impl Stream<()> {
-    /// Generates a stream from the provided generator.
-    ///
-    /// The generator receives [`Yielder`] as an argument and should return a
-    /// future that will produce messages by using [`Yielder::emit`].
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// #[message]
-    /// struct SomeMessage(u32);
-    ///
-    /// #[message]
-    /// struct AnotherMessage;
-    ///
-    /// let stream = Stream::generate(|mut y| async move {
-    ///     y.emit(SomeMessage(42)).await;
-    ///     y.emit(AnotherMessage).await;
-    /// });
-    ///
-    /// let mut ctx = ctx.with(&stream);
-    /// ```
-    pub fn generate<G, F>(generator: G) -> Stream<impl futures::Stream<Item = Envelope>>
+    /// Creates an uattached source based on the provided future.
+    pub fn once<F>(future: F) -> Unattached<Self>
     where
-        G: FnOnce(Yielder) -> F,
-        F: Future<Output = ()>,
+        F: Future<Output = M> + Send + 'static,
     {
-        // Highly inspired by https://github.com/Riateche/stream_generator.
-        let (tx, rx) = mpsc::channel(0);
-        let gen = generator(Yielder(tx));
-        let fake = stream::once(gen).filter_map(|_| async { None });
-        Stream::new(stream::select(fake, rx))
+        Self::from_futures03_inner(stream::once(future), false)
     }
-}
 
-#[sealed]
-impl<S> crate::source::Source for Stream<S>
-where
-    S: futures::Stream,
-    S::Item: StreamItem,
-{
-    fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
-        let mut state = self.0.lock();
+    // TODO: `is_terminated() -> bool`.
 
-        let stream = match &mut *state {
-            StreamState::Active(stream) => stream,
-            StreamState::Closed => return Poll::Pending, // TODO: `Poll::Ready(None)`?
+    fn from_futures03_inner(
+        stream: impl futures::Stream<Item = M> + Send + 'static,
+        rewrite_trace_id: bool,
+    ) -> Unattached<Self> {
+        let source = StreamSource {
+            scope: scope::expose(),
+            rewrite_trace_id,
+            inner: stream,
         };
 
-        // TODO: should we poll streams in a separate scope?
-        match stream.as_mut().poll_next(cx) {
-            Poll::Ready(Some(item)) => Poll::Ready(Some(item.unify())),
-            Poll::Ready(None) => {
-                *state = StreamState::Closed;
-                Poll::Ready(None)
-            }
-            Poll::Pending => Poll::Pending,
+        if rewrite_trace_id {
+            source.scope.set_trace_id(TraceId::generate());
         }
+
+        let this = Self {
+            // See comments for `from_untyped` to get details why we use it directly here.
+            source: SourceArc::from_untyped(UntypedSourceArc::new(source)),
+        };
+
+        Unattached::new(this.source.clone(), this)
     }
 }
 
-// === Yielder ===
+impl Stream<AnyMessage> {
+    /// Generates a stream from the provided generator.
+    ///
+    /// The generator receives [`Emitter`] as an argument and should return a
+    /// future that will produce messages by using [`Emitter::emit`].
+    pub fn generate<G, F>(generator: G) -> Unattached<Self>
+    where
+        G: FnOnce(Emitter) -> F,
+        F: Future<Output = ()> + Send + 'static,
+    {
+        // Highly inspired by https://github.com/Riateche/stream_generator.
+        // TODO: `mpsc::channel` produces overhead here, replace with a custom slot.
+        let (tx, rx) = mpsc::channel(0);
+        let gen = generator(Emitter(tx));
+        let gen = stream::once(gen).filter_map(|_| async { None });
+        let stream = stream::select(gen, rx);
+
+        Self::from_futures03_inner(stream, false)
+    }
+}
+
+#[pin_project]
+struct StreamSource<S: ?Sized> {
+    scope: Scope,
+    rewrite_trace_id: bool,
+    #[pin]
+    inner: S,
+}
+
+impl<S, M> SourceStream for StreamSource<S>
+where
+    S: futures::Stream<Item = M> + ?Sized + Send + 'static,
+    M: StreamItem,
+{
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        // We never call `SourceArc::lock().pinned()`, so it can be unimplemented.
+        // Anyway, it cannot be implemented because `StreamSource<_>` is DST.
+        unreachable!()
+    }
+
+    fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
+        let this = self.project();
+
+        // TODO: get rid of cloning here.
+        // tokio's `LocalKey` API forces us to clone the current scope on every poll.
+        // Usually, it's not a problem, but `Scope` contains a shared `Arc` among
+        // all actors inside a group, which can lead to a high contention.
+        // We can avoid it by implementing a custom `LocalKey`.
+        let scope = this.scope.clone();
+
+        scope.sync_within(|| match this.inner.poll_next(cx) {
+            Poll::Ready(Some(msg)) => {
+                let trace_id = scope::trace_id();
+
+                this.scope.set_trace_id(if *this.rewrite_trace_id {
+                    TraceId::generate()
+                } else {
+                    trace_id
+                });
+
+                let msg = msg.to_any_message();
+                let kind = MessageKind::Regular { sender: Addr::NULL };
+                let envelope = Envelope::with_trace_id(msg, kind, trace_id);
+
+                Poll::Ready(Some(envelope))
+            }
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => {
+                this.scope.set_trace_id(scope::trace_id());
+                Poll::Pending
+            }
+        })
+    }
+}
+
+// === Emitter ===
 
 /// A handle for emitting messages from [`Stream::generate`].
-pub struct Yielder(mpsc::Sender<Envelope>);
+pub struct Emitter(mpsc::Sender<AnyMessage>);
 
-impl Yielder {
+impl Emitter {
     /// Emits a message from the generated stream.
     pub async fn emit<M: Message>(&mut self, message: M) {
-        let _ = self.0.send(message.unify()).await;
+        let _ = self.0.send(AnyMessage::new(message)).await;
     }
 }
 
 // === StreamItem ===
 
-#[doc(hidden)]
 #[sealed]
-pub trait StreamItem {
+pub trait StreamItem: 'static {
+    /// This method is private.
     #[doc(hidden)]
-    fn unify(self) -> Envelope;
+    fn to_any_message(self) -> AnyMessage;
 }
 
-// TODO(v0.2): it's inconsistent with `ctx.send()` that accepts only messages.
-#[doc(hidden)]
 #[sealed]
-impl StreamItem for Envelope {
+impl StreamItem for AnyMessage {
+    /// This method is private.
     #[doc(hidden)]
-    fn unify(self) -> Envelope {
+    fn to_any_message(self) -> AnyMessage {
         self
     }
 }
 
-// TODO(v0.2): remove it, use explicit `scope::set_trace_id()` instead.
-#[doc(hidden)]
 #[sealed]
-impl<M: Message> StreamItem for (TraceId, M) {
+impl<M: Message> StreamItem for M {
+    /// This method is private.
     #[doc(hidden)]
-    fn unify(self) -> Envelope {
-        let kind = MessageKind::Regular { sender: Addr::NULL };
-        Envelope::with_trace_id(self.1, kind, self.0).upcast()
+    fn to_any_message(self) -> AnyMessage {
+        AnyMessage::new(self)
     }
 }
 
-#[doc(hidden)]
 #[sealed]
-impl<M: Message> StreamItem for M {
+impl<M1: Message, M2: Message> StreamItem for Result<M1, M2> {
+    /// This method is private.
     #[doc(hidden)]
-    fn unify(self) -> Envelope {
-        (TraceId::generate(), self).unify()
+    fn to_any_message(self) -> AnyMessage {
+        match self {
+            Ok(msg) => msg.to_any_message(),
+            Err(msg) => msg.to_any_message(),
+        }
     }
 }

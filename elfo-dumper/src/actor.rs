@@ -7,7 +7,7 @@ use tokio::task;
 use tracing::{error, info};
 
 use elfo_core::{
-    dumping::{self, MessageName, INTERNAL_CLASS},
+    dumping::INTERNAL_CLASS,
     group::TerminationPolicy,
     message,
     messages::{ConfigUpdated, Terminate, UpdateConfig},

@@ -382,10 +382,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn it_works() {
-        time::pause();
-
         let meta = Arc::new(ActorMeta {
             group: "group".into(),
             key: "key".into(),

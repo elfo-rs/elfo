@@ -92,10 +92,8 @@ mod tests {
     #[message]
     struct Timeout;
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn it_works() {
-        time::pause();
-
         let sw = Stopwatch::new(|| Timeout);
 
         for _ in 0..=5 {

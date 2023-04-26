@@ -86,6 +86,7 @@ impl Proxy {
 
     #[track_caller]
     pub fn recv(&mut self) -> impl Future<Output = Envelope> + '_ {
+        // We use a separate timer here to avoid interaction with the tokio's timer.
         static STD_CLOCK: Lazy<StdClock> = Lazy::new(StdClock::new);
         static TIMER_SERVICE: Lazy<Arc<TimerService>> = Lazy::new(|| {
             let timer_service = Arc::new(TimerService::new(&*STD_CLOCK));

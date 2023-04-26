@@ -102,8 +102,8 @@ pub struct Rule {
 pub enum OnOverflow {
     /// Skip a dump, don't write to a file.
     Skip,
-    /// Truncate a dump, serialize as an incomplete string with appended `
-    /// TRUNCATED`.
+    /// Truncate a dump, serialize as an incomplete JSON with appended
+    /// `TRUNCATED`.
     Truncate,
 }
 

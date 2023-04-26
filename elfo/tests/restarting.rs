@@ -36,10 +36,8 @@ async fn it_restarts_explicitly() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn it_restarts_with_timeout_after_failures() {
-    tokio::time::pause();
-
     let schema = ActorGroup::new().exec(move |mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
@@ -75,10 +73,8 @@ impl Drop for GuardedMessage {
 }
 
 // See #68.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn mailbox_must_be_dropped() {
-    tokio::time::pause();
-
     let schema = ActorGroup::new().exec(|_ctx| async {
         tokio::time::sleep(Duration::from_secs(1)).await;
         anyhow::bail!("boom!");
