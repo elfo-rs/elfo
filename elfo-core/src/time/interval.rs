@@ -6,13 +6,14 @@ use std::{
 };
 
 use pin_project::pin_project;
+use sealed::sealed;
 use tokio::time::{Duration, Instant, Sleep};
 
 use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
-    source::{SourceArc, SourceHandle, SourceStream, Unattached},
+    source::{SourceArc, SourceStream, Unattached},
     tracing::TraceId,
 };
 
@@ -55,7 +56,8 @@ pub struct Interval<M> {
     source: SourceArc<IntervalSource<M>>,
 }
 
-impl<M> SourceHandle for Interval<M> {
+#[sealed]
+impl<M> crate::source::SourceHandle for Interval<M> {
     fn is_terminated(&self) -> bool {
         self.source.is_terminated()
     }

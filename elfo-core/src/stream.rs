@@ -14,7 +14,7 @@ use crate::{
     envelope::{Envelope, MessageKind},
     message::{AnyMessage, Message},
     scope::{self, Scope},
-    source::{SourceArc, SourceHandle, SourceStream, Unattached, UntypedSourceArc},
+    source::{SourceArc, SourceStream, Unattached, UntypedSourceArc},
     tracing::TraceId,
 };
 
@@ -124,7 +124,8 @@ pub struct Stream<M = AnyMessage> {
     source: SourceArc<StreamSource<dyn futures::Stream<Item = M> + Send + 'static>>,
 }
 
-impl<M> SourceHandle for Stream<M> {
+#[sealed]
+impl<M> crate::source::SourceHandle for Stream<M> {
     fn is_terminated(&self) -> bool {
         self.source.is_terminated()
     }

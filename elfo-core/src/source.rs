@@ -108,6 +108,7 @@ impl<H> Unattached<H> {
 // === SourceHandle ===
 
 /// Defines common methods for sources.
+#[sealed(pub(crate))]
 pub trait SourceHandle {
     /// Returns `true` if the source has stopped producing messages.
     fn is_terminated(&self) -> bool;
