@@ -24,7 +24,9 @@ pub use elfo_telemeter as telemeter;
 pub use elfo_test as test;
 
 pub mod prelude {
-    pub use super::{assert_msg, assert_msg_eq, message, msg, ActorGroup, Context, Schema};
+    pub use super::{
+        assert_msg, assert_msg_eq, message, msg, ActorGroup, Context, Schema, SourceHandle,
+    };
 }
 
 #[deprecated(since = "0.1.1")]

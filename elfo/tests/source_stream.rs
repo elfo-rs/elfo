@@ -23,26 +23,39 @@ async fn once() {
 
     let group = ActorGroup::new().exec(|mut ctx| async move {
         let mut trace_ids = HashMap::new();
+        let mut terminated = None::<Stream<_>>;
 
         while let Some(envelope) = ctx.recv().await {
+            if let Some(handle) = terminated.take() {
+                assert!(handle.is_terminated());
+            }
+
             msg!(match envelope {
                 msg @ Start => {
                     let override_trace_id = msg.override_trace_id.then(TraceId::generate);
-                    trace_ids.insert(msg.no, override_trace_id.unwrap_or_else(scope::trace_id));
+                    let no = msg.no;
 
-                    ctx.attach(Stream::once(async move {
+                    let handle = ctx.attach(Stream::once(async move {
                         if let Some(trace_id) = override_trace_id {
                             scope::set_trace_id(trace_id);
                         }
 
-                        time::sleep(Duration::from_millis(msg.no)).await;
-                        Finished(msg.no)
+                        time::sleep(Duration::from_millis(no)).await;
+                        Finished(no)
                     }));
+
+                    assert!(!handle.is_terminated());
+                    let data = (handle, override_trace_id.unwrap_or_else(scope::trace_id));
+                    trace_ids.insert(no, data);
                 }
                 msg @ Finished(no) => {
-                    let expected_trace_id = trace_ids.remove(&no).unwrap();
+                    let (handle, expected_trace_id) = trace_ids.remove(&no).unwrap();
                     assert_eq!(scope::trace_id(), expected_trace_id);
                     ctx.send(msg).await.unwrap();
+
+                    assert!(!handle.is_terminated()); // become after the next `recv()`
+                    assert!(terminated.is_none());
+                    terminated = Some(handle);
                 }
             });
         }
@@ -140,6 +153,65 @@ async fn from_futures03() {
     assert_msg_eq!(proxy.recv().await, Produced::new(35, 1)); // 70
     assert_msg_eq!(proxy.recv().await, Produced::new(49, 1)); // 98
     assert_msg_eq!(proxy.recv().await, Produced::new(35, 2)); // 105
+}
+
+#[tokio::test(start_paused = true)]
+async fn terminate() {
+    #[message]
+    struct Start(u64);
+
+    #[message]
+    struct Terminate(u64);
+
+    #[message]
+    #[derive(PartialEq, Eq)]
+    struct Produced(u64);
+
+    let group = ActorGroup::new().exec(|mut ctx| async move {
+        let mut handles = HashMap::new();
+
+        while let Some(envelope) = ctx.recv().await {
+            msg!(match envelope {
+                Start(group) => {
+                    let stream = futures::stream::unfold(0, move |no| async move {
+                        time::sleep(Duration::from_millis(group)).await;
+                        Some((Produced(group), no + 1))
+                    });
+
+                    let stream = ctx.attach(Stream::from_futures03(stream));
+                    handles.insert(group, stream);
+                }
+                Terminate(group) => {
+                    let handle = handles.remove(&group).unwrap();
+                    assert!(!handle.is_terminated());
+                    handle.terminate();
+                }
+                Produced(group) => {
+                    ctx.send(Produced(group)).await.unwrap();
+                }
+            });
+        }
+    });
+
+    let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
+    assert!(proxy.try_recv().is_none());
+
+    proxy.send(Start(11)).await;
+    proxy.send(Start(23)).await;
+    proxy.send(Start(35)).await;
+
+    assert_msg_eq!(proxy.recv().await, Produced(11)); // 11
+    assert_msg_eq!(proxy.recv().await, Produced(11)); // 22
+    assert_msg_eq!(proxy.recv().await, Produced(23)); // 23
+    assert_msg_eq!(proxy.recv().await, Produced(11)); // 33
+    proxy.send(Terminate(11)).await;
+    assert_msg_eq!(proxy.recv().await, Produced(35)); // 35
+    assert_msg_eq!(proxy.recv().await, Produced(23)); // 46
+    proxy.send(Terminate(23)).await;
+    assert_msg_eq!(proxy.recv().await, Produced(35)); // 70
+    proxy.send(Terminate(35)).await;
+
+    assert!(proxy.try_recv().is_none());
 }
 
 #[tokio::test(start_paused = true)]

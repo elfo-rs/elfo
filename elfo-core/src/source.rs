@@ -85,6 +85,7 @@ pub(crate) trait SourceStream: Send + 'static {
     fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>>;
 }
 
+#[must_use = "sources do nothing unless you attach them"]
 pub struct Unattached<H> {
     source: UntypedSourceArc,
     handle: H,
@@ -104,6 +105,19 @@ impl<H> Unattached<H> {
     }
 }
 
+// === SourceHandle ===
+
+/// Defines common methods for sources.
+pub trait SourceHandle {
+    /// Returns `true` if the source has stopped producing messages.
+    fn is_terminated(&self) -> bool;
+
+    /// Terminates the source.
+    ///
+    /// The `Drop` will be called only on one of the following `(try_)recv()`.
+    fn terminate(self);
+}
+
 // === SourceArc ===
 
 pub(crate) struct SourceArc<S: ?Sized> {
@@ -112,10 +126,33 @@ pub(crate) struct SourceArc<S: ?Sized> {
 }
 
 impl<S: ?Sized> SourceArc<S> {
-    /// TODO
+    /// Creates a new `SourceArc` from an unsized `SourceStream`:
+    /// `SourceArc::new()` cannot be used until `CoerceUnsized` is
+    /// [stabilized](https://github.com/rust-lang/rust/issues/18598).
     pub(crate) fn from_untyped(inner: UntypedSourceArc) -> Self {
         let marker = PhantomData;
         Self { inner, marker }
+    }
+}
+
+impl<S: ?Sized> SourceArc<S> {
+    pub(crate) fn is_terminated(&self) -> bool {
+        // TODO: deadlock if `is_terminated()` is called inside `poll_recv()`.
+        //       consider using `ReentrantMutex` or split the mutex instead.
+        self.inner.0.lock().is_terminated
+    }
+
+    pub(crate) fn terminate(&self) {
+        // TODO: deadlock if `terminate()` is called inside `poll_recv()`.
+        //       consider using `ReentrantMutex` or split the mutex instead.
+        let mut inner = self.inner.0.lock();
+
+        if inner.is_terminated {
+            return;
+        }
+
+        inner.is_terminated = true;
+        inner.waker.wake_by_ref();
     }
 }
 
@@ -150,6 +187,13 @@ pub(crate) struct SourceStreamGuard<'a, S: ?Sized> {
 
 impl<S: 'static> SourceStreamGuard<'_, S> {
     pub(crate) fn wake(&mut self) {
+        // If the source is terminated, we should not wake it up.
+        // It solves [the ABA problem in unicycle](https://github.com/udoprog/unicycle/issues/27),
+        // but only for our own configuration methods.
+        if self.inner.is_terminated {
+            return;
+        }
+
         self.inner.waker.wake_by_ref();
     }
 
@@ -168,12 +212,12 @@ impl<S: 'static> SourceStreamGuard<'_, S> {
 
 // === UntypedSourceArc ===
 
-// TODO: visibility.
 #[derive(Clone)]
 pub(crate) struct UntypedSourceArc(Arc<Mutex<StreamWithWaker<dyn SourceStream>>>);
 
 struct StreamWithWaker<S: ?Sized> {
     waker: Waker,
+    is_terminated: bool,
     stream: S,
 }
 
@@ -181,6 +225,7 @@ impl UntypedSourceArc {
     pub(crate) fn new(stream: impl SourceStream) -> Self {
         Self(Arc::new(Mutex::new(StreamWithWaker {
             waker: noop_waker(),
+            is_terminated: false,
             stream,
         })))
     }
@@ -191,6 +236,10 @@ impl futures::Stream for UntypedSourceArc {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
         let mut guard = self.0.lock();
+
+        if guard.is_terminated {
+            return Poll::Ready(None);
+        }
 
         // SAFETY: The data inside the `Mutex` is pinned and we don't move it out here.
         let result = unsafe { Pin::new_unchecked(&mut guard.stream) }.poll_recv(cx);
@@ -203,12 +252,16 @@ impl futures::Stream for UntypedSourceArc {
             guard.waker = cx.waker().clone();
         }
 
+        if matches!(result, Poll::Ready(None)) {
+            guard.is_terminated = true;
+        }
+
         result
     }
 }
 
 fn noop_waker() -> Waker {
-    // SAFETY: it returns an object that upholds the right RawWaker contract.
+    // SAFETY: it returns an object that upholds the right `RawWaker` contract.
     unsafe { Waker::from_raw(noop_raw_waker()) }
 }
 

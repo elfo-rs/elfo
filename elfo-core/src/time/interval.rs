@@ -12,7 +12,7 @@ use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
-    source::{SourceArc, SourceStream, Unattached},
+    source::{SourceArc, SourceHandle, SourceStream, Unattached},
     tracing::TraceId,
 };
 
@@ -53,6 +53,16 @@ use crate::{
 /// ```
 pub struct Interval<M> {
     source: SourceArc<IntervalSource<M>>,
+}
+
+impl<M> SourceHandle for Interval<M> {
+    fn is_terminated(&self) -> bool {
+        self.source.is_terminated()
+    }
+
+    fn terminate(self) {
+        self.source.terminate();
+    }
 }
 
 const NEVER: Duration = Duration::new(0, 0);

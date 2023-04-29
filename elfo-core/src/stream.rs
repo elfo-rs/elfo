@@ -14,7 +14,7 @@ use crate::{
     envelope::{Envelope, MessageKind},
     message::{AnyMessage, Message},
     scope::{self, Scope},
-    source::{SourceArc, SourceStream, Unattached, UntypedSourceArc},
+    source::{SourceArc, SourceHandle, SourceStream, Unattached, UntypedSourceArc},
     tracing::TraceId,
 };
 
@@ -28,6 +28,8 @@ use crate::{
 ///
 /// Note: the `new()` constructor is reserved until `AsyncIterator` is
 /// [stabilized](https://github.com/rust-lang/rust/issues/79024).
+///
+/// All wrapped streams and futures are fused by the implementation.
 ///
 /// # Tracing
 ///
@@ -122,6 +124,16 @@ pub struct Stream<M = AnyMessage> {
     source: SourceArc<StreamSource<dyn futures::Stream<Item = M> + Send + 'static>>,
 }
 
+impl<M> SourceHandle for Stream<M> {
+    fn is_terminated(&self) -> bool {
+        self.source.is_terminated()
+    }
+
+    fn terminate(self) {
+        self.source.terminate();
+    }
+}
+
 impl<M: StreamItem> Stream<M> {
     /// Creates an unattached source based on the provided [`futures::Stream`].
     pub fn from_futures03<S>(stream: S) -> Unattached<Self>
@@ -138,8 +150,6 @@ impl<M: StreamItem> Stream<M> {
     {
         Self::from_futures03_inner(stream::once(future), false)
     }
-
-    // TODO: `is_terminated() -> bool`.
 
     fn from_futures03_inner(
         stream: impl futures::Stream<Item = M> + Send + 'static,
