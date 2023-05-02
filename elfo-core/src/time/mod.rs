@@ -1,11 +1,22 @@
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
-pub use self::{interval::Interval, stopwatch::Stopwatch};
+use tokio::time::Instant;
+
+pub use self::{delay::Delay, interval::Interval};
 
 pub(crate) use r#impl::*;
 
+mod delay;
 mod interval;
-mod stopwatch;
+
+fn far_future() -> Instant {
+    // Copied from `tokio`.
+    // Roughly 30 years from now.
+    // API does not provide a way to obtain max `Instant`
+    // or convert specific date in the future to instant.
+    // 1000 years overflows on macOS, 100 years overflows on FreeBSD.
+    Instant::now() + Duration::from_secs(86400 * 365 * 30)
+}
 
 #[cfg(test)]
 pub(crate) mod r#impl {

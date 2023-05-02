@@ -14,6 +14,7 @@ use crate::{
     envelope::{Envelope, MessageKind},
     message::Message,
     source::{SourceArc, SourceStream, Unattached},
+    time::far_future,
     tracing::TraceId,
 };
 
@@ -57,12 +58,14 @@ pub struct Interval<M> {
 }
 
 #[sealed]
-impl<M> crate::source::SourceHandle for Interval<M> {
+impl<M: Message> crate::source::SourceHandle for Interval<M> {
     fn is_terminated(&self) -> bool {
         self.source.is_terminated()
     }
 
     fn terminate(self) {
+        // Reset the sleep timer to prevent it from waking up.
+        self.stop();
         self.source.terminate();
     }
 }
@@ -85,7 +88,7 @@ impl<M: Message> Interval<M> {
             message,
             period: NEVER,
             is_delayed: false,
-            sleep: tokio::time::sleep_until(Instant::now()),
+            sleep: tokio::time::sleep_until(far_future()),
         });
 
         Unattached::new(source.clone(), Self { source })
@@ -193,6 +196,9 @@ impl<M: Message> Interval<M> {
     }
 
     /// Stops any ticks. To resume ticks use one of `start_*` methods.
+    ///
+    /// Note: it doesn't terminates the source. It means the source is present
+    /// in the source map until [`SourceHandle::terminate()`] is called.
     pub fn stop(&self) {
         self.schedule(Some(far_future()), NEVER);
     }
@@ -232,10 +238,12 @@ impl<M: Message> SourceStream for IntervalSource<M> {
         *this.is_delayed = false;
 
         // Reset the underlying timer.
+        // It would be nice to use `reset_without_reregister` here, but it's private.
+        // TODO: consider moving to `tokio::time::Interval`, which uses it internally.
         let new_deadline = this.sleep.deadline() + *this.period;
         this.sleep.reset(new_deadline);
 
-        // Emit a message.
+        // Emit the message.
         let message = this.message.clone();
         let kind = MessageKind::Regular { sender: Addr::NULL };
         let trace_id = TraceId::generate();
@@ -243,13 +251,4 @@ impl<M: Message> SourceStream for IntervalSource<M> {
 
         Poll::Ready(Some(envelope))
     }
-}
-
-fn far_future() -> Instant {
-    // Copied from `tokio`.
-    // Roughly 30 years from now.
-    // API does not provide a way to obtain max `Instant`
-    // or convert specific date in the future to instant.
-    // 1000 years overflows on macOS, 100 years overflows on FreeBSD.
-    Instant::now() + Duration::from_secs(86400 * 365 * 30)
 }
