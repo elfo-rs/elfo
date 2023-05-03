@@ -63,7 +63,7 @@ pub fn new() -> (PrintingLayer, Schema) {
 
     let shared = Arc::new(shared);
     let layer = PrintingLayer::new(shared.clone());
-    let schema = Logger::new(shared);
+    let schema = Logger::blueprint(shared);
 
     (layer, schema)
 }

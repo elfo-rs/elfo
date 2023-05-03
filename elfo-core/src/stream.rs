@@ -125,7 +125,7 @@ pub struct Stream<M = AnyMessage> {
 }
 
 #[sealed]
-impl<M> crate::source::SourceHandle for Stream<M> {
+impl<M: StreamItem> crate::source::SourceHandle for Stream<M> {
     fn is_terminated(&self) -> bool {
         self.source.is_terminated()
     }

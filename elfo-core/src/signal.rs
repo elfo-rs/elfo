@@ -1,203 +1,209 @@
 use std::{
+    any::Any,
     io,
     os::raw::c_int,
+    pin::Pin,
     task::{self, Poll},
 };
 
-use parking_lot::Mutex;
+use pin_project::pin_project;
 use sealed::sealed;
 use tokio::signal;
 #[cfg(unix)]
 use tokio::signal::unix;
-use tokio_util::sync::ReusableBoxFuture;
+#[cfg(windows)]
+use tokio::signal::windows;
 
 use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
+    source::{SourceArc, SourceStream, Unattached},
     tracing::TraceId,
 };
 
-/// `Source` that watches signals.
+/// A source that emits a message once a signal is received.
+/// Clones the message on every tick.
 ///
-/// All signals except `SignalKind::CtrlC` produces messages on UNIX system
-/// only. For other systems they produce nothing. It's useful and helps to
-/// avoid writing `#[cfg(unix)]` everywhere around signals.
-pub struct Signal<F> {
-    inner: Mutex<SignalInner>,
-    message_factory: F,
+/// It's based on the tokio implementation, so it should be useful to read
+/// about [caveats](https://docs.rs/tokio/latest/tokio/signal/unix/struct.Signal.html).
+///
+/// # Tracing
+///
+/// Every message starts a new trace, thus a new trace id is generated and
+/// assigned to the current scope.
+///
+/// # Example
+///
+/// ```
+/// # use std::time::Duration;
+/// # use elfo_core as elfo;
+/// # async fn exec(mut ctx: elfo::Context) {
+/// # use elfo::{message, msg};
+/// use elfo::signal::{Signal, SignalKind};
+///
+/// #[message]
+/// struct ReloadFile;
+///
+/// ctx.attach(Signal::new(SignalKind::UnixHangup, ReloadFile));
+///
+/// while let Some(envelope) = ctx.recv().await {
+///     msg!(match envelope {
+///         ReloadFile => { /* ... */ },
+///     });
+/// }
+/// # }
+/// ```
+pub struct Signal<M> {
+    source: SourceArc<SignalSource<M>>,
+}
+
+#[sealed]
+impl<M: Message> crate::source::SourceHandle for Signal<M> {
+    fn is_terminated(&self) -> bool {
+        self.source.is_terminated()
+    }
+
+    fn terminate(self) {
+        self.source.terminate();
+    }
+}
+
+#[pin_project]
+struct SignalSource<M> {
+    message: M,
+    inner: SignalInner,
 }
 
 enum SignalInner {
-    CtrlC(ReusableBoxFuture<'static, io::Result<()>>),
+    Disabled,
+    #[cfg(windows)]
+    WindowsCtrlC(windows::CtrlC),
     #[cfg(unix)]
     Unix(unix::Signal),
-    Empty,
 }
 
+/// A kind of signal to listen to.
+///
+/// * `Unix*` variants are available only on UNIX systems and produce nothing
+/// on other systems.
+/// * `Windows*` variants are available only on Windows and produce nothing
+/// on other systems.
+///
+/// It helps to avoid writing `#[cfg(_)]` everywhere around signals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SignalKind {
-    /// Completes when a “ctrl-c” notification is sent to the process.
-    ///
-    /// See <https://docs.rs/tokio/1.7.1/tokio/signal/fn.ctrl_c.html>
-    CtrlC,
+    /// The "ctrl-c" notification.
+    WindowsCtrlC,
 
-    /// Allows for listening to any valid OS signal.
-    Raw(c_int),
+    /// Any valid OS signal.
+    UnixRaw(c_int),
     /// SIGALRM
-    Alarm,
+    UnixAlarm,
     /// SIGCHLD
-    Child,
+    UnixChild,
     /// SIGHUP
-    Hangup,
+    UnixHangup,
     /// SIGINT
-    Interrupt,
+    UnixInterrupt,
     /// SIGIO
-    Io,
+    UnixIo,
     /// SIGPIPE
-    Pipe,
+    UnixPipe,
     /// SIGQUIT
-    Quit,
+    UnixQuit,
     /// SIGTERM
-    Terminate,
+    UnixTerminate,
     /// SIGUSR1
-    User1,
+    UnixUser1,
     /// SIGUSR2
-    User2,
+    UnixUser2,
     /// SIGWINCH
-    WindowChange,
+    UnixWindowChange,
 }
 
-impl<F> Signal<F> {
-    pub fn new(kind: SignalKind, message_factory: F) -> Self {
-        let inner = match kind {
-            // TODO: remove this line for `unix` after testing windows.
-            SignalKind::CtrlC => SignalInner::CtrlC(ReusableBoxFuture::new(signal::ctrl_c())),
-            #[cfg(unix)]
-            _ => match create_by_kind(kind) {
-                Ok(inner) => SignalInner::Unix(inner),
-                Err(err) => {
-                    tracing::warn!(
-                        kind = ?kind,
-                        error = %err,
-                        "failed to create a signal handler"
-                    );
-                    SignalInner::Empty
-                }
-            },
-            #[cfg(not(unix))]
-            _ => SignalInner::Empty,
+impl<M: Message> Signal<M> {
+    /// Creates an unattached instance of [`Signal`].
+    pub fn new(kind: SignalKind, message: M) -> Unattached<Self> {
+        let inner = SignalInner::new(kind).unwrap_or_else(|err| {
+            tracing::warn!(kind = ?kind, error = %err, "failed to create a signal handler");
+            SignalInner::Disabled
+        });
+
+        let source = SourceArc::new(SignalSource { message, inner });
+        Unattached::new(source.clone(), Self { source })
+    }
+
+    /// Replaces a stored message with the provided one.
+    pub fn set_message(&self, message: M) {
+        let mut guard = self.source.lock();
+        let source = guard.pinned().project();
+        *source.message = message;
+    }
+}
+
+impl SignalInner {
+    #[cfg(unix)]
+    fn new(kind: SignalKind) -> io::Result<SignalInner> {
+        use signal::unix::SignalKind as U;
+
+        let kind = match kind {
+            SignalKind::UnixRaw(signum) => U::from_raw(signum),
+            SignalKind::UnixAlarm => U::alarm(),
+            SignalKind::UnixChild => U::child(),
+            SignalKind::UnixHangup => U::hangup(),
+            SignalKind::UnixInterrupt => U::interrupt(),
+            SignalKind::UnixIo => U::io(),
+            SignalKind::UnixPipe => U::pipe(),
+            SignalKind::UnixQuit => U::quit(),
+            SignalKind::UnixTerminate => U::terminate(),
+            SignalKind::UnixUser1 => U::user_defined1(),
+            SignalKind::UnixUser2 => U::user_defined2(),
+            SignalKind::UnixWindowChange => U::window_change(),
+            _ => return Ok(SignalInner::Disabled),
         };
 
-        Self {
-            inner: Mutex::new(inner),
-            message_factory,
+        unix::signal(kind).map(SignalInner::Unix)
+    }
+
+    #[cfg(windows)]
+    fn new(kind: SignalKind) -> io::Result<SignalInner> {
+        match kind {
+            SignalKind::WindowsCtrlC => windows::ctrl_c().map(SignalInner::WindowsCtrlC),
+            _ => Ok(SignalInner::Disabled),
+        }
+    }
+
+    fn poll_recv(&mut self, cx: &mut task::Context<'_>) -> Poll<Option<()>> {
+        match self {
+            SignalInner::Disabled => Poll::Ready(None),
+            #[cfg(windows)]
+            SignalInner::WindowsCtrlC(inner) => inner.poll_recv(cx),
+            #[cfg(unix)]
+            SignalInner::Unix(inner) => inner.poll_recv(cx),
         }
     }
 }
 
-#[cfg(unix)]
-fn create_by_kind(kind: SignalKind) -> io::Result<unix::Signal> {
-    use signal::unix::SignalKind as TSK;
+impl<M: Message> SourceStream for SignalSource<M> {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 
-    let kind = match kind {
-        SignalKind::CtrlC => TSK::interrupt(),
-        SignalKind::Raw(signum) => TSK::from_raw(signum),
-        SignalKind::Alarm => TSK::alarm(),
-        SignalKind::Child => TSK::child(),
-        SignalKind::Hangup => TSK::hangup(),
-        SignalKind::Interrupt => TSK::interrupt(),
-        SignalKind::Io => TSK::io(),
-        SignalKind::Pipe => TSK::pipe(),
-        SignalKind::Quit => TSK::quit(),
-        SignalKind::Terminate => TSK::terminate(),
-        SignalKind::User1 => TSK::user_defined1(),
-        SignalKind::User2 => TSK::user_defined2(),
-        SignalKind::WindowChange => TSK::window_change(),
-    };
+    fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
+        let this = self.project();
 
-    unix::signal(kind)
-}
+        match this.inner.poll_recv(cx) {
+            Poll::Ready(Some(())) => {}
+            Poll::Ready(None) => return Poll::Ready(None),
+            Poll::Pending => return Poll::Pending,
+        }
 
-#[sealed]
-impl<M, F> crate::source::Source for Signal<F>
-where
-    F: Fn() -> M,
-    M: Message,
-{
-    fn poll_recv(&self, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {
-        match &mut *self.inner.lock() {
-            SignalInner::CtrlC(inner) => {
-                if let Err(err) = futures::ready!(inner.poll(cx)) {
-                    tracing::error!(error = %err, "failed to receive a signal");
-                }
-
-                assert!(inner.try_set(signal::ctrl_c()).is_ok());
-            }
-            #[cfg(unix)]
-            SignalInner::Unix(inner) => {
-                if !matches!(inner.poll_recv(cx), Poll::Ready(Some(()))) {
-                    return Poll::Pending;
-                }
-            }
-            SignalInner::Empty => return Poll::Pending,
-        };
-
-        let message = (self.message_factory)();
+        let message = this.message.clone();
         let kind = MessageKind::Regular { sender: Addr::NULL };
         let trace_id = TraceId::generate();
         let envelope = Envelope::with_trace_id(message, kind, trace_id).upcast();
         Poll::Ready(Some(envelope))
-    }
-}
-
-#[cfg(test)]
-#[cfg(feature = "test-util")]
-mod tests {
-    use super::*;
-
-    use futures::{future::poll_fn, poll};
-
-    use crate::{assert_msg, message, source::Source};
-
-    #[message]
-    struct SomeSignal;
-
-    #[tokio::test]
-    #[cfg(unix)]
-    async fn unix_signal() {
-        let signal = Signal::new(SignalKind::User1, || SomeSignal);
-
-        for _ in 0..=5 {
-            assert!(poll!(poll_fn(|cx| signal.poll_recv(cx))).is_pending());
-            send_signal(libc::SIGUSR1);
-            assert_msg!(
-                poll_fn(|cx| signal.poll_recv(cx)).await.unwrap(),
-                SomeSignal
-            );
-        }
-    }
-
-    #[tokio::test]
-    #[cfg(unix)]
-    async fn ctrl_c() {
-        let signal = Signal::new(SignalKind::CtrlC, || SomeSignal);
-
-        for _ in 0..=5 {
-            assert!(poll!(poll_fn(|cx| signal.poll_recv(cx))).is_pending());
-            send_signal(libc::SIGINT);
-            assert_msg!(
-                poll_fn(|cx| signal.poll_recv(cx)).await.unwrap(),
-                SomeSignal
-            );
-        }
-    }
-
-    fn send_signal(signal: libc::c_int) {
-        use libc::{getpid, kill};
-
-        unsafe {
-            assert_eq!(kill(getpid(), signal), 0);
-        }
     }
 }

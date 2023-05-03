@@ -26,6 +26,7 @@ use crate::{
 pub(crate) struct Logger {
     ctx: Context<Config>,
     shared: Arc<Shared>,
+    buffer: String,
 }
 
 /// Reload a log file, usually after rotation.
@@ -37,24 +38,29 @@ pub struct ReopenLogFile {}
 impl Logger {
     // TODO: rename it?
     #[allow(clippy::new_ret_no_self)]
-    pub(crate) fn new(shared: Arc<Shared>) -> Schema {
+    pub(crate) fn blueprint(shared: Arc<Shared>) -> Schema {
         ActorGroup::new()
             .config::<Config>()
             .termination_policy(TerminationPolicy::manually())
-            .exec(move |ctx| Logger::ctor(ctx, shared.clone()).main())
+            .exec(move |ctx| Logger::new(ctx, shared.clone()).main())
     }
 
-    fn ctor(ctx: Context<Config>, shared: Arc<Shared>) -> Self {
-        Self { ctx, shared }
+    fn new(ctx: Context<Config>, shared: Arc<Shared>) -> Self {
+        Self {
+            ctx,
+            shared,
+            buffer: String::with_capacity(1024),
+        }
     }
 
-    async fn main(self) {
-        let mut buffer = String::with_capacity(1024);
+    async fn main(mut self) {
         let mut file = open_file(self.ctx.config()).await;
         let mut use_colors = can_use_colors(self.ctx.config());
 
-        let signal = Signal::new(SignalKind::Hangup, ReopenLogFile::default);
-        let mut ctx = self.ctx.clone().with(&signal);
+        self.ctx.attach(Signal::new(
+            SignalKind::UnixHangup,
+            ReopenLogFile::default(),
+        ));
 
         // Note that we don't use `elfo::stream::Stream` here intentionally
         // to avoid cyclic dependences (`Context::recv()` logs all messages).
@@ -63,29 +69,29 @@ impl Logger {
                 event = self.shared.channel.receive() => {
                     let event = ward!(event, break);
 
-                    buffer.clear();
+                    self.buffer.clear();
 
                     if use_colors {
-                        self.format_event::<theme::ColoredTheme>(&mut buffer, event, ctx.config());
+                        self.format_event::<theme::ColoredTheme>(event);
                     } else {
-                        self.format_event::<theme::PlainTheme>(&mut buffer, event, ctx.config());
+                        self.format_event::<theme::PlainTheme>(event);
                     }
 
                     if let Some(file) = file.as_mut() {
                         // TODO: what about performance here?
-                        file.write_all(buffer.as_ref()).await.expect("cannot write to the config file");
+                        file.write_all(self.buffer.as_ref()).await.expect("cannot write to the config file");
                     } else {
-                        print!("{buffer}");
+                        print!("{}", self.buffer);
                     }
 
                     increment_counter!("elfo_written_events_total");
                 },
-                envelope = ctx.recv() => {
+                envelope = self.ctx.recv() => {
                     let envelope = ward!(envelope, break);
                     msg!(match envelope {
                         ReopenLogFile | ConfigUpdated => {
-                            file = open_file(ctx.config()).await;
-                            use_colors = can_use_colors(ctx.config());
+                            file = open_file(self.ctx.config()).await;
+                            use_colors = can_use_colors(self.ctx.config());
                         },
                         Terminate => {
                             // TODO: use phases instead of hardcoded delay.
@@ -103,12 +109,10 @@ impl Logger {
         }
     }
 
-    pub(super) fn format_event<T: theme::Theme>(
-        &self,
-        out: &mut String,
-        event: PreparedEvent,
-        config: &Config,
-    ) {
+    pub(super) fn format_event<T: theme::Theme>(&mut self, event: PreparedEvent) {
+        let out = &mut self.buffer;
+        let config = self.ctx.config();
+
         let payload = self
             .shared
             .pool

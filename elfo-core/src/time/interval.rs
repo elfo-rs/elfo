@@ -18,7 +18,8 @@ use crate::{
     tracing::TraceId,
 };
 
-/// A source that emits messages periodically. Clones the message on every tick.
+/// A source that emits messages periodically.
+/// Clones the message on every tick.
 ///
 /// # Tracing
 ///

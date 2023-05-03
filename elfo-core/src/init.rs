@@ -149,16 +149,14 @@ const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
 const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(7);
 
 async fn termination(mut ctx: Context, topology: Topology) {
-    let term_signal = Signal::new(SignalKind::Terminate, || TerminateSystem);
-    let ctrl_c_signal = Signal::new(SignalKind::CtrlC, || TerminateSystem);
-
-    let memory_usage_interval = ctx.attach(Interval::new(CheckMemoryUsageTick));
-
-    let mut ctx = ctx.with(&term_signal).with(&ctrl_c_signal);
+    ctx.attach(Signal::new(SignalKind::UnixTerminate, TerminateSystem));
+    ctx.attach(Signal::new(SignalKind::UnixInterrupt, TerminateSystem));
+    ctx.attach(Signal::new(SignalKind::WindowsCtrlC, TerminateSystem));
 
     let memory_tracker = match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
         Ok(tracker) => {
-            memory_usage_interval.start(CHECK_MEMORY_USAGE_INTERVAL);
+            ctx.attach(Interval::new(CheckMemoryUsageTick))
+                .start(CHECK_MEMORY_USAGE_INTERVAL);
             Some(tracker)
         }
         Err(err) => {

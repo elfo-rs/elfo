@@ -51,6 +51,7 @@ humantime-serde = "1"
 criterion = "0.4.0"
 static_assertions = "1.1.0"
 parking_lot = "0.12"
+libc = "0.2.97"
 
 [package.metadata.docs.rs]
 all-features = true
