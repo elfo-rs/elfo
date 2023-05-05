@@ -172,8 +172,7 @@ impl<M: Message> Interval<M> {
     /// If `period` is zero.
     #[track_caller]
     pub fn start_after(&self, delay: Duration, period: Duration) {
-        assert_ne!(period, NEVER, "period must be non-zero");
-        self.schedule(Some(Instant::now() + delay), period);
+        self.start_at(Instant::now() + delay, period);
     }
 
     /// Schedules the timer to start emitting ticks every `period`.
