@@ -78,7 +78,7 @@ struct Tick(u32);
 #[message]
 struct Terminate;
 
-fn sample() -> Schema {
+fn sample() -> Blueprint {
     ActorGroup::new().exec(move |mut ctx| async move {
         let mut interval = Some(ctx.attach(Interval::new(Tick(0))));
 

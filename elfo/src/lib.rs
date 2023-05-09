@@ -25,6 +25,6 @@ pub use elfo_test as test;
 
 pub mod prelude {
     pub use super::{
-        assert_msg, assert_msg_eq, message, msg, ActorGroup, Context, Schema, SourceHandle,
+        assert_msg, assert_msg_eq, message, msg, ActorGroup, Blueprint, Context, SourceHandle,
     };
 }

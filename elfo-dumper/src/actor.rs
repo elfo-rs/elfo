@@ -16,7 +16,7 @@ use elfo_core::{
     scope::{self, SerdeMode},
     signal::{Signal, SignalKind},
     time::Interval,
-    ActorGroup, Context, Schema,
+    ActorGroup, Blueprint, Context,
 };
 use elfo_utils::ward;
 
@@ -247,7 +247,7 @@ fn collect_classes(map: &FxHashSet<&'static str>) -> Vec<String> {
     map.iter().map(|s| s.to_string()).collect()
 }
 
-pub(crate) fn new(dump_storage: Arc<Mutex<DumpStorage>>) -> Schema {
+pub(crate) fn new(dump_storage: Arc<Mutex<DumpStorage>>) -> Blueprint {
     let storage_1 = dump_storage.clone();
     let file_registry = Arc::new(FileRegistry::default());
 

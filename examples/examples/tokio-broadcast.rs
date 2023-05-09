@@ -16,7 +16,7 @@ use tokio::sync::broadcast;
 #[message]
 struct SomeMessage(u32);
 
-fn receiver(broadcast_tx: broadcast::Sender<SomeMessage>) -> Schema {
+fn receiver(broadcast_tx: broadcast::Sender<SomeMessage>) -> Blueprint {
     #[message]
     struct Lagged(u64);
 
@@ -50,7 +50,7 @@ fn receiver(broadcast_tx: broadcast::Sender<SomeMessage>) -> Schema {
         })
 }
 
-fn sender(broadcast_tx: broadcast::Sender<SomeMessage>) -> Schema {
+fn sender(broadcast_tx: broadcast::Sender<SomeMessage>) -> Blueprint {
     #[message]
     struct SomeTick;
 

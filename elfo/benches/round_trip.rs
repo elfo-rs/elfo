@@ -50,7 +50,7 @@ macro_rules! flag {
     };
 }
 
-fn make_producers<const FLAGS: Flags>(actor_count: u32, iter_count: u32) -> Schema {
+fn make_producers<const FLAGS: Flags>(actor_count: u32, iter_count: u32) -> Blueprint {
     ActorGroup::new()
         .router(MapRouter::new(move |envelope| {
             msg!(match envelope {
@@ -100,7 +100,7 @@ fn make_producers<const FLAGS: Flags>(actor_count: u32, iter_count: u32) -> Sche
         })
 }
 
-fn make_consumers<const FLAGS: Flags>(actor_count: u32) -> Schema {
+fn make_consumers<const FLAGS: Flags>(actor_count: u32) -> Blueprint {
     ActorGroup::new()
         .router(MapRouter::new(move |envelope| {
             msg!(match envelope {

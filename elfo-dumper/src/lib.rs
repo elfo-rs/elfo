@@ -14,7 +14,7 @@ use tracing::error;
 
 use elfo_core::{
     dumping::{self, Recorder},
-    Schema,
+    Blueprint,
 };
 
 use self::dump_storage::DumpStorage;
@@ -33,7 +33,7 @@ mod config;
 pub mod config;
 
 /// Installs a global dump recorder and returns a group to handle dumps.
-pub fn new() -> Schema {
+pub fn new() -> Blueprint {
     let storage = Arc::new(Mutex::new(DumpStorage::new()));
     let schema = actor::new(storage.clone());
 

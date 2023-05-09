@@ -19,7 +19,7 @@ use elfo_core::{
     messages::{ConfigRejected, Ping, UpdateConfig, ValidateConfig},
     msg,
     signal::{Signal, SignalKind},
-    ActorGroup, ActorStatus, Addr, Context, Request, Schema, Topology,
+    ActorGroup, ActorStatus, Addr, Blueprint, Context, Request, Topology,
 };
 
 pub use self::protocol::*;
@@ -30,14 +30,14 @@ mod protocol;
 // How often warn if a group is updating a config too long.
 const WARN_INTERVAL: Duration = Duration::from_secs(5);
 
-pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Schema {
+pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Blueprint {
     let config = Value::deserialize(config).map_err(|err| err.to_string());
     let source = ConfigSource::Fixture(config);
     let topology = topology.clone();
     ActorGroup::new().exec(move |ctx| Configurer::new(ctx, topology.clone(), source.clone()).main())
 }
 
-pub fn from_path(topology: &Topology, path_to_config: impl AsRef<Path>) -> Schema {
+pub fn from_path(topology: &Topology, path_to_config: impl AsRef<Path>) -> Blueprint {
     let source = ConfigSource::File(path_to_config.as_ref().to_path_buf());
     let topology = topology.clone();
     ActorGroup::new().exec(move |ctx| Configurer::new(ctx, topology.clone(), source.clone()).main())

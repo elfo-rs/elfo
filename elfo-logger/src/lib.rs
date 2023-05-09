@@ -14,7 +14,7 @@ use sharded_slab::Pool;
 use tracing::{span::Id as SpanId, Level, Metadata, Subscriber};
 use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 
-use elfo_core::{tracing::TraceId, ActorMeta, Schema};
+use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
 
 use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::PrintingLayer};
 
@@ -54,7 +54,7 @@ struct PreparedEvent {
 }
 
 // TODO: revise factory (return also `FilteringLayer` somehow).
-pub fn new() -> (PrintingLayer, Schema) {
+pub fn new() -> (PrintingLayer, Blueprint) {
     let shared = Shared {
         channel: GenericChannel::with_capacity(CHANNEL_CAPACITY),
         pool: Pool::default(),
@@ -68,7 +68,7 @@ pub fn new() -> (PrintingLayer, Schema) {
     (layer, schema)
 }
 
-pub fn init() -> Schema {
+pub fn init() -> Blueprint {
     // TODO: log instead of panicking.
     let (printer, schema) = new();
     let registry = Registry::default();

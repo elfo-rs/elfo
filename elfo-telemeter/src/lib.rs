@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use tracing::error;
 
-use elfo_core::Schema;
+use elfo_core::Blueprint;
 
 use self::{recorder::Recorder, storage::Storage};
 
@@ -38,7 +38,7 @@ mod allocator;
 pub use allocator::AllocatorStats;
 
 /// Installs a global metric recorder and returns a group to handle metrics.
-pub fn init() -> Schema {
+pub fn init() -> Blueprint {
     let storage = Arc::new(Storage::new());
     let recorder = Recorder::new(storage.clone());
     let schema = actor::new(storage);

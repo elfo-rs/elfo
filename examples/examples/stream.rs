@@ -7,7 +7,7 @@ struct SomeMessage(u32);
 #[message]
 struct EndOfMessages;
 
-fn samples() -> Schema {
+fn samples() -> Blueprint {
     ActorGroup::new().exec(|mut ctx| async move {
         let stream = Stream::from_futures03(stream::iter(vec![SomeMessage(0), SomeMessage(1)]));
         ctx.attach(stream);

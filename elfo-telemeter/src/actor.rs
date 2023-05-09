@@ -6,7 +6,7 @@ use tracing::{error, info};
 
 use elfo_core::{
     message, messages::ConfigUpdated, msg, scope, time::Interval, tracing::TraceId, ActorGroup,
-    Context, MoveOwnership, Schema,
+    Blueprint, Context, MoveOwnership,
 };
 
 use crate::{
@@ -36,7 +36,7 @@ struct CompactionTick;
 #[message]
 struct ServerFailed(MoveOwnership<hyper::Error>);
 
-pub(crate) fn new(storage: Arc<Storage>) -> Schema {
+pub(crate) fn new(storage: Arc<Storage>) -> Blueprint {
     ActorGroup::new()
         .config::<Config>()
         .exec(move |ctx| Telemeter::new(ctx, storage.clone()).main())

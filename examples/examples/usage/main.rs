@@ -74,7 +74,7 @@ mod producer {
 
     // It's a group factory. The module can have a lot of them with different
     // arguments, just like constructors.
-    pub fn new() -> Schema {
+    pub fn new() -> Blueprint {
         ActorGroup::new()
             .config::<Config>()
             .exec(move |ctx| async move {
@@ -112,7 +112,7 @@ mod aggregator {
 
     use crate::protocol::*;
 
-    pub fn new() -> Schema {
+    pub fn new() -> Blueprint {
         ActorGroup::new()
             // Routers are called on a sending side, potentially from many threads.
             // Usually, routers extract some sharding key from messages.
@@ -202,7 +202,7 @@ mod reporter {
     #[message]
     struct SummarizeTick;
 
-    pub fn new() -> Schema {
+    pub fn new() -> Blueprint {
         ActorGroup::new().config::<Config>().exec(reporter)
     }
 

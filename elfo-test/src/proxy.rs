@@ -20,7 +20,8 @@ use serde_value::Value;
 use tokio::task;
 
 use elfo_core::{
-    ActorGroup, ActorMeta, Addr, Context, Envelope, Local, Message, Request, ResponseToken, Schema,
+    ActorGroup, ActorMeta, Addr, Blueprint, Context, Envelope, Local, Message, Request,
+    ResponseToken,
     _priv::do_start,
     message, msg,
     routers::{MapRouter, Outcome},
@@ -195,7 +196,7 @@ impl Drop for Proxy {
 #[message(ret = Local<Context>)]
 struct StealContext;
 
-fn testers(tx: shared::OneshotSender<Context>) -> Schema {
+fn testers(tx: shared::OneshotSender<Context>) -> Blueprint {
     let tx = Arc::new(tx);
     let next_tester_key = AtomicUsize::new(1);
 
@@ -227,7 +228,7 @@ fn testers(tx: shared::OneshotSender<Context>) -> Schema {
         })
 }
 
-pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> Proxy {
+pub async fn proxy(schema: Blueprint, config: impl for<'de> Deserializer<'de>) -> Proxy {
     let _ = tracing_subscriber::fmt()
         .with_target(false)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())

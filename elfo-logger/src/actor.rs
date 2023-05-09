@@ -14,7 +14,7 @@ use elfo_core::{
     messages::{ConfigUpdated, Terminate},
     msg,
     signal::{Signal, SignalKind},
-    ActorGroup, Context, Schema,
+    ActorGroup, Blueprint, Context,
 };
 
 use crate::{
@@ -38,7 +38,7 @@ pub struct ReopenLogFile {}
 impl Logger {
     // TODO: rename it?
     #[allow(clippy::new_ret_no_self)]
-    pub(crate) fn blueprint(shared: Arc<Shared>) -> Schema {
+    pub(crate) fn blueprint(shared: Arc<Shared>) -> Blueprint {
         ActorGroup::new()
             .config::<Config>()
             .termination_policy(TerminationPolicy::manually())

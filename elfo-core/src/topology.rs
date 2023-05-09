@@ -11,7 +11,7 @@ use crate::{
     context::Context,
     demux::{Demux, Filter as DemuxFilter},
     envelope::Envelope,
-    group::Schema,
+    group::Blueprint,
     runtime::RuntimeManager,
 };
 
@@ -143,7 +143,7 @@ impl<'t> Local<'t> {
         self.route_to(dest, |_| true)
     }
 
-    pub fn mount(self, schema: Schema) {
+    pub fn mount(self, schema: Blueprint) {
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
         let ctx = Context::new(book, self.demux.into_inner()).with_group(addr);

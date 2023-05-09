@@ -39,7 +39,7 @@ enum Type {
     Enum(u32),
 }
 
-fn sample() -> Schema {
+fn sample() -> Blueprint {
     ActorGroup::new().exec(|mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
             msg!(match &envelope {

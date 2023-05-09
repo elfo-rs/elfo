@@ -16,7 +16,7 @@ pub use crate::{
     config::Config,
     context::{Context, RequestBuilder},
     envelope::Envelope,
-    group::{ActorGroup, Schema},
+    group::{ActorGroup, Blueprint},
     init::{start, try_start},
     local::{Local, MoveOwnership},
     message::{Message, Request},

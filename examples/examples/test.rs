@@ -33,7 +33,7 @@ async fn summator(mut ctx: Context<Config>) {
     }
 }
 
-pub fn summators() -> Schema {
+pub fn summators() -> Blueprint {
     ActorGroup::new().config::<Config>().exec(summator)
 }
 

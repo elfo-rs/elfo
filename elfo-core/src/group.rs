@@ -63,7 +63,7 @@ impl<R, C> ActorGroup<R, C> {
         }
     }
 
-    pub fn exec<X, O, ER>(self, exec: X) -> Schema
+    pub fn exec<X, O, ER>(self, exec: X) -> Blueprint
     where
         R: Router<C>,
         X: Fn(Context<C, R::Key>) -> O + Send + Sync + 'static,
@@ -88,11 +88,11 @@ impl<R, C> ActorGroup<R, C> {
             Object::new(addr, Group::new(router, finished))
         };
 
-        Schema { run: Box::new(run) }
+        Blueprint { run: Box::new(run) }
     }
 }
 
-pub struct Schema {
+pub struct Blueprint {
     pub(crate) run: Box<dyn FnOnce(Context, String, RuntimeManager) -> Object>,
 }
 
