@@ -7,9 +7,6 @@ use tokio::{
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
-use crate::{self as elfo};
-use elfo_macros::{message, msg_raw as msg};
-
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
     addr::Addr,
@@ -20,6 +17,7 @@ use crate::{
     memory_tracker::MemoryTracker,
     message,
     messages::{Ping, Terminate, UpdateConfig},
+    msg,
     object::Object,
     scope::{Scope, ScopeGroupShared},
     signal::{Signal, SignalKind},
@@ -138,10 +136,10 @@ pub async fn do_start<F: Future>(
     scope.within(f).await
 }
 
-#[message(elfo = crate)]
+#[message]
 struct TerminateSystem;
 
-#[message(elfo = crate)]
+#[message]
 struct CheckMemoryUsageTick;
 
 // TODO: make these values configurable.
@@ -150,19 +148,15 @@ const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(45);
 const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
 const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(7);
 
-async fn termination(ctx: Context, topology: Topology) {
-    let term_signal = Signal::new(SignalKind::Terminate, || TerminateSystem);
-    let ctrl_c_signal = Signal::new(SignalKind::CtrlC, || TerminateSystem);
-    let memory_usage_interval = Interval::new(|| CheckMemoryUsageTick);
-
-    let mut ctx = ctx
-        .with(&term_signal)
-        .with(&ctrl_c_signal)
-        .with(&memory_usage_interval);
+async fn termination(mut ctx: Context, topology: Topology) {
+    ctx.attach(Signal::new(SignalKind::UnixTerminate, TerminateSystem));
+    ctx.attach(Signal::new(SignalKind::UnixInterrupt, TerminateSystem));
+    ctx.attach(Signal::new(SignalKind::WindowsCtrlC, TerminateSystem));
 
     let memory_tracker = match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
         Ok(tracker) => {
-            memory_usage_interval.set_period(CHECK_MEMORY_USAGE_INTERVAL);
+            ctx.attach(Interval::new(CheckMemoryUsageTick))
+                .start(CHECK_MEMORY_USAGE_INTERVAL);
             Some(tracker)
         }
         Err(err) => {

@@ -1,11 +1,8 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use futures::{future::poll_fn, pin_mut};
+use futures::pin_mut;
 use once_cell::sync::Lazy;
 use tracing::{error, info, trace};
-
-use crate::{self as elfo};
-use elfo_macros::msg_raw as msg;
 
 use crate::{
     actor::{Actor, ActorStatus},
@@ -18,11 +15,11 @@ use crate::{
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     mailbox::RecvResult,
     message::{Message, Request},
-    messages,
+    messages, msg,
     request_table::ResponseToken,
     routers::Singleton,
     scope,
-    source::{Combined, Source},
+    source::{SourceHandle, Sources, Unattached},
 };
 
 use self::{budget::Budget, stats::Stats};
@@ -33,14 +30,14 @@ mod stats;
 static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
 
 /// An actor execution context.
-pub struct Context<C = (), K = Singleton, S = ()> {
+pub struct Context<C = (), K = Singleton> {
     book: AddressBook,
     addr: Addr,
     group: Addr,
     demux: Demux,
     config: Arc<C>,
     key: K,
-    source: S,
+    sources: Sources,
     stage: Stage,
     stats: Stats,
     budget: Budget,
@@ -56,7 +53,7 @@ enum Stage {
 assert_impl_all!(Context: Send);
 // TODO: !Sync?
 
-impl<C, K, S> Context<C, K, S> {
+impl<C, K> Context<C, K> {
     /// Returns the actor's address.
     #[inline]
     pub fn addr(&self) -> Addr {
@@ -88,20 +85,9 @@ impl<C, K, S> Context<C, K, S> {
         &self.key
     }
 
-    /// Transforms the context to another one with the provided source.
-    pub fn with<S1>(self, source: S1) -> Context<C, K, Combined<S, S1>> {
-        Context {
-            book: self.book,
-            addr: self.addr,
-            group: self.group,
-            demux: self.demux,
-            config: self.config,
-            key: self.key,
-            source: Combined::new(self.source, source),
-            stage: Stage::PreRecv,
-            stats: self.stats,
-            budget: self.budget,
-        }
+    /// Attaches the provided source to the context.
+    pub fn attach<S1: SourceHandle>(&mut self, source: Unattached<S1>) -> S1 {
+        source.attach_to(&mut self.sources)
     }
 
     /// Updates the actor's status.
@@ -234,7 +220,7 @@ impl<C, K, S> Context<C, K, S> {
     /// }
     /// ```
     #[inline]
-    pub fn request<R: Request>(&self, request: R) -> RequestBuilder<'_, C, K, S, R, Any> {
+    pub fn request<R: Request>(&self, request: R) -> RequestBuilder<'_, C, K, R, Any> {
         RequestBuilder::new(self, request)
     }
 
@@ -255,7 +241,7 @@ impl<C, K, S> Context<C, K, S> {
         &self,
         recipient: Addr,
         request: R,
-    ) -> RequestBuilder<'_, C, K, S, R, Any> {
+    ) -> RequestBuilder<'_, C, K, R, Any> {
         RequestBuilder::new(self, request).to(recipient)
     }
 
@@ -452,7 +438,6 @@ impl<C, K, S> Context<C, K, S> {
     pub async fn recv(&mut self) -> Option<Envelope>
     where
         C: 'static,
-        S: Source,
     {
         loop {
             self.stats.on_recv();
@@ -477,9 +462,6 @@ impl<C, K, S> Context<C, K, S> {
             let mailbox_fut = actor.recv();
             pin_mut!(mailbox_fut);
 
-            let source_fut = poll_fn(|cx| self.source.poll_recv(cx));
-            pin_mut!(source_fut);
-
             tokio::select! {
                 result = mailbox_fut => match result {
                     RecvResult::Data(envelope) => {
@@ -493,9 +475,9 @@ impl<C, K, S> Context<C, K, S> {
                         return None;
                     }
                 },
-                option = source_fut => {
-                    // Sources cannot return `None` for now.
-                    let envelope = option.expect("source cannot return None");
+                option = self.sources.next(), if !self.sources.is_empty() => {
+                    // TODO: is it required if mailbox becomes source?
+                    let envelope = ward!(option, continue);
 
                     if let Some(envelope) = self.post_recv(envelope) {
                         return Some(envelope);
@@ -651,7 +633,7 @@ impl<C, K, S> Context<C, K, S> {
             demux: self.demux.clone(),
             config: Arc::new(()),
             key: Singleton,
-            source: (),
+            sources: Sources::new(),
             stage: self.stage,
             stats: Stats::empty(),
             budget: self.budget.clone(),
@@ -662,7 +644,7 @@ impl<C, K, S> Context<C, K, S> {
         &self.book
     }
 
-    pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K, S> {
+    pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K> {
         Context {
             book: self.book,
             addr: self.addr,
@@ -670,7 +652,7 @@ impl<C, K, S> Context<C, K, S> {
             demux: self.demux,
             config,
             key: self.key,
-            source: self.source,
+            sources: self.sources,
             stage: self.stage,
             stats: self.stats,
             budget: self.budget,
@@ -688,7 +670,7 @@ impl<C, K, S> Context<C, K, S> {
         self
     }
 
-    pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1, S> {
+    pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1> {
         Context {
             book: self.book,
             addr: self.addr,
@@ -696,7 +678,7 @@ impl<C, K, S> Context<C, K, S> {
             demux: self.demux,
             config: self.config,
             key,
-            source: self.source,
+            sources: self.sources,
             stage: self.stage,
             stats: self.stats,
             budget: self.budget,
@@ -740,7 +722,7 @@ impl Context {
             demux,
             config: Arc::new(()),
             key: Singleton,
-            source: (),
+            sources: Sources::new(),
             stage: Stage::PreRecv,
             stats: Stats::empty(),
             budget: Budget::default(),
@@ -758,7 +740,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             demux: self.demux.clone(),
             config: self.config.clone(),
             key: self.key.clone(),
-            source: (),
+            sources: Sources::new(),
             stage: self.stage,
             stats: Stats::empty(),
             budget: self.budget.clone(),
@@ -767,8 +749,8 @@ impl<C, K: Clone> Clone for Context<C, K> {
 }
 
 #[must_use]
-pub struct RequestBuilder<'c, C, K, S, R, M> {
-    context: &'c Context<C, K, S>,
+pub struct RequestBuilder<'c, C, K, R, M> {
+    context: &'c Context<C, K>,
     request: R,
     to: Option<Addr>,
     marker: PhantomData<M>,
@@ -778,8 +760,8 @@ pub struct Any;
 pub struct All;
 pub(crate) struct Forgotten;
 
-impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
-    fn new(context: &'c Context<C, K, S>, request: R) -> Self {
+impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
+    fn new(context: &'c Context<C, K>, request: R) -> Self {
         Self {
             context,
             request,
@@ -789,7 +771,7 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
     }
 
     #[inline]
-    pub fn all(self) -> RequestBuilder<'c, C, K, S, R, All> {
+    pub fn all(self) -> RequestBuilder<'c, C, K, R, All> {
         RequestBuilder {
             context: self.context,
             request: self.request,
@@ -800,7 +782,7 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
 
     // TODO
     #[allow(unused)]
-    pub(crate) fn forgotten(self) -> RequestBuilder<'c, C, K, S, R, Forgotten> {
+    pub(crate) fn forgotten(self) -> RequestBuilder<'c, C, K, R, Forgotten> {
         RequestBuilder {
             context: self.context,
             request: self.request,
@@ -810,7 +792,7 @@ impl<'c, C, K, S, R> RequestBuilder<'c, C, K, S, R, Any> {
     }
 }
 
-impl<'c, C, K, S, R, M> RequestBuilder<'c, C, K, S, R, M> {
+impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
     #[deprecated(note = "use `Context::request_to()` instead")]
     #[doc(hidden)]
     #[inline]
@@ -827,7 +809,7 @@ impl<'c, C, K, S, R, M> RequestBuilder<'c, C, K, S, R, M> {
 }
 
 // TODO: add `pub async fn id() { ... }`
-impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
+impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     /// Waits for the response.
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         // TODO: cache `OwnedEntry`?
@@ -871,7 +853,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Any> {
     }
 }
 
-impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
+impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
     /// Waits for the responses.
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError<R>>> {
         // TODO: cache `OwnedEntry`?
@@ -923,7 +905,7 @@ impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, K, S, R, All> {
     }
 }
 
-impl<'c, C: 'static, K, S, R: Request> RequestBuilder<'c, C, S, K, R, Forgotten> {
+impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Forgotten> {
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         let token = ResponseToken::forgotten(self.context.book.clone());
         let kind = MessageKind::RequestAny(token);

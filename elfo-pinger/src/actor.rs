@@ -3,23 +3,19 @@ use std::time::Duration;
 use tokio::{select, time};
 use tracing::{debug, info, warn};
 
-use elfo_core as elfo;
-use elfo_macros::message;
-
-use elfo::{
-    messages::Ping, scope, time::Interval, topology::ActorGroup, ActorStatus, Addr, Context,
-    Topology,
+use elfo_core::{
+    message, messages::Ping, scope, time::Interval, topology::ActorGroup, ActorStatus, Addr,
+    Context, Topology,
 };
 use elfo_utils::ward;
 
 use crate::config::Config;
 
-#[message(elfo = elfo_core)]
+#[message]
 struct PingTick;
 
-pub(crate) async fn exec(ctx: Context<Config>, topology: Topology) {
-    let interval = Interval::new(|| PingTick);
-    let mut ctx = ctx.with(&interval);
+pub(crate) async fn exec(mut ctx: Context<Config>, topology: Topology) {
+    let interval = ctx.attach(Interval::new(PingTick));
 
     let mut groups = collect_groups(&topology, &[ctx.group()]);
     let group_count = groups.len() as u32;
@@ -33,7 +29,7 @@ pub(crate) async fn exec(ctx: Context<Config>, topology: Topology) {
     let mut timed_out = 0;
     let mut pinging = None;
 
-    interval.set_period(ctx.config().ping_interval / group_count);
+    interval.start(ctx.config().ping_interval / group_count);
 
     // Accept envelopes from the mailbox concurrently with pinging
     // in order to avoid getting stuck with the configurer.

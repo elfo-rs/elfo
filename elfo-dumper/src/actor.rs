@@ -6,13 +6,12 @@ use parking_lot::Mutex;
 use tokio::task;
 use tracing::{error, info};
 
-use elfo_core as elfo;
-use elfo_macros::{message, msg_raw as msg};
-
-use elfo::{
+use elfo_core::{
     dumping::INTERNAL_CLASS,
     group::TerminationPolicy,
+    message,
     messages::{ConfigUpdated, Terminate, UpdateConfig},
+    msg,
     routers::{MapRouter, Outcome},
     scope::{self, SerdeMode},
     signal::{Signal, SignalKind},
@@ -30,19 +29,20 @@ use crate::{
     serializer::Serializer,
 };
 
-#[message(elfo = elfo_core)]
+#[message]
 struct StartDumperForClass(String);
 
-#[message(elfo = elfo_core)]
+#[message]
 struct ReopenDumpFile;
 
-#[message(elfo = elfo_core)]
+#[message]
 struct DumpingTick;
 
 struct Dumper {
     ctx: Context<Config, String>,
     dump_registry: Arc<DumpRegistry>,
     file_registry: Arc<FileRegistry>,
+    interval: Interval<DumpingTick>,
 
     // Used only by the manager actor.
     manager: Option<Manager>,
@@ -55,7 +55,7 @@ struct Manager {
 
 impl Dumper {
     fn new(
-        ctx: Context<Config, String>,
+        mut ctx: Context<Config, String>,
         dump_storage: Arc<Mutex<DumpStorage>>,
         file_registry: Arc<FileRegistry>,
     ) -> Self {
@@ -73,10 +73,11 @@ impl Dumper {
         };
 
         Self {
-            ctx,
             dump_registry,
             file_registry,
+            interval: ctx.attach(Interval::new(DumpingTick)),
             manager,
+            ctx,
         }
     }
 
@@ -94,20 +95,19 @@ impl Dumper {
 
         rule_set.configure(&self.ctx.config().rules);
 
-        let signal = Signal::new(SignalKind::Hangup, || ReopenDumpFile);
-        let interval = Interval::new(|| DumpingTick);
-        // TODO: `interval.after` to set random time shift.
-        interval.set_period(self.ctx.config().write_interval);
+        self.ctx
+            .attach(Signal::new(SignalKind::UnixHangup, ReopenDumpFile));
 
-        let mut ctx = self.ctx.clone().with(&signal).with(&interval);
+        // TODO: use `interval.start_after` to set random time shift.
+        self.interval.start(self.ctx.config().write_interval);
 
-        while let Some(envelope) = ctx.recv().await {
+        while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
                 ConfigUpdated => {
-                    let config = ctx.config();
-                    interval.set_period(config.write_interval);
+                    let config = self.ctx.config();
+                    self.interval.set_period(config.write_interval);
 
-                    path = config.path(ctx.key());
+                    path = config.path(self.ctx.key());
                     self.file_registry
                         .open(&path, false)
                         .await
@@ -131,7 +131,7 @@ impl Dumper {
                         .wrap_err("cannot reopen the dump file")?;
                 }
                 DumpingTick => {
-                    let timeout = ctx.config().write_interval;
+                    let timeout = self.ctx.config().write_interval;
                     let dump_registry = self.dump_registry.clone();
                     let file = self.file_registry.acquire(&path).await;
 
@@ -176,7 +176,7 @@ impl Dumper {
                 }
                 Terminate => {
                     // TODO: use phases instead of a hardcoded delay.
-                    interval.set_period(Duration::from_millis(250));
+                    self.interval.set_period(Duration::from_millis(250));
                     need_to_terminate = true;
                 }
             });

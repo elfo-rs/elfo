@@ -11,7 +11,6 @@ edition.workspace = true
 unstable = []
 
 [dependencies]
-elfo-macros = { version = "0.1.15", path = "../elfo-macros" }
 elfo-core = { version = "0.1.35", path = "../elfo-core", features = ["unstable"] } # TODO: do not need
 
 tokio = "1"

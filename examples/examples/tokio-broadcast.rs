@@ -16,21 +16,21 @@ use tokio::sync::broadcast;
 #[message]
 struct SomeMessage(u32);
 
-#[message]
-struct Lagged(u64);
-
 fn receiver(broadcast_tx: broadcast::Sender<SomeMessage>) -> Schema {
+    #[message]
+    struct Lagged(u64);
+
     ActorGroup::new()
         .router(MapRouter::new(|_| Outcome::Multicast(vec![0, 1, 2])))
-        .exec(move |ctx| {
-            // Wrap into `elfo::Stream`.
+        .exec(move |mut ctx| {
+            // Wrap into `elfo::stream::Stream`.
             let mut broadcast_rx = broadcast_tx.subscribe();
-            let stream = Stream::generate(|mut y| async move {
+            let stream = Stream::generate(|mut emitter| async move {
                 use broadcast::error::RecvError;
                 loop {
                     match broadcast_rx.recv().await {
-                        Ok(msg) => y.emit(msg).await,
-                        Err(RecvError::Lagged(skipped)) => y.emit(Lagged(skipped)).await,
+                        Ok(msg) => emitter.emit(msg).await,
+                        Err(RecvError::Lagged(skipped)) => emitter.emit(Lagged(skipped)).await,
                         Err(RecvError::Closed) => break,
                     }
                 }
@@ -38,7 +38,7 @@ fn receiver(broadcast_tx: broadcast::Sender<SomeMessage>) -> Schema {
 
             async move {
                 // Attach the stream to the context.
-                let mut ctx = ctx.with(stream);
+                ctx.attach(stream);
 
                 while let Some(envelope) = ctx.recv().await {
                     msg!(match envelope {
@@ -54,12 +54,11 @@ fn sender(broadcast_tx: broadcast::Sender<SomeMessage>) -> Schema {
     #[message]
     struct SomeTick;
 
-    ActorGroup::new().exec(move |ctx| {
+    ActorGroup::new().exec(move |mut ctx| {
         let broadcast_tx = broadcast_tx.clone();
         async move {
-            let interval = Interval::new(|| SomeTick);
-            interval.set_period(Duration::from_secs(1));
-            let mut ctx = ctx.with(&interval);
+            let interval = ctx.attach(Interval::new(SomeTick));
+            interval.start(Duration::from_secs(1));
 
             let mut num = 0;
 

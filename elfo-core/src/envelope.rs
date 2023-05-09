@@ -29,6 +29,19 @@ pub(crate) enum MessageKind {
 }
 
 impl<M> Envelope<M> {
+    pub(crate) fn new(message: M, kind: MessageKind) -> Self {
+        Self::with_trace_id(message, kind, crate::scope::trace_id())
+    }
+
+    pub(crate) fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
+        Self {
+            created_time: Instant::now(),
+            trace_id,
+            kind,
+            message,
+        }
+    }
+
     #[inline]
     pub fn trace_id(&self) -> TraceId {
         self.trace_id
@@ -59,19 +72,6 @@ impl<M> Envelope<M> {
 }
 
 impl<M: Message> Envelope<M> {
-    pub(crate) fn new(message: M, kind: MessageKind) -> Self {
-        Self::with_trace_id(message, kind, crate::scope::trace_id())
-    }
-
-    pub(crate) fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
-        Self {
-            created_time: Instant::now(),
-            trace_id,
-            kind,
-            message,
-        }
-    }
-
     pub(crate) fn upcast(self) -> Envelope {
         Envelope {
             created_time: self.created_time,

@@ -20,14 +20,13 @@ use serde_value::Value;
 use tokio::task;
 
 use elfo_core::{
-    self as elfo, ActorGroup, ActorMeta, Addr, Context, Envelope, Local, Message, Request,
-    ResponseToken, Schema,
+    ActorGroup, ActorMeta, Addr, Context, Envelope, Local, Message, Request, ResponseToken, Schema,
     _priv::do_start,
+    message, msg,
     routers::{MapRouter, Outcome},
     scope::Scope,
     topology::{GetAddrs, Topology},
 };
-use elfo_macros::{message, msg_raw as msg};
 
 const SYNC_YIELD_COUNT: usize = 32;
 
@@ -87,6 +86,7 @@ impl Proxy {
 
     #[track_caller]
     pub fn recv(&mut self) -> impl Future<Output = Envelope> + '_ {
+        // We use a separate timer here to avoid interaction with the tokio's timer.
         static STD_CLOCK: Lazy<StdClock> = Lazy::new(StdClock::new);
         static TIMER_SERVICE: Lazy<Arc<TimerService>> = Lazy::new(|| {
             let timer_service = Arc::new(TimerService::new(&*STD_CLOCK));
@@ -200,7 +200,7 @@ impl Drop for Proxy {
     }
 }
 
-#[message(ret = Local<Context>, elfo = elfo_core)]
+#[message(ret = Local<Context>)]
 struct StealContext;
 
 fn testers(tx: shared::OneshotSender<Context>) -> Schema {
@@ -287,19 +287,17 @@ pub async fn proxy(schema: Schema, config: impl for<'de> Deserializer<'de>) -> P
 mod tests {
     use super::*;
 
-    use elfo_core as elfo;
-    use elfo_core::{assert_msg_eq, config::AnyConfig};
-    use elfo_macros::msg_raw as msg;
+    use elfo_core::{assert_msg_eq, config::AnyConfig, message, msg};
 
-    #[message(elfo = elfo_core)]
+    #[message]
     #[derive(PartialEq)]
     struct SomeMessage;
 
-    #[message(elfo = elfo_core, ret = u32)]
+    #[message(ret = u32)]
     #[derive(PartialEq)]
     struct SomeRequest;
 
-    #[message(elfo = elfo_core)]
+    #[message]
     #[derive(PartialEq)]
     struct SomeMessage2;
 

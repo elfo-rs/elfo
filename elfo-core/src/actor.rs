@@ -13,13 +13,11 @@ use crate::{
     group::TerminationPolicy,
     mailbox::{Mailbox, RecvResult},
     messages::{ActorStatusReport, Terminate},
+    msg,
     request_table::RequestTable,
     scope,
     subscription::SubscriptionManager,
 };
-
-use crate::{self as elfo};
-use elfo_macros::msg_raw as msg;
 
 // === ActorMeta ===
 

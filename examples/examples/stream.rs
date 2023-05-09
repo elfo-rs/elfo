@@ -8,10 +8,9 @@ struct SomeMessage(u32);
 struct EndOfMessages;
 
 fn samples() -> Schema {
-    ActorGroup::new().exec(|ctx| async move {
-        let stream1 = Stream::new(stream::iter(vec![SomeMessage(0), SomeMessage(1)]));
-
-        let mut ctx = ctx.with(stream1);
+    ActorGroup::new().exec(|mut ctx| async move {
+        let stream = Stream::from_futures03(stream::iter(vec![SomeMessage(0), SomeMessage(1)]));
+        ctx.attach(stream);
 
         while let Some(_envelope) = ctx.recv().await {
             // ...

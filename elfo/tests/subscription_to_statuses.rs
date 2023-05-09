@@ -69,10 +69,8 @@ fn check_seq(proxy: &mut Proxy, expected: &[(u32, ActorStatusKind, Option<&str>)
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn it_works() {
-    tokio::time::pause();
-
     use ActorStatusKind::*;
 
     let mut proxy = run_group().await;

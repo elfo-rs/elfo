@@ -13,13 +13,11 @@ use serde_value::Value;
 use tokio::{fs, select, time};
 use tracing::{debug, error, info, warn};
 
-use elfo_core as elfo;
-use elfo_macros::msg_raw as msg;
-
-use elfo::{
+use elfo_core::{
     config::AnyConfig,
     errors::RequestError,
     messages::{ConfigRejected, Ping, UpdateConfig, ValidateConfig},
+    msg,
     signal::{Signal, SignalKind},
     ActorGroup, ActorStatus, Addr, Context, Request, Schema, Topology,
 };
@@ -78,17 +76,18 @@ impl Configurer {
     }
 
     async fn main(mut self) {
-        let hangup = Signal::new(SignalKind::Hangup, ReloadConfigs::default);
-        let user2 = Signal::new(SignalKind::User2, ReloadConfigs::forcing);
+        let signal = Signal::new(SignalKind::UnixHangup, ReloadConfigs::default());
+        self.ctx.attach(signal);
+        let signal = Signal::new(SignalKind::UnixUser2, ReloadConfigs::forcing());
+        self.ctx.attach(signal);
 
-        let mut ctx = self.ctx.clone().with(&hangup).with(user2);
         let can_start = self.load_and_update_configs(true).await.is_ok();
 
         if !can_start {
             panic!("configs are invalid at startup");
         }
 
-        while let Some(envelope) = ctx.recv().await {
+        while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
                 ReloadConfigs { force } => {
                     let _ = self.load_and_update_configs(force).await;
@@ -99,7 +98,7 @@ impl Configurer {
                         .await
                         .map_err(|errors| TryReloadConfigsRejected { errors });
 
-                    ctx.respond(token, response);
+                    self.ctx.respond(token, response);
                 }
             })
         }

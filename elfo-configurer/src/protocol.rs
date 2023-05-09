@@ -1,9 +1,9 @@
-use elfo_macros::message;
+use elfo_core::message;
 
 /// The command to reload configs and send changed ones.
 /// By default, up-to-date configs aren't resent across the system.
 /// Use `ReloadConfigs::with_force(true)` to change this behavior.
-#[message(elfo = elfo_core)]
+#[message]
 #[derive(Default)]
 pub struct ReloadConfigs {
     pub(crate) force: bool,
@@ -24,7 +24,7 @@ impl ReloadConfigs {
 /// If the validation stage is failed, `TryReloadConfigsRejected` is returned.
 /// By default, up-to-date configs isn't resent across the system.
 /// Use `TryReloadConfigs::with_force(true)` to change this behavior.
-#[message(ret = Result<(), TryReloadConfigsRejected>, elfo = elfo_core)]
+#[message(ret = Result<(), TryReloadConfigsRejected>)]
 #[derive(Default)]
 pub struct TryReloadConfigs {
     pub(crate) force: bool,
@@ -38,7 +38,7 @@ impl TryReloadConfigs {
 }
 
 /// The response to `TryReloadConfigs`.
-#[message(part, elfo = elfo_core)]
+#[message(part)]
 #[non_exhaustive]
 pub struct TryReloadConfigsRejected {
     /// All reasons why configs cannot be updated.
@@ -46,7 +46,7 @@ pub struct TryReloadConfigsRejected {
 }
 
 /// Contains a reason why some actor rejects the config.
-#[message(part, elfo = elfo_core)]
+#[message(part)]
 #[non_exhaustive]
 pub struct ReloadConfigsError {
     // TODO: meta

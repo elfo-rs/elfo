@@ -6,6 +6,9 @@ extern crate static_assertions;
 #[macro_use]
 extern crate elfo_utils;
 
+// To make `#[message]` and `msg!` work inside `elfo-core`.
+extern crate self as elfo_core;
+
 // TODO: revise this list.
 pub use crate::{
     actor::{ActorMeta, ActorStatus, ActorStatusKind},
@@ -18,8 +21,10 @@ pub use crate::{
     local::{Local, MoveOwnership},
     message::{Message, Request},
     request_table::ResponseToken,
+    source::SourceHandle,
     topology::Topology,
 };
+pub use elfo_macros::{message_core as message, msg_core as msg};
 
 pub mod config;
 pub mod dumping;
