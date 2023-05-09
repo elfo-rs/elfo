@@ -74,7 +74,7 @@ impl Parse for MessageArgs {
                     let content;
                     parenthesized!(content in input);
                     args.not = content
-                        .parse_terminated::<_, Token![,]>(Ident::parse)?
+                        .parse_terminated(Ident::parse, Token![,])?
                         .iter()
                         .map(|ident| ident.to_string())
                         .collect();

@@ -63,7 +63,6 @@ fn extract_path_to_type(path: &Path) -> Path {
 
 fn extract_kind(pat: &Pat) -> Result<GroupKind, &'static str> {
     match pat {
-        Pat::Box(_) => Err("box patterns are forbidden"),
         Pat::Ident(pat) => match pat.subpat.as_ref() {
             Some(sp) => extract_kind(&sp.1),
             None if is_type_ident(&pat.ident) => {
@@ -78,6 +77,7 @@ fn extract_kind(pat: &Pat) -> Result<GroupKind, &'static str> {
             .iter()
             .find_map(|pat| extract_kind(pat).ok())
             .ok_or("cannot determine the message's type"),
+        Pat::Paren(_) => Err("parenthesized patterns are forbidden"),
         Pat::Path(pat) => Ok(GroupKind::Regular(extract_path_to_type(&pat.path))),
         Pat::Range(_) => Err("range patterns are forbidden"),
         Pat::Reference(pat) => extract_kind(&pat.pat),

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING** source: move to dynamic sources, see the Actoromicon for details ([#50]).
 - source: new sources are fair ([#58]).
 - status: `Alarming` is logged with `Warn` level instead of `Error`.
+- deps: update `syn` to v2, `sealed` to v0.5, `quanta` to v0.11.
 
 ### Removed
 - Deprecated stuff: `tls`, `Proxy::set_addr()`, `RequestBuilder::from()`, `Scope::addr()`, also `actors` and `trace_id` modules.

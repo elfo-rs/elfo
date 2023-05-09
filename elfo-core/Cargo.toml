@@ -39,7 +39,7 @@ serde-value = "0.7.0"
 arc-swap = "1.2.0"
 erased-serde = "0.3.16"
 pin-project = "1.0.8"
-sealed = "0.4"
+sealed = "0.5"
 stability = "0.1.1"
 once_cell = { version = "1.8.0", features = ["parking_lot"] }
 serde_json = { version = "1.0.64", features = ["raw_value"] }
