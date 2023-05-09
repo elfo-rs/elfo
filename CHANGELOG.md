@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - source: new sources are fair ([#58]).
 - status: `Alarming` is logged with `Warn` level instead of `Error`.
 
+### Removed
+- Deprecated stuff: `tls`, `Proxy::set_addr()`, `RequestBuilder::from()`, `Scope::addr()`, also `actors` and `trace_id` modules.
+
 [#58]: https://github.com/elfo-rs/elfo/issues/58
 [#50]: https://github.com/elfo-rs/elfo/issues/50
 

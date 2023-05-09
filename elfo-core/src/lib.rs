@@ -40,19 +40,8 @@ pub mod stream;
 #[cfg(feature = "unstable-stuck-detection")]
 pub mod stuck_detection;
 pub mod time;
-#[deprecated(note = "use `elfo::scope` instead")]
-pub mod tls;
 pub mod topology;
 pub mod tracing;
-
-#[deprecated(note = "use `elfo::tracing` instead")]
-pub mod trace_id {
-    pub use crate::tracing::TraceId;
-
-    pub fn generate() -> TraceId {
-        TraceId::generate()
-    }
-}
 
 mod actor;
 mod addr;

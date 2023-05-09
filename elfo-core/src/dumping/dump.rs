@@ -5,7 +5,7 @@ use serde::Serialize;
 use smallbox::{smallbox, SmallBox};
 
 use super::{extract_name::extract_name, sequence_no::SequenceNo};
-use crate::{actor::ActorMeta, envelope, message, scope, thread::ThreadId, trace_id::TraceId};
+use crate::{actor::ActorMeta, envelope, message, scope, thread::ThreadId, tracing::TraceId};
 
 // === Dump ===
 

@@ -14,7 +14,7 @@ use sharded_slab::Pool;
 use tracing::{span::Id as SpanId, Level, Metadata, Subscriber};
 use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 
-use elfo_core::{trace_id::TraceId, ActorMeta, Schema};
+use elfo_core::{tracing::TraceId, ActorMeta, Schema};
 
 use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::PrintingLayer};
 

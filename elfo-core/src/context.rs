@@ -66,13 +66,6 @@ impl<C, K> Context<C, K> {
         self.group
     }
 
-    #[deprecated]
-    #[doc(hidden)]
-    #[cfg(feature = "test-util")]
-    pub fn set_addr(&mut self, addr: Addr) {
-        self.addr = addr;
-    }
-
     /// Returns the actual config.
     #[inline]
     pub fn config(&self) -> &C {
@@ -793,13 +786,6 @@ impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
 }
 
 impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
-    #[deprecated(note = "use `Context::request_to()` instead")]
-    #[doc(hidden)]
-    #[inline]
-    pub fn from(self, addr: Addr) -> Self {
-        self.to(addr)
-    }
-
     /// Specified the recipient of the request.
     #[inline]
     fn to(mut self, addr: Addr) -> Self {

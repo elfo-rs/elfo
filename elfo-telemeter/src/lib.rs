@@ -49,9 +49,3 @@ pub fn init() -> Schema {
 
     schema
 }
-
-/// Installs a global metric recorder and returns a group to handle metrics.
-#[deprecated] // TODO(v0.2): revise this method.
-pub fn new() -> Schema {
-    init()
-}

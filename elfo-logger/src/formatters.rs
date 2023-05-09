@@ -2,7 +2,7 @@ use std::{fmt::Write, hash::Hash, marker::PhantomData, sync::Arc, time::SystemTi
 
 use tracing::Level;
 
-use elfo_core::{trace_id::TraceId, ActorMeta};
+use elfo_core::{tracing::TraceId, ActorMeta};
 
 pub(crate) trait Formatter<T: ?Sized> {
     fn fmt(dest: &mut String, v: &T);

@@ -3,7 +3,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use derive_more::Constructor;
-use elfo::{config::AnyConfig, prelude::*, scope, stream::Stream, trace_id::TraceId};
+use elfo::{config::AnyConfig, prelude::*, scope, stream::Stream, tracing::TraceId};
 use futures::StreamExt;
 use parking_lot::Mutex;
 use tokio::time;

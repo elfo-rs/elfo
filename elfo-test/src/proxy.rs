@@ -132,14 +132,6 @@ impl Proxy {
         }
     }
 
-    #[deprecated]
-    pub fn set_addr(&mut self, addr: Addr) {
-        #[allow(deprecated)]
-        self.scope
-            .clone()
-            .sync_within(|| self.context.set_addr(addr))
-    }
-
     /// Sets message wait time for `recv` call.
     pub fn set_recv_timeout(&mut self, recv_timeout: Duration) {
         self.recv_timeout = recv_timeout;

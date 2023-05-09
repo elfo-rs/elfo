@@ -7,7 +7,7 @@ use parking_lot::{Mutex, RawMutex};
 use crate::{
     envelope::Envelope,
     errors::{SendError, TrySendError},
-    trace_id::TraceId,
+    tracing::TraceId,
 };
 
 // TODO: make mailboxes bounded by time instead of size.

@@ -28,10 +28,3 @@ pub mod prelude {
         assert_msg, assert_msg_eq, message, msg, ActorGroup, Context, Schema, SourceHandle,
     };
 }
-
-#[deprecated(since = "0.1.1")]
-pub mod actors {
-    #[cfg(feature = "elfo-configurer")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "full")))]
-    pub use super::configurer;
-}

@@ -65,12 +65,6 @@ impl Scope {
     }
 
     #[inline]
-    #[deprecated(note = "use `actor()` instead")]
-    pub fn addr(&self) -> Addr {
-        self.actor()
-    }
-
-    #[inline]
     pub fn actor(&self) -> Addr {
         self.actor.addr
     }

@@ -5,7 +5,7 @@ use crate::{
     address_book::AddressBook,
     message::{AnyMessage, Message},
     request_table::{RequestId, ResponseToken},
-    trace_id::TraceId,
+    tracing::TraceId,
 };
 
 // TODO: use granular messages instead of `SmallBox`.
