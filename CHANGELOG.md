@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **BREAKING** source: move to dynamic sources, see the Actoromicon for details ([#50]).
+- source: new sources are fair ([#58]).
 - status: `Alarming` is logged with `Warn` level instead of `Error`.
+
+[#58]: https://github.com/elfo-rs/elfo/issues/58
+[#50]: https://github.com/elfo-rs/elfo/issues/50
 
 ## [0.1.40] - 2023-03-07
 ### Added
