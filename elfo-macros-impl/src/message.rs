@@ -301,6 +301,7 @@ pub fn message_impl(
 
         #[doc(hidden)]
         #[allow(non_snake_case)]
+        #[allow(unreachable_code)] // for `enum Impossible {}`
         const _: () = {
             // Keep this list as minimal as possible to avoid possible collisions with `#name`.
             // Especially avoid `PascalCase`.

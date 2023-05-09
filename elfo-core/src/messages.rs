@@ -8,6 +8,14 @@ use crate::{
     message,
 };
 
+/// A helper type for using in generic code (e.g. as an associated type) to
+/// indicate a message that cannot be constructed.
+///
+/// Feel free to define a custom `Impossible` type as an empty enum if more
+/// implemented traits are needed.
+#[message]
+pub enum Impossible {}
+
 /// Checks that the actor is able to handle messages.
 /// Routed to all actors in a group by default and handled implicitly by actors.
 #[message(ret = ())]

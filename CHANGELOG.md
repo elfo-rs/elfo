@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- messages: `Impossible` that cannot be constructed ([#39]).
+
 ### Changed
 - **BREAKING** source: move to dynamic sources, see the Actoromicon for details ([#50]).
 - **BREAKING** rename `Schema` to `Blueprint`.
@@ -18,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [#58]: https://github.com/elfo-rs/elfo/issues/58
 [#50]: https://github.com/elfo-rs/elfo/issues/50
+[#39]: https://github.com/elfo-rs/elfo/issues/39
 
 ## [0.1.40] - 2023-03-07
 ### Added
