@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - **BREAKING** proxy: `non_exhaustive()`, it's hard to make it work with async `try_recv()`.
+- **BREAKING** configurer: remove `TryReloadConfigs`, use `ReloadConfigs` instead.
 - Deprecated stuff: `tls`, `Proxy::set_addr()`, `RequestBuilder::from()`, `Scope::addr()`, also `actors` and `trace_id` modules.
 
 [#70]: https://github.com/elfo-rs/elfo/issues/70

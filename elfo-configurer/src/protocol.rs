@@ -1,46 +1,26 @@
 use elfo_core::message;
 
-/// The command to reload configs and send changed ones.
-/// By default, up-to-date configs aren't resent across the system.
-/// Use `ReloadConfigs::with_force(true)` to change this behavior.
-#[message]
+/// The request to reload configs and send changed ones.
+/// If the validation stage is failed, `ReloadConfigsRejected` is returned.
+/// By default, up-to-date configs isn't resent across the system.
+/// Use `ReloadConfigs::forcing()` to change this behavior.
+#[message(ret = Result<(), ReloadConfigsRejected>)]
 #[derive(Default)]
 pub struct ReloadConfigs {
     pub(crate) force: bool,
 }
 
 impl ReloadConfigs {
-    pub(crate) fn forcing() -> Self {
+    /// All configs will be updated, including up-to-date ones.
+    pub fn forcing() -> Self {
         Self { force: true }
     }
-
-    /// If enabled, all configs will be updated, including up-to-date ones.
-    pub fn with_force(self, force: bool) -> Self {
-        ReloadConfigs { force }
-    }
 }
 
-/// The request to reload configs and send changed ones.
-/// If the validation stage is failed, `TryReloadConfigsRejected` is returned.
-/// By default, up-to-date configs isn't resent across the system.
-/// Use `TryReloadConfigs::with_force(true)` to change this behavior.
-#[message(ret = Result<(), TryReloadConfigsRejected>)]
-#[derive(Default)]
-pub struct TryReloadConfigs {
-    pub(crate) force: bool,
-}
-
-impl TryReloadConfigs {
-    /// If enabled, all configs will be updated, including up-to-date ones.
-    pub fn with_force(self, force: bool) -> Self {
-        TryReloadConfigs { force }
-    }
-}
-
-/// The response to `TryReloadConfigs`.
+/// The response to `ReloadConfigs`.
 #[message(part)]
 #[non_exhaustive]
-pub struct TryReloadConfigsRejected {
+pub struct ReloadConfigsRejected {
     /// All reasons why configs cannot be updated.
     pub errors: Vec<ReloadConfigsError>,
 }

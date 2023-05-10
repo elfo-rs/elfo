@@ -89,14 +89,11 @@ impl Configurer {
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
-                ReloadConfigs { force } => {
-                    let _ = self.load_and_update_configs(force).await;
-                }
-                (TryReloadConfigs { force }, token) => {
+                (ReloadConfigs { force }, token) => {
                     let response = self
                         .load_and_update_configs(force)
                         .await
-                        .map_err(|errors| TryReloadConfigsRejected { errors });
+                        .map_err(|errors| ReloadConfigsRejected { errors });
 
                     self.ctx.respond(token, response);
                 }
