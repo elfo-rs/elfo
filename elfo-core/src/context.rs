@@ -769,7 +769,6 @@ pub struct RequestBuilder<'c, C, K, R, M> {
 
 pub struct Any;
 pub struct All;
-pub(crate) struct Forgotten;
 
 impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
     fn new(context: &'c Context<C, K>, request: R) -> Self {
@@ -783,17 +782,6 @@ impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
 
     #[inline]
     pub fn all(self) -> RequestBuilder<'c, C, K, R, All> {
-        RequestBuilder {
-            context: self.context,
-            request: self.request,
-            to: self.to,
-            marker: PhantomData,
-        }
-    }
-
-    // TODO
-    #[allow(unused)]
-    pub(crate) fn forgotten(self) -> RequestBuilder<'c, C, K, R, Forgotten> {
         RequestBuilder {
             context: self.context,
             request: self.request,
@@ -906,24 +894,5 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
                 Ok(envelope.into_message().into())
             })
             .collect()
-    }
-}
-
-impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Forgotten> {
-    pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
-        let token = ResponseToken::forgotten(self.context.book.clone());
-        let kind = MessageKind::RequestAny(token);
-
-        let res = if let Some(recipient) = self.to {
-            self.context.do_send_to(recipient, self.request, kind).await
-        } else {
-            self.context.do_send(self.request, kind).await
-        };
-
-        if let Err(err) = res {
-            return Err(RequestError::Closed(err.0));
-        }
-
-        Err(RequestError::Ignored)
     }
 }

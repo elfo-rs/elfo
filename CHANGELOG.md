@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - status: `Alarming` is logged with `Warn` level instead of `Error`.
 - deps: update `syn` to v2, `sealed` to v0.5, `quanta` to v0.11.
 - context: speedup `Context::recv()` up to 10%.
+- context: now `Context::(try_)send(_to)()` can be used with requests for "fire and forget" style ([#15]).
 
 ### Removed
 - **BREAKING** proxy: `non_exhaustive()`, it's hard to make it work with async `try_recv()`.
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#50]: https://github.com/elfo-rs/elfo/issues/50
 [#39]: https://github.com/elfo-rs/elfo/issues/39
 [#24]: https://github.com/elfo-rs/elfo/issues/24
+[#15]: https://github.com/elfo-rs/elfo/issues/15
 
 ## [0.1.40] - 2023-03-07
 ### Added

@@ -155,9 +155,12 @@ impl EnvelopeOwned for Envelope {
     #[inline]
     fn unpack_request<T>(self) -> (AnyMessage, ResponseToken<T>) {
         match self.kind {
+            // A request sent by using `ctx.send()` ("fire and forget").
+            // Also it's useful for the protocol evolution.
+            MessageKind::Regular { .. } => (self.message, ResponseToken::forgotten()),
             MessageKind::RequestAny(token) => (self.message, token.into_typed()),
             MessageKind::RequestAll(token) => (self.message, token.into_typed()),
-            _ => unreachable!(),
+            MessageKind::Response { .. } => unreachable!(),
         }
     }
 }

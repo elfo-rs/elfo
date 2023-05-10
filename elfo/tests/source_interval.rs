@@ -54,6 +54,41 @@ async fn multiple() {
     assert_msg_eq!(proxy.recv().await, Tick(ms(49))); // 98
 }
 
+// Checks that ticks can be requests, responses aren't produced.
+#[tokio::test(start_paused = true)]
+async fn request() {
+    #[message(ret = u32)]
+    #[derive(PartialEq, Eq)]
+    struct Tick(u32);
+
+    let group = ActorGroup::new().exec(|mut ctx| async move {
+        let interval = ctx.attach(Interval::new(Tick(0)));
+        interval.start(ms(10));
+
+        while let Some(envelope) = ctx.recv().await {
+            msg!(match envelope {
+                (msg @ Tick(no), token) => {
+                    ctx.respond(token, no); // does nothing
+                    let next_no = ctx.request(msg).resolve().await.unwrap();
+                    interval.set_message(Tick(next_no));
+                }
+            });
+        }
+    });
+
+    let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
+
+    for i in 0..5 {
+        msg!(match proxy.recv().await {
+            (Tick(no), token) => {
+                assert_eq!(no, i);
+                proxy.respond(token, no + 1);
+            }
+            _ => unreachable!(),
+        });
+    }
+}
+
 #[message]
 struct Start(Duration);
 

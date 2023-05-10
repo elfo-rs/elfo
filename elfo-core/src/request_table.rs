@@ -49,9 +49,9 @@ impl RequestTable {
 
     pub(crate) fn clone_token(&self, token: &ResponseToken<()>) -> Option<ResponseToken<()>> {
         debug_assert_eq!(token.sender, self.owner);
+        let book = token.book.clone()?;
         let mut requests = self.requests.lock();
         requests.get_mut(token.request_id)?.remainder += 1;
-        let book = token.book.clone();
         Some(ResponseToken::new(token.sender, token.request_id, book))
     }
 
@@ -129,7 +129,7 @@ impl RequestTable {
 pub struct ResponseToken<T> {
     pub(crate) sender: Addr,
     pub(crate) request_id: RequestId,
-    book: AddressBook,
+    book: Option<AddressBook>,
     marker: PhantomData<T>,
 }
 
@@ -138,7 +138,7 @@ impl ResponseToken<()> {
         Self {
             sender,
             request_id,
-            book,
+            book: Some(book),
             marker: PhantomData,
         }
     }
@@ -156,11 +156,11 @@ impl ResponseToken<()> {
 }
 
 impl<R> ResponseToken<R> {
-    pub(crate) fn forgotten(book: AddressBook) -> Self {
+    pub(crate) fn forgotten() -> Self {
         Self {
             sender: Addr::NULL,
             request_id: RequestId::null(),
-            book,
+            book: None,
             marker: PhantomData,
         }
     }
@@ -177,22 +177,22 @@ impl<R> ResponseToken<R> {
     }
 
     pub(crate) fn is_forgotten(&self) -> bool {
-        self.request_id == RequestId::null()
+        self.request_id.is_null()
     }
 
     fn forget(&mut self) {
+        // We use the special value of `RequestId` to reduce memory usage.
         self.request_id = RequestId::null();
     }
 }
 
 impl<T> Drop for ResponseToken<T> {
     fn drop(&mut self) {
-        // We use the special value of `RequestId` to reduce memory usage.
-        if self.request_id.is_null() {
+        if self.is_forgotten() {
             return;
         }
 
-        let object = ward!(self.book.get(self.sender));
+        let object = ward!(self.book.as_ref().and_then(|b| b.get(self.sender)));
         let actor = ward!(object.as_actor());
         actor
             .request_table()
