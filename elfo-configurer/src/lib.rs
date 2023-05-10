@@ -187,10 +187,7 @@ impl Configurer {
         let status = ActorStatus::NORMAL.with_details("config validation");
         self.ctx.set_status(status);
 
-        if let Err(errors) = self
-            .request_all(&config_list, |config| ValidateConfig::new(config))
-            .await
-        {
+        if let Err(errors) = self.request_all(&config_list, ValidateConfig::new).await {
             error!("config validation failed");
             self.ctx.set_status(ActorStatus::NORMAL);
             return Err(errors);
@@ -200,10 +197,7 @@ impl Configurer {
         let status = ActorStatus::NORMAL.with_details("config updating");
         self.ctx.set_status(status);
 
-        if let Err(errors) = self
-            .request_all(&config_list, |config| UpdateConfig::new(config))
-            .await
-        {
+        if let Err(errors) = self.request_all(&config_list, UpdateConfig::new).await {
             error!("config updating failed");
             self.ctx
                 .set_status(ActorStatus::ALARMING.with_details("possibly incosistent configs"));
