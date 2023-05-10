@@ -30,9 +30,9 @@ pub(crate) struct Logger {
 }
 
 /// Reload a log file, usually after rotation.
-#[non_exhaustive]
 #[message]
 #[derive(Default)]
+#[non_exhaustive]
 pub struct ReopenLogFile {}
 
 impl Logger {

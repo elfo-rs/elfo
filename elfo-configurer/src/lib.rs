@@ -188,7 +188,7 @@ impl Configurer {
         self.ctx.set_status(status);
 
         if let Err(errors) = self
-            .request_all(&config_list, |config| ValidateConfig { config })
+            .request_all(&config_list, |config| ValidateConfig::new(config))
             .await
         {
             error!("config validation failed");
@@ -201,7 +201,7 @@ impl Configurer {
         self.ctx.set_status(status);
 
         if let Err(errors) = self
-            .request_all(&config_list, |config| UpdateConfig { config })
+            .request_all(&config_list, |config| UpdateConfig::new(config))
             .await
         {
             error!("config updating failed");
@@ -283,7 +283,7 @@ async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
     let futures = config_list
         .iter()
         .cloned()
-        .map(|item| ctx.request_to(item.addr, Ping).all().resolve())
+        .map(|item| ctx.request_to(item.addr, Ping::default()).all().resolve())
         .collect::<Vec<_>>();
 
     // TODO: use `try_join_all`.

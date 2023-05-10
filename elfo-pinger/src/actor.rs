@@ -86,7 +86,7 @@ fn collect_groups(topology: &Topology, exclude: &[Addr]) -> Vec<ActorGroup> {
 
 async fn ping_group(ctx: Context, group: ActorGroup, warn_threshold: Duration) -> bool {
     debug!(group = %group.name, "checking a group");
-    let fut = ctx.request_to(group.addr, Ping).all().resolve();
+    let fut = ctx.request_to(group.addr, Ping::default()).all().resolve();
     if time::timeout(warn_threshold, fut).await.is_err() {
         warn!(
             message = "group hasn't responded in the allowed time",

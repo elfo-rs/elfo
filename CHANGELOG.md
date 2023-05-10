@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING** context: make `Context::try_recv()` async, now it polls sources and respects an actor's budget ([#24], [#70]).
 - **BREAKING** proxy: make `Proxy::try_recv()` async.
 - **BREAKING** rename `Schema` to `Blueprint`.
+- **BREAKING** mark public system messages as "non_exhaustive" ([#35]).
 - source: new sources are fair ([#58]).
 - status: `Alarming` is logged with `Warn` level instead of `Error`.
 - deps: update `syn` to v2, `sealed` to v0.5, `quanta` to v0.11.
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#58]: https://github.com/elfo-rs/elfo/issues/58
 [#50]: https://github.com/elfo-rs/elfo/issues/50
 [#39]: https://github.com/elfo-rs/elfo/issues/39
+[#35]: https://github.com/elfo-rs/elfo/issues/35
 [#24]: https://github.com/elfo-rs/elfo/issues/24
 [#15]: https://github.com/elfo-rs/elfo/issues/15
 

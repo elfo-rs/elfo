@@ -11,6 +11,7 @@ use elfo_core::{message, ActorMeta, Local};
 /// A command to get actual snapshot of all metrics.
 /// The response is restricted to be local only for now.
 #[message(ret = Local<Arc<Snapshot>>)]
+#[non_exhaustive]
 pub struct GetSnapshot;
 
 /// Actual values of all metrics.

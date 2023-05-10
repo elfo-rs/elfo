@@ -19,21 +19,26 @@ pub enum Impossible {}
 /// Checks that the actor is able to handle messages.
 /// Routed to all actors in a group by default and handled implicitly by actors.
 #[message(ret = ())]
+#[derive(Default)]
+#[non_exhaustive]
 pub struct Ping;
 
 #[message(ret = Result<(), ConfigRejected>)]
 #[derive(Constructor)]
+#[non_exhaustive]
 pub struct ValidateConfig {
     pub config: AnyConfig,
 }
 
 #[message(ret = Result<(), ConfigRejected>)]
 #[derive(Constructor)]
+#[non_exhaustive]
 pub struct UpdateConfig {
     pub config: AnyConfig,
 }
 
 #[message]
+#[non_exhaustive]
 pub struct ConfigRejected {
     pub reason: String,
 }
@@ -47,12 +52,14 @@ impl<R: Display> From<R> for ConfigRejected {
 }
 
 #[message]
+#[non_exhaustive]
 pub struct ConfigUpdated {
     // TODO: add `old_config`.
 }
 
 #[message]
 #[derive(Default)]
+#[non_exhaustive]
 pub struct Terminate {
     pub(crate) closing: bool,
 }
@@ -70,7 +77,7 @@ impl Terminate {
 #[message]
 #[derive(Default)]
 #[non_exhaustive]
-pub struct SubscribeToActorStatuses {}
+pub struct SubscribeToActorStatuses;
 
 #[message]
 #[non_exhaustive]
