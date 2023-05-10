@@ -321,7 +321,6 @@ where
         let ctx = self
             .context
             .clone()
-            .with_addr(addr)
             .with_key(key.clone())
             .with_config(user_config);
 
@@ -342,6 +341,8 @@ where
                 .expect("a supervisor stores only actors")
                 .on_start();
 
+            // It must be called after `entry.insert()`.
+            let ctx = ctx.with_addr(addr);
             let fut = AssertUnwindSafe(async { sv.exec.exec(ctx).await.unify() }).catch_unwind();
             let new_status = match fut.await {
                 Ok(Ok(())) => ActorStatus::TERMINATED,

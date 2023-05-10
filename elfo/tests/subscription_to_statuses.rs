@@ -47,10 +47,9 @@ async fn run_group() -> Proxy {
     elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await
 }
 
-#[track_caller]
-fn check_seq(proxy: &mut Proxy, expected: &[(u32, ActorStatusKind, Option<&str>)]) {
+async fn check_seq(proxy: &mut Proxy, expected: &[(u32, ActorStatusKind, Option<&str>)]) {
     let mut actual = Vec::new();
-    while let Some(envelope) = proxy.try_recv() {
+    while let Some(envelope) = proxy.try_recv().await {
         msg!(match envelope {
             ActorStatusReport { meta, status, .. } => actual.push((meta, status)),
             _ => unreachable!(),
@@ -100,7 +99,8 @@ async fn it_works() {
             (3, Failed, Some("panic: oops")),
             (4, Normal, Some("on Start")),
         ],
-    );
+    )
+    .await;
 
     // Start another one.
     proxy.send(Start(5)).await;
@@ -113,7 +113,8 @@ async fn it_works() {
             (5, Normal, None),
             (5, Normal, Some("on Start")),
         ],
-    );
+    )
+    .await;
 
     // Fail some.
     proxy.send(Fail(1)).await;
@@ -125,7 +126,8 @@ async fn it_works() {
             (1, Normal, Some("on Fail")),
             (1, Failed, Some("panic: oops")),
         ],
-    );
+    )
+    .await;
 
     // Test another subscription.
     let mut subproxy = proxy.subproxy().await;
@@ -140,7 +142,8 @@ async fn it_works() {
             (4, Normal, Some("on Start")),
             (5, Normal, Some("on Start")),
         ],
-    );
+    )
+    .await;
 
     // Stop some.
     proxy.send(Stop(4)).await;
@@ -150,11 +153,13 @@ async fn it_works() {
     check_seq(
         &mut proxy,
         &[(4, Normal, Some("on Stop")), (4, Terminated, None)],
-    );
+    )
+    .await;
     check_seq(
         &mut subproxy,
         &[(4, Normal, Some("on Stop")), (4, Terminated, None)],
-    );
+    )
+    .await;
 
     // Wait for restarting.
     tokio::time::sleep(Duration::from_secs(100)).await;
@@ -169,7 +174,8 @@ async fn it_works() {
             (3, Initializing, None),
             (3, Normal, None),
         ],
-    );
+    )
+    .await;
     check_seq(
         &mut subproxy,
         &[
@@ -178,5 +184,6 @@ async fn it_works() {
             (3, Initializing, None),
             (3, Normal, None),
         ],
-    );
+    )
+    .await;
 }

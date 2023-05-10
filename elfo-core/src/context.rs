@@ -1,8 +1,10 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{future::poll_fn, marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
 
-use futures::pin_mut;
+use futures::{pin_mut, Stream};
 use once_cell::sync::Lazy;
-use tracing::{error, info, trace};
+use tracing::{info, trace};
+
+use elfo_utils::unlikely;
 
 use crate::{
     actor::{Actor, ActorStatus},
@@ -16,6 +18,7 @@ use crate::{
     mailbox::RecvResult,
     message::{Message, Request},
     messages, msg,
+    object::ObjectArc,
     request_table::ResponseToken,
     routers::Singleton,
     scope,
@@ -32,8 +35,9 @@ static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
 /// An actor execution context.
 pub struct Context<C = (), K = Singleton> {
     book: AddressBook,
-    addr: Addr,
-    group: Addr,
+    actor: Option<ObjectArc>, // `None` for group's and pruned context.
+    actor_addr: Addr,
+    group_addr: Addr,
     demux: Demux,
     config: Arc<C>,
     key: K,
@@ -57,13 +61,13 @@ impl<C, K> Context<C, K> {
     /// Returns the actor's address.
     #[inline]
     pub fn addr(&self) -> Addr {
-        self.addr
+        self.actor_addr
     }
 
     /// Returns the current group's address.
     #[inline]
     pub fn group(&self) -> Addr {
-        self.group
+        self.group_addr
     }
 
     /// Returns the actual config.
@@ -89,9 +93,7 @@ impl<C, K> Context<C, K> {
     /// ctx.set_status(ActorStatus::ALARMING.with_details("something wrong"));
     /// ```
     pub fn set_status(&self, status: ActorStatus) {
-        let object = ward!(self.book.get_owned(self.addr));
-        let actor = ward!(object.as_actor());
-        actor.set_status(status);
+        ward!(self.actor.as_ref().and_then(|o| o.as_actor())).set_status(status);
     }
 
     /// Closes the mailbox, that leads to returning `None` from `recv()` and
@@ -99,8 +101,7 @@ impl<C, K> Context<C, K> {
     ///
     /// Returns `true` if the mailbox has just been closed.
     pub fn close(&self) -> bool {
-        let object = ward!(self.book.get_owned(self.addr), return false);
-        ward!(object.as_actor(), return false).close()
+        ward!(self.actor.as_ref().and_then(|o| o.as_actor()), return false).close()
     }
 
     /// Sends a message using the routing system.
@@ -121,7 +122,9 @@ impl<C, K> Context<C, K> {
     /// }
     /// ```
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
-        let kind = MessageKind::Regular { sender: self.addr };
+        let kind = MessageKind::Regular {
+            sender: self.actor_addr,
+        };
         self.do_send(message, kind).await
     }
 
@@ -146,7 +149,9 @@ impl<C, K> Context<C, K> {
     /// }
     /// ```
     pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
-        let kind = MessageKind::Regular { sender: self.addr };
+        let kind = MessageKind::Regular {
+            sender: self.actor_addr,
+        };
 
         // XXX: unify with `do_send`.
         self.stats.on_sent_message::<M>();
@@ -312,7 +317,9 @@ impl<C, K> Context<C, K> {
         recipient: Addr,
         message: M,
     ) -> Result<(), SendError<M>> {
-        let kind = MessageKind::Regular { sender: self.addr };
+        let kind = MessageKind::Regular {
+            sender: self.actor_addr,
+        };
         self.do_send_to(recipient, message, kind).await
     }
 
@@ -361,7 +368,9 @@ impl<C, K> Context<C, K> {
     ) -> Result<(), TrySendError<M>> {
         self.stats.on_sent_message::<M>();
 
-        let kind = MessageKind::Regular { sender: self.addr };
+        let kind = MessageKind::Regular {
+            sender: self.actor_addr,
+        };
 
         trace!(to = %recipient, "> {:?}", message);
         if let Some(permit) = DUMPER.acquire_m::<M>() {
@@ -432,50 +441,37 @@ impl<C, K> Context<C, K> {
     where
         C: 'static,
     {
-        loop {
-            self.stats.on_recv();
-
-            if self.stage == Stage::Closed {
-                on_recv_after_close();
-            }
-
+        'outer: loop {
             // TODO: reset if the mailbox is empty.
             self.budget.acquire().await;
 
-            // TODO: cache `OwnedEntry`?
-            let object = self.book.get_owned(self.addr)?;
-            let actor = object.as_actor()?;
+            self.pre_recv();
 
-            if self.stage == Stage::PreRecv {
-                on_first_recv(&mut self.stage, actor);
-            }
+            let envelope = 'received: {
+                let mailbox_fut = self.actor.as_ref().expect("LOL").as_actor()?.recv();
+                pin_mut!(mailbox_fut);
 
-            // TODO: reset `trace_id` to `None`?
-
-            let mailbox_fut = actor.recv();
-            pin_mut!(mailbox_fut);
-
-            tokio::select! {
-                result = mailbox_fut => match result {
-                    RecvResult::Data(envelope) => {
-                        if let Some(envelope) = self.post_recv(envelope) {
-                            return Some(envelope);
+                tokio::select! {
+                    result = mailbox_fut => match result {
+                        RecvResult::Data(envelope) => {
+                            break 'received envelope;
+                        },
+                        RecvResult::Closed(trace_id) => {
+                            scope::set_trace_id(trace_id);
+                            let actor = self.actor.as_ref()?.as_actor()?;
+                            on_input_closed(&mut self.stage, actor);
+                            return None;
                         }
                     },
-                    RecvResult::Closed(trace_id) => {
-                        scope::set_trace_id(trace_id);
-                        on_input_closed(&mut self.stage, actor);
-                        return None;
-                    }
-                },
-                option = self.sources.next(), if !self.sources.is_empty() => {
-                    // TODO: is it required if mailbox becomes source?
-                    let envelope = ward!(option, continue);
+                    option = self.sources.next(), if !self.sources.is_empty() => {
+                        let envelope = ward!(option, continue 'outer);
+                        break 'received envelope;
+                    },
+                }
+            };
 
-                    if let Some(envelope) = self.post_recv(envelope) {
-                        return Some(envelope);
-                    }
-                },
+            if let Some(envelope) = self.post_recv(envelope) {
+                return Some(envelope);
             }
         }
     }
@@ -495,43 +491,70 @@ impl<C, K> Context<C, K> {
     ///     })
     /// }
     /// ```
-    pub fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
+    pub async fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
     where
         C: 'static,
     {
+        #[allow(clippy::never_loop)] // false positive
         loop {
-            self.stats.on_recv();
+            self.budget.acquire().await;
 
-            if self.stage == Stage::Closed {
-                on_recv_after_close();
-            }
+            self.pre_recv();
 
-            let object = self.book.get(self.addr).ok_or(TryRecvError::Closed)?;
-            let actor = object.as_actor().ok_or(TryRecvError::Closed)?;
+            let envelope = 'received: {
+                let actor = ward!(
+                    self.actor.as_ref().and_then(|o| o.as_actor()),
+                    return Err(TryRecvError::Closed)
+                );
 
-            if self.stage == Stage::PreRecv {
-                on_first_recv(&mut self.stage, actor);
-            }
+                // TODO: poll mailbox and sources fairly.
+                match actor.try_recv() {
+                    Some(RecvResult::Data(envelope)) => {
+                        break 'received envelope;
+                    }
+                    Some(RecvResult::Closed(trace_id)) => {
+                        scope::set_trace_id(trace_id);
+                        on_input_closed(&mut self.stage, actor);
+                        return Err(TryRecvError::Closed);
+                    }
+                    None => {}
+                }
 
-            // TODO: poll the sources.
-            match actor.try_recv() {
-                Some(RecvResult::Data(envelope)) => {
-                    drop(object);
+                if !self.sources.is_empty() {
+                    let envelope = poll_fn(|cx| match Pin::new(&mut self.sources).poll_next(cx) {
+                        Poll::Ready(Some(envelope)) => Poll::Ready(Some(envelope)),
+                        _ => Poll::Ready(None),
+                    })
+                    .await;
 
-                    if let Some(envelope) = self.post_recv(envelope) {
-                        return Ok(envelope);
+                    if let Some(envelope) = envelope {
+                        break 'received envelope;
                     }
                 }
-                Some(RecvResult::Closed(trace_id)) => {
-                    scope::set_trace_id(trace_id);
-                    on_input_closed(&mut self.stage, actor);
-                    return Err(TryRecvError::Closed);
-                }
-                None => {
-                    self.stats.on_empty_mailbox();
-                    return Err(TryRecvError::Empty);
-                }
+
+                self.stats.on_empty_mailbox();
+                return Err(TryRecvError::Empty);
+            };
+
+            if let Some(envelope) = self.post_recv(envelope) {
+                return Ok(envelope);
             }
+        }
+    }
+
+    fn pre_recv(&mut self) {
+        self.stats.on_recv();
+
+        if unlikely(self.stage == Stage::Closed) {
+            panic!("calling `recv()` or `try_recv()` after `None` is returned, an infinite loop?");
+        }
+
+        if unlikely(self.stage == Stage::PreRecv) {
+            let actor = ward!(self.actor.as_ref().and_then(|o| o.as_actor()));
+            if actor.is_initializing() {
+                actor.set_status(ActorStatus::NORMAL);
+            }
+            self.stage = Stage::Working;
         }
     }
 
@@ -548,7 +571,9 @@ impl<C, K> Context<C, K> {
                 self.config = config.get_user::<C>().clone();
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
-                let kind = MessageKind::Regular { sender: self.addr };
+                let kind = MessageKind::Regular {
+                    sender: self.actor_addr,
+                };
                 let envelope = Envelope::new(message, kind).upcast();
                 self.respond(token, Ok(()));
                 envelope
@@ -621,8 +646,9 @@ impl<C, K> Context<C, K> {
     pub fn pruned(&self) -> Context {
         Context {
             book: self.book.clone(),
-            addr: self.addr,
-            group: self.group,
+            actor: None,
+            actor_addr: self.actor_addr,
+            group_addr: self.group_addr,
             demux: self.demux.clone(),
             config: Arc::new(()),
             key: Singleton,
@@ -640,8 +666,9 @@ impl<C, K> Context<C, K> {
     pub(crate) fn with_config<C1>(self, config: Arc<C1>) -> Context<C1, K> {
         Context {
             book: self.book,
-            addr: self.addr,
-            group: self.group,
+            actor: self.actor,
+            actor_addr: self.actor_addr,
+            group_addr: self.group_addr,
             demux: self.demux,
             config,
             key: self.key,
@@ -653,21 +680,24 @@ impl<C, K> Context<C, K> {
     }
 
     pub(crate) fn with_addr(mut self, addr: Addr) -> Self {
-        self.addr = addr;
+        self.actor = self.book.get_owned(addr);
+        assert!(self.actor.is_some());
+        self.actor_addr = addr;
         self.stats = Stats::startup();
         self
     }
 
     pub(crate) fn with_group(mut self, group: Addr) -> Self {
-        self.group = group;
+        self.group_addr = group;
         self
     }
 
     pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1> {
         Context {
             book: self.book,
-            addr: self.addr,
-            group: self.group,
+            actor: self.actor,
+            actor_addr: self.actor_addr,
+            group_addr: self.group_addr,
             demux: self.demux,
             config: self.config,
             key,
@@ -684,14 +714,6 @@ fn e2m<M: Message>(envelope: Envelope) -> M {
 }
 
 #[cold]
-fn on_first_recv(stage: &mut Stage, actor: &Actor) {
-    if actor.is_initializing() {
-        actor.set_status(ActorStatus::NORMAL);
-    }
-    *stage = Stage::Working;
-}
-
-#[cold]
 fn on_input_closed(stage: &mut Stage, actor: &Actor) {
     if !actor.is_terminating() {
         actor.set_status(ActorStatus::TERMINATING);
@@ -700,18 +722,13 @@ fn on_input_closed(stage: &mut Stage, actor: &Actor) {
     trace!("input closed");
 }
 
-#[cold]
-fn on_recv_after_close() {
-    error!("calling `recv()` or `try_recv()` after `None` is returned, an infinite loop?");
-    panic!("suicide");
-}
-
 impl Context {
     pub(crate) fn new(book: AddressBook, demux: Demux) -> Self {
         Self {
             book,
-            addr: Addr::NULL,
-            group: Addr::NULL,
+            actor: None,
+            actor_addr: Addr::NULL,
+            group_addr: Addr::NULL,
             demux,
             config: Arc::new(()),
             key: Singleton,
@@ -728,8 +745,9 @@ impl<C, K: Clone> Clone for Context<C, K> {
     fn clone(&self) -> Self {
         Self {
             book: self.book.clone(),
-            addr: self.addr,
-            group: self.group,
+            actor: self.book.get_owned(self.actor_addr),
+            actor_addr: self.actor_addr,
+            group_addr: self.group_addr,
             demux: self.demux.clone(),
             config: self.config.clone(),
             key: self.key.clone(),
@@ -799,7 +817,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     /// Waits for the response.
     pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
         // TODO: cache `OwnedEntry`?
-        let this = self.context.addr;
+        let this = self.context.actor_addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
         let token = actor
@@ -843,7 +861,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
     /// Waits for the responses.
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError<R>>> {
         // TODO: cache `OwnedEntry`?
-        let this = self.context.addr;
+        let this = self.context.actor_addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
         let token = actor

@@ -32,12 +32,13 @@ use elfo_core::{
 const SYNC_YIELD_COUNT: usize = 32;
 
 pub struct Proxy {
-    context: Context,
+    context: ProxyContext,
     scope: Scope,
-    non_exhaustive: bool,
     subject_addr: Addr,
     recv_timeout: Duration,
 }
+
+type ProxyContext = Context<(), usize>;
 
 impl Proxy {
     pub fn addr(&self) -> Addr {
@@ -117,10 +118,11 @@ impl Proxy {
         })
     }
 
-    pub fn try_recv(&mut self) -> Option<Envelope> {
+    pub async fn try_recv(&mut self) -> Option<Envelope> {
         self.scope
             .clone()
-            .sync_within(|| self.context.try_recv().ok())
+            .within(async move { self.context.try_recv().await.ok() })
+            .await
     }
 
     /// Waits until the testable actor handles all previously sent messages.
@@ -136,10 +138,6 @@ impl Proxy {
     /// Sets message wait time for `recv` call.
     pub fn set_recv_timeout(&mut self, recv_timeout: Duration) {
         self.recv_timeout = recv_timeout;
-    }
-
-    pub fn non_exhaustive(&mut self) {
-        self.non_exhaustive = true;
     }
 
     /// Creates a subproxy with a different address.
@@ -164,7 +162,6 @@ impl Proxy {
         Proxy {
             scope: Scope::test(context.addr(), meta),
             context,
-            non_exhaustive: self.non_exhaustive,
             subject_addr: self.subject_addr,
             recv_timeout: self.recv_timeout,
         }
@@ -181,22 +178,10 @@ impl Proxy {
     }
 }
 
-impl Drop for Proxy {
-    fn drop(&mut self) {
-        if !self.non_exhaustive && !thread::panicking() {
-            self.scope.clone().sync_within(|| {
-                if let Some(envelope) = self.try_recv() {
-                    panic!("test ended, but not all messages have been consumed: {envelope:?}");
-                }
-            });
-        }
-    }
-}
-
-#[message(ret = Local<Context>)]
+#[message(ret = Local<ProxyContext>)]
 struct StealContext;
 
-fn testers(tx: shared::OneshotSender<Context>) -> Blueprint {
+fn testers(tx: shared::OneshotSender<ProxyContext>) -> Blueprint {
     let tx = Arc::new(tx);
     let next_tester_key = AtomicUsize::new(1);
 
@@ -212,12 +197,12 @@ fn testers(tx: shared::OneshotSender<Context>) -> Blueprint {
 
             async move {
                 if *ctx.key() == 0 {
-                    let _ = tx.send(ctx.pruned());
+                    let _ = tx.send(ctx);
                 } else {
                     let envelope = ctx.recv().await.unwrap();
                     msg!(match envelope {
                         (StealContext, token) => {
-                            ctx.respond(token, Local::from(ctx.pruned()));
+                            ctx.pruned().respond(token, Local::from(ctx));
                         }
                         envelope => panic!("unexpected message: {envelope:?}"),
                     });
@@ -270,7 +255,6 @@ pub async fn proxy(schema: Blueprint, config: impl for<'de> Deserializer<'de>) -
     Proxy {
         scope: Scope::test(context.addr(), meta),
         context,
-        non_exhaustive: false,
         subject_addr,
         recv_timeout: Duration::from_millis(150),
     }

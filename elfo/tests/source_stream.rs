@@ -62,7 +62,7 @@ async fn once() {
     });
 
     let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start::new(100, false)).await;
     proxy.send(Start::new(25, true)).await;
@@ -74,7 +74,7 @@ async fn once() {
     assert_msg_eq!(proxy.recv().await, Finished(5));
     assert_msg_eq!(proxy.recv().await, Finished(50));
     assert_msg_eq!(proxy.recv().await, Finished(100));
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start::new(10, true)).await;
     proxy.send(Start::new(15, false)).await;
@@ -138,7 +138,7 @@ async fn from_futures03() {
     });
 
     let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start::new(11, 4)).await;
     proxy.send(Start::new(35, 3)).await;
@@ -194,7 +194,7 @@ async fn terminate() {
     });
 
     let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start(11)).await;
     proxy.send(Start(23)).await;
@@ -211,7 +211,7 @@ async fn terminate() {
     assert_msg_eq!(proxy.recv().await, Produced(35)); // 70
     proxy.send(Terminate(35)).await;
 
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 }
 
 #[tokio::test(start_paused = true)]
@@ -308,7 +308,7 @@ async fn result() {
     });
 
     let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start::new(10, false)).await;
     proxy.send(Start::new(20, true)).await;

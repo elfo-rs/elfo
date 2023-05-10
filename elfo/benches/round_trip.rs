@@ -79,7 +79,7 @@ fn make_producers<const FLAGS: Flags>(actor_count: u32, iter_count: u32) -> Blue
 
                     if flag!(SEND_EVENT_BACK) {
                         // FIXME
-                        if let Ok(envelope) = ctx.try_recv() {
+                        if let Ok(envelope) = ctx.try_recv().await {
                             msg!(match envelope {
                                 event @ Event => {
                                     black_box(event.value);

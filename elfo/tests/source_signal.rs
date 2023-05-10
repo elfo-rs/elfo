@@ -77,7 +77,7 @@ async fn terminate() {
 
     send_signal(libc::SIGWINCH);
     proxy.sync().await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 }
 
 #[cfg(unix)]

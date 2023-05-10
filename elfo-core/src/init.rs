@@ -104,7 +104,7 @@ pub async fn do_start<F: Future>(
 
     let entry = topology.book.vacant_entry();
     let addr = entry.addr();
-    let ctx = Context::new(topology.book.clone(), Demux::default()).with_addr(addr);
+    let ctx = Context::new(topology.book.clone(), Demux::default());
 
     let meta = Arc::new(ActorMeta {
         group: "system.init".into(),
@@ -127,6 +127,9 @@ pub async fn do_start<F: Future>(
     let scope = Scope::new(TraceId::generate(), addr, meta, Arc::new(scope_shared));
     scope.clone().sync_within(|| actor.on_start()); // need to emit initial metrics
     entry.insert(Object::new(addr, actor));
+
+    // It must be called after `entry.insert()`.
+    let ctx = ctx.with_addr(addr);
 
     let f = async move {
         start_entrypoints(&ctx, &topology).await?;

@@ -40,7 +40,7 @@ async fn smoke() {
     });
 
     let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start(100)).await;
     proxy.send(Start(25)).await;
@@ -52,7 +52,7 @@ async fn smoke() {
     assert_msg_eq!(proxy.recv().await, Tick(5));
     assert_msg_eq!(proxy.recv().await, Tick(50));
     assert_msg_eq!(proxy.recv().await, Tick(100));
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start(10)).await;
     proxy.send(Start(15)).await;
@@ -95,7 +95,7 @@ async fn terminate() {
     });
 
     let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start(10)).await;
     proxy.send(Start(20)).await;

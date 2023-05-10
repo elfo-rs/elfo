@@ -34,7 +34,7 @@ async fn multiple() {
     });
 
     let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Start(ms(11))).await;
     proxy.send(Start(ms(35))).await;
@@ -52,8 +52,6 @@ async fn multiple() {
     assert_msg_eq!(proxy.recv().await, Tick(ms(11))); // 77
     assert_msg_eq!(proxy.recv().await, Tick(ms(11))); // 88
     assert_msg_eq!(proxy.recv().await, Tick(ms(49))); // 98
-
-    proxy.non_exhaustive();
 }
 
 #[message]
@@ -116,8 +114,7 @@ struct Checker {
 }
 
 impl Checker {
-    fn new(mut proxy: Proxy) -> Self {
-        proxy.non_exhaustive();
+    fn new(proxy: Proxy) -> Self {
         Self {
             proxy,
             prev_time: Instant::now(),
@@ -235,5 +232,5 @@ async fn terminate() {
 
     proxy.send(Terminate).await;
     proxy.sync().await;
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 }

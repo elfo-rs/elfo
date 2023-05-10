@@ -71,7 +71,7 @@ async fn it_terminates_manually_policy_via_closing_terminate() {
 
     proxy.send(Terminate::default()).await;
     assert_msg_eq!(proxy.recv().await, BeforeExit);
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     proxy.send(Terminate::closing()).await;
     assert_msg_eq!(proxy.recv().await, BeforeExit);

@@ -11,17 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **BREAKING** source: move to dynamic sources, see the Actoromicon for details ([#50]).
+- **BREAKING** context: make `Context::try_recv()` async, now it polls sources and respects an actor's budget ([#24], [#70]).
+- **BREAKING** proxy: make `Proxy::try_recv()` async.
 - **BREAKING** rename `Schema` to `Blueprint`.
 - source: new sources are fair ([#58]).
 - status: `Alarming` is logged with `Warn` level instead of `Error`.
 - deps: update `syn` to v2, `sealed` to v0.5, `quanta` to v0.11.
+- context: speedup `Context::recv()` up to 10%.
 
 ### Removed
+- **BREAKING** proxy: `non_exhaustive()`, it's hard to make it work with async `try_recv()`.
 - Deprecated stuff: `tls`, `Proxy::set_addr()`, `RequestBuilder::from()`, `Scope::addr()`, also `actors` and `trace_id` modules.
 
+[#70]: https://github.com/elfo-rs/elfo/issues/70
 [#58]: https://github.com/elfo-rs/elfo/issues/58
 [#50]: https://github.com/elfo-rs/elfo/issues/50
 [#39]: https://github.com/elfo-rs/elfo/issues/39
+[#24]: https://github.com/elfo-rs/elfo/issues/24
 
 ## [0.1.40] - 2023-03-07
 ### Added
