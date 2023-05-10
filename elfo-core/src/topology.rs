@@ -143,12 +143,12 @@ impl<'t> Local<'t> {
         self.route_to(dest, |_| true)
     }
 
-    pub fn mount(self, schema: Blueprint) {
+    pub fn mount(self, blueprint: Blueprint) {
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
         let ctx = Context::new(book, self.demux.into_inner()).with_group(addr);
         let rt_manager = self.topology.inner.read().rt_manager.clone();
-        let object = (schema.run)(ctx, self.name, rt_manager);
+        let object = (blueprint.run)(ctx, self.name, rt_manager);
         self.entry.insert(object);
     }
 }

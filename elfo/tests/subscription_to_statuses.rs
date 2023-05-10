@@ -20,7 +20,7 @@ struct Stop(u32);
 struct Fail(u32);
 
 async fn run_group() -> Proxy {
-    let schema = ActorGroup::new()
+    let blueprint = ActorGroup::new()
         .router(MapRouter::new(|envelope| {
             msg!(match envelope {
                 Start(n) | Stop(n) | Fail(n) => Outcome::Unicast(*n),
@@ -44,7 +44,7 @@ async fn run_group() -> Proxy {
             }
         });
 
-    elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await
+    elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await
 }
 
 async fn check_seq(proxy: &mut Proxy, expected: &[(u32, ActorStatusKind, Option<&str>)]) {

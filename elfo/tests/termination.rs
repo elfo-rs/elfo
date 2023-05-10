@@ -8,7 +8,7 @@ struct BeforeExit;
 
 #[tokio::test]
 async fn it_terminates_closing_policy() {
-    let schema = ActorGroup::new().exec(move |mut ctx| async move {
+    let blueprint = ActorGroup::new().exec(move |mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 _ => unreachable!(),
@@ -18,7 +18,7 @@ async fn it_terminates_closing_policy() {
         ctx.send(BeforeExit).await.unwrap();
     });
 
-    let mut proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
+    let mut proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     proxy.send(Terminate::default()).await;
     proxy.finished().await;
@@ -28,7 +28,7 @@ async fn it_terminates_closing_policy() {
 
 #[tokio::test]
 async fn it_terminates_manually_policy() {
-    let schema = ActorGroup::new()
+    let blueprint = ActorGroup::new()
         .termination_policy(TerminationPolicy::manually())
         .exec(move |mut ctx| async move {
             while let Some(envelope) = ctx.recv().await {
@@ -42,7 +42,7 @@ async fn it_terminates_manually_policy() {
             }
         });
 
-    let mut proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
+    let mut proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     proxy.send(Terminate::default()).await;
     proxy.finished().await;
@@ -52,7 +52,7 @@ async fn it_terminates_manually_policy() {
 
 #[tokio::test]
 async fn it_terminates_manually_policy_via_closing_terminate() {
-    let schema = ActorGroup::new()
+    let blueprint = ActorGroup::new()
         .termination_policy(TerminationPolicy::manually())
         .exec(move |mut ctx| async move {
             while let Some(envelope) = ctx.recv().await {
@@ -67,7 +67,7 @@ async fn it_terminates_manually_policy_via_closing_terminate() {
             ctx.send(BeforeExit).await.unwrap();
         });
 
-    let mut proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
+    let mut proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     proxy.send(Terminate::default()).await;
     assert_msg_eq!(proxy.recv().await, BeforeExit);

@@ -41,11 +41,11 @@ pub use allocator::AllocatorStats;
 pub fn init() -> Blueprint {
     let storage = Arc::new(Storage::new());
     let recorder = Recorder::new(storage.clone());
-    let schema = actor::new(storage);
+    let blueprint = actor::new(storage);
 
     if let Err(err) = metrics::set_boxed_recorder(Box::new(recorder)) {
         error!(error = %err, "failed to set a metric recorder");
     }
 
-    schema
+    blueprint
 }

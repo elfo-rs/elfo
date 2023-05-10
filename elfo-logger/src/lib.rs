@@ -63,14 +63,14 @@ pub fn new() -> (PrintingLayer, Blueprint) {
 
     let shared = Arc::new(shared);
     let layer = PrintingLayer::new(shared.clone());
-    let schema = Logger::blueprint(shared);
+    let blueprint = Logger::blueprint(shared);
 
-    (layer, schema)
+    (layer, blueprint)
 }
 
 pub fn init() -> Blueprint {
     // TODO: log instead of panicking.
-    let (printer, schema) = new();
+    let (printer, blueprint) = new();
     let registry = Registry::default();
 
     if env::var(EnvFilter::DEFAULT_ENV).is_ok() {
@@ -84,7 +84,7 @@ pub fn init() -> Blueprint {
         install_subscriber(subscriber);
     };
 
-    schema
+    blueprint
 }
 
 fn install_subscriber(s: impl Subscriber + Send + Sync) {

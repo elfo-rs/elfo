@@ -35,7 +35,7 @@ pub mod config;
 /// Installs a global dump recorder and returns a group to handle dumps.
 pub fn new() -> Blueprint {
     let storage = Arc::new(Mutex::new(DumpStorage::new()));
-    let schema = actor::new(storage.clone());
+    let blueprint = actor::new(storage.clone());
 
     let is_ok = dumping::set_make_recorder(Box::new(move |class| {
         storage.lock().registry(class) as Arc<dyn Recorder>
@@ -45,5 +45,5 @@ pub fn new() -> Blueprint {
         error!("failed to set a dump recorder");
     }
 
-    schema
+    blueprint
 }

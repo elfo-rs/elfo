@@ -18,7 +18,7 @@ struct Terminated;
 
 #[tokio::test]
 async fn it_restarts_explicitly() {
-    let schema = ActorGroup::new().exec(move |mut ctx| async move {
+    let blueprint = ActorGroup::new().exec(move |mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 Terminate { .. } => break,
@@ -28,7 +28,7 @@ async fn it_restarts_explicitly() {
         ctx.send(Terminated).await.unwrap();
     });
 
-    let mut proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
+    let mut proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     for _ in 1..5 {
         proxy.send(Terminate).await;
@@ -38,7 +38,7 @@ async fn it_restarts_explicitly() {
 
 #[tokio::test(start_paused = true)]
 async fn it_restarts_with_timeout_after_failures() {
-    let schema = ActorGroup::new().exec(move |mut ctx| async move {
+    let blueprint = ActorGroup::new().exec(move |mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 Terminate { .. } => panic!("boom!"),
@@ -47,7 +47,7 @@ async fn it_restarts_with_timeout_after_failures() {
         }
     });
 
-    let mut proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
+    let mut proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     for i in 1..5 {
         proxy.send(Terminate).await;
@@ -75,11 +75,11 @@ impl Drop for GuardedMessage {
 // See #68.
 #[tokio::test(start_paused = true)]
 async fn mailbox_must_be_dropped() {
-    let schema = ActorGroup::new().exec(|_ctx| async {
+    let blueprint = ActorGroup::new().exec(|_ctx| async {
         tokio::time::sleep(Duration::from_secs(1)).await;
         anyhow::bail!("boom!");
     });
-    let proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
+    let proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     let msg = GuardedMessage::default();
     let flag = msg.0.clone();

@@ -19,7 +19,7 @@ async fn it_doesnt_start_actors() {
     #[message]
     struct GentleMulti(Vec<u32>);
 
-    let schema = ActorGroup::new()
+    let blueprint = ActorGroup::new()
         .router(MapRouter::new(|e| {
             msg!(match e {
                 Start(no) => Outcome::Unicast(*no),
@@ -43,7 +43,7 @@ async fn it_doesnt_start_actors() {
             }
         });
 
-    let proxy = elfo::test::proxy(schema, elfo::config::AnyConfig::default()).await;
+    let proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     // TODO: simplify such tests.
     assert!(AssertUnwindSafe(proxy.send(GentleUni(42)))

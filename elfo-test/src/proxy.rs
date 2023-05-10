@@ -213,7 +213,7 @@ fn testers(tx: shared::OneshotSender<ProxyContext>) -> Blueprint {
         })
 }
 
-pub async fn proxy(schema: Blueprint, config: impl for<'de> Deserializer<'de>) -> Proxy {
+pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>) -> Proxy {
     let _ = tracing_subscriber::fmt()
         .with_target(false)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -238,7 +238,7 @@ pub async fn proxy(schema: Blueprint, config: impl for<'de> Deserializer<'de>) -
     // TODO: capture log messages.
     // TODO: capture metrics.
     configurers.mount(elfo_configurer::fixture(&topology, config));
-    subject.mount(schema);
+    subject.mount(blueprint);
 
     let (tx, rx) = shared::oneshot_channel();
     testers.mount(self::testers(tx));
