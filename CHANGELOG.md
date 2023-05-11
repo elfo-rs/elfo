@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING** proxy: make `Proxy::try_recv()` async.
 - **BREAKING** rename `Schema` to `Blueprint`.
 - **BREAKING** mark public system messages as "non_exhaustive" ([#35]).
+- **BREAKING** stream: rename `Yielder` to `Emitter`.
 - source: new sources are fair ([#58]).
 - status: `Alarming` is logged with `Warn` level instead of `Error`.
 - deps: update `syn` to v2, `sealed` to v0.5, `quanta` to v0.11.
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **BREAKING** proxy: `non_exhaustive()`, it's hard to make it work with async `try_recv()`.
 - **BREAKING** configurer: remove `TryReloadConfigs`, use `ReloadConfigs` instead.
+- **BREAKING** time: remove `Stopwatch` in favor of `Delay`.
 - Deprecated stuff: `tls`, `Proxy::set_addr()`, `RequestBuilder::from()`, `Scope::addr()`, also `actors` and `trace_id` modules.
 
 [#70]: https://github.com/elfo-rs/elfo/issues/70
