@@ -21,7 +21,7 @@ pub use crate::{
     local::{Local, MoveOwnership},
     message::{Message, Request},
     request_table::ResponseToken,
-    source::SourceHandle,
+    source::{SourceHandle, UnattachedSource},
     topology::Topology,
 };
 pub use elfo_macros::{message_core as message, msg_core as msg};

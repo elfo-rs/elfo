@@ -13,7 +13,7 @@ use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
-    source::{SourceArc, SourceStream, Unattached},
+    source::{SourceArc, SourceStream, UnattachedSource},
     time::far_future,
     tracing::TraceId,
 };
@@ -84,7 +84,7 @@ struct IntervalSource<M> {
 
 impl<M: Message> Interval<M> {
     /// Creates an unattached instance of [`Interval`].
-    pub fn new(message: M) -> Unattached<Self> {
+    pub fn new(message: M) -> UnattachedSource<Self> {
         let source = SourceArc::new(IntervalSource {
             message,
             period: NEVER,
@@ -92,7 +92,7 @@ impl<M: Message> Interval<M> {
             sleep: tokio::time::sleep_until(far_future()),
         });
 
-        Unattached::new(source.clone(), Self { source })
+        UnattachedSource::new(source.clone(), Self { source })
     }
 
     /// Replaces a stored message with the provided one.

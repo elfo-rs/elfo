@@ -14,7 +14,7 @@ use crate::{
     envelope::{Envelope, MessageKind},
     message::Message,
     scope,
-    source::{SourceArc, SourceStream, Unattached},
+    source::{SourceArc, SourceStream, UnattachedSource},
     time::far_future,
     tracing::TraceId,
 };
@@ -84,7 +84,7 @@ impl<M: Message> Delay<M> {
     /// Schedules the timer to emit the provided message after `delay`.
     ///
     /// Creates an unattached instance of [`Delay`].
-    pub fn new(delay: Duration, message: M) -> Unattached<Self> {
+    pub fn new(delay: Duration, message: M) -> UnattachedSource<Self> {
         Self::until(Instant::now() + delay, message)
     }
 
@@ -97,14 +97,14 @@ impl<M: Message> Delay<M> {
     /// This method is unstable, because it accepts [`tokio::time::Instant`],
     /// which will be replaced in the future to support other runtimes.
     #[stability::unstable]
-    pub fn until(when: Instant, message: M) -> Unattached<Self> {
+    pub fn until(when: Instant, message: M) -> UnattachedSource<Self> {
         let source = SourceArc::new(DelaySource {
             message: Some(message),
             trace_id: Some(scope::trace_id()),
             sleep: tokio::time::sleep_until(when),
         });
 
-        Unattached::new(source.clone(), Self { source })
+        UnattachedSource::new(source.clone(), Self { source })
     }
 }
 

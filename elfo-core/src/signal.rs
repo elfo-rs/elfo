@@ -18,7 +18,7 @@ use crate::{
     addr::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
-    source::{SourceArc, SourceStream, Unattached},
+    source::{SourceArc, SourceStream, UnattachedSource},
     tracing::TraceId,
 };
 
@@ -125,14 +125,14 @@ pub enum SignalKind {
 
 impl<M: Message> Signal<M> {
     /// Creates an unattached instance of [`Signal`].
-    pub fn new(kind: SignalKind, message: M) -> Unattached<Self> {
+    pub fn new(kind: SignalKind, message: M) -> UnattachedSource<Self> {
         let inner = SignalInner::new(kind).unwrap_or_else(|err| {
             tracing::warn!(kind = ?kind, error = %err, "failed to create a signal handler");
             SignalInner::Disabled
         });
 
         let source = SourceArc::new(SignalSource { message, inner });
-        Unattached::new(source.clone(), Self { source })
+        UnattachedSource::new(source.clone(), Self { source })
     }
 
     /// Replaces a stored message with the provided one.

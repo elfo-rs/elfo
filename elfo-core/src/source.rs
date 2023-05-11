@@ -18,13 +18,19 @@ pub(crate) trait SourceStream: Send + 'static {
     fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>>;
 }
 
+/// A wrapper to indicate that a source hasn't been attached to a context yet.
+///
+/// Sources does nothing unless they are attached to a context.
+/// Use [`Context::attach()`] to do it.
+///
+/// [`Context::attach()`]: crate::context::Context::attach()
 #[must_use = "sources do nothing unless you attach them"]
-pub struct Unattached<H> {
+pub struct UnattachedSource<H> {
     source: UntypedSourceArc,
     handle: H,
 }
 
-impl<H> Unattached<H> {
+impl<H> UnattachedSource<H> {
     pub(crate) fn new(source: SourceArc<impl SourceStream + ?Sized>, handle: H) -> Self {
         Self {
             source: source.inner,

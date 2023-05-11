@@ -14,7 +14,7 @@ use crate::{
     envelope::{Envelope, MessageKind},
     message::{AnyMessage, Message},
     scope::{self, Scope},
-    source::{SourceArc, SourceStream, Unattached, UntypedSourceArc},
+    source::{SourceArc, SourceStream, UnattachedSource, UntypedSourceArc},
     tracing::TraceId,
 };
 
@@ -137,7 +137,7 @@ impl<M: StreamItem> crate::source::SourceHandle for Stream<M> {
 
 impl<M: StreamItem> Stream<M> {
     /// Creates an unattached source based on the provided [`futures::Stream`].
-    pub fn from_futures03<S>(stream: S) -> Unattached<Self>
+    pub fn from_futures03<S>(stream: S) -> UnattachedSource<Self>
     where
         S: futures::Stream<Item = M> + Send + 'static,
     {
@@ -145,7 +145,7 @@ impl<M: StreamItem> Stream<M> {
     }
 
     /// Creates an uattached source based on the provided future.
-    pub fn once<F>(future: F) -> Unattached<Self>
+    pub fn once<F>(future: F) -> UnattachedSource<Self>
     where
         F: Future<Output = M> + Send + 'static,
     {
@@ -155,7 +155,7 @@ impl<M: StreamItem> Stream<M> {
     fn from_futures03_inner(
         stream: impl futures::Stream<Item = M> + Send + 'static,
         rewrite_trace_id: bool,
-    ) -> Unattached<Self> {
+    ) -> UnattachedSource<Self> {
         let source = StreamSource {
             scope: scope::expose(),
             rewrite_trace_id,
@@ -171,7 +171,7 @@ impl<M: StreamItem> Stream<M> {
             source: SourceArc::from_untyped(UntypedSourceArc::new(source)),
         };
 
-        Unattached::new(this.source.clone(), this)
+        UnattachedSource::new(this.source.clone(), this)
     }
 }
 
@@ -180,7 +180,7 @@ impl Stream<AnyMessage> {
     ///
     /// The generator receives [`Emitter`] as an argument and should return a
     /// future that will produce messages by using [`Emitter::emit`].
-    pub fn generate<G, F>(generator: G) -> Unattached<Self>
+    pub fn generate<G, F>(generator: G) -> UnattachedSource<Self>
     where
         G: FnOnce(Emitter) -> F,
         F: Future<Output = ()> + Send + 'static,

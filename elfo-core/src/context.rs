@@ -22,7 +22,7 @@ use crate::{
     request_table::ResponseToken,
     routers::Singleton,
     scope,
-    source::{SourceHandle, Sources, Unattached},
+    source::{SourceHandle, Sources, UnattachedSource},
 };
 
 use self::{budget::Budget, stats::Stats};
@@ -83,7 +83,7 @@ impl<C, K> Context<C, K> {
     }
 
     /// Attaches the provided source to the context.
-    pub fn attach<S1: SourceHandle>(&mut self, source: Unattached<S1>) -> S1 {
+    pub fn attach<S1: SourceHandle>(&mut self, source: UnattachedSource<S1>) -> S1 {
         source.attach_to(&mut self.sources)
     }
 
