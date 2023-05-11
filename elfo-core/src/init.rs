@@ -149,7 +149,7 @@ struct CheckMemoryUsageTick;
 const SEND_CLOSING_TERMINATE_AFTER: Duration = Duration::from_secs(30);
 const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(45);
 const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
-const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(7);
+const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(3);
 
 async fn termination(mut ctx: Context, topology: Topology) {
     ctx.attach(Signal::new(SignalKind::UnixTerminate, TerminateSystem));
@@ -168,6 +168,8 @@ async fn termination(mut ctx: Context, topology: Topology) {
         }
     };
 
+    let mut oom_prevented = false;
+
     while let Some(envelope) = ctx.recv().await {
         msg!(match envelope {
             TerminateSystem => break, // TODO: use `Terminate`?
@@ -177,9 +179,10 @@ async fn termination(mut ctx: Context, topology: Topology) {
                     Some(Ok(false)) => {
                         error!("maximum memory usage is reached, forcibly terminating");
                         let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
+                        oom_prevented = true;
                     }
                     Some(Err(err)) => {
-                        error!(error = %err, "memory tracker cannot check memory usage");
+                        warn!(error = %err, "memory tracker cannot check memory usage");
                     }
                 }
             }
@@ -195,10 +198,16 @@ async fn termination(mut ctx: Context, topology: Topology) {
         select! {
             _ = &mut termination => return,
             Some(envelope) = ctx.recv() => {
-                // TODO: `Terminate::closing` on second `Ctrl-C`
-                // `Ctrl-C` has been pressed again.
-                // Terminate immediately.
-                if envelope.is::<TerminateSystem>() {
+                if !envelope.is::<TerminateSystem>() {
+                    continue;
+                }
+
+                if oom_prevented {
+                    // Skip the first signal after OOM prevented.
+                    oom_prevented = false;
+                } else {
+                    // `Ctrl-C` has been pressed again. Terminate immediately.
+                    // TODO: `Terminate::closing` on second `Ctrl-C`
                     return;
                 }
             }

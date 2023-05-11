@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - context: speedup `Context::recv()` up to 10%.
 - context: now `Context::(try_)send(_to)()` can be used with requests for "fire and forget" style ([#15]).
 
+### Fixed
+- init: ignore the first signal after OOM is prevented.
+
 ### Removed
 - **BREAKING** proxy: `non_exhaustive()`, it's hard to make it work with async `try_recv()`.
 - **BREAKING** configurer: remove `TryReloadConfigs`, use `ReloadConfigs` instead.
