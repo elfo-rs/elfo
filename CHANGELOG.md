@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - messages: `Impossible` that cannot be constructed ([#39]).
 
 ### Changed
+- **BREAKING** all built-in actors are moved to the `batteries` module.
 - **BREAKING** source: move to dynamic sources, see the Actoromicon for details ([#50]).
 - **BREAKING** context: make `Context::try_recv()` async, now it polls sources and respects an actor's budget ([#24], [#70]).
 - **BREAKING** proxy: make `Proxy::try_recv()` async.

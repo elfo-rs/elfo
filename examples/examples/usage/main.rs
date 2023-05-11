@@ -267,9 +267,9 @@ fn topology() -> elfo::Topology {
     // * `RUST_LOG=info,[{actor_group=aggregators}]`
     //
     // However, it's more useful to control logging in the config file.
-    let logger = elfo::logger::init();
+    let logger = elfo::batteries::logger::init();
     // Setup up telemetry (based on the `metrics` crate).
-    let telemeter = elfo::telemeter::init();
+    let telemeter = elfo::batteries::telemeter::init();
 
     // Define actor groups.
     let producers = topology.local("producers");
@@ -293,13 +293,16 @@ fn topology() -> elfo::Topology {
     reporters.mount(reporter::new());
     loggers.mount(logger);
     telemeters.mount(telemeter);
-    dumpers.mount(elfo::dumper::new());
-    pingers.mount(elfo::pinger::new(&topology));
+    dumpers.mount(elfo::batteries::dumper::new());
+    pingers.mount(elfo::batteries::pinger::new(&topology));
 
     // Actors can use `topology` as an extended service locator.
     // Usually it should be used for utilities only.
     let config_path = "examples/examples/usage/config.toml";
-    configurers.mount(elfo::configurer::from_path(&topology, config_path));
+    configurers.mount(elfo::batteries::configurer::from_path(
+        &topology,
+        config_path,
+    ));
 
     topology
 }

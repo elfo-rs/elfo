@@ -77,7 +77,7 @@ fn sender(broadcast_tx: broadcast::Sender<SomeMessage>) -> Blueprint {
 #[tokio::main]
 async fn main() {
     let topology = elfo::Topology::empty();
-    let logger = elfo::logger::init();
+    let logger = elfo::batteries::logger::init();
 
     let senders = topology.local("senders");
     let receivers = topology.local("receivers");
@@ -89,7 +89,10 @@ async fn main() {
     senders.mount(self::sender(broadcast_tx.clone()));
     receivers.mount(self::receiver(broadcast_tx));
     loggers.mount(logger);
-    configurers.mount(elfo::configurer::fixture(&topology, AnyConfig::default()));
+    configurers.mount(elfo::batteries::configurer::fixture(
+        &topology,
+        AnyConfig::default(),
+    ));
 
     elfo::start(topology).await;
 }

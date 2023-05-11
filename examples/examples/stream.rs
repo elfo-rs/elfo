@@ -21,7 +21,7 @@ fn samples() -> Blueprint {
 #[tokio::main]
 async fn main() {
     let topology = elfo::Topology::empty();
-    let logger = elfo::logger::init();
+    let logger = elfo::batteries::logger::init();
 
     let samples = topology.local("samples");
     let loggers = topology.local("loggers");
@@ -29,7 +29,10 @@ async fn main() {
 
     samples.mount(self::samples());
     loggers.mount(logger);
-    configurers.mount(elfo::configurer::fixture(&topology, AnyConfig::default()));
+    configurers.mount(elfo::batteries::configurer::fixture(
+        &topology,
+        AnyConfig::default(),
+    ));
 
     elfo::start(topology).await;
 }

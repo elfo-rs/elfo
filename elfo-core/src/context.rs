@@ -503,7 +503,13 @@ impl<C, K> Context<C, K> {
     ///
     /// The method is async due to the following reasons:
     /// 1. To poll sources, not only the mailbox.
-    /// 2. To respect the actor budget (see [`Context::recv()`] for details).
+    /// 2. To respect the actor budget (see below).
+    ///
+    /// # Budget
+    ///
+    /// The method returns the execution back to the runtime once the actor's
+    /// budget has been exhausted. It prevents the actor from blocking the
+    /// runtime for too long.
     ///
     /// # Cancel safety
     ///

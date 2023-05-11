@@ -148,7 +148,10 @@ async fn run<const FLAGS: Flags>(
 
     producers.mount(make_producers::<FLAGS>(producer_count, iter_count));
     consumers.mount(make_consumers::<FLAGS>(consumer_count));
-    configurers.mount(elfo::configurer::fixture(&topology, AnyConfig::default()));
+    configurers.mount(elfo::batteries::configurer::fixture(
+        &topology,
+        AnyConfig::default(),
+    ));
 
     elfo::_priv::do_start(topology, |ctx, _| async move {
         let elapsed = ctx

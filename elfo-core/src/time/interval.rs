@@ -199,6 +199,8 @@ impl<M: Message> Interval<M> {
     ///
     /// Note: it doesn't terminates the source. It means the source is present
     /// in the source map until [`SourceHandle::terminate()`] is called.
+    ///
+    /// [`SourceHandle::terminate()`]: crate::SourceHandle::terminate()
     pub fn stop(&self) {
         self.schedule(Some(far_future()), NEVER);
     }
