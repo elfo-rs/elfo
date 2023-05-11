@@ -424,19 +424,39 @@ impl<C, K> Context<C, K> {
             .respond(token.into_untyped(), envelope);
     }
 
-    /// Receives the next envelope.
+    /// Receives the next envelope from the mailbox or sources.
+    /// If the envelope isn't available, the method waits for the next one.
+    /// If the mailbox is closed, `None` is returned.
+    ///
+    /// # Budget
+    ///
+    /// The method returns the execution back to the runtime once the actor's
+    /// budget has been exhausted. It prevents the actor from blocking the
+    /// runtime for too long.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe. However, using `select!` requires handling
+    /// tracing on your own, so avoid it if possible (use sources instead).
     ///
     /// # Panics
-    /// If the method is called again after returning `None`.
     ///
-    /// # Examples
-    /// ```ignore
+    /// If the method is called again after `None` is returned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// # use elfo::{message, msg};
+    /// # #[message]
+    /// # struct SomethingHappened;
     /// while let Some(envelope) = ctx.recv().await {
     ///     msg!(match envelope {
-    ///         SomethingHappened => /* ... */,
-    ///     })
+    ///         SomethingHappened => { /* ... */ },
+    ///     });
     /// }
-    /// ```
+    /// # }
     pub async fn recv(&mut self) -> Option<Envelope>
     where
         C: 'static,
@@ -448,7 +468,7 @@ impl<C, K> Context<C, K> {
             self.pre_recv();
 
             let envelope = 'received: {
-                let mailbox_fut = self.actor.as_ref().expect("LOL").as_actor()?.recv();
+                let mailbox_fut = self.actor.as_ref()?.as_actor()?.recv();
                 pin_mut!(mailbox_fut);
 
                 tokio::select! {
@@ -476,20 +496,52 @@ impl<C, K> Context<C, K> {
         }
     }
 
-    /// Receives the next envelope without waiting.
+    /// Receives the next envelope from the mailbox or sources without waiting.
+    /// If the envelope isn't available, `Err(TryRecvError::Empty)` is returned.
+    /// If the mailbox is closed, `Err(TryRecvError::Closed)` is returned.
+    /// Useful to batch message processing.
+    ///
+    /// The method is async due to the following reasons:
+    /// 1. To poll sources, not only the mailbox.
+    /// 2. To respect the actor budget (see [`Context::recv()`] for details).
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe. However, using `select!` requires handling
+    /// tracing on your own, so avoid it if possible (use sources instead).
     ///
     /// # Panics
-    /// If the method is called again after returning
-    /// `Err(TryRecvError::Closed)`.
     ///
-    /// # Examples
-    /// ```ignore
-    /// // Iterate over all available messages.
-    /// while let Ok(envelope) = ctx.try_recv() {
-    ///     msg!(match envelope {
-    ///         SomethingHappened => /* ... */,
-    ///     })
+    /// If the method is called again after `Err(TryRecvError::Closed)`.
+    ///
+    /// # Example
+    ///
+    /// Handle all available messages:
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// # fn handle_batch(_batch: impl Iterator<Item = elfo::Envelope>) {}
+    /// let mut batch = Vec::new();
+    ///
+    /// loop {
+    ///     match ctx.try_recv().await {
+    ///         Ok(envelope) => batch.push(envelope),
+    ///         Err(err) => {
+    ///             handle_batch(batch.drain(..));
+    ///
+    ///             if err.is_empty() {
+    ///                 // Wait for the next batch.
+    ///                 if let Some(envelope) = ctx.recv().await {
+    ///                     batch.push(envelope);
+    ///                     continue;
+    ///                 }
+    ///             }
+    ///
+    ///             break;
+    ///         },
+    ///     }
     /// }
+    /// # }
     /// ```
     pub async fn try_recv(&mut self) -> Result<Envelope, TryRecvError>
     where
