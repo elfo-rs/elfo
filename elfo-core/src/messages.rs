@@ -14,6 +14,7 @@ use crate::{
 /// Feel free to define a custom `Impossible` type as an empty enum if more
 /// implemented traits are needed.
 #[message]
+#[derive(Eq, PartialEq, Hash, Copy)]
 pub enum Impossible {}
 
 /// Checks that the actor is able to handle messages.
