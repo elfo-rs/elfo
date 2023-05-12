@@ -167,6 +167,7 @@ impl Proxy {
         }
     }
 
+    /// Waits until the testable actor finishes.
     pub async fn finished(&self) {
         let fut = self.context.finished(self.subject_addr);
         self.scope.clone().within(fut).await

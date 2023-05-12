@@ -160,7 +160,7 @@ async fn run<const FLAGS: Flags>(
             .resolve()
             .await
             .into_iter()
-            .map(|spent| spent.unwrap_or_else(|_| Duration::new(0, 0))) // FIXME: should be error.
+            .map(|spent| spent.unwrap_or(Duration::ZERO)) // FIXME: should be error.
             .max()
             .unwrap();
 
@@ -231,7 +231,7 @@ fn case<const FLAGS: Flags>(c: &mut Criterion) {
                         }));
                     }
 
-                    let mut max = Duration::new(0, 0);
+                    let mut max = Duration::ZERO;
                     for i in h {
                         max = max.max(i.join().unwrap());
                     }

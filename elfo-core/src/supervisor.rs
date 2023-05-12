@@ -368,7 +368,7 @@ where
             if need_to_restart {
                 let after = backoff.next();
 
-                if after == Duration::from_secs(0) {
+                if after == Duration::ZERO {
                     debug!("actor will be restarted immediately");
                 } else {
                     debug!(?after, "actor will be restarted");

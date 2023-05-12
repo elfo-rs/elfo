@@ -29,7 +29,7 @@ impl Backoff {
 
         // If an actor is alive enough time, reset the backoff.
         if self.start_time + BACKOFF_STEP <= now {
-            self.next_backoff = Duration::from_secs(0);
+            self.next_backoff = Duration::ZERO;
         }
 
         let backoff = self.next_backoff;
@@ -72,7 +72,7 @@ mod tests {
 
             // After some, enough to reset the backoff, time.
             mock.increment(BACKOFF_STEP);
-            assert_eq!(backoff.next(), Duration::from_secs(0)); // resetted
+            assert_eq!(backoff.next(), Duration::ZERO); // resetted
             backoff.start();
 
             // After some, not enough to reset the backoff, time.

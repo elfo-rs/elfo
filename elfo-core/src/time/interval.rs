@@ -71,7 +71,7 @@ impl<M: Message> crate::source::SourceHandle for Interval<M> {
     }
 }
 
-const NEVER: Duration = Duration::new(0, 0);
+const NEVER: Duration = Duration::ZERO;
 
 #[pin_project]
 struct IntervalSource<M> {
