@@ -351,13 +351,13 @@ impl<C, K> Context<C, K> {
     /// # Example
     /// ```ignore
     /// // Fire and forget.
-    /// let _ = ctx.send(SomethingHappened).await;
+    /// let _ = ctx.try_send_to(addr, SomethingHappened);
     ///
     /// // Fire or fail.
-    /// ctx.send(SomethingHappened).await?;
+    /// ctx.try_send_to(addr, SomethingHappened)?;
     ///
     /// // Fire or log.
-    /// if let Some(err) = ctx.send(SomethingHappened).await {
+    /// if let Some(err) = ctx.try_send_to(addr, SomethingHappened) {
     ///     warn!("...", error = err);
     /// }
     /// ```
