@@ -156,8 +156,24 @@ impl<M: StreamItem> Stream<M> {
         stream: impl futures::Stream<Item = M> + Send + 'static,
         rewrite_trace_id: bool,
     ) -> UnattachedSource<Self> {
+        // TODO: should it be ok to create a stream outside the actor system?
+        // However, it requires some sort of `on_attach()` to get a scope inside.
+        #[cfg(not(feature = "test-util"))]
+        let scope = scope::expose();
+        #[cfg(feature = "test-util")]
+        let scope = scope::try_expose().unwrap_or_else(|| {
+            Scope::test(
+                Addr::NULL,
+                // XXX
+                std::sync::Arc::new(crate::actor::ActorMeta {
+                    group: "test".into(),
+                    key: "test".into(),
+                }),
+            )
+        });
+
         let source = StreamSource {
-            scope: scope::expose(),
+            scope,
             rewrite_trace_id,
             inner: stream,
         };
