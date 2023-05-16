@@ -15,7 +15,6 @@ use crate::{
     message::Message,
     scope,
     source::{SourceArc, SourceStream, UnattachedSource},
-    time::far_future,
     tracing::TraceId,
 };
 
@@ -59,16 +58,11 @@ pub struct Delay<M> {
 #[sealed]
 impl<M: Message> crate::source::SourceHandle for Delay<M> {
     fn is_terminated(&self) -> bool {
-        self.source.is_terminated()
+        self.source.lock().is_none()
     }
 
     fn terminate(self) {
-        // Reset the sleep timer to prevent it from waking up.
-        let mut guard = self.source.lock();
-        guard.pinned().project().sleep.reset(far_future());
-        drop(guard);
-
-        self.source.terminate();
+        ward!(self.source.lock()).terminate();
     }
 }
 
@@ -98,19 +92,21 @@ impl<M: Message> Delay<M> {
     /// which will be replaced in the future to support other runtimes.
     #[stability::unstable]
     pub fn until(when: Instant, message: M) -> UnattachedSource<Self> {
-        let source = SourceArc::new(DelaySource {
+        let source = DelaySource {
             message: Some(message),
             trace_id: Some(scope::trace_id()),
             sleep: tokio::time::sleep_until(when),
-        });
+        };
 
-        UnattachedSource::new(source.clone(), Self { source })
+        let source = SourceArc::new(source, true);
+        UnattachedSource::new(source, |source| Self { source })
     }
 }
 
 impl<M: Message> SourceStream for DelaySource<M> {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    fn as_any_mut(self: Pin<&mut Self>) -> Pin<&mut dyn Any> {
+        // SAFETY: we only cast here, it cannot move data.
+        unsafe { self.map_unchecked_mut(|s| s) }
     }
 
     fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {

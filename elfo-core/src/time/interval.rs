@@ -61,13 +61,11 @@ pub struct Interval<M> {
 #[sealed]
 impl<M: Message> crate::source::SourceHandle for Interval<M> {
     fn is_terminated(&self) -> bool {
-        self.source.is_terminated()
+        self.source.lock().is_none()
     }
 
     fn terminate(self) {
-        // Reset the sleep timer to prevent it from waking up.
-        self.stop();
-        self.source.terminate();
+        ward!(self.source.lock()).terminate();
     }
 }
 
@@ -85,21 +83,21 @@ struct IntervalSource<M> {
 impl<M: Message> Interval<M> {
     /// Creates an unattached instance of [`Interval`].
     pub fn new(message: M) -> UnattachedSource<Self> {
-        let source = SourceArc::new(IntervalSource {
+        let source = IntervalSource {
             message,
             period: NEVER,
             is_delayed: false,
             sleep: tokio::time::sleep_until(far_future()),
-        });
+        };
 
-        UnattachedSource::new(source.clone(), Self { source })
+        let source = SourceArc::new(source, false);
+        UnattachedSource::new(source, |source| Self { source })
     }
 
     /// Replaces a stored message with the provided one.
     pub fn set_message(&self, message: M) {
-        let mut guard = self.source.lock();
-        let source = guard.pinned().project();
-        *source.message = message;
+        let mut guard = ward!(self.source.lock());
+        *guard.stream().project().message = message;
     }
 
     // TODO: pub fn set_missed_tick_policy
@@ -129,8 +127,8 @@ impl<M: Message> Interval<M> {
     pub fn set_period(&self, period: Duration) {
         assert_ne!(period, NEVER, "period must be non-zero");
 
-        let mut guard = self.source.lock();
-        let source = guard.pinned().project();
+        let mut guard = ward!(self.source.lock());
+        let source = guard.stream().project();
 
         // Do nothing if not started or the period hasn't been changed.
         if *source.period == NEVER || period == *source.period {
@@ -206,8 +204,8 @@ impl<M: Message> Interval<M> {
     }
 
     fn schedule(&self, when: Option<Instant>, period: Duration) {
-        let mut guard = self.source.lock();
-        let source = guard.pinned().project();
+        let mut guard = ward!(self.source.lock());
+        let source = guard.stream().project();
 
         *source.is_delayed = when.is_some();
         *source.period = period;
@@ -219,8 +217,9 @@ impl<M: Message> Interval<M> {
 }
 
 impl<M: Message> SourceStream for IntervalSource<M> {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    fn as_any_mut(self: Pin<&mut Self>) -> Pin<&mut dyn Any> {
+        // SAFETY: we only cast here, it cannot move data.
+        unsafe { self.map_unchecked_mut(|s| s) }
     }
 
     fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {

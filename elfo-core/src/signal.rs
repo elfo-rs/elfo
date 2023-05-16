@@ -61,11 +61,11 @@ pub struct Signal<M> {
 #[sealed]
 impl<M: Message> crate::source::SourceHandle for Signal<M> {
     fn is_terminated(&self) -> bool {
-        self.source.is_terminated()
+        self.source.lock().is_none()
     }
 
     fn terminate(self) {
-        self.source.terminate();
+        ward!(self.source.lock()).terminate();
     }
 }
 
@@ -131,15 +131,14 @@ impl<M: Message> Signal<M> {
             SignalInner::Disabled
         });
 
-        let source = SourceArc::new(SignalSource { message, inner });
-        UnattachedSource::new(source.clone(), Self { source })
+        let source = SourceArc::new(SignalSource { message, inner }, false);
+        UnattachedSource::new(source, |source| Self { source })
     }
 
     /// Replaces a stored message with the provided one.
     pub fn set_message(&self, message: M) {
-        let mut guard = self.source.lock();
-        let source = guard.pinned().project();
-        *source.message = message;
+        let mut guard = ward!(self.source.lock());
+        *guard.stream().project().message = message;
     }
 }
 
@@ -187,8 +186,9 @@ impl SignalInner {
 }
 
 impl<M: Message> SourceStream for SignalSource<M> {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    fn as_any_mut(self: Pin<&mut Self>) -> Pin<&mut dyn Any> {
+        // SAFETY: we only cast here, it cannot move data.
+        unsafe { self.map_unchecked_mut(|s| s) }
     }
 
     fn poll_recv(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Envelope>> {

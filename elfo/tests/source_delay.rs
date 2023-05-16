@@ -13,27 +13,20 @@ async fn smoke() {
 
     let group = ActorGroup::new().exec(|mut ctx| async move {
         let mut handles = HashMap::new();
-        let mut terminated = None::<Delay<_>>;
 
         while let Some(envelope) = ctx.recv().await {
-            if let Some(handle) = terminated.take() {
-                assert!(handle.is_terminated());
-            }
-
             msg!(match envelope {
                 Start(group) => {
                     let delay = Duration::from_millis(group);
                     let handle = ctx.attach(Delay::new(delay, Tick(group)));
+                    assert!(!handle.is_terminated());
                     handles.insert(group, (handle, scope::trace_id()));
                 }
                 msg @ Tick(group) => {
                     let (handle, expected_trace_id) = handles.remove(&group).unwrap();
                     assert_eq!(scope::trace_id(), expected_trace_id);
                     ctx.send(msg).await.unwrap();
-
-                    assert!(!handle.is_terminated()); // become after the next `recv()`
-                    assert!(terminated.is_none());
-                    terminated = Some(handle);
+                    assert!(handle.is_terminated());
                 }
             });
         }

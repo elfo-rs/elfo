@@ -23,13 +23,8 @@ async fn once() {
 
     let group = ActorGroup::new().exec(|mut ctx| async move {
         let mut trace_ids = HashMap::new();
-        let mut terminated = None::<Stream<_>>;
 
         while let Some(envelope) = ctx.recv().await {
-            if let Some(handle) = terminated.take() {
-                assert!(handle.is_terminated());
-            }
-
             msg!(match envelope {
                 msg @ Start => {
                     let override_trace_id = msg.override_trace_id.then(TraceId::generate);
@@ -52,10 +47,7 @@ async fn once() {
                     let (handle, expected_trace_id) = trace_ids.remove(&no).unwrap();
                     assert_eq!(scope::trace_id(), expected_trace_id);
                     ctx.send(msg).await.unwrap();
-
-                    assert!(!handle.is_terminated()); // become after the next `recv()`
-                    assert!(terminated.is_none());
-                    terminated = Some(handle);
+                    assert!(handle.is_terminated());
                 }
             });
         }

@@ -31,6 +31,9 @@ use crate::{
 ///
 /// All wrapped streams and futures are fused by the implementation.
 ///
+/// Note: [`Stream::is_terminated()`] and [`Stream::terminate()`] cannot be
+/// called *inside* the stream, because it leads to a deadlock.
+///
 /// # Tracing
 ///
 /// * If the stream created using [`Stream::from_futures03()`], every message
@@ -127,11 +130,11 @@ pub struct Stream<M = AnyMessage> {
 #[sealed]
 impl<M: StreamItem> crate::source::SourceHandle for Stream<M> {
     fn is_terminated(&self) -> bool {
-        self.source.is_terminated()
+        self.source.lock().is_none()
     }
 
     fn terminate(self) {
-        self.source.terminate();
+        ward!(self.source.lock()).terminate();
     }
 }
 
@@ -141,7 +144,7 @@ impl<M: StreamItem> Stream<M> {
     where
         S: futures::Stream<Item = M> + Send + 'static,
     {
-        Self::from_futures03_inner(stream, true)
+        Self::from_futures03_inner(stream, true, false)
     }
 
     /// Creates an uattached source based on the provided future.
@@ -149,12 +152,13 @@ impl<M: StreamItem> Stream<M> {
     where
         F: Future<Output = M> + Send + 'static,
     {
-        Self::from_futures03_inner(stream::once(future), false)
+        Self::from_futures03_inner(stream::once(future), false, true)
     }
 
     fn from_futures03_inner(
         stream: impl futures::Stream<Item = M> + Send + 'static,
         rewrite_trace_id: bool,
+        oneshot: bool,
     ) -> UnattachedSource<Self> {
         // TODO: should it be ok to create a stream outside the actor system?
         // However, it requires some sort of `on_attach()` to get a scope inside.
@@ -182,12 +186,9 @@ impl<M: StreamItem> Stream<M> {
             source.scope.set_trace_id(TraceId::generate());
         }
 
-        let this = Self {
-            // See comments for `from_untyped` to get details why we use it directly here.
-            source: SourceArc::from_untyped(UntypedSourceArc::new(source)),
-        };
-
-        UnattachedSource::new(this.source.clone(), this)
+        // See comments for `from_untyped` to get details why we use it directly here.
+        let source = SourceArc::from_untyped(UntypedSourceArc::new(source, oneshot));
+        UnattachedSource::new(source, |source| Self { source })
     }
 }
 
@@ -208,7 +209,7 @@ impl Stream<AnyMessage> {
         let gen = stream::once(gen).filter_map(|_| async { None });
         let stream = stream::select(gen, rx);
 
-        Self::from_futures03_inner(stream, false)
+        Self::from_futures03_inner(stream, false, false)
     }
 }
 
@@ -225,8 +226,8 @@ where
     S: futures::Stream<Item = M> + ?Sized + Send + 'static,
     M: StreamItem,
 {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        // We never call `SourceArc::lock().pinned()`, so it can be unimplemented.
+    fn as_any_mut(self: Pin<&mut Self>) -> Pin<&mut dyn Any> {
+        // We never call `SourceArc::lock().stream()`, so it can be unimplemented.
         // Anyway, it cannot be implemented because `StreamSource<_>` is DST.
         unreachable!()
     }
