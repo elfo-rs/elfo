@@ -22,10 +22,10 @@ Elfo is another actor system. Check [The Actoromicon](http://actoromicon.rs/).
 To use `elfo`, add this to your `Cargo.toml`:
 ```toml
 [dependencies]
-elfo = { version = "0.1", features = ["full"] }
+elfo = { version = "0.2.0-alpha.0", features = ["full"] }
 
 [dev-dependencies]
-elfo = { version = "0.1", features = ["test-util"] }
+elfo = { version = "0.2.0-alpha.0", features = ["test-util"] }
 ```
 
 ## Examples

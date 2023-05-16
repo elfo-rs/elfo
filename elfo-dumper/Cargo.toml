@@ -1,6 +1,6 @@
 [package]
 name = "elfo-dumper"
-version = "0.1.8"
+version = "0.2.0-alpha.0"
 description = "Dumps messages on disk"
 
 authors.workspace = true
@@ -8,8 +8,8 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-elfo-core = { version = "0.1.35", path = "../elfo-core", features = ["unstable"] }
-elfo-utils = { version = "0.2.1", path = "../elfo-utils" }
+elfo-core = { version = "0.2.0-alpha.0", path = "../elfo-core", features = ["unstable"] }
+elfo-utils = { version = "0.2.2", path = "../elfo-utils" }
 
 tokio = { version = "1", features = ["fs", "io-util", "sync"] }
 serde = { version = "1.0.120", features = ["derive"] }

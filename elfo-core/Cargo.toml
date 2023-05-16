@@ -1,6 +1,6 @@
 [package]
 name = "elfo-core"
-version = "0.1.35"
+version = "0.2.0-alpha.0"
 description = "The core of the system"
 
 authors.workspace = true
@@ -13,8 +13,8 @@ unstable = []
 unstable-stuck-detection = ["dep:thread_local"]
 
 [dependencies]
-elfo-macros = { version = "0.1.15", path = "../elfo-macros" }
-elfo-utils = { version = "0.2.1", path = "../elfo-utils" }
+elfo-macros = { version = "0.2.0-alpha.0", path = "../elfo-macros" }
+elfo-utils = { version = "0.2.2", path = "../elfo-utils" }
 
 tokio = { version = "1.16", features = ["rt", "sync", "time", "signal", "macros"] }
 sharded-slab = "0.1.1"

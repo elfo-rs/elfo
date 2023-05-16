@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+## [0.2.0-alpha.0]
 ### Added
 - messages: `Impossible` that cannot be constructed ([#39]).
 
@@ -427,7 +429,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.40...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.0...HEAD
+[0.2.0-alpha.0]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.2.0-alpha.0
 [0.1.40]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.1.40
 [0.1.39]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.38...elfo-0.1.39
 [0.1.38]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.37...elfo-0.1.38
