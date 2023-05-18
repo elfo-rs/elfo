@@ -7,10 +7,14 @@ use std::{
 use elfo_core::{
     node::NodeNo,
     routers::{MapRouter, Outcome},
-    ActorGroup, Context, GroupNo, Schema, Topology,
+    ActorGroup, Blueprint, Context, GroupNo, Topology,
 };
 
-use crate::{config::Config, discovery::Discovery, listener::Listener, node_map::NodeMap};
+use self::{discovery::Discovery, listener::Listener};
+use crate::{config::Config, node_map::NodeMap};
+
+mod discovery;
+mod listener;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub(crate) enum Key {
@@ -32,7 +36,8 @@ impl Display for Key {
     }
 }
 
-pub fn new(topology: &Topology) -> Schema {
+/// TODO
+pub fn new(topology: &Topology) -> Blueprint {
     let node_map = Arc::new(NodeMap::new(topology));
 
     ActorGroup::new()
@@ -45,8 +50,8 @@ pub fn new(topology: &Topology) -> Schema {
 
             async move {
                 match ctx.key() {
-                    Key::Listener => Listener::new(node_map).main(ctx).await,
-                    Key::Discovery => Discovery::new(node_map).main(ctx).await,
+                    Key::Listener => Listener::new(ctx, node_map).main().await,
+                    Key::Discovery => Discovery::new(ctx, node_map).main().await,
                     _ => todo!(),
                 }
             }

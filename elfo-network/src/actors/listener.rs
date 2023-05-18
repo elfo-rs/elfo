@@ -6,12 +6,12 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{info, warn};
 
-use elfo_core as elfo;
-use elfo_core::{stream::Stream, Context, Envelope, MoveOwnership};
-use elfo_macros::{message, msg_raw as msg};
+use elfo_core::{
+    message, msg, scope, stream::Stream, tracing::TraceId, Context, MoveOwnership, UnattachedSource,
+};
 
 use crate::{
-    actor::Key,
+    actors::Key,
     codec::{Decoder, Encoder},
     config::Config,
     node_map::NodeMap,
@@ -20,6 +20,7 @@ use crate::{
 const MAX_FRAME_SIZE: u32 = 65536; // TODO: make it configurable.
 
 pub(crate) struct Listener {
+    ctx: Context<Config, Key>,
     node_map: Arc<NodeMap>,
 }
 
@@ -30,24 +31,23 @@ struct TcpConnectionAccepted {
 }
 
 impl Listener {
-    pub(crate) fn new(node_map: Arc<NodeMap>) -> Self {
-        Self { node_map }
+    pub(crate) fn new(ctx: Context<Config, Key>, node_map: Arc<NodeMap>) -> Self {
+        Self { ctx, node_map }
     }
 
-    pub(crate) async fn main(self, ctx: Context<Config, Key>) -> Result<()> {
+    pub(crate) async fn main(mut self) -> Result<()> {
         // TODO: timeout.
-        let listener = TcpListener::bind(&ctx.config().listener.tcp)
+        let listener = TcpListener::bind(&self.ctx.config().listener.tcp)
             .await
             .wrap_err("cannot bind TCP listener")?;
 
-        let mut ctx = ctx.with(make_listener_stream(listener));
-
         info!(
             message = "listening for TCP connections",
-            addr = %ctx.config().listener.tcp
+            addr = %self.ctx.config().listener.tcp
         );
+        self.ctx.attach(make_listener_stream(listener));
 
-        while let Some(envelope) = ctx.recv().await {
+        while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
                 msg @ TcpConnectionAccepted => {
                     info!(message = "new TCP connection accepted", remote_addr = %msg.addr);
@@ -74,9 +74,11 @@ impl Listener {
     }
 }
 
-fn make_listener_stream(listener: TcpListener) -> Stream<impl futures::Stream<Item = Envelope>> {
+fn make_listener_stream(listener: TcpListener) -> UnattachedSource<Stream> {
     Stream::generate(move |mut y| async move {
         loop {
+            scope::set_trace_id(TraceId::generate());
+
             match listener.accept().await {
                 Ok((stream, addr)) => {
                     let stream = stream.into();
@@ -84,6 +86,7 @@ fn make_listener_stream(listener: TcpListener) -> Stream<impl futures::Stream<It
                 }
                 Err(err) => {
                     warn!(message = "cannot accept TCP connection", error = %err);
+                    // TODO: restart?
                 }
             }
         }

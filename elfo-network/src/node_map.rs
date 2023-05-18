@@ -1,6 +1,5 @@
-use std::sync::Mutex;
-
 use fxhash::FxHashMap;
+use parking_lot::Mutex;
 
 use elfo_core::{
     node::{self, NodeNo},
