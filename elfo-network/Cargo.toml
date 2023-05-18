@@ -7,8 +7,8 @@ edition = "2018"
 license = "MIT"
 
 [dependencies]
-elfo-macros = { version = "0.1.13", path = "../elfo-macros", features = ["network"] }
-elfo-core = { version = "0.1.32", path = "../elfo-core", features = ["unstable", "network"] }
+elfo-macros = { version = "0.2.0-alpha.0", path = "../elfo-macros", features = ["network"] }
+elfo-core = { version = "0.2.0-alpha.0", path = "../elfo-core", features = ["unstable", "network"] }
 
 serde = { version = "1.0.120", features = ["derive"] }
 static_assertions = "1.1.0"
@@ -19,3 +19,4 @@ tokio = { version = "1.19.2", features = ["net"] }
 tokio-util = { version = "0.7.3", features = ["codec"] }
 bytes = "1.1.0"
 tracing = "0.1.25"
+parking_lot = "0.12"

@@ -1,4 +1,4 @@
-use elfo_core::{node::NodeNo, GroupNo, MoveOwnership};
+use elfo_core::{node::NodeNo, GroupNo};
 use elfo_macros::message;
 
 // Internal.

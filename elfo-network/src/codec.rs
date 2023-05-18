@@ -10,7 +10,7 @@
 //! * sender, `u64`
 //! * target, `u64`
 //! * kind, `u8`: 0 = Regular, 1 = RequestAny, 2 = RequestAll, 3 = Response
-//! * request_id (for RequestAny, RequestAll and Response kinds), `u64`
+//! * correlation_id (for RequestAny, RequestAll and Response kinds), `u64`
 //! * responses_left (for Response kind), `u32`
 //! * message, rest of frame
 

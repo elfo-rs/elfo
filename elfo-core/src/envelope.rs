@@ -34,7 +34,9 @@ impl<M> Envelope<M> {
         Self::with_trace_id(message, kind, crate::scope::trace_id())
     }
 
-    pub(crate) fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
+    // This is private API. Do not use it.
+    #[doc(hidden)]
+    pub fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
         Self {
             created_time: Instant::now(),
             trace_id,
@@ -75,7 +77,9 @@ impl<M> Envelope<M> {
 }
 
 impl<M: Message> Envelope<M> {
-    pub(crate) fn upcast(self) -> Envelope {
+    // This is private API. Do not use it.
+    #[doc(hidden)]
+    pub fn upcast(self) -> Envelope {
         Envelope {
             created_time: self.created_time,
             trace_id: self.trace_id,

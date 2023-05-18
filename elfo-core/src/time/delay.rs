@@ -10,7 +10,7 @@ use sealed::sealed;
 use tokio::time::{Duration, Instant, Sleep};
 
 use crate::{
-    addr::Addr,
+    address_book::Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
     scope,
