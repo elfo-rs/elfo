@@ -257,5 +257,9 @@ fn command_event(c: &mut Criterion) {
     case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK | ROUND_ROBIN }>(c);
 }
 
-criterion_group!(benches, request_response, only_command, command_event);
+criterion_group!(
+    benches,
+    // request_response,
+    only_command, // command_event
+);
 criterion_main!(benches);

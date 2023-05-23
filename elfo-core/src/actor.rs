@@ -1,5 +1,6 @@
 use std::{fmt, mem, sync::Arc};
 
+use elfo_utils::unlikely;
 use futures_intrusive::sync::ManualResetEvent;
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use parking_lot::RwLock;
@@ -12,7 +13,7 @@ use crate::{
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
     mailbox::{Mailbox, RecvResult},
-    messages::{ActorStatusReport, Terminate},
+    messages::{ActorStatusReport, Terminate, UpdateConfig},
     msg,
     request_table::RequestTable,
     scope,
@@ -175,7 +176,12 @@ impl Actor {
             }
         });
 
-        self.mailbox.try_send(envelope)
+        // TODO laplab: refactor.
+        if unlikely(envelope.is::<UpdateConfig>()) {
+            self.mailbox.try_send_high_priority(envelope)
+        } else {
+            self.mailbox.try_send(envelope)
+        }
     }
 
     pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
@@ -191,7 +197,12 @@ impl Actor {
             }
         });
 
-        self.mailbox.send(envelope).await
+        // TODO laplab: refactor.
+        if unlikely(envelope.is::<UpdateConfig>()) {
+            self.mailbox.send_high_priority(envelope).await
+        } else {
+            self.mailbox.send(envelope).await
+        }
     }
 
     pub(crate) async fn recv(&self) -> RecvResult {
