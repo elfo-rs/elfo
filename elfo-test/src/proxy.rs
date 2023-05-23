@@ -23,6 +23,7 @@ use elfo_core::{
     ActorGroup, ActorMeta, Addr, Blueprint, Context, Envelope, Local, Message, Request,
     ResponseToken,
     _priv::do_start,
+    errors::RequestError,
     message, msg,
     routers::{MapRouter, Outcome},
     scope::Scope,
@@ -78,6 +79,15 @@ impl Proxy {
                 Err(err) => panic!("cannot send {} ({}) at {}", R::VTABLE.name, err, location),
             }
         })
+    }
+
+    pub fn try_request<R: Request>(
+        &self,
+        request: R,
+    ) -> impl Future<Output = Result<R::Response, RequestError<R>>> + '_ {
+        self.scope
+            .clone()
+            .within(self.context.request(request).resolve())
     }
 
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, response: R::Response) {

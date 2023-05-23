@@ -41,7 +41,11 @@ pub enum Outcome<T> {
     /// Discards a message.
     /// If a message is discarded by everyone, the sending side gets an error.
     Discard,
-    /// Acts as `Broadcast` for system messages and `Discard` otherwise.
+    /// Route message using default behaviour.
+    /// This behaviour depends on the message type:
+    /// - `ValidateConfig` is routed as `Discard`
+    /// - All other system messages are routed as `Broadcast`
+    /// - All non-system messages are routed as `Discard`
     Default,
 }
 
@@ -85,7 +89,8 @@ impl<C> Router<C> for () {
         msg!(match envelope {
             // These messages shouldn't spawn actors.
             // TODO: maybe this logic should be in the supervisor.
-            ValidateConfig | Terminate | Ping => Outcome::GentleUnicast(Singleton),
+            Terminate | Ping => Outcome::GentleUnicast(Singleton),
+            ValidateConfig => Outcome::Default,
             _ => Outcome::Unicast(Singleton),
         })
     }

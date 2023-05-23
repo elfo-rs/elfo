@@ -148,7 +148,7 @@ where
                         let outcome = self.router.route(&envelope);
                         let mut envelope = envelope;
                         envelope.set_message(messages::ValidateConfig { config });
-                        self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+                        self.do_handle(envelope, outcome.or(Outcome::Discard))
                     }
                 }
                 Err(reason) => {
