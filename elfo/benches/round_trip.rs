@@ -244,18 +244,18 @@ fn case<const FLAGS: Flags>(c: &mut Criterion) {
 }
 
 // Cases.
-fn request_response(c: &mut Criterion) {
-    case::<{ ONE_INSTANCE | SEND_REQUEST | ONE_TO_ONE }>(c);
-    case::<{ ONE_INSTANCE | SEND_REQUEST | ROUND_ROBIN }>(c);
-}
+// fn request_response(c: &mut Criterion) {
+//     case::<{ ONE_INSTANCE | SEND_REQUEST | ONE_TO_ONE }>(c);
+//     case::<{ ONE_INSTANCE | SEND_REQUEST | ROUND_ROBIN }>(c);
+// }
 fn only_command(c: &mut Criterion) {
     case::<{ ONE_INSTANCE | SEND_COMMAND | ONE_TO_ONE }>(c);
     case::<{ ONE_INSTANCE | SEND_COMMAND | ROUND_ROBIN }>(c);
 }
-fn command_event(c: &mut Criterion) {
-    case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK | ONE_TO_ONE }>(c);
-    case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK | ROUND_ROBIN }>(c);
-}
+// fn command_event(c: &mut Criterion) {
+//     case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK | ONE_TO_ONE }>(c);
+//     case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK | ROUND_ROBIN }>(c);
+// }
 
 criterion_group!(
     benches,

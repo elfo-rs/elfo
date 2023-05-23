@@ -7,7 +7,6 @@ use futures_intrusive::{
     channel::{self, GenericChannel},
 };
 use parking_lot::{Mutex, RawMutex};
-use tokio::pin;
 
 use crate::{
     envelope::Envelope,
