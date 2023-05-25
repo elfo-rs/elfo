@@ -1,9 +1,8 @@
-use std::{pin::Pin, task::Context};
+use std::collections::VecDeque;
 
-use elfo_utils::{likely, unlikely};
-use futures::Future;
+use elfo_utils::unlikely;
 use futures_intrusive::{
-    buffer::GrowingHeapBuf,
+    buffer::RingBuf,
     channel::{self, GenericChannel},
 };
 use parking_lot::{Mutex, RawMutex};
@@ -16,99 +15,122 @@ use crate::{
 
 // TODO: make mailboxes bounded by time instead of size.
 const LIMIT: usize = 100_000;
-const HIGH_PRIORITY_LIMIT: usize = 100;
 
 pub(crate) struct Mailbox {
-    queue: GenericChannel<RawMutex, Envelope, GrowingHeapBuf<Envelope>>,
-    high_priority_queue: GenericChannel<RawMutex, Envelope, GrowingHeapBuf<Envelope>>,
+    queue: GenericChannel<RawMutex, (bool, Envelope), PriorityBuf>,
     close: Mutex<Option<TraceId>>,
+}
+
+struct PriorityBuf {
+    buffer: VecDeque<(bool, Envelope)>,
+    limit: usize,
+}
+
+impl RingBuf for PriorityBuf {
+    type Item = (bool, Envelope);
+
+    fn new() -> Self {
+        PriorityBuf {
+            buffer: VecDeque::new(),
+            limit: 0,
+        }
+    }
+
+    fn with_capacity(limit: usize) -> Self {
+        PriorityBuf {
+            buffer: VecDeque::new(),
+            limit,
+        }
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.limit
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    #[inline]
+    fn can_push(&self) -> bool {
+        self.buffer.len() != self.limit
+    }
+
+    #[inline]
+    fn push(&mut self, value: Self::Item) {
+        debug_assert!(self.can_push());
+        if unlikely(value.0) {
+            // TODO laplab: check if there any priority messages before pushing to front.
+            self.buffer.push_front(value);
+        } else {
+            self.buffer.push_back(value);
+        }
+    }
+
+    #[inline]
+    fn pop(&mut self) -> Self::Item {
+        debug_assert!(self.buffer.len() > 0);
+        self.buffer.pop_front().unwrap()
+    }
 }
 
 impl Mailbox {
     pub(crate) fn new() -> Self {
         Self {
             queue: GenericChannel::with_capacity(LIMIT),
-            high_priority_queue: GenericChannel::with_capacity(HIGH_PRIORITY_LIMIT),
             close: Mutex::new(None),
         }
     }
 
     pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
-        let fut = self.queue.send(envelope);
-        fut.await.map_err(|err| SendError(err.0))
+        let fut = self.queue.send((false, envelope));
+        fut.await.map_err(|err| SendError(err.0 .1))
     }
 
     pub(crate) async fn send_high_priority(
         &self,
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>> {
-        let fut = self.high_priority_queue.send(envelope);
-        fut.await.map_err(|err| SendError(err.0))
+        let fut = self.queue.send((true, envelope));
+        fut.await.map_err(|err| SendError(err.0 .1))
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        self.queue.try_send(envelope).map_err(|err| match err {
-            channel::TrySendError::Full(envelope) => TrySendError::Full(envelope),
-            channel::TrySendError::Closed(envelope) => TrySendError::Closed(envelope),
-        })
+        self.queue
+            .try_send((false, envelope))
+            .map_err(|err| match err {
+                channel::TrySendError::Full(envelope) => TrySendError::Full(envelope.1),
+                channel::TrySendError::Closed(envelope) => TrySendError::Closed(envelope.1),
+            })
     }
 
     pub(crate) fn try_send_high_priority(
         &self,
         envelope: Envelope,
     ) -> Result<(), TrySendError<Envelope>> {
-        self.high_priority_queue
-            .try_send(envelope)
+        self.queue
+            .try_send((true, envelope))
             .map_err(|err| match err {
-                channel::TrySendError::Full(envelope) => TrySendError::Full(envelope),
-                channel::TrySendError::Closed(envelope) => TrySendError::Closed(envelope),
+                channel::TrySendError::Full(envelope) => TrySendError::Full(envelope.1),
+                channel::TrySendError::Closed(envelope) => TrySendError::Closed(envelope.1),
             })
     }
 
     pub(crate) async fn recv(&self) -> RecvResult {
-        // let received = tokio::select! {
-        //     high_priority_envelope = self.high_priority_queue.receive() =>
-        // high_priority_envelope,     envelope = self.queue.receive() =>
-        // envelope, };
-        let mut high_priority_fut = self.high_priority_queue.receive();
-        let mut regular_priority_fut = self.queue.receive();
-        let received = std::future::poll_fn(|cx: &mut Context<'_>| {
-            // SAFETY: future is stored on the stack above and never moved.
-            let high_priority_pin = unsafe { Pin::new_unchecked(&mut high_priority_fut) };
-            let regular_priority_pin = unsafe { Pin::new_unchecked(&mut regular_priority_fut) };
-
-            let high_priority_poll = Future::poll(high_priority_pin, cx);
-            if unlikely(high_priority_poll.is_ready()) {
-                high_priority_poll
-            } else {
-                Future::poll(regular_priority_pin, cx)
-            }
-        })
-        .await;
-
-        match received {
-            Some(envelope) => RecvResult::Data(envelope),
+        let fut = self.queue.receive();
+        match fut.await {
+            Some(envelope) => RecvResult::Data(envelope.1),
             None => self.on_close(),
         }
     }
 
     pub(crate) fn try_recv(&self) -> Option<RecvResult> {
-        let high_priority = self.high_priority_queue.try_receive();
-        if likely(matches!(
-            high_priority,
-            Err(channel::TryReceiveError::Empty)
-        )) {
-            return match self.queue.try_receive() {
-                Ok(envelope) => Some(RecvResult::Data(envelope)),
-                Err(channel::TryReceiveError::Empty) => None,
-                Err(channel::TryReceiveError::Closed) => Some(self.on_close()),
-            };
-        } else if likely(high_priority.is_ok()) {
-            return Some(RecvResult::Data(high_priority.unwrap()));
-        } else
-        // if unlikely(matches!(high_priority, Err(channel::TryReceiveError::Closed)))
-        {
-            return Some(self.on_close());
+        match self.queue.try_receive() {
+            Ok(envelope) => Some(RecvResult::Data(envelope.1)),
+            Err(channel::TryReceiveError::Empty) => None,
+            Err(channel::TryReceiveError::Closed) => Some(self.on_close()),
         }
     }
 

@@ -253,9 +253,9 @@ fn only_command(c: &mut Criterion) {
     case::<{ ONE_INSTANCE | SEND_COMMAND | ROUND_ROBIN }>(c);
 }
 // fn command_event(c: &mut Criterion) {
-//     case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK | ONE_TO_ONE }>(c);
-//     case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK | ROUND_ROBIN }>(c);
-// }
+//     case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK | ONE_TO_ONE
+// }>(c);     case::<{ ONE_INSTANCE | SEND_COMMAND | SEND_EVENT_BACK |
+// ROUND_ROBIN }>(c); }
 
 criterion_group!(
     benches,
