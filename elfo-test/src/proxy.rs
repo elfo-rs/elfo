@@ -23,7 +23,7 @@ use elfo_core::{
     ActorGroup, ActorMeta, Addr, Blueprint, Context, Envelope, Local, Message, Request,
     ResponseToken,
     _priv::do_start,
-    errors::RequestError,
+    errors::TrySendError,
     message, msg,
     routers::{MapRouter, Outcome},
     scope::Scope,
@@ -56,6 +56,12 @@ impl Proxy {
         })
     }
 
+    pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
+        self.scope
+            .clone()
+            .sync_within(|| self.context.try_send(message))
+    }
+
     #[track_caller]
     pub fn send_to<M: Message>(
         &self,
@@ -79,15 +85,6 @@ impl Proxy {
                 Err(err) => panic!("cannot send {} ({}) at {}", R::VTABLE.name, err, location),
             }
         })
-    }
-
-    pub fn try_request<R: Request>(
-        &self,
-        request: R,
-    ) -> impl Future<Output = Result<R::Response, RequestError<R>>> + '_ {
-        self.scope
-            .clone()
-            .within(self.context.request(request).resolve())
     }
 
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, response: R::Response) {

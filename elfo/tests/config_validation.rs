@@ -2,8 +2,8 @@
 
 use elfo::{
     config::AnyConfig,
-    errors::RequestError,
-    messages::{ConfigRejected, ValidateConfig},
+    errors::TrySendError,
+    messages::ValidateConfig,
     prelude::*,
     routers::{MapRouter, Outcome, Singleton},
 };
@@ -19,9 +19,8 @@ async fn singleton_actor_with_default_validate_config() {
             msg!(match envelope {
                 StartSingleton => continue,
                 (ValidateConfig { .. }, token) => {
-                    let error: ConfigRejected =
-                        String::from("did not expect ValidateConfig message").into();
-                    ctx.respond(token, Err(error));
+                    drop(token);
+                    panic!("did not expect ValidateConfig message");
                 }
                 _ => unreachable!(),
             });
@@ -29,16 +28,13 @@ async fn singleton_actor_with_default_validate_config() {
     });
 
     let mut proxy = elfo::test::proxy(blueprint, AnyConfig::default()).await;
-    info!("proxy started");
 
     proxy.send(StartSingleton).await;
     proxy.sync().await;
     info!("actor started");
 
-    let result = proxy
-        .try_request(ValidateConfig::new(AnyConfig::default()))
-        .await;
-    assert!(matches!(result, Err(RequestError::Closed(..))));
+    let result = proxy.try_send(ValidateConfig::new(AnyConfig::default()));
+    assert!(matches!(result, Err(TrySendError::Closed(..))));
 }
 
 #[tokio::test]
@@ -64,7 +60,6 @@ async fn singleton_actor_with_custom_validate_config() {
         });
 
     let mut proxy = elfo::test::proxy(blueprint, AnyConfig::default()).await;
-    info!("proxy started");
 
     proxy.send(StartSingleton).await;
     proxy.sync().await;
@@ -93,9 +88,8 @@ async fn actor_group_with_default_validate_config() {
                 msg!(match envelope {
                     StartGroupMember(..) => continue,
                     (ValidateConfig { .. }, token) => {
-                        let error: ConfigRejected =
-                            String::from("did not expect ValidateConfig message").into();
-                        ctx.respond(token, Err(error));
+                        drop(token);
+                        panic!("did not expect ValidateConfig message");
                     }
                     _ => unreachable!(),
                 });
@@ -103,7 +97,6 @@ async fn actor_group_with_default_validate_config() {
         });
 
     let mut proxy = elfo::test::proxy(blueprint, AnyConfig::default()).await;
-    info!("proxy started");
 
     proxy.send(StartGroupMember(0)).await;
     proxy.send(StartGroupMember(1)).await;
@@ -111,10 +104,8 @@ async fn actor_group_with_default_validate_config() {
     proxy.sync().await;
     info!("actors started");
 
-    let result = proxy
-        .try_request(ValidateConfig::new(AnyConfig::default()))
-        .await;
-    assert!(matches!(result, Err(RequestError::Closed(..))));
+    let result = proxy.try_send(ValidateConfig::new(AnyConfig::default()));
+    assert!(matches!(result, Err(TrySendError::Closed(..))));
 }
 
 #[tokio::test]
@@ -140,7 +131,6 @@ async fn actor_group_with_custom_validate_config() {
         });
 
     let mut proxy = elfo::test::proxy(blueprint, AnyConfig::default()).await;
-    info!("proxy started");
 
     proxy.send(StartGroupMember(0)).await;
     proxy.send(StartGroupMember(1)).await;
