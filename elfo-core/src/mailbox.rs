@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use elfo_utils::unlikely;
+use elfo_utils::{likely, unlikely};
 use futures_intrusive::{
     buffer::RingBuf,
     channel::{self, GenericChannel},
@@ -23,6 +23,7 @@ pub(crate) struct Mailbox {
 
 struct PriorityBuf {
     buffer: VecDeque<(bool, Envelope)>,
+    priority_prefix_end: usize,
     limit: usize,
 }
 
@@ -32,6 +33,7 @@ impl RingBuf for PriorityBuf {
     fn new() -> Self {
         PriorityBuf {
             buffer: VecDeque::new(),
+            priority_prefix_end: 0,
             limit: 0,
         }
     }
@@ -39,6 +41,7 @@ impl RingBuf for PriorityBuf {
     fn with_capacity(limit: usize) -> Self {
         PriorityBuf {
             buffer: VecDeque::new(),
+            priority_prefix_end: 0,
             limit,
         }
     }
@@ -62,8 +65,20 @@ impl RingBuf for PriorityBuf {
     fn push(&mut self, value: Self::Item) {
         debug_assert!(self.can_push());
         if unlikely(value.0) {
-            // TODO laplab: check if there any priority messages before pushing to front.
-            self.buffer.push_front(value);
+            // To maintain FIFO order of priority messages, we need to push such messages to
+            // the end of the priority prefix in the buffer.
+            //
+            // |-------------------- Buffer ------------------|
+            // |-- Priority messages --|-- Regular messages --|
+            //                          ^
+            //                          |
+            // priority_prefix_end -----+
+            if likely(self.priority_prefix_end == 0) {
+                self.buffer.push_front(value);
+            } else {
+                self.buffer.insert(self.priority_prefix_end, value);
+            }
+            self.priority_prefix_end += 1;
         } else {
             self.buffer.push_back(value);
         }
@@ -71,8 +86,13 @@ impl RingBuf for PriorityBuf {
 
     #[inline]
     fn pop(&mut self) -> Self::Item {
-        debug_assert!(self.buffer.len() > 0);
-        self.buffer.pop_front().unwrap()
+        debug_assert!(!self.buffer.is_empty());
+        let item = self.buffer.pop_front().unwrap();
+        debug_assert!(!item.0 || self.priority_prefix_end > 0);
+        if unlikely(item.0) {
+            self.priority_prefix_end -= 1;
+        }
+        item
     }
 }
 
