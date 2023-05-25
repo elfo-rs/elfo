@@ -26,6 +26,9 @@ pub use crate::{
 };
 pub use elfo_macros::{message_core as message, msg_core as msg};
 
+#[macro_use]
+mod macros;
+
 pub mod config;
 pub mod dumping;
 pub mod errors;
@@ -51,12 +54,13 @@ mod envelope;
 mod exec;
 mod init;
 mod local;
-mod macros;
 mod mailbox;
 mod memory_tracker;
 mod message;
 mod object;
 mod permissions;
+#[cfg(feature = "network")]
+mod remote;
 mod request_table;
 mod runtime;
 mod source;

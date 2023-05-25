@@ -34,3 +34,13 @@ macro_rules! assert_msg_eq {
         assert_eq!(actual, expected);
     }};
 }
+
+macro_rules! cfg_network {
+    // Force `{..}` to make rustfmt work.
+    ({$($item:item)*}) => {
+        $(
+            #[cfg(feature = "network")]
+            $item
+        )*
+    }
+}

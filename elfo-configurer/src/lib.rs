@@ -332,7 +332,7 @@ fn match_configs(
     filter: TopologyFilter,
 ) -> Vec<ConfigWithMeta> {
     topology
-        .actor_groups()
+        .locals()
         // Entrypoints' configs are updated only at startup.
         .filter(|group| !group.is_entrypoint)
         .filter(|group| match filter {

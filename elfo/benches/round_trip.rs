@@ -8,7 +8,7 @@ use elfo::{
     messages::{Terminate, UpdateConfig},
     prelude::*,
     routers::{MapRouter, Outcome},
-    topology::{GetAddrs, Topology},
+    topology::Topology,
 };
 
 #[message]
@@ -143,8 +143,8 @@ async fn run<const FLAGS: Flags>(
 
     producers.route_all_to(&consumers);
 
-    let producers_addr = producers.addrs()[0];
-    let consumers_addr = consumers.addrs()[0];
+    let producers_addr = producers.addr();
+    let consumers_addr = consumers.addr();
 
     producers.mount(make_producers::<FLAGS>(producer_count, iter_count));
     consumers.mount(make_consumers::<FLAGS>(consumer_count));

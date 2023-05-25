@@ -16,7 +16,7 @@ impl NodeMap {
         let this = NodeInfo {
             node_no: node::node_no(),
             groups: topology
-                .actor_groups()
+                .locals()
                 .map(|group| GroupInfo {
                     group_no: group.addr.group_no(),
                     name: group.name,
