@@ -1,6 +1,8 @@
 use derive_more::From;
 use futures::future::{join_all, BoxFuture};
 
+#[cfg(feature = "network")]
+use crate::remote::{Remote, RemoteRouteReport};
 use crate::{
     actor::Actor,
     address_book::SlabConfig,
@@ -28,6 +30,8 @@ pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object, SlabConfig>;
 pub(crate) enum ObjectKind {
     Actor(Actor),
     Group(Group),
+    #[cfg(feature = "network")]
+    Remote(Remote),
 }
 
 impl Object {
@@ -45,6 +49,7 @@ impl Object {
     pub(crate) async fn send<C, K>(
         &self,
         ctx: &Context<C, K>,
+        recipient: Option<Addr>,
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>> {
         match &self.kind {
@@ -92,10 +97,19 @@ impl Object {
                 }
                 RouteReport::Closed(envelope) => Err(SendError(envelope)),
             },
+            #[cfg(feature = "network")]
+            ObjectKind::Remote(handle) => match (handle.send)(recipient, envelope) {
+                RemoteRouteReport::Done => Ok(()),
+                _ => todo!(),
+            },
         }
     }
 
-    pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
+    pub(crate) fn try_send(
+        &self,
+        recipient: Option<Addr>,
+        envelope: Envelope,
+    ) -> Result<(), TrySendError<Envelope>> {
         match &self.kind {
             ObjectKind::Actor(handle) => handle.try_send(envelope),
             ObjectKind::Group(handle) => match (handle.router)(envelope) {
@@ -107,6 +121,11 @@ impl Object {
                 }
                 RouteReport::Closed(envelope) => Err(TrySendError::Closed(envelope)),
             },
+            #[cfg(feature = "network")]
+            ObjectKind::Remote(handle) => match (handle.try_send)(recipient, envelope) {
+                RemoteRouteReport::Done => Ok(()),
+                _ => todo!(),
+            },
         }
     }
 
@@ -114,6 +133,8 @@ impl Object {
         match &self.kind {
             ObjectKind::Actor(actor) => Some(actor),
             ObjectKind::Group(_) => None,
+            #[cfg(feature = "network")]
+            ObjectKind::Remote(_) => None,
         }
     }
 
@@ -121,6 +142,8 @@ impl Object {
         match &self.kind {
             ObjectKind::Actor(actor) => actor.finished().await,
             ObjectKind::Group(group) => (group.finished)().await,
+            #[cfg(feature = "network")]
+            ObjectKind::Remote(_) => todo!(),
         }
     }
 }

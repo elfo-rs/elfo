@@ -27,7 +27,7 @@ use elfo_core::{
     message, msg,
     routers::{MapRouter, Outcome},
     scope::Scope,
-    topology::{GetAddrs, Topology},
+    topology::Topology,
 };
 
 const SYNC_YIELD_COUNT: usize = 32;
@@ -238,7 +238,7 @@ pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>
     let testers = topology.local("system.testers");
     let configurers = topology.local("system.configurers").entrypoint();
 
-    let subject_addr = subject.addrs()[0];
+    let subject_addr = subject.addr();
 
     testers.route_all_to(&subject);
     subject.route_all_to(&testers);

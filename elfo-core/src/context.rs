@@ -194,7 +194,7 @@ impl<C, K> Context<C, K> {
 
         if addrs.len() == 1 {
             return match self.book.get(addrs[0]) {
-                Some(object) => object.try_send(envelope).map_err(|err| err.map(e2m)),
+                Some(object) => object.try_send(None, envelope).map_err(|err| err.map(e2m)),
                 None => Err(TrySendError::Closed(e2m(envelope))),
             };
         }
@@ -209,7 +209,7 @@ impl<C, K> Context<C, K> {
             let envelope = ward!(envelope, break);
 
             match self.book.get(addr) {
-                Some(object) => match object.try_send(envelope) {
+                Some(object) => match object.try_send(None, envelope) {
                     Ok(()) => success = true,
                     Err(err) => {
                         has_full |= err.is_full();
@@ -283,9 +283,10 @@ impl<C, K> Context<C, K> {
         }
 
         if addrs.len() == 1 {
-            return match self.book.get_owned(addrs[0]) {
+            let recipient = addrs[0];
+            return match self.book.get_owned(recipient) {
                 Some(object) => object
-                    .send(self, envelope)
+                    .send(self, Some(recipient), envelope)
                     .await
                     .map_err(|err| SendError(e2m(err.0))),
                 None => Err(SendError(e2m(envelope))),
@@ -303,7 +304,11 @@ impl<C, K> Context<C, K> {
 
             match self.book.get_owned(addr) {
                 Some(object) => {
-                    unused = object.send(self, envelope).await.err().map(|err| err.0);
+                    unused = object
+                        .send(self, Some(addr), envelope)
+                        .await
+                        .err()
+                        .map(|err| err.0);
                     if unused.is_none() {
                         success = true;
                     }
@@ -363,7 +368,7 @@ impl<C, K> Context<C, K> {
         let entry = self.book.get_owned(recipient);
         let object = ward!(entry, return Err(SendError(message)));
         let envelope = Envelope::new(message, kind);
-        let fut = object.send(self, envelope.upcast());
+        let fut = object.send(self, Some(recipient), envelope.upcast());
         let result = fut.await;
         result.map_err(|err| SendError(e2m(err.0)))
     }
@@ -406,7 +411,7 @@ impl<C, K> Context<C, K> {
         let envelope = Envelope::new(message, kind);
 
         object
-            .try_send(envelope.upcast())
+            .try_send(Some(recipient), envelope.upcast())
             .map_err(|err| err.map(e2m))
     }
 

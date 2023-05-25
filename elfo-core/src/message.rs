@@ -28,6 +28,9 @@ pub trait Request: Message {
 // Reexported in `elfo::_priv`.
 pub struct AnyMessage {
     vtable: &'static MessageVTable,
+    #[cfg(feature = "network")]
+    data: SmallBox<dyn Any + Send, [usize; 22]>,
+    #[cfg(not(feature = "network"))]
     data: SmallBox<dyn Any + Send, [usize; 23]>,
 }
 

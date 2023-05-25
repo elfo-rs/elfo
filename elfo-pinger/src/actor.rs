@@ -4,7 +4,7 @@ use tokio::{select, time};
 use tracing::{debug, info, warn};
 
 use elfo_core::{
-    message, messages::Ping, scope, time::Interval, topology::ActorGroup, ActorStatus, Addr,
+    message, messages::Ping, scope, time::Interval, topology::LocalActorGroup, ActorStatus, Addr,
     Context, Topology,
 };
 use elfo_utils::ward;
@@ -77,14 +77,14 @@ pub(crate) async fn exec(mut ctx: Context<Config>, topology: Topology) {
     }
 }
 
-fn collect_groups(topology: &Topology, exclude: &[Addr]) -> Vec<ActorGroup> {
+fn collect_groups(topology: &Topology, exclude: &[Addr]) -> Vec<LocalActorGroup> {
     topology
-        .actor_groups()
+        .locals()
         .filter(|group| !exclude.contains(&group.addr))
         .collect()
 }
 
-async fn ping_group(ctx: Context, group: ActorGroup, warn_threshold: Duration) -> bool {
+async fn ping_group(ctx: Context, group: LocalActorGroup, warn_threshold: Duration) -> bool {
     debug!(group = %group.name, "checking a group");
     let fut = ctx.request_to(group.addr, Ping::default()).all().resolve();
     if time::timeout(warn_threshold, fut).await.is_err() {

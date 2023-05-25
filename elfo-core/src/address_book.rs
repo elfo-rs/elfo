@@ -98,6 +98,10 @@ impl Addr {
         (self.0 >> 40) as GroupNo
     }
 
+    fn node_no_group_no(self) -> u32 {
+        (self.0 >> 40) as u32
+    }
+
     fn slot_addr(self) -> usize {
         (self.0 & 0x0000_00ff_ffff_ffff) as usize
     }
@@ -143,35 +147,59 @@ const_assert_eq!(Slab::<Object, SlabConfig>::USED_BITS, 32);
 
 #[derive(Clone)]
 pub(crate) struct AddressBook {
-    slab: Arc<Slab<Object, SlabConfig>>,
+    local: Arc<Slab<Object, SlabConfig>>,
+    #[cfg(feature = "network")]
+    remote: Arc<RemoteToLocalMap>, // TODO: use `arc_swap::cache::Cache` in TLS?
 }
 
 assert_impl_all!(AddressBook: Sync);
 
 impl AddressBook {
     pub(crate) fn new() -> Self {
-        Self {
-            slab: Arc::new(Slab::new_with_config::<SlabConfig>()),
+        let local = Arc::new(Slab::new_with_config::<SlabConfig>());
+
+        #[cfg(feature = "network")]
+        return Self {
+            local,
+            remote: Default::default(),
+        };
+
+        #[cfg(not(feature = "network"))]
+        Self { local };
+    }
+
+    #[cfg(feature = "network")]
+    pub(crate) fn register_remote(&self, remote_addr: Addr, local_addr: Addr) {
+        self.remote.insert(remote_addr, local_addr);
+    }
+
+    pub(crate) fn get(&self, mut addr: Addr) -> Option<ObjectRef<'_>> {
+        #[cfg(feature = "network")]
+        if !addr.is_local() {
+            addr = self.remote.get(addr)?;
         }
+
+        self.local.get(addr.into_bits() as usize)
     }
 
-    pub(crate) fn get(&self, addr: Addr) -> Option<ObjectRef<'_>> {
-        self.slab.get(addr.into_bits() as usize)
-    }
+    pub(crate) fn get_owned(&self, mut addr: Addr) -> Option<ObjectArc> {
+        #[cfg(feature = "network")]
+        if !addr.is_local() {
+            addr = self.remote.get(addr)?;
+        }
 
-    pub(crate) fn get_owned(&self, addr: Addr) -> Option<ObjectArc> {
-        self.slab.clone().get_owned(addr.into_bits() as usize)
+        self.local.clone().get_owned(addr.into_bits() as usize)
     }
 
     pub(crate) fn vacant_entry(&self, group_no: GroupNo) -> VacantEntry<'_> {
-        self.slab
+        self.local
             .vacant_entry()
             .map(|entry| VacantEntry { entry, group_no })
             .expect("too many actors")
     }
 
     pub(crate) fn remove(&self, addr: Addr) {
-        self.slab.remove(addr.into_bits() as usize);
+        self.local.remove(addr.into_bits() as usize);
     }
 }
 
@@ -189,3 +217,30 @@ impl<'b> VacantEntry<'b> {
         Addr::new_local(self.entry.key(), self.group_no)
     }
 }
+
+cfg_network!({
+    use arc_swap::ArcSwap;
+    use fxhash::FxHashMap;
+
+    #[derive(Default)]
+    pub(super) struct RemoteToLocalMap {
+        map: ArcSwap<FxHashMap<u32, Addr>>,
+    }
+
+    impl RemoteToLocalMap {
+        pub(super) fn insert(&self, remote_addr: Addr, local_addr: Addr) {
+            assert!(!remote_addr.is_local());
+            assert!(local_addr.is_local());
+
+            self.map.rcu(|map| {
+                let mut map = (**map).clone();
+                map.insert(remote_addr.node_no_group_no(), local_addr);
+                map
+            });
+        }
+
+        pub(super) fn get(&self, addr: Addr) -> Option<Addr> {
+            self.map.load().get(&addr.node_no_group_no()).copied()
+        }
+    }
+});

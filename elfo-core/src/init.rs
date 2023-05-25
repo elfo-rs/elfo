@@ -31,7 +31,7 @@ type Result<T, E = StartError> = std::result::Result<T, E>;
 
 async fn start_entrypoints(ctx: &Context, topology: &Topology, is_check_only: bool) -> Result<()> {
     let futures = topology
-        .actor_groups()
+        .locals()
         .filter(|group| group.is_entrypoint)
         .map(|group| async move {
             let response = ctx
@@ -253,7 +253,7 @@ async fn do_termination(ctx: Context, topology: Topology) {
 async fn terminate_groups(ctx: &Context, topology: &Topology, user: bool) {
     // TODO: specify order of system groups.
     let futures = topology
-        .actor_groups()
+        .locals()
         .filter(|group| user ^ group.name.starts_with("system."))
         .map(|group| async move {
             select! {
