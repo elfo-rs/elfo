@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **BREAKING** supervisor: actors discard `ValidateConfig` by default.
+- **BREAKING** supervisor: actors discard `ValidateConfig` by default ([#87]).
+
+[#87]: https://github.com/elfo-rs/elfo/pull/87
 
 ## [0.2.0-alpha.0]
 ### Added
