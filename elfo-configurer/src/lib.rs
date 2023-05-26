@@ -239,10 +239,10 @@ impl Configurer {
             .into_iter()
             .flat_map(|(group, results)| results.into_iter().map(move |res| (group.clone(), res)))
             .filter_map(|(group, result)| match result {
+                // NOTE: Since actors discard `ValidateConfig` by default, it is ok to receive
+                // `Err(RequestError::Closed(..))` here.
                 Ok(Ok(_)) | Err(_) => None,
                 Ok(Err(reject)) => Some((group, reject.reason)),
-                // TODO: it's meaningful, but doesn't work well with empty groups.
-                // Err(RequestError::Closed(_)) => Some((group, "some group is closed".into())),
             })
             // TODO: provide more info.
             .inspect(|(group, reason)| error!(%group, %reason, "invalid config"))

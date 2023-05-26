@@ -23,6 +23,7 @@ use elfo_core::{
     ActorGroup, ActorMeta, Addr, Blueprint, Context, Envelope, Local, Message, Request,
     ResponseToken,
     _priv::do_start,
+    errors::TrySendError,
     message, msg,
     routers::{MapRouter, Outcome},
     scope::Scope,
@@ -53,6 +54,12 @@ impl Proxy {
                 panic!("cannot send {} ({}) at {}", M::VTABLE.name, err, location);
             }
         })
+    }
+
+    pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
+        self.scope
+            .clone()
+            .sync_within(|| self.context.try_send(message))
     }
 
     #[track_caller]
