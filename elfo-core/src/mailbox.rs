@@ -15,14 +15,14 @@ const LIMIT: usize = 100_000;
 
 pub(crate) struct Mailbox {
     queue: GenericChannel<RawMutex, Envelope, GrowingHeapBuf<Envelope>>,
-    close: Mutex<Option<TraceId>>,
+    closed_trace_id: Mutex<Option<TraceId>>,
 }
 
 impl Mailbox {
     pub(crate) fn new() -> Self {
         Self {
             queue: GenericChannel::with_capacity(LIMIT),
-            close: Mutex::new(None),
+            closed_trace_id: Mutex::new(None),
         }
     }
 
@@ -56,8 +56,13 @@ impl Mailbox {
 
     #[cold]
     pub(crate) fn close(&self, trace_id: TraceId) -> bool {
+        // NOTE: It is important that we take the lock here before actually closing the
+        // channel. If we take a lock after closing the channel, data race is
+        // possible when we try to `recv()` after the channel is closed, but
+        // before the `closed_trace_id` is assigned.
+        let mut closed_trace_id = self.closed_trace_id.lock();
         if self.queue.close().is_newly_closed() {
-            *self.close.lock() = Some(trace_id);
+            *closed_trace_id = Some(trace_id);
             true
         } else {
             false
@@ -71,7 +76,7 @@ impl Mailbox {
 
     #[cold]
     fn on_close(&self) -> RecvResult {
-        let trace_id = self.close.lock().expect("called before close()");
+        let trace_id = self.closed_trace_id.lock().expect("called before close()");
         RecvResult::Closed(trace_id)
     }
 }
