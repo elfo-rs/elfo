@@ -7,7 +7,7 @@ use futures::{future::BoxFuture, FutureExt};
 use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
-use tracing::{debug, error_span, info, warn, Instrument, Span};
+use tracing::{debug, error, error_span, info, warn, Instrument, Span};
 
 use elfo_utils::CachePadded;
 
@@ -191,6 +191,7 @@ where
                 Err(reason) => {
                     msg!(match envelope {
                         (messages::UpdateConfig { .. }, token) => {
+                            error!(group = %self.meta.group, %reason, "invalid config");
                             let reject = messages::ConfigRejected { reason };
                             self.context.respond(token, Err(reject));
                         }
