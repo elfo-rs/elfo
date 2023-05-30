@@ -23,14 +23,10 @@ async fn singleton_actor_update_config() {
         .config::<Config>()
         .exec(move |mut ctx| async move {
             while let Some(envelope) = ctx.recv().await {
-                let mut limit = ctx.config().limit;
                 msg!(match envelope {
-                    StartSingleton => continue,
-                    ConfigUpdated => {
-                        limit = ctx.config().limit;
-                    }
+                    StartSingleton | ConfigUpdated => continue,
                     (GetLimit, token) => {
-                        ctx.respond(token, limit);
+                        ctx.respond(token, ctx.config().limit);
                     }
                     _ => unreachable!(),
                 });
