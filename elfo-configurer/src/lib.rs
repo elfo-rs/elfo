@@ -194,12 +194,7 @@ impl Configurer {
         let status = ActorStatus::NORMAL.with_details("config updating");
         self.ctx.set_status(status);
 
-        if let Err(errors) = self.update_all(&config_list).await {
-            error!("config updating failed");
-            self.ctx
-                .set_status(ActorStatus::ALARMING.with_details("possibly incosistent configs"));
-            return Err(errors);
-        }
+        self.update_all(&config_list).await;
 
         self.ctx.set_status(ActorStatus::NORMAL);
 
@@ -254,10 +249,7 @@ impl Configurer {
         }
     }
 
-    async fn update_all(
-        &self,
-        config_list: &[ConfigWithMeta],
-    ) -> Result<(), Vec<ReloadConfigsError>> {
+    async fn update_all(&self, config_list: &[ConfigWithMeta]) {
         let futures = config_list
             .iter()
             .cloned()
@@ -279,25 +271,7 @@ impl Configurer {
             })
             .collect::<Vec<_>>();
 
-        let errors = future::join_all(futures)
-            .await
-            .into_iter()
-            .filter_map(|(group, result)| match result {
-                Ok(_) => None,
-                Err(err) => {
-                    error!(%group, %err, "failed to update config");
-                    Some(ReloadConfigsError {
-                        reason: err.to_string(),
-                    })
-                }
-            })
-            .collect::<Vec<_>>();
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
+        future::join_all(futures).await;
     }
 }
 
