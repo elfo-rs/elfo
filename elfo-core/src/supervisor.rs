@@ -191,7 +191,7 @@ where
                 Err(reason) => {
                     msg!(match envelope {
                         (messages::UpdateConfig { .. }, token) => {
-                            error!(group = %self.meta.group, %reason, "invalid config");
+                            self.in_scope(|| error!(group = %self.meta.group, %reason, "invalid config is ignored"));
                             let reject = messages::ConfigRejected { reason };
                             self.context.respond(token, Err(reject));
                         }

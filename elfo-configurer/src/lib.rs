@@ -238,6 +238,7 @@ impl Configurer {
                 Ok(Ok(_)) | Err(_) => None,
                 Ok(Err(reject)) => Some((group, reject.reason)),
             })
+            // TODO: include actor keys in the error message.
             .inspect(|(group, reason)| error!(%group, %reason, "invalid config"))
             .map(|(_, reason)| ReloadConfigsError { reason })
             .collect::<Vec<_>>();
@@ -258,9 +259,8 @@ impl Configurer {
                 // While `UpdateConfig` is defined as a request to cover more use cases, default
                 // configurer simply sends out new configs instead of waiting for all groups to
                 // process the message and respond. This is done for performance reasons. If an
-                // actor has a congested mailbox or spends a lot of time processing each
-                // message, updating configs using requests can take a lot of
-                // time.
+                // actor has a congested mailbox or spends a lot of time processing each message,
+                // updating configs using requests can take a lot of time.
                 let fut = self.ctx.send_to(item.addr, UpdateConfig::new(item.config));
 
                 wrap_long_running_future(
@@ -308,7 +308,7 @@ async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
             Ok(()) | Err(RequestError::Ignored) => None,
             Err(RequestError::Closed(_)) => Some(String::from("some group is closed")),
         })
-        // TODO: provide more info.
+        // TODO: include actor keys in the error message.
         .inspect(|reason| error!(%reason, "ping failed"));
 
     errors.count() == 0
@@ -349,7 +349,7 @@ fn match_configs(
                 group_name: group.name.clone(),
                 addr: group.addr,
                 hash: fxhash::hash64(&group_config),
-                config: AnyConfig::new(group_config),
+                config: AnyConfig::from_value(group_config),
             }
         })
         .collect()

@@ -1,10 +1,13 @@
 #![cfg(feature = "test-util")]
 
-use elfo::{config::AnyConfig, messages::ConfigUpdated, prelude::*};
-use elfo_core::messages::{ConfigRejected, UpdateConfig};
 use serde::Deserialize;
-use serde_value::Value;
 use toml::toml;
+
+use elfo::{
+    config::AnyConfig,
+    messages::{ConfigRejected, ConfigUpdated, UpdateConfig},
+    prelude::*,
+};
 
 #[tokio::test]
 async fn singleton_actor_update_config() {
@@ -42,22 +45,18 @@ async fn singleton_actor_update_config() {
     assert_eq!(proxy.request(GetLimit).await, 128);
 
     // Update with valid config through message.
-    let config = AnyConfig::new(
-        Value::deserialize(toml! {
-            limit = 256
-        })
-        .unwrap(),
-    );
+    let config = AnyConfig::deserialize(toml! {
+        limit = 256
+    })
+    .unwrap();
     proxy.send(UpdateConfig::new(config)).await;
     assert_eq!(proxy.request(GetLimit).await, 256);
 
     // Update with valid config through request.
-    let config = AnyConfig::new(
-        Value::deserialize(toml! {
-            limit = 512
-        })
-        .unwrap(),
-    );
+    let config = AnyConfig::deserialize(toml! {
+        limit = 512
+    })
+    .unwrap();
     assert!(matches!(
         proxy.request(UpdateConfig::new(config)).await,
         Ok(_)
@@ -65,12 +64,10 @@ async fn singleton_actor_update_config() {
     assert_eq!(proxy.request(GetLimit).await, 512);
 
     // Update with invalid config through message.
-    let config = AnyConfig::new(
-        Value::deserialize(toml! {
-            limit = -256
-        })
-        .unwrap(),
-    );
+    let config = AnyConfig::deserialize(toml! {
+        limit = -256
+    })
+    .unwrap();
     proxy.send(UpdateConfig::new(config.clone())).await;
     assert_eq!(proxy.request(GetLimit).await, 512);
 
