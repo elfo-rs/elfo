@@ -16,10 +16,10 @@ use tracing::{debug, error, info, warn};
 use elfo_core::{
     config::AnyConfig,
     errors::RequestError,
-    messages::{ConfigRejected, Ping, UpdateConfig, ValidateConfig},
+    messages::{Ping, UpdateConfig, ValidateConfig},
     msg,
     signal::{Signal, SignalKind},
-    ActorGroup, ActorStatus, Addr, Blueprint, Context, Request, Topology,
+    ActorGroup, ActorStatus, Addr, Blueprint, Context, Topology,
 };
 
 pub use self::protocol::*;
@@ -184,7 +184,7 @@ impl Configurer {
         let status = ActorStatus::NORMAL.with_details("config validation");
         self.ctx.set_status(status);
 
-        if let Err(errors) = self.request_all(&config_list, ValidateConfig::new).await {
+        if let Err(errors) = self.validate_all(&config_list).await {
             error!("config validation failed");
             self.ctx.set_status(ActorStatus::NORMAL);
             return Err(errors);
@@ -194,12 +194,7 @@ impl Configurer {
         let status = ActorStatus::NORMAL.with_details("config updating");
         self.ctx.set_status(status);
 
-        if let Err(errors) = self.request_all(&config_list, UpdateConfig::new).await {
-            error!("config updating failed");
-            self.ctx
-                .set_status(ActorStatus::ALARMING.with_details("possibly incosistent configs"));
-            return Err(errors);
-        }
+        self.update_all(&config_list).await;
 
         self.ctx.set_status(ActorStatus::NORMAL);
 
@@ -210,14 +205,10 @@ impl Configurer {
         Ok(config_list.into_iter().map(|c| c.group_name).collect())
     }
 
-    async fn request_all<R>(
+    async fn validate_all(
         &self,
         config_list: &[ConfigWithMeta],
-        make_msg: impl Fn(AnyConfig) -> R,
-    ) -> Result<(), Vec<ReloadConfigsError>>
-    where
-        R: Request<Response = Result<(), ConfigRejected>>,
-    {
+    ) -> Result<(), Vec<ReloadConfigsError>> {
         let futures = config_list
             .iter()
             .cloned()
@@ -225,15 +216,18 @@ impl Configurer {
                 let group = item.group_name;
                 let fut = self
                     .ctx
-                    .request_to(item.addr, make_msg(item.config))
+                    .request_to(item.addr, ValidateConfig::new(item.config))
                     .all()
                     .resolve();
 
-                wrap_request_future(fut, group)
+                wrap_long_running_future(
+                    fut,
+                    group,
+                    "group is validing the config suspiciously long",
+                )
             })
             .collect::<Vec<_>>();
 
-        // TODO: use `try_join_all`.
         let errors = future::join_all(futures)
             .await
             .into_iter()
@@ -244,7 +238,7 @@ impl Configurer {
                 Ok(Ok(_)) | Err(_) => None,
                 Ok(Err(reject)) => Some((group, reject.reason)),
             })
-            // TODO: provide more info.
+            // TODO: include actor keys in the error message.
             .inspect(|(group, reason)| error!(%group, %reason, "invalid config"))
             .map(|(_, reason)| ReloadConfigsError { reason })
             .collect::<Vec<_>>();
@@ -255,15 +249,43 @@ impl Configurer {
             Err(errors)
         }
     }
+
+    async fn update_all(&self, config_list: &[ConfigWithMeta]) {
+        let futures = config_list
+            .iter()
+            .cloned()
+            .map(|item| {
+                let group = item.group_name;
+                // While `UpdateConfig` is defined as a request to cover more use cases, default
+                // configurer simply sends out new configs instead of waiting for all groups to
+                // process the message and respond. This is done for performance reasons. If an
+                // actor has a congested mailbox or spends a lot of time processing each
+                // message, updating configs using requests can take a lot of time.
+                let fut = self.ctx.send_to(item.addr, UpdateConfig::new(item.config));
+
+                wrap_long_running_future(
+                    fut,
+                    group,
+                    "some actors in the group have congested mailboxes, config update is stalled",
+                )
+            })
+            .collect::<Vec<_>>();
+
+        future::join_all(futures).await;
+    }
 }
 
-async fn wrap_request_future<F: Future>(f: F, group_name: String) -> (String, F::Output) {
+async fn wrap_long_running_future<F: Future>(
+    f: F,
+    group_name: String,
+    message: &'static str,
+) -> (String, F::Output) {
     tokio::pin!(f);
     loop {
         select! {
             output = &mut f => return (group_name, output),
             _ = time::sleep(WARN_INTERVAL) => {
-                warn!(group = %group_name, "group is updating the config suspiciously long");
+                warn!(group = %group_name, message);
             }
         }
     }
@@ -286,7 +308,7 @@ async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
             Ok(()) | Err(RequestError::Ignored) => None,
             Err(RequestError::Closed(_)) => Some(String::from("some group is closed")),
         })
-        // TODO: provide more info.
+        // TODO: include actor keys in the error message.
         .inspect(|reason| error!(%reason, "ping failed"));
 
     errors.count() == 0
@@ -327,7 +349,7 @@ fn match_configs(
                 group_name: group.name.clone(),
                 addr: group.addr,
                 hash: fxhash::hash64(&group_config),
-                config: AnyConfig::new(group_config),
+                config: AnyConfig::from_value(group_config),
             }
         })
         .collect()

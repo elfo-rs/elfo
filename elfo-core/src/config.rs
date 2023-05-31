@@ -32,7 +32,13 @@ struct Decoded {
 }
 
 impl AnyConfig {
-    pub fn new(value: Value) -> Self {
+    /// Creates `AnyConfig` from `serde_value::Value`.
+    ///
+    /// This method is unstable because it relies on the specific implementation
+    /// using `serde_value`. `AnyConfig::deserialize` should be used instead
+    /// where possible.
+    #[stability::unstable]
+    pub fn from_value(value: Value) -> Self {
         Self {
             raw: Arc::new(value),
             decoded: None,
@@ -90,7 +96,7 @@ impl AnyConfig {
 
 impl Default for AnyConfig {
     fn default() -> Self {
-        Self::new(Value::Map(Default::default()))
+        Self::from_value(Value::Map(Default::default()))
     }
 }
 
@@ -103,7 +109,7 @@ impl fmt::Debug for AnyConfig {
 
 impl<'de> Deserialize<'de> for AnyConfig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Value::deserialize(deserializer).map(Self::new)
+        Value::deserialize(deserializer).map(Self::from_value)
     }
 }
 
