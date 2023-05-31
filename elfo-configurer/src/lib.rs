@@ -259,8 +259,8 @@ impl Configurer {
                 // While `UpdateConfig` is defined as a request to cover more use cases, default
                 // configurer simply sends out new configs instead of waiting for all groups to
                 // process the message and respond. This is done for performance reasons. If an
-                // actor has a congested mailbox or spends a lot of time processing each message,
-                // updating configs using requests can take a lot of time.
+                // actor has a congested mailbox or spends a lot of time processing each
+                // message, updating configs using requests can take a lot of time.
                 let fut = self.ctx.send_to(item.addr, UpdateConfig::new(item.config));
 
                 wrap_long_running_future(
