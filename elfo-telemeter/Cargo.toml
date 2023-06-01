@@ -1,11 +1,14 @@
 [package]
 name = "elfo-telemeter"
 version = "0.2.0-alpha.0"
-description = "A telemeter collecting metrics"
+description = "Collects and exposes metrics of the elfo system"
+keywords = ["elfo", "actor", "distributed", "tokio"]
 
+repository.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
+readme.workspace = true
 
 [features]
 unstable = []

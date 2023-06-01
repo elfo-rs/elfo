@@ -4,8 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+<!-- next-header -->
 
-## [Unreleased]
+## [Unreleased] - ReleaseDate
 ### Changed
 - **BREAKING** supervisor: actors discard `ValidateConfig` by default ([#87]).
 - **BREAKING** configurer: rename `AnyConfig::new` into `AnyConfig::from_value` and mark it unstable ([#90]).
@@ -18,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#89]: https://github.com/elfo-rs/elfo/pull/89
 [#87]: https://github.com/elfo-rs/elfo/pull/87
 
-## [0.2.0-alpha.0]
+## [0.2.0-alpha.0] - 2023-05-16
 ### Added
 - messages: `Impossible` that cannot be constructed ([#39]).
 
@@ -439,8 +440,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2021-04-03
 - Feuer Frei!
 
-
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.1...HEAD
+<!-- next-url -->
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.1...HEAD
 [0.2.0-alpha.1]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.0...elfo-0.2.0-alpha.1
 [0.2.0-alpha.0]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.2.0-alpha.0
 [0.1.40]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.1.40

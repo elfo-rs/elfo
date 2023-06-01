@@ -2,7 +2,12 @@
 name = "elfo-examples"
 version = "0.0.0"
 publish = false
-edition = "2018"
+
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+readme.workspace = true
 
 [dev-dependencies]
 elfo = { version = "0.2.0-alpha.0", path = "../elfo", features = ["full", "test-util"] }

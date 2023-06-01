@@ -1,11 +1,14 @@
 [package]
 name = "elfo-utils"
 version = "0.2.2"
-description = "Utils"
+description = "Some utils for the elfo system"
+keywords = ["elfo", "actor", "distributed"]
 
+repository.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
+readme.workspace = true
 
 [[bench]]
 name = "rate_limiter"

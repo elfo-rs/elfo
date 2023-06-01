@@ -2,10 +2,13 @@
 name = "elfo-macros"
 version = "0.2.0-alpha.0"
 description = "Macros for matching and deriving messages"
+keywords = ["elfo", "actor", "distributed", "tokio", "macros"]
 
+repository.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
+readme.workspace = true
 
 [lib]
 proc-macro = true

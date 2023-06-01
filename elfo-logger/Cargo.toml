@@ -1,11 +1,14 @@
 [package]
 name = "elfo-logger"
 version = "0.2.0-alpha.0"
-description = "Logging subsystem"
+description = "Logs events of the elfo system"
+keywords = ["elfo", "actor", "distributed", "tokio", "logging"]
 
+repository.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
+readme.workspace = true
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.0", path = "../elfo-core", features = ["unstable"] }

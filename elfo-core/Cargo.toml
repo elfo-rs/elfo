@@ -1,11 +1,14 @@
 [package]
 name = "elfo-core"
 version = "0.2.0-alpha.0"
-description = "The core of the system"
+description = "The core of the elfo system"
+keywords = ["elfo", "actor", "distributed", "tokio"]
 
+repository.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
+readme.workspace = true
 
 [features]
 test-util = ["tokio/test-util"]

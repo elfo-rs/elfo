@@ -1,11 +1,14 @@
 [package]
 name = "elfo-dumper"
 version = "0.2.0-alpha.0"
-description = "Dumps messages on disk"
+description = "Dumps messages of the elfo system on disk"
+keywords = ["elfo", "actor", "distributed", "tokio", "dumping"]
 
+repository.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
+readme.workspace = true
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.0", path = "../elfo-core", features = ["unstable"] }
