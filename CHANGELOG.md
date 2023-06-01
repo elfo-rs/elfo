@@ -6,18 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
-
 ### Changed
 - **BREAKING** supervisor: actors discard `ValidateConfig` by default ([#87]).
-- configurer: send `UpdateConfig` as a regular message instead of a request ([#90]).
 - **BREAKING** configurer: rename `AnyConfig::new` into `AnyConfig::from_value` and mark it unstable ([#90]).
+- configurer: send `UpdateConfig` as a regular message instead of a request ([#90]).
 
 ### Fixed
 - mailbox: avoid data race between `Mailbox::close()` and `Mailbox::recv()` methods ([#89]).
 
-[#87]: https://github.com/elfo-rs/elfo/pull/87
-[#89]: https://github.com/elfo-rs/elfo/pull/89
 [#90]: https://github.com/elfo-rs/elfo/pull/90
+[#89]: https://github.com/elfo-rs/elfo/pull/89
+[#87]: https://github.com/elfo-rs/elfo/pull/87
 
 ## [0.2.0-alpha.0]
 ### Added
@@ -441,7 +440,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 
-[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.0...HEAD
+[unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.1...HEAD
+[0.2.0-alpha.1]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.0...elfo-0.2.0-alpha.1
 [0.2.0-alpha.0]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.2.0-alpha.0
 [0.1.40]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.1.40
 [0.1.39]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.38...elfo-0.1.39
