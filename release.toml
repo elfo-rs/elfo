@@ -1,2 +1,2 @@
-pre-release-commit-message = "chore: release {{version}}"
+pre-release-commit-message = "chore: release"
 allow-branch = ["master"]
