@@ -17,7 +17,7 @@ unstable-stuck-detection = ["dep:thread_local"]
 
 [dependencies]
 elfo-macros = { version = "0.2.0-alpha.0", path = "../elfo-macros" }
-elfo-utils = { version = "0.2.2", path = "../elfo-utils" }
+elfo-utils = { version = "0.2.3", path = "../elfo-utils" }
 
 tokio = { version = "1.16", features = ["rt", "sync", "time", "signal", "macros"] }
 sharded-slab = "0.1.1"

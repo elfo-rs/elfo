@@ -441,8 +441,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.1...HEAD
-[0.2.0-alpha.1]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.0...elfo-0.2.0-alpha.1
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.0...HEAD
 [0.2.0-alpha.0]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.2.0-alpha.0
 [0.1.40]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.1.40
 [0.1.39]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.38...elfo-0.1.39

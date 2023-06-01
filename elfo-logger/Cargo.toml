@@ -12,7 +12,7 @@ readme.workspace = true
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.0", path = "../elfo-core", features = ["unstable"] }
-elfo-utils = { version = "0.2.2", path = "../elfo-utils" }
+elfo-utils = { version = "0.2.3", path = "../elfo-utils" }
 
 derive_more = "0.99.11"
 futures-intrusive = "0.5"
