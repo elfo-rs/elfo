@@ -9,7 +9,7 @@ extern crate elfo_utils;
 // To make `#[message]` and `msg!` work inside `elfo-core`.
 extern crate self as elfo_core;
 
-// TODO: revise this list.
+// TODO: revise this list, what about `NodeNo`?
 pub use crate::{
     actor::{ActorMeta, ActorStatus, ActorStatusKind},
     address_book::{Addr, GroupNo},

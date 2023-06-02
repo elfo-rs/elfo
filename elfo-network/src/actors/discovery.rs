@@ -1,82 +1,414 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use eyre::Result;
-use futures::SinkExt;
-use tokio::net::TcpStream;
-use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::info;
+use eyre::{eyre, Result, WrapErr};
+use futures::StreamExt;
+use quanta::Instant;
+use tracing::{debug, error, info, warn};
 
-use elfo_core::{message, msg, scope, time::Interval, Addr, Context, Envelope, _priv::MessageKind};
+use elfo_core::{
+    message, msg, node::NodeNo, scope, Addr, Context, Envelope, Message, MoveOwnership,
+    _priv::MessageKind, messages::ConfigUpdated, stream::Stream,
+};
 
 use crate::{
     actors::Key,
-    codec::{Decoder, Encoder},
-    config::Config,
-    node_map::NodeMap,
-    protocol::{Greeting, RemoteGroupInfo},
+    config::{Config, Transport},
+    connection::{self, Connection},
+    node_map::{LaunchId, NodeInfo, NodeMap},
+    protocol::{internode, StartReceiver, StartTransmitter},
 };
 
-const MAX_FRAME_SIZE: u32 = 65536; // TODO: make it configurable.
+#[message]
+struct ConnectionEstablished {
+    role: ConnectionRole,
+    connection: MoveOwnership<Connection>,
+}
 
-pub(crate) struct Discovery {
+#[message(part)]
+enum ConnectionRole {
+    // Only possible if this node is a server.
+    Unknown,
+    Control(internode::NodeCompositionReport),
+    Receiver(internode::ReadyToReceive),
+    Transmitter(internode::ReadyToTransmit),
+}
+
+#[message]
+struct ConnectionAccepted {
+    is_initiator: bool,
+    role: ConnectionRole,
+    node_no: NodeNo,
+    launch_id: LaunchId,
+    connection: MoveOwnership<Connection>,
+}
+
+#[message]
+struct ConnectionRejected {
+    error: String,
+    peer: Transport,
+}
+
+pub(super) struct Discovery {
     ctx: Context<Config, Key>,
     node_map: Arc<NodeMap>,
 }
 
-#[message(elfo = elfo_core)]
-struct DiscoveryTick;
+// TODO: detect duplicate nodes.
+// TODO: discover tick.
+// TODO: status of in-progress connections
+// TODO: launch_id changed.
+// TODO: repeat discovery by timer.
 
 impl Discovery {
-    pub(crate) fn new(ctx: Context<Config, Key>, node_map: Arc<NodeMap>) -> Self {
+    pub(super) fn new(ctx: Context<Config, Key>, node_map: Arc<NodeMap>) -> Self {
         Self { ctx, node_map }
     }
 
-    pub(crate) async fn main(mut self) -> Result<()> {
-        let interval = self.ctx.attach(Interval::new(DiscoveryTick));
-        interval.start_after(Duration::from_secs(0), Duration::from_secs(10)); // TODO: configurable.
+    pub(super) async fn main(mut self) -> Result<()> {
+        self.listen().await?;
+        self.discover();
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
-                DiscoveryTick => self.discover().await?,
+                ConfigUpdated => {
+                    // TODO: update listeners.
+                    // TODO: stop discovering for removed transports.
+                    // TODO: self.discover();
+                }
+                msg @ ConnectionEstablished => self.on_connection_established(msg),
+                msg @ ConnectionAccepted => self.on_connection_accepted(msg).await,
+                msg @ ConnectionRejected => self.on_connection_rejected(msg),
             });
         }
 
         Ok(())
     }
 
-    async fn discover(&mut self) -> Result<()> {
-        // TODO: do it in parallel.
-        for addr in &self.ctx.config().discovery.predefined {
-            info!(message = "discovering", %addr);
+    async fn listen(&mut self) -> Result<()> {
+        for transport in self.ctx.config().listen.clone() {
+            let stream = connection::listen(&transport)
+                .await
+                .wrap_err_with(|| eyre!("cannot listen {}", transport))?
+                .map(|conn| ConnectionEstablished {
+                    role: ConnectionRole::Unknown,
+                    connection: conn.into(),
+                });
 
-            // TODO: timeout, skip errors.
-            let stream = TcpStream::connect(addr).await?;
+            info!(
+                message = "listening for connections",
+                listener = %transport,
+            );
 
-            let (rx, tx) = stream.into_split();
-            let rx = FramedRead::new(rx, Decoder::new(MAX_FRAME_SIZE));
-            let mut tx = FramedWrite::new(tx, Encoder::new(MAX_FRAME_SIZE));
-
-            let envelope = Envelope::with_trace_id(
-                Greeting {
-                    node_no: self.node_map.this.node_no,
-                    groups: self
-                        .node_map
-                        .this
-                        .groups
-                        .iter()
-                        .map(|info| RemoteGroupInfo {
-                            group_no: info.group_no,
-                            name: info.name.clone(),
-                        })
-                        .collect(),
-                },
-                MessageKind::Regular { sender: Addr::NULL },
-                scope::trace_id(),
-            )
-            .upcast();
-            tx.send((envelope, Addr::NULL)).await?;
+            self.ctx.attach(Stream::from_futures03(stream));
         }
 
         Ok(())
     }
+
+    fn discover(&mut self) {
+        let node_report = internode::NodeCompositionReport {
+            groups: self.node_map.this.groups.clone(),
+            interests: self.node_map.this.interests.clone(),
+        };
+
+        for transport in self.ctx.config().discovery.predefined.clone() {
+            self.open_connection(&transport, ConnectionRole::Control(node_report.clone()));
+        }
+    }
+
+    fn open_connection(
+        &mut self,
+        peer: &Transport,
+        role: ConnectionRole,
+    ) -> Stream<ConnectionEstablished> {
+        let interval = self.ctx.config().discovery.attempt_interval;
+        let peer = peer.clone();
+
+        self.ctx.attach(Stream::once(async move {
+            loop {
+                debug!(message = "connecting to peer", peer = %peer, role = ?role);
+
+                match connection::connect(&peer).await {
+                    Ok(connection) => {
+                        break ConnectionEstablished {
+                            role,
+                            connection: connection.into(),
+                        }
+                    }
+                    Err(err) => {
+                        info!(message = "cannot connect", peer = %peer, error = %err);
+                    }
+                }
+
+                // TODO: should we change trace_id?
+                debug!(message = "retrying after some time", peer = %peer, delay = ?interval);
+                tokio::time::sleep(interval).await;
+            }
+        }))
+    }
+
+    fn on_connection_established(&mut self, msg: ConnectionEstablished) {
+        let connection = msg.connection.take().unwrap();
+
+        info!(
+            message = "new connection established",
+            peer = %connection.peer,
+            role = ?msg.role,
+        );
+
+        let node_map = self.node_map.clone();
+        self.ctx.attach(Stream::once(async move {
+            let peer = connection.peer.clone();
+
+            accept_connection(connection, msg.role, &node_map.this)
+                .await
+                .map_err(|err| ConnectionRejected {
+                    error: err.to_string(),
+                    peer,
+                })
+        }));
+    }
+
+    async fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
+        let mut connection = msg.connection.take().unwrap();
+
+        info!(
+            message = "new connection accepted",
+            peer = %connection.peer,
+            role = ?msg.role,
+        );
+
+        match msg.role {
+            ConnectionRole::Unknown => unreachable!(),
+            ConnectionRole::Control(remote_node) => {
+                // TODO: should we update `NodeMap`?
+
+                // The stream is empty, so it shouldn't block the actor.
+                if let Err(err) = connection
+                    .write
+                    .send_flush(
+                        make_regular(internode::NodeCompositionReport {
+                            groups: self.node_map.this.groups.clone(),
+                            interests: self.node_map.this.interests.clone(),
+                        }),
+                        Addr::NULL,
+                    )
+                    .await
+                {
+                    // TODO: another way?
+                    return self.on_connection_rejected(ConnectionRejected {
+                        error: format!("once accepted: {err}"),
+                        peer: connection.peer,
+                    });
+                }
+
+                if msg.is_initiator {
+                    let this_node = &self.node_map.clone().this;
+
+                    for group in remote_node
+                        .groups
+                        .iter()
+                        .filter(|g| this_node.interests.contains(&g.name))
+                    {
+                        // TODO: save stream to cancel later.
+                        self.open_connection(
+                            &connection.peer,
+                            ConnectionRole::Transmitter(internode::ReadyToTransmit {
+                                group_no: group.group_no,
+                            }),
+                        );
+                    }
+
+                    for group in this_node
+                        .groups
+                        .iter()
+                        .filter(|g| remote_node.interests.contains(&g.name))
+                    {
+                        // TODO: save stream to cancel later.
+                        self.open_connection(
+                            &connection.peer,
+                            ConnectionRole::Receiver(internode::ReadyToReceive {
+                                group_no: group.group_no,
+                            }),
+                        );
+                    }
+                }
+            }
+            ConnectionRole::Receiver(details) => {
+                // The stream is empty, so it shouldn't block the actor.
+                if let Err(err) = connection
+                    .write
+                    .send_flush(
+                        make_regular(internode::ReadyToReceive {
+                            group_no: details.group_no,
+                        }),
+                        Addr::NULL,
+                    )
+                    .await
+                {
+                    // TODO: another way?
+                    return self.on_connection_rejected(ConnectionRejected {
+                        error: format!("once accepted: {err}"),
+                        peer: connection.peer,
+                    });
+                }
+
+                let res = self.ctx.try_send_to(
+                    self.ctx.group(),
+                    StartReceiver {
+                        node_no: msg.node_no,
+                        local_group_no: details.group_no,
+                        connection: connection.into(),
+                    },
+                );
+
+                if let Err(err) = res {
+                    error!(message = "cannot start receiver", error = %err);
+                    // TODO: something else?
+                }
+            }
+            ConnectionRole::Transmitter(details) => {
+                // The stream is empty, so it shouldn't block the actor.
+                if let Err(err) = connection
+                    .write
+                    .send_flush(
+                        make_regular(internode::ReadyToTransmit {
+                            group_no: details.group_no,
+                        }),
+                        Addr::NULL,
+                    )
+                    .await
+                {
+                    // TODO: another way?
+                    return self.on_connection_rejected(ConnectionRejected {
+                        error: format!("once accepted: {err}"),
+                        peer: connection.peer,
+                    });
+                }
+
+                let res = self.ctx.try_send_to(
+                    self.ctx.group(),
+                    StartTransmitter {
+                        node_no: msg.node_no,
+                        remote_group_no: details.group_no,
+                        connection: connection.into(),
+                    },
+                );
+
+                if let Err(err) = res {
+                    error!(message = "cannot start transmitter", error = %err);
+                    // TODO: something else?
+                }
+            }
+        }
+    }
+
+    fn on_connection_rejected(&mut self, msg: ConnectionRejected) {
+        // TODO: something else? Retries?
+        warn!(
+            message = "new connection rejected",
+            peer = %msg.peer,
+            error = %msg.error,
+        );
+    }
+}
+
+async fn accept_connection(
+    mut connection: Connection,
+    mut role: ConnectionRole,
+    this_node: &NodeInfo,
+) -> Result<ConnectionAccepted> {
+    let start = Instant::now();
+    let (node_no, launch_id) = handshake(&mut connection, this_node).await.map_err(|err| {
+        debug!(
+            message = "handshake failed",
+            peer = %connection.peer,
+            error = %err,
+            elapsed = ?start.elapsed(),
+        );
+        err
+    })?;
+
+    debug!(
+        message = "handshake succeeded",
+        peer = %connection.peer,
+        elapsed = ?start.elapsed(),
+    );
+
+    let is_initiator = !matches!(role, ConnectionRole::Unknown);
+    if !is_initiator {
+        let (envelope, _) = connection
+            .read
+            .recv()
+            .await
+            .wrap_err("receiving first message after handshake")?
+            .ok_or_else(|| eyre!("connection closed after handshake"))?;
+
+        role = msg!(match envelope {
+            msg @ internode::NodeCompositionReport => ConnectionRole::Control(msg),
+            msg @ internode::ReadyToTransmit =>
+                ConnectionRole::Receiver(internode::ReadyToReceive {
+                    group_no: msg.group_no,
+                }),
+            msg @ internode::ReadyToReceive =>
+                ConnectionRole::Transmitter(internode::ReadyToTransmit {
+                    group_no: msg.group_no,
+                }),
+            envelope => return Err(unexpected_message_error(envelope)),
+        });
+    }
+
+    Ok(ConnectionAccepted {
+        is_initiator,
+        role,
+        node_no,
+        launch_id,
+        connection: connection.into(),
+    })
+}
+
+async fn handshake(
+    connection: &mut Connection,
+    this_node: &NodeInfo,
+) -> Result<(NodeNo, LaunchId)> {
+    let msg = internode::Handshake {
+        node_no: this_node.node_no,
+        launch_id: this_node.launch_id,
+    };
+
+    connection
+        .write
+        .send_flush(make_regular(msg), Addr::NULL)
+        .await
+        .wrap_err("sending Handshake")?;
+
+    let (envelope, _) = connection
+        .read
+        .recv()
+        .await
+        .wrap_err("receiving Handshake")?
+        .ok_or_else(|| eyre!("connection closed before receiving any messages"))?;
+
+    msg!(match envelope {
+        msg @ internode::Handshake => Ok((msg.node_no, msg.launch_id)),
+        envelope => Err(unexpected_message_error(envelope)),
+    })
+}
+
+fn make_regular(msg: impl Message) -> Envelope {
+    Envelope::with_trace_id(
+        msg,
+        MessageKind::Regular { sender: Addr::NULL },
+        scope::trace_id(),
+    )
+    .upcast()
+}
+
+fn unexpected_message_error(envelope: Envelope) -> eyre::Report {
+    let message = envelope.message();
+    eyre!(
+        "unexpected message: {}::{}",
+        message.protocol(),
+        message.name()
+    )
 }
