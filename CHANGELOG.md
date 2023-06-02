@@ -8,9 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0-alpha.1] - 2023-06-01
 ### Changed
-- **BREAKING** supervisor: actors discard `ValidateConfig` by default ([#87]).
+- **BREAKING** supervisor: actors discard `ValidateConfig` by default ([#49], [#87]).
 - **BREAKING** configurer: rename `AnyConfig::new` into `AnyConfig::from_value` and mark it unstable ([#90]).
-- configurer: send `UpdateConfig` as a regular message instead of a request ([#90]).
+- configurer: send `UpdateConfig` as a regular message instead of a request ([#49], [#90]).
 
 ### Fixed
 - mailbox: avoid data race between `Mailbox::close()` and `Mailbox::recv()` methods ([#89]).
@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#90]: https://github.com/elfo-rs/elfo/pull/90
 [#89]: https://github.com/elfo-rs/elfo/pull/89
 [#87]: https://github.com/elfo-rs/elfo/pull/87
+[#49]: https://github.com/elfo-rs/elfo/issues/49
 
 ## [0.2.0-alpha.0] - 2023-05-16
 ### Added
