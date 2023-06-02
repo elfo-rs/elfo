@@ -1,5 +1,6 @@
 pre-release-replacements = [
     {prerelease=true, file="../README.md", search="^elfo =(.*?)\".+?\"", replace="{{crate_name}} =${1}\"{{version}}\""},
+    {prerelease=true, file="../README.md", search="docs.rs/elfo/.*", replace="docs.rs/elfo/{{version}}/elfo"},
     {prerelease=true, file="../CHANGELOG.md", search="Unreleased", replace="{{version}}"},
     {prerelease=true, file="../CHANGELOG.md", search="\\.\\.\\.HEAD", replace="...{{tag_name}}", exactly=1},
     {prerelease=true, file="../CHANGELOG.md", search="ReleaseDate", replace="{{date}}"},
