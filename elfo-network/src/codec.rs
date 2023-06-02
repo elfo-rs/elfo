@@ -189,14 +189,13 @@ fn get_str<'a>(frame: &mut &'a [u8]) -> Result<&'a str> {
 mod tests {
     use tokio_util::codec::{Decoder as _, Encoder as _};
 
-    use elfo_core::assert_msg_eq;
-    use elfo_macros::message;
+    use elfo_core::{assert_msg_eq, message};
 
     use super::*;
 
     #[test]
     fn it_works() {
-        #[message(elfo = elfo_core)]
+        #[message]
         #[derive(PartialEq)]
         struct Test(u32);
 

@@ -40,7 +40,7 @@ pub type GroupNo = u8;
 // * - `GroupNo::MAX` is reserved to represent `Addr::NULL` unambiguously.
 //
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Addr(u64);
+pub struct Addr(u64); // TODO: make it NonZero
 
 impl fmt::Display for Addr {
     #[inline]
