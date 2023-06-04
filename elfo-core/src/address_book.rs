@@ -1,7 +1,6 @@
 use std::{fmt, sync::Arc};
 
 use sharded_slab::{self as slab, Slab};
-use static_assertions::const_assert_eq;
 
 use crate::{
     node::{self, NodeNo},
@@ -11,36 +10,47 @@ use crate::{
 #[stability::unstable]
 pub type GroupNo = u8;
 
+/// Represents the global unique address of an actor.
 // Structure (64b platform):
-//        16b         8b         10b         9b         21b
+//  64           48         40           30      21                0
 //  +------------+----------+------------+-------+-----------------+
 //  |   node_no  | group_no | generation |  TID  |  page + offset  |
+//  |     16b    |    8b    |     10b    |   9b  |       21b       |
 //  +------------+----------+------------+-------+-----------------+
 //   (0 if local)           ^----------- slot addr (40b) ----------^
 //
 // Limits:
+// - max nodes in a cluster                       65535 (1)
+// - max groups in a node                           255 (2)
 // - max active actors spawned by one thread    1048544
 // - slot generations to prevent ABA               1024
 // - max threads spawning actors                    256
-// - max groups in node                             255 *
 //
 // Structure (32b platform):
-//        16b         8b       8b       7b      7b       18b
+//  64           48         40      32       25    18              0
 //  +------------+----------+-------+--------+-----+---------------+
 //  |   node_no  | group_no | empty | genera | TID | page + offset |
+//  |     16b    |    8b    |   8b  |   7b   |  7b |      18b      |
 //  +------------+----------+-------+--------+-----+---------------+
 //   (0 if local)                   ^------- slot addr (32b) ------^
 //
 // Limits:
+// - max nodes in a cluster                       65535 (1)
+// - max groups in a node                           255 (2)
 // - max active actors spawned by one thread     131040
 // - slot generations to prevent ABA                128
 // - max threads spawning actors                     64
-// - max groups in node                             255 *
 //
-// * - `GroupNo::MAX` is reserved to represent `Addr::NULL` unambiguously.
-//
+// (1) - `0` is reserved to represent the local node.
+// (2) - `GroupNo::MAX` is reserved to represent `Addr::NULL` unambiguously.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Addr(u64); // TODO: make it NonZero
+
+// The current implementation of network is depends on the fact that
+// `Addr` cannot be sent inside messages. It prevents from different
+// possible errors like responding without having a valid connection.
+// TODO: https://github.com/nvzqz/static-assertions-rs/issues/30
+assert_not_impl_all!(Addr: serde::Serialize, serde::Deserialize<'static>);
 
 impl fmt::Display for Addr {
     #[inline]
