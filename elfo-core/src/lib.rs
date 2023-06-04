@@ -58,6 +58,7 @@ mod memory_tracker;
 mod message;
 mod object;
 mod permissions;
+#[doc(hidden)]
 #[cfg(feature = "network")]
 mod remote;
 mod request_table;

@@ -2,7 +2,7 @@ use derive_more::From;
 use futures::future::{join_all, BoxFuture};
 
 #[cfg(feature = "network")]
-use crate::remote::{Remote, RemoteRouteReport};
+use crate::remote::RemoteHandle;
 use crate::{
     actor::Actor,
     address_book::SlabConfig,
@@ -31,7 +31,7 @@ pub(crate) enum ObjectKind {
     Actor(Actor),
     Group(Group),
     #[cfg(feature = "network")]
-    Remote(Remote),
+    Remote(Box<dyn RemoteHandle>),
 }
 
 impl Object {
@@ -97,11 +97,8 @@ impl Object {
                 }
                 RouteReport::Closed(envelope) => Err(SendError(envelope)),
             },
-            #[cfg(feature = "network")]
-            ObjectKind::Remote(handle) => match (handle.send)(recipient, envelope) {
-                RemoteRouteReport::Done => Ok(()),
-                _ => todo!(),
-            },
+            #[cfg(feature = "network")] // TODO: `handle.send()`
+            ObjectKind::Remote(handle) => handle.unbounded_send(recipient, envelope),
         }
     }
 
@@ -122,10 +119,7 @@ impl Object {
                 RouteReport::Closed(envelope) => Err(TrySendError::Closed(envelope)),
             },
             #[cfg(feature = "network")]
-            ObjectKind::Remote(handle) => match (handle.try_send)(recipient, envelope) {
-                RemoteRouteReport::Done => Ok(()),
-                _ => todo!(),
-            },
+            ObjectKind::Remote(handle) => handle.try_send(recipient, envelope),
         }
     }
 

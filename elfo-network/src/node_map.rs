@@ -1,10 +1,11 @@
+use derive_more::Display;
 use fxhash::FxHashMap;
 use parking_lot::Mutex;
 
 use elfo_core::{
     message,
     node::{self, NodeNo},
-    Topology,
+    topology::Topology,
 };
 
 use crate::protocol::internode::GroupInfo;
@@ -23,12 +24,23 @@ impl NodeMap {
             launch_id: LaunchId::generate(),
             groups: topology
                 .locals()
-                .map(|group| GroupInfo {
-                    group_no: group.addr.group_no(),
-                    name: group.name,
+                .map(|group| {
+                    let interests = topology
+                        .connections()
+                        .filter_map(|conn| {
+                            (conn.from == group.addr)
+                                .then(|| conn.to.into_remote())
+                                .flatten()
+                        })
+                        .collect();
+
+                    GroupInfo {
+                        group_no: group.addr.group_no(),
+                        name: group.name,
+                        interests,
+                    }
                 })
                 .collect(),
-            interests: topology.remotes().map(|group| group.name.clone()).collect(),
         };
 
         Self {
@@ -42,11 +54,10 @@ pub(crate) struct NodeInfo {
     pub(crate) node_no: NodeNo,
     pub(crate) launch_id: LaunchId,
     pub(crate) groups: Vec<GroupInfo>,
-    pub(crate) interests: Vec<String>,
 }
 
 #[message(part, transparent)]
-#[derive(Copy, PartialEq, Eq)]
+#[derive(Copy, PartialEq, Eq, Display)]
 pub(crate) struct LaunchId(u64);
 
 impl LaunchId {
