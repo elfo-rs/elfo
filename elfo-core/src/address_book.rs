@@ -159,7 +159,7 @@ const_assert_eq!(Slab::<Object, SlabConfig>::USED_BITS, 32);
 pub(crate) struct AddressBook {
     local: Arc<Slab<Object, SlabConfig>>,
     #[cfg(feature = "network")]
-    remote: Arc<RemoteToLocalMap>, // TODO: use `arc_swap::cache::Cache` in TLS?
+    remote: Arc<RemoteToHandleMap>, // TODO: use `arc_swap::cache::Cache` in TLS?
 }
 
 assert_impl_all!(AddressBook: Sync);
@@ -179,8 +179,14 @@ impl AddressBook {
     }
 
     #[cfg(feature = "network")]
-    pub(crate) fn register_remote(&self, remote_addr: Addr, local_addr: Addr) {
-        self.remote.insert(remote_addr, local_addr);
+    pub(crate) fn register_remote(
+        &self,
+        local_group_addr: Addr,
+        remote_group_addr: Addr,
+        handle_addr: Addr,
+    ) {
+        self.remote
+            .insert(local_group_addr, remote_group_addr, handle_addr);
     }
 
     pub(crate) fn get(&self, mut addr: Addr) -> Option<ObjectRef<'_>> {
@@ -233,24 +239,42 @@ cfg_network!({
     use fxhash::FxHashMap;
 
     #[derive(Default)]
-    pub(super) struct RemoteToLocalMap {
-        map: ArcSwap<FxHashMap<u32, Addr>>,
+    pub(super) struct RemoteToHandleMap {
+        // (local_group_no, remote_node_no_group_no) -> handle_addr
+        map: ArcSwap<FxHashMap<(u32, u32), Addr>>,
     }
 
-    impl RemoteToLocalMap {
-        pub(super) fn insert(&self, remote_addr: Addr, local_addr: Addr) {
-            assert!(!remote_addr.is_local());
-            assert!(local_addr.is_local());
+    impl RemoteToHandleMap {
+        pub(super) fn insert(
+            &self,
+            local_group_addr: Addr,
+            remote_group_addr: Addr,
+            handle_addr: Addr,
+        ) {
+            assert!(local_group_addr.is_local());
+            assert!(!remote_group_addr.is_local());
+            assert!(handle_addr.is_local());
 
             self.map.rcu(|map| {
                 let mut map = (**map).clone();
-                map.insert(remote_addr.node_no_group_no(), local_addr);
+                map.insert(
+                    (
+                        local_group_addr.node_no_group_no(),
+                        remote_group_addr.node_no_group_no(),
+                    ),
+                    handle_addr,
+                );
                 map
             });
         }
 
-        pub(super) fn get(&self, addr: Addr) -> Option<Addr> {
-            self.map.load().get(&addr.node_no_group_no()).copied()
+        pub(super) fn get(&self, remote_addr: Addr) -> Option<Addr> {
+            debug_assert!(!remote_addr.is_local());
+
+            let local = crate::scope::with(|scope| scope.group()).node_no_group_no();
+            let remote = remote_addr.node_no_group_no();
+
+            self.map.load().get(&(local, remote)).copied()
         }
     }
 });

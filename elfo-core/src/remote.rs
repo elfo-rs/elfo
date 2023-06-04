@@ -1,12 +1,20 @@
-use crate::{address_book::Addr, envelope::Envelope};
+use crate::{
+    address_book::Addr,
+    envelope::Envelope,
+    errors::{SendError, TrySendError},
+};
 
-pub(crate) struct Remote {
-    pub(crate) try_send: Box<dyn Fn(Option<Addr>, Envelope) -> RemoteRouteReport + Send + Sync>,
-    pub(crate) send: Box<dyn Fn(Option<Addr>, Envelope) -> RemoteRouteReport + Send + Sync>,
-}
-
-pub enum RemoteRouteReport {
-    Done,
-    Wait(()),
-    Closed(Envelope),
+#[stability::unstable]
+pub trait RemoteHandle: Send + Sync + 'static {
+    // TODO: fn send
+    fn try_send(
+        &self,
+        recipient: Option<Addr>,
+        envelope: Envelope,
+    ) -> Result<(), TrySendError<Envelope>>;
+    fn unbounded_send(
+        &self,
+        recipient: Option<Addr>,
+        envelope: Envelope,
+    ) -> Result<(), SendError<Envelope>>;
 }

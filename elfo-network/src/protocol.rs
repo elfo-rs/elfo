@@ -1,27 +1,19 @@
 use elfo_core::{message, node::NodeNo, GroupNo, MoveOwnership};
 
-use crate::{connection::Connection, node_map::LaunchId};
+use crate::{node_map::LaunchId, socket::Socket};
 
 // Internal.
 
 #[message]
-pub(crate) struct StartTransmitter {
-    pub(crate) node_no: NodeNo,
-    pub(crate) remote_group_no: GroupNo,
-    pub(crate) connection: MoveOwnership<Connection>,
-}
-
-#[message]
-pub(crate) struct StartReceiver {
-    pub(crate) node_no: NodeNo,
-    pub(crate) local_group_no: GroupNo,
-    pub(crate) connection: MoveOwnership<Connection>,
+pub(crate) struct HandleConnection {
+    pub(crate) local: GroupNo,
+    pub(crate) remote: (NodeNo, GroupNo),
+    pub(crate) socket: MoveOwnership<Socket>,
 }
 
 pub(crate) mod internode {
     use super::*;
 
-    // client                           server
     //             any connection
     //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //      Handshake -->   <-- Handshake
@@ -29,23 +21,18 @@ pub(crate) mod internode {
     //
     //           control connection
     //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //      (client)             (server)
     //                  ...
-    //      NodeCompositionReport -->
-    //          <-- NodeCompositionReport
-    //                  ...
-    //
-    //            data connection
-    //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //                  ...
-    //      ReadyToReceive -->
-    //                <-- ReadyToTransmit
+    //      SwitchToControl -->
+    //                <-- SwitchToControl
     //                  ...
     //
     //            data connection
     //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //      (client)             (server)
     //                  ...
-    //      ReadyToTransmit -->
-    //                 <-- ReadyToReceive
+    //      SwitchToData -->
+    //                   <-- SwitchToData
     //                  ...
     //
     //             any connection
@@ -53,13 +40,6 @@ pub(crate) mod internode {
     //                  ...
     //      Ping -->
     //                           <-- Pong
-    //                  ...
-    //
-    //             any connection
-    //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //                  ...
-    //                           <-- Ping
-    //      Pong -->
     //                  ...
     //
     // TODO: close, status changes.
@@ -71,28 +51,24 @@ pub(crate) mod internode {
     }
 
     #[message]
-    pub(crate) struct NodeCompositionReport {
+    pub(crate) struct SwitchToControl {
         pub(crate) groups: Vec<GroupInfo>,
-        /// Remote group's names that this node is interested in.
-        pub(crate) interests: Vec<String>,
     }
 
     #[message(part)]
     pub(crate) struct GroupInfo {
         pub(crate) group_no: GroupNo, // TODO: just `no`?
         pub(crate) name: String,
+        /// Remote group's names that this group is interested in.
+        pub(crate) interests: Vec<String>,
     }
 
     #[message]
-    pub(crate) struct ReadyToReceive {
+    pub(crate) struct SwitchToData {
         /// Local group's number of a client.
-        pub(crate) group_no: GroupNo,
-    }
-
-    #[message]
-    pub(crate) struct ReadyToTransmit {
+        pub(crate) my_group_no: GroupNo,
         /// Local group's number of a server.
-        pub(crate) group_no: GroupNo,
+        pub(crate) your_group_no: GroupNo,
     }
 
     #[message]
