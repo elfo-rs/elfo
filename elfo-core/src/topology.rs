@@ -205,7 +205,11 @@ impl<'t> Local<'t> {
     ///
     /// Local to remote (requires the `network` feature): TODO
     pub fn route_to<F>(&self, dest: &impl Destination<F>, filter: F) {
-        dest.extend_demux(self.entry.addr(), &mut self.demux.borrow_mut(), filter);
+        dest.extend_demux(
+            self.entry.addr().group_no(),
+            &mut self.demux.borrow_mut(),
+            filter,
+        );
 
         let mut inner = self.topology.inner.write();
         inner.connections.push(Connection {
@@ -236,7 +240,7 @@ impl<'t> Local<'t> {
 #[sealed]
 pub trait Destination<F> {
     #[doc(hidden)]
-    fn extend_demux(&self, source_addr: Addr, demux: &mut Demux, filter: F);
+    fn extend_demux(&self, source_group_no: GroupNo, demux: &mut Demux, filter: F);
 
     #[doc(hidden)]
     fn connection_endpoint(&self) -> ConnectionTo;
@@ -247,7 +251,7 @@ impl<F> Destination<F> for Local<'_>
 where
     F: Fn(&Envelope) -> bool + Send + Sync + 'static,
 {
-    fn extend_demux(&self, _source_addr: Addr, demux: &mut Demux, filter: F) {
+    fn extend_demux(&self, _: GroupNo, demux: &mut Demux, filter: F) {
         let addr = self.entry.addr();
         demux.append(move |envelope, addrs| {
             if filter(envelope) {
@@ -276,7 +280,7 @@ cfg_network!({
     #[non_exhaustive]
     pub struct RemoteActorGroup {
         pub name: String,
-        nodes: FxHashMap<Addr, Nodes>,
+        nodes: FxHashMap<GroupNo, Nodes>,
     }
 
     impl Topology {
@@ -285,9 +289,9 @@ cfg_network!({
         #[stability::unstable]
         pub fn register_remote(
             &self,
-            local_group_addr: Addr,
+            local_group: GroupNo,
+            remote_group: (NodeNo, GroupNo),
             remote_group_name: &str,
-            remote_group_addr: Addr,
             handle: impl RemoteHandle,
         ) -> RegisterRemoteGroupGuard {
             // XXX: get rid of `MAX` here.
@@ -297,7 +301,7 @@ cfg_network!({
             entry.insert(object);
 
             self.book
-                .register_remote(local_group_addr, remote_group_addr, handle_addr);
+                .register_remote(local_group, remote_group, handle_addr);
 
             let inner = self.inner.write();
             let group = inner
@@ -306,9 +310,9 @@ cfg_network!({
                 .find(|group| group.name == remote_group_name)
                 .expect("remote group not found");
 
-            group.nodes[&local_group_addr].rcu(|nodes| {
+            group.nodes[&local_group].rcu(|nodes| {
                 let mut nodes = (**nodes).clone();
-                nodes.insert(remote_group_addr.node_no(), handle_addr);
+                nodes.insert(remote_group.0, handle_addr);
                 nodes
             });
 
@@ -359,7 +363,7 @@ cfg_network!({
     where
         F: Fn(&Envelope, &NodeDiscovery) -> Outcome + Send + Sync + 'static,
     {
-        fn extend_demux(&self, source_addr: Addr, demux: &mut Demux, filter: F) {
+        fn extend_demux(&self, local_group_no: GroupNo, demux: &mut Demux, filter: F) {
             let nodes = self
                 .topology
                 .inner
@@ -369,7 +373,7 @@ cfg_network!({
                 .find(|group| group.name == self.name)
                 .expect("remote group not found")
                 .nodes
-                .entry(source_addr)
+                .entry(local_group_no)
                 .or_default()
                 .clone();
 

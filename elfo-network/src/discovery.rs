@@ -7,7 +7,7 @@ use tracing::{debug, error, info, warn};
 
 use elfo_core::{
     message, msg, node::NodeNo, scope, Addr, Envelope, Message, MoveOwnership, _priv::MessageKind,
-    messages::ConfigUpdated, stream::Stream, GroupNo,
+    messages::ConfigUpdated, stream::Stream, GroupNo, Topology,
 };
 
 use crate::{
@@ -72,8 +72,11 @@ pub(super) struct Discovery {
 // TODO: repeat discovery by timer.
 
 impl Discovery {
-    pub(super) fn new(ctx: NetworkContext, node_map: Arc<NodeMap>) -> Self {
-        Self { ctx, node_map }
+    pub(super) fn new(ctx: NetworkContext, topology: Topology) -> Self {
+        Self {
+            ctx,
+            node_map: Arc::new(NodeMap::new(&topology)),
+        }
     }
 
     pub(super) async fn main(mut self) -> Result<()> {
@@ -194,7 +197,19 @@ impl Discovery {
         match msg.role {
             ConnectionRole::Unknown => unreachable!(),
             ConnectionRole::Control(remote) => {
-                // TODO: should we update `NodeMap`?
+                {
+                    let mut nodes = self.node_map.nodes.lock();
+                    nodes.insert(
+                        msg.node_no,
+                        NodeInfo {
+                            node_no: msg.node_no,
+                            launch_id: msg.launch_id,
+                            groups: remote.groups.clone(),
+                        },
+                    );
+
+                    // TODO: check launch_id.
+                }
 
                 // Only initiator (client) can start new connections,
                 // because he knows the transport address.
@@ -224,11 +239,33 @@ impl Discovery {
                 // TODO: start ping-pong process on the socket.
             }
             ConnectionRole::Data(remote) => {
+                let local_group_name = self
+                    .node_map
+                    .this
+                    .groups
+                    .iter()
+                    .find(|g| g.group_no == remote.your_group_no)
+                    .map(|g| g.name.clone());
+
+                let remote_group_name =
+                    self.node_map.nodes.lock().get(&msg.node_no).and_then(|n| {
+                        n.groups
+                            .iter()
+                            .find(|g| g.group_no == remote.my_group_no)
+                            .map(|g| g.name.clone())
+                    });
+
+                let (local_group_name, remote_group_name) =
+                    ward!(local_group_name.zip(remote_group_name), {
+                        error!("control and data connections contradict each other");
+                        return;
+                    });
+
                 let res = self.ctx.try_send_to(
                     self.ctx.group(),
                     HandleConnection {
-                        local: remote.your_group_no,
-                        remote: (msg.node_no, remote.my_group_no),
+                        local: (remote.your_group_no, local_group_name),
+                        remote: (msg.node_no, remote.my_group_no, remote_group_name),
                         socket: socket.into(),
                     },
                 );

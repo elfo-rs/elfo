@@ -8,7 +8,6 @@ extern crate elfo_utils;
 use std::{
     fmt::{self, Display},
     hash::Hash,
-    sync::Arc,
 };
 
 use elfo_core::{
@@ -19,7 +18,7 @@ use elfo_core::{
     ActorGroup, Blueprint, Context, GroupNo, Topology,
 };
 
-use crate::{config::Config, node_map::NodeMap, protocol::HandleConnection};
+use crate::{config::Config, protocol::HandleConnection};
 
 mod codec;
 mod config;
@@ -33,8 +32,8 @@ mod socket;
 enum ActorKey {
     Discovery,
     Connection {
-        local: GroupNo,
-        remote: (NodeNo, GroupNo),
+        local: (GroupNo, String),
+        remote: (NodeNo, GroupNo, String),
     },
 }
 
@@ -44,7 +43,7 @@ impl Display for ActorKey {
         match self {
             ActorKey::Discovery => f.write_str("discovery"),
             ActorKey::Connection { local, remote } => {
-                write!(f, "{}:{}:{}", local, remote.0, remote.1)
+                write!(f, "{}:{}:{}", local.1, remote.0, remote.2)
             }
         }
     }
@@ -54,7 +53,7 @@ type NetworkContext = Context<Config, ActorKey>;
 
 /// TODO
 pub fn new(topology: &Topology) -> Blueprint {
-    let node_map = Arc::new(NodeMap::new(topology));
+    let topology = topology.clone();
 
     ActorGroup::new()
         .config::<Config>()
@@ -62,20 +61,21 @@ pub fn new(topology: &Topology) -> Blueprint {
             msg!(match envelope {
                 UpdateConfig => Outcome::Unicast(ActorKey::Discovery),
                 msg @ HandleConnection => Outcome::Unicast(ActorKey::Connection {
-                    local: msg.local,
-                    remote: msg.remote,
+                    local: msg.local.clone(),
+                    remote: msg.remote.clone(),
                 }),
                 _ => Outcome::Default,
             })
         }))
         .exec(move |ctx: Context<Config, ActorKey>| {
-            let node_map = node_map.clone();
-
+            let topology = topology.clone();
             async move {
-                match *ctx.key() {
-                    ActorKey::Discovery => discovery::Discovery::new(ctx, node_map).main().await,
+                match ctx.key().clone() {
+                    ActorKey::Discovery => discovery::Discovery::new(ctx, topology).main().await,
                     ActorKey::Connection { local, remote } => {
-                        connection::Connection::new(ctx, local, remote).main().await
+                        connection::Connection::new(ctx, local, remote, topology)
+                            .main()
+                            .await
                     }
                 }
             }

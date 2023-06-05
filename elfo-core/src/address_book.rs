@@ -181,12 +181,11 @@ impl AddressBook {
     #[cfg(feature = "network")]
     pub(crate) fn register_remote(
         &self,
-        local_group_addr: Addr,
-        remote_group_addr: Addr,
+        local_group: GroupNo,
+        remote_group: (NodeNo, GroupNo),
         handle_addr: Addr,
     ) {
-        self.remote
-            .insert(local_group_addr, remote_group_addr, handle_addr);
+        self.remote.insert(local_group, remote_group, handle_addr);
     }
 
     pub(crate) fn get(&self, mut addr: Addr) -> Option<ObjectRef<'_>> {
@@ -241,29 +240,23 @@ cfg_network!({
     #[derive(Default)]
     pub(super) struct RemoteToHandleMap {
         // (local_group_no, remote_node_no_group_no) -> handle_addr
-        map: ArcSwap<FxHashMap<(u32, u32), Addr>>,
+        map: ArcSwap<FxHashMap<u64, Addr>>,
     }
 
     impl RemoteToHandleMap {
         pub(super) fn insert(
             &self,
-            local_group_addr: Addr,
-            remote_group_addr: Addr,
+            local_group: GroupNo,
+            remote_group: (NodeNo, GroupNo),
             handle_addr: Addr,
         ) {
-            assert!(local_group_addr.is_local());
-            assert!(!remote_group_addr.is_local());
-            assert!(handle_addr.is_local());
+            let key = u64::from(local_group) << 32
+                | u64::from(remote_group.0) << 8
+                | u64::from(remote_group.1);
 
             self.map.rcu(|map| {
                 let mut map = (**map).clone();
-                map.insert(
-                    (
-                        local_group_addr.node_no_group_no(),
-                        remote_group_addr.node_no_group_no(),
-                    ),
-                    handle_addr,
-                );
+                map.insert(key, handle_addr);
                 map
             });
         }
@@ -273,8 +266,9 @@ cfg_network!({
 
             let local = crate::scope::with(|scope| scope.group()).node_no_group_no();
             let remote = remote_addr.node_no_group_no();
+            let key = u64::from(local) << 32 | u64::from(remote);
 
-            self.map.load().get(&(local, remote)).copied()
+            self.map.load().get(&key).copied()
         }
     }
 });
