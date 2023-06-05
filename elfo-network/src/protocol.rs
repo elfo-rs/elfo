@@ -6,8 +6,8 @@ use crate::{node_map::LaunchId, socket::Socket};
 
 #[message]
 pub(crate) struct HandleConnection {
-    pub(crate) local: GroupNo,
-    pub(crate) remote: (NodeNo, GroupNo),
+    pub(crate) local: (GroupNo, String),
+    pub(crate) remote: (NodeNo, GroupNo, String),
     pub(crate) socket: MoveOwnership<Socket>,
 }
 

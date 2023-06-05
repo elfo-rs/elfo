@@ -10,7 +10,7 @@ use elfo_core::{
 
 use crate::protocol::internode::GroupInfo;
 
-// TODO: stop sharing? It seems to be useful only for the discovery actor.
+// TODO: move to discovery?
 
 pub(crate) struct NodeMap {
     pub(crate) nodes: Mutex<FxHashMap<NodeNo, NodeInfo>>,

@@ -31,7 +31,7 @@ impl Socket {
         Self {
             read: ReadHalf(FramedRead::new(rx, Decoder::new(MAX_FRAME_SIZE))),
             write: WriteHalf(FramedWrite::new(tx, Encoder::new(MAX_FRAME_SIZE))),
-            peer: peer.into(),
+            peer,
         }
     }
 }
