@@ -11,20 +11,15 @@
 //! * recipient, `u64`
 //! * kind, `u8`: 0 = Regular, 1 = RequestAny, 2 = RequestAll, 3 = Response
 //! * correlation_id (for RequestAny, RequestAll and Response kinds), `u64`
-//! * responses_left (for Response kind), `u32`
 //! * message, rest of frame
 
 use std::{convert::TryFrom, str};
 
 use bytes::{Buf, BufMut, BytesMut};
-use eyre::{ensure, eyre, Error, Result};
+use eyre::{bail, ensure, eyre, Error, Result};
 use tokio_util::codec;
 
-use elfo_core::{
-    tracing::TraceId,
-    Addr, Envelope, Message,
-    _priv::{AnyMessage, MessageKind},
-};
+use elfo_core::{tracing::TraceId, Addr, Message, _priv::AnyMessage};
 
 // === Encoder ===
 
@@ -48,48 +43,60 @@ impl Encoder {
     }
 }
 
-impl codec::Encoder<(Envelope, Addr)> for Encoder {
+impl codec::Encoder<NetworkEnvelope> for Encoder {
     type Error = Error;
 
-    fn encode(
-        &mut self,
-        (envelope, recipient): (Envelope, Addr),
-        dst: &mut BytesMut,
-    ) -> Result<()> {
-        let message = envelope.message();
+    fn encode(&mut self, envelope: NetworkEnvelope, dst: &mut BytesMut) -> Result<()> {
         let original_len = dst.len();
 
         // size
-        dst.put_u32_le(0); // will be rewrite later.
+        dst.put_u32_le(0); // will be rewritten below.
 
         // protocol
-        let protocol_len = message.protocol().len();
+        let protocol_len = envelope.message.protocol().len();
         assert!(protocol_len <= 255);
         dst.put_u8(protocol_len as u8);
-        dst.extend_from_slice(message.protocol().as_bytes());
+        dst.extend_from_slice(envelope.message.protocol().as_bytes());
 
         // name
-        let message_name_len = message.name().len();
+        let message_name_len = envelope.message.name().len();
         assert!(message_name_len <= 255);
         dst.put_u8(message_name_len as u8);
-        dst.extend_from_slice(message.name().as_bytes());
+        dst.extend_from_slice(envelope.message.name().as_bytes());
 
         // trace_id
-        dst.put_u64_le(u64::from(envelope.trace_id()));
+        dst.put_u64_le(u64::from(envelope.trace_id));
 
         // sender
-        let sender = envelope.sender().into_remote().into_bits();
+        let sender = envelope.sender.into_remote().into_bits();
         dst.put_u64_le(sender);
 
         // recipient
-        dst.put_u64_le(recipient.into_bits());
+        dst.put_u64_le(envelope.recipient.into_bits());
 
         // kind
-        // TODO: support requests and responses.
-        dst.put_u8(0);
+        match envelope.kind {
+            NetworkMessageKind::Regular => dst.put_u8(0),
+            NetworkMessageKind::RequestAny(correlation_id) => {
+                dst.put_u8(1);
+                dst.put_u64_le(correlation_id);
+            }
+            NetworkMessageKind::RequestAll(correlation_id) => {
+                dst.put_u8(2);
+                dst.put_u64_le(correlation_id);
+            }
+            NetworkMessageKind::Response(correlation_id) => {
+                dst.put_u8(3);
+                dst.put_u64_le(correlation_id);
+            }
+            NetworkMessageKind::LastResponse(correlation_id) => {
+                dst.put_u8(4);
+                dst.put_u64_le(correlation_id);
+            }
+        }
 
         // TODO: resize buffer on failures & limit size.
-        let message_size = match message.write_msgpack(&mut self.buffer) {
+        let message_size = match envelope.message.write_msgpack(&mut self.buffer) {
             Ok(size) => size,
             Err(err) => {
                 dst.truncate(original_len);
@@ -125,7 +132,7 @@ impl Decoder {
 
 impl codec::Decoder for Decoder {
     type Error = Error;
-    type Item = (Envelope, Addr);
+    type Item = NetworkEnvelope;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
         if src.len() < 4 {
@@ -161,7 +168,7 @@ impl codec::Decoder for Decoder {
     }
 }
 
-fn decode(mut frame: &[u8]) -> Result<(Envelope, Addr)> {
+fn decode(mut frame: &[u8]) -> Result<NetworkEnvelope> {
     let protocol = get_str(&mut frame)?;
     let name = get_str(&mut frame)?;
 
@@ -169,15 +176,25 @@ fn decode(mut frame: &[u8]) -> Result<(Envelope, Addr)> {
     let sender = Addr::from_bits(frame.get_u64_le());
     let recipient = Addr::from_bits(frame.get_u64_le());
 
-    // TODO: support requests and responses.
-    let kind = frame.get_u8();
-    assert_eq!(kind, 0);
-    let kind = MessageKind::Regular { sender };
+    let kind = match frame.get_u8() {
+        0 => NetworkMessageKind::Regular,
+        1 => NetworkMessageKind::RequestAny(frame.get_u64_le()),
+        2 => NetworkMessageKind::RequestAll(frame.get_u64_le()),
+        3 => NetworkMessageKind::Response(frame.get_u64_le()),
+        4 => NetworkMessageKind::LastResponse(frame.get_u64_le()),
+        n => bail!("invalid message kind: {n}"),
+    };
 
     let message = AnyMessage::read_msgpack(protocol, name, frame)?
         .ok_or_else(|| eyre!("unknown message {}::{}", protocol, name))?;
 
-    Ok((Envelope::with_trace_id(message, kind, trace_id), recipient))
+    Ok(NetworkEnvelope {
+        sender,
+        recipient,
+        trace_id,
+        kind,
+        message,
+    })
 }
 
 fn get_str<'a>(frame: &mut &'a [u8]) -> Result<&'a str> {
@@ -189,11 +206,29 @@ fn get_str<'a>(frame: &mut &'a [u8]) -> Result<&'a str> {
     Ok(name)
 }
 
+// === NetworkEnvelope ===
+
+pub(crate) struct NetworkEnvelope {
+    pub(crate) sender: Addr,
+    pub(crate) recipient: Addr,
+    pub(crate) trace_id: TraceId,
+    pub(crate) kind: NetworkMessageKind,
+    pub(crate) message: AnyMessage,
+}
+
+pub(crate) enum NetworkMessageKind {
+    Regular,
+    RequestAny(u64),
+    RequestAll(u64),
+    Response(u64),
+    LastResponse(u64),
+}
+
 #[cfg(test)]
 mod tests {
     use tokio_util::codec::{Decoder as _, Encoder as _};
 
-    use elfo_core::{assert_msg_eq, message};
+    use elfo_core::message;
 
     use super::*;
 
@@ -208,20 +243,25 @@ mod tests {
         let recipient = Addr::NULL;
 
         let trace_id = TraceId::try_from(42).unwrap();
-        let envelope =
-            Envelope::with_trace_id(test.upcast(), MessageKind::Regular { sender }, trace_id);
+        let envelope = NetworkEnvelope {
+            sender,
+            recipient,
+            trace_id,
+            kind: NetworkMessageKind::Regular,
+            message: test.upcast(),
+        };
 
         let mut encoder = Encoder::new(1024);
         let mut decoder = Decoder::new(1024);
 
         let mut bytes = BytesMut::new();
-        encoder.encode((envelope, recipient), &mut bytes).unwrap();
+        encoder.encode(envelope, &mut bytes).unwrap();
 
-        let (actual_envelope, actual_target) = decoder.decode(&mut bytes).unwrap().unwrap();
+        let actual = decoder.decode(&mut bytes).unwrap().unwrap();
 
-        assert_eq!(actual_envelope.trace_id(), trace_id);
-        assert_eq!(actual_envelope.sender(), sender);
-        assert_eq!(actual_target, recipient);
-        assert_msg_eq!(actual_envelope, Test(42));
+        assert_eq!(actual.trace_id, trace_id);
+        assert_eq!(actual.sender, sender);
+        assert_eq!(actual.recipient, recipient);
+        assert_eq!(actual.message.downcast::<Test>().unwrap(), Test(42));
     }
 }

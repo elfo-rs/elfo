@@ -328,7 +328,9 @@ impl<C, K> Context<C, K> {
         self.do_send_to(recipient, message, kind).await
     }
 
-    async fn do_send_to<M: Message>(
+    #[doc(hidden)]
+    #[stability::unstable]
+    pub async fn do_send_to<M: Message>(
         &self,
         recipient: Addr,
         message: M,
