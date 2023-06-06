@@ -30,12 +30,16 @@ pub enum MessageKind {
 }
 
 impl<M> Envelope<M> {
-    pub(crate) fn new(message: M, kind: MessageKind) -> Self {
+    // This is private API. Do not use it.
+    #[doc(hidden)]
+    #[inline]
+    pub fn new(message: M, kind: MessageKind) -> Self {
         Self::with_trace_id(message, kind, crate::scope::trace_id())
     }
 
     // This is private API. Do not use it.
     #[doc(hidden)]
+    #[inline]
     pub fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
         Self {
             created_time: Instant::now(),
@@ -53,6 +57,13 @@ impl<M> Envelope<M> {
     #[inline]
     pub fn message(&self) -> &M {
         &self.message
+    }
+
+    // This is private API. Do not use it.
+    #[doc(hidden)]
+    #[inline]
+    pub fn into_message(self) -> M {
+        self.message
     }
 
     /// Part of private API. Do not use it.
@@ -86,11 +97,6 @@ impl<M: Message> Envelope<M> {
             kind: self.kind,
             message: self.message.upcast(),
         }
-    }
-
-    // TODO: make `pub` for regular messages.
-    pub(crate) fn into_message(self) -> M {
-        self.message
     }
 }
 

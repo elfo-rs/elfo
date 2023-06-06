@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use eyre::{eyre, Result, WrapErr};
+use eyre::{ensure, eyre, Result, WrapErr};
 use futures::StreamExt;
 use quanta::Instant;
 use tracing::{debug, error, info, warn};
@@ -11,6 +11,7 @@ use elfo_core::{
 };
 
 use crate::{
+    codec::{NetworkEnvelope, NetworkMessageKind},
     config::Transport,
     node_map::{LaunchId, NodeInfo, NodeMap},
     protocol::{
@@ -381,28 +382,42 @@ async fn handshake(socket: &mut Socket, this_node: &NodeInfo) -> Result<(NodeNo,
 
 async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
     let name = msg.name();
-    let msg = Envelope::with_trace_id(
-        msg,
-        MessageKind::Regular { sender: Addr::NULL },
-        scope::trace_id(),
-    )
-    .upcast();
+    let envelope = NetworkEnvelope {
+        sender: Addr::NULL,    // doesn't matter
+        recipient: Addr::NULL, // doesn't matter
+        trace_id: scope::trace_id(),
+        kind: NetworkMessageKind::Regular,
+        message: msg.upcast(),
+    };
 
     socket
         .write
-        .send_flush(msg, Addr::NULL)
+        .send_flush(envelope)
         .await
         .wrap_err_with(|| eyre!("cannot send {}", name))
 }
 
 async fn recv(socket: &mut Socket) -> Result<Envelope> {
-    Ok(socket
+    let envelope = socket
         .read
         .recv()
         .await
-        .wrap_err("cannot receive a message")?
-        .ok_or_else(|| eyre!("connection closed before receiving any messages"))?
-        .0)
+        .wrap_err("cannot receive an message")?
+        .ok_or_else(|| eyre!("connection closed before receiving any messages"))?;
+
+    ensure!(
+        matches!(envelope.kind, NetworkMessageKind::Regular),
+        "unexpected message kind"
+    );
+
+    scope::set_trace_id(envelope.trace_id);
+
+    Ok(Envelope::new(
+        envelope.message,
+        MessageKind::Regular {
+            sender: envelope.sender,
+        },
+    ))
 }
 
 async fn recv_regular<M: Message>(socket: &mut Socket) -> Result<M> {
@@ -416,10 +431,9 @@ async fn recv_regular<M: Message>(socket: &mut Socket) -> Result<M> {
 }
 
 fn unexpected_message_error(envelope: Envelope, expected: &[&str]) -> eyre::Report {
-    let message = envelope.message();
     eyre!(
         "unexpected message: {}, expected: {}",
-        message.name(),
+        envelope.message().name(),
         expected.join(" or "),
     )
 }

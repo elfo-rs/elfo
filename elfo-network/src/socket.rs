@@ -6,10 +6,8 @@ use tokio::net::{tcp, TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::warn;
 
-use elfo_core::{Addr, Envelope};
-
 use crate::{
-    codec::{Decoder, Encoder},
+    codec::{Decoder, Encoder, NetworkEnvelope},
     config::Transport,
 };
 
@@ -39,7 +37,7 @@ impl Socket {
 pub(crate) struct ReadHalf(FramedRead<tcp::OwnedReadHalf, Decoder>);
 
 impl ReadHalf {
-    pub(crate) async fn recv(&mut self) -> Result<Option<(Envelope, Addr)>> {
+    pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>> {
         self.0.next().await.transpose()
     }
 }
@@ -48,11 +46,11 @@ impl ReadHalf {
 pub(crate) struct WriteHalf(FramedWrite<tcp::OwnedWriteHalf, Encoder>);
 
 impl WriteHalf {
-    // TODO: it would be nice to have only `&Envelope` here.
+    // TODO: it would be nice to have only `&NetworkEnvelope` here.
     // It requires either to replace `FramedWrite` or make `Message: Sync`.
-    pub(crate) async fn send(&mut self, envelope: Envelope, addr: Addr) -> Result<()> {
+    pub(crate) async fn send(&mut self, envelope: NetworkEnvelope) -> Result<()> {
         // TODO: timeout, it should be clever
-        self.0.send((envelope, addr)).await?;
+        self.0.send(envelope).await?;
         Ok(())
     }
 
@@ -61,8 +59,8 @@ impl WriteHalf {
         Ok(())
     }
 
-    pub(crate) async fn send_flush(&mut self, envelope: Envelope, addr: Addr) -> Result<()> {
-        self.send(envelope, addr).await?;
+    pub(crate) async fn send_flush(&mut self, envelope: NetworkEnvelope) -> Result<()> {
+        self.send(envelope).await?;
         self.flush().await?;
         Ok(())
     }
