@@ -7,14 +7,10 @@ use crate::{
 #[stability::unstable]
 pub trait RemoteHandle: Send + Sync + 'static {
     // TODO: fn send
-    fn try_send(
-        &self,
-        recipient: Option<Addr>,
-        envelope: Envelope,
-    ) -> Result<(), TrySendError<Envelope>>;
+    fn try_send(&self, recipient: Addr, envelope: Envelope) -> Result<(), TrySendError<Envelope>>;
     fn unbounded_send(
         &self,
-        recipient: Option<Addr>,
+        recipient: Addr,
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>>;
 }

@@ -8,7 +8,7 @@
 //! * name
 //! * trace_id, `u64`
 //! * sender, `u64`
-//! * target, `u64`
+//! * recipient, `u64`
 //! * kind, `u8`: 0 = Regular, 1 = RequestAny, 2 = RequestAll, 3 = Response
 //! * correlation_id (for RequestAny, RequestAll and Response kinds), `u64`
 //! * responses_left (for Response kind), `u32`
@@ -51,7 +51,11 @@ impl Encoder {
 impl codec::Encoder<(Envelope, Addr)> for Encoder {
     type Error = Error;
 
-    fn encode(&mut self, (envelope, target): (Envelope, Addr), dst: &mut BytesMut) -> Result<()> {
+    fn encode(
+        &mut self,
+        (envelope, recipient): (Envelope, Addr),
+        dst: &mut BytesMut,
+    ) -> Result<()> {
         let message = envelope.message();
         let original_len = dst.len();
 
@@ -77,8 +81,8 @@ impl codec::Encoder<(Envelope, Addr)> for Encoder {
         let sender = envelope.sender().into_remote().into_bits();
         dst.put_u64_le(sender);
 
-        // target
-        dst.put_u64_le(target.into_bits());
+        // recipient
+        dst.put_u64_le(recipient.into_bits());
 
         // kind
         // TODO: support requests and responses.
@@ -163,7 +167,7 @@ fn decode(mut frame: &[u8]) -> Result<(Envelope, Addr)> {
 
     let trace_id = TraceId::try_from(frame.get_u64_le())?;
     let sender = Addr::from_bits(frame.get_u64_le());
-    let target = Addr::from_bits(frame.get_u64_le());
+    let recipient = Addr::from_bits(frame.get_u64_le());
 
     // TODO: support requests and responses.
     let kind = frame.get_u8();
@@ -173,7 +177,7 @@ fn decode(mut frame: &[u8]) -> Result<(Envelope, Addr)> {
     let message = AnyMessage::read_msgpack(protocol, name, frame)?
         .ok_or_else(|| eyre!("unknown message {}::{}", protocol, name))?;
 
-    Ok((Envelope::with_trace_id(message, kind, trace_id), target))
+    Ok((Envelope::with_trace_id(message, kind, trace_id), recipient))
 }
 
 fn get_str<'a>(frame: &mut &'a [u8]) -> Result<&'a str> {
@@ -201,7 +205,7 @@ mod tests {
 
         let test = Test(42);
         let sender = Addr::NULL;
-        let target = Addr::NULL;
+        let recipient = Addr::NULL;
 
         let trace_id = TraceId::try_from(42).unwrap();
         let envelope = Envelope::with_trace_id(
@@ -214,13 +218,13 @@ mod tests {
         let mut decoder = Decoder::new(1024);
 
         let mut bytes = BytesMut::new();
-        encoder.encode((envelope, target), &mut bytes).unwrap();
+        encoder.encode((envelope, recipient), &mut bytes).unwrap();
 
         let (actual_envelope, actual_target) = decoder.decode(&mut bytes).unwrap().unwrap();
 
         assert_eq!(actual_envelope.trace_id(), trace_id);
         assert_eq!(actual_envelope.sender(), sender);
-        assert_eq!(actual_target, target);
+        assert_eq!(actual_target, recipient);
         assert_msg_eq!(actual_envelope, Test(42));
     }
 }

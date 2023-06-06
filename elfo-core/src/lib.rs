@@ -59,8 +59,9 @@ mod memory_tracker;
 mod message;
 mod object;
 mod permissions;
-#[doc(hidden)]
-#[cfg(feature = "network")]
+#[cfg(all(feature = "network", feature = "unstable"))]
+pub mod remote;
+#[cfg(all(feature = "network", not(feature = "unstable")))]
 mod remote;
 mod request_table;
 mod runtime;
