@@ -52,9 +52,9 @@ impl Stats {
         self.in_handling = Some(InHandling::new(EMPTY_MAILBOX_LABELS, Instant::now()));
     }
 
-    pub(super) fn on_sent_message<M: Message>(&self) {
+    pub(super) fn on_sent_message(&self, message: &impl Message) {
         let recorder = ward!(metrics::try_recorder());
-        let key = Key::from_static_parts("elfo_sent_messages_total", M::VTABLE.labels);
+        let key = Key::from_static_parts("elfo_sent_messages_total", message.labels());
         recorder.increment_counter(&key, 1);
     }
 

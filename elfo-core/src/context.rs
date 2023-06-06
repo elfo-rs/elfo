@@ -11,7 +11,7 @@ use crate::{
     address_book::{Addr, AddressBook},
     config::AnyConfig,
     demux::Demux,
-    dumping::{self, Direction, Dump, Dumper, INTERNAL_CLASS},
+    dumping::{Direction, Dump, Dumper, INTERNAL_CLASS},
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     mailbox::RecvResult,
@@ -152,12 +152,11 @@ impl<C, K> Context<C, K> {
             sender: self.actor_addr,
         };
 
-        // XXX: unify with `do_send`.
-        self.stats.on_sent_message::<M>();
+        self.stats.on_sent_message(&message);
 
         trace!("> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m::<M>() {
-            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
         let envelope = Envelope::new(message, kind).upcast();
@@ -245,11 +244,11 @@ impl<C, K> Context<C, K> {
     }
 
     async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
-        self.stats.on_sent_message::<M>();
+        self.stats.on_sent_message(&message);
 
         trace!("> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m::<M>() {
-            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
         let envelope = Envelope::new(message, kind).upcast();
@@ -335,11 +334,11 @@ impl<C, K> Context<C, K> {
         message: M,
         kind: MessageKind,
     ) -> Result<(), SendError<M>> {
-        self.stats.on_sent_message::<M>();
+        self.stats.on_sent_message(&message);
 
         trace!(to = %recipient, "> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m::<M>() {
-            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
         let entry = self.book.get_owned(recipient);
@@ -372,15 +371,15 @@ impl<C, K> Context<C, K> {
         recipient: Addr,
         message: M,
     ) -> Result<(), TrySendError<M>> {
-        self.stats.on_sent_message::<M>();
+        self.stats.on_sent_message(&message);
 
         let kind = MessageKind::Regular {
             sender: self.actor_addr,
         };
 
         trace!(to = %recipient, "> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m::<M>() {
-            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
         let entry = self.book.get(recipient);
@@ -408,18 +407,18 @@ impl<C, K> Context<C, K> {
             return;
         }
 
-        self.stats.on_sent_message::<R::Wrapper>();
-
         let sender = token.sender;
         let message = R::Wrapper::from(message);
+        self.stats.on_sent_message(&message);
+
         let kind = MessageKind::Response {
             sender: self.addr(),
             request_id: token.request_id,
         };
 
         trace!(to = %sender, "> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m::<R>() {
-            permit.record(Dump::message(message.clone(), &kind, Direction::Out));
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
         let envelope = Envelope::new(message, kind).upcast();
@@ -647,21 +646,9 @@ impl<C, K> Context<C, K> {
 
         let message = envelope.message();
         trace!("< {:?}", message);
-
-        if message.dumping_allowed() {
-            if let Some(permit) = DUMPER.acquire() {
-                // TODO: reuse `Dump::message`, it requires `AnyMessage: Message`.
-                let dump = Dump::builder()
-                    .direction(Direction::In)
-                    .message_name(message.name())
-                    .message_protocol(message.protocol())
-                    .message_kind(dumping::MessageKind::from_message_kind(
-                        envelope.message_kind(),
-                    ))
-                    .do_finish(message.erase());
-
-                permit.record(dump);
-            }
+        if let Some(permit) = DUMPER.acquire_m(message) {
+            let kind = envelope.message_kind();
+            permit.record(Dump::message(message, kind, Direction::In));
         }
 
         // We should change the status after dumping the original message
@@ -893,13 +880,11 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
             let envelope = envelope.do_downcast::<R::Wrapper>();
 
             // TODO: increase a counter.
-            trace!("< {:?}", envelope.message());
-            if let Some(permit) = DUMPER.acquire_m::<R>() {
-                permit.record(Dump::message(
-                    envelope.message().clone(),
-                    envelope.message_kind(),
-                    Direction::In,
-                ));
+            let message = envelope.message();
+            trace!("< {:?}", message);
+            if let Some(permit) = DUMPER.acquire_m(message) {
+                let kind = envelope.message_kind();
+                permit.record(Dump::message(message, kind, Direction::In));
             }
             Ok(envelope.into_message().into())
         } else {
@@ -945,15 +930,13 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
                 let envelope = res?;
 
                 // TODO: increase a counter.
-                trace!("< {:?}", envelope.message());
+                let message = envelope.message();
+                trace!("< {:?}", message);
 
                 // TODO: `acquire_many` or even unconditionally?
-                if let Some(permit) = DUMPER.acquire_m::<R>() {
-                    permit.record(Dump::message(
-                        envelope.message().clone(),
-                        envelope.message_kind(),
-                        Direction::In,
-                    ));
+                if let Some(permit) = DUMPER.acquire_m(message) {
+                    let kind = envelope.message_kind();
+                    permit.record(Dump::message(message, kind, Direction::In));
                 }
                 Ok(envelope.into_message().into())
             })

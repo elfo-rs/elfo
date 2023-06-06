@@ -227,7 +227,7 @@ pub fn message_impl(
             }
 
             fn read_msgpack(buffer: &[u8]) -> Result<#internal::AnyMessage, rmps::decode::Error> {
-                rmps::decode::from_slice::<#name>(buffer).map(#internal::AnyMessage::new)
+                rmps::decode::from_slice::<#name>(buffer).map(#crate_::Message::upcast)
             }
         }
     } else {
@@ -243,7 +243,10 @@ pub fn message_impl(
     let impl_message = if !args.part {
         quote! {
             impl #crate_::Message for #name {
-                const VTABLE: &'static #internal::MessageVTable = VTABLE;
+                #[inline(always)]
+                fn _vtable(&self) -> &'static #internal::MessageVTable {
+                    &VTABLE
+                }
 
                 #[inline(always)]
                 fn _touch(&self) {
@@ -258,7 +261,7 @@ pub fn message_impl(
             }
 
             fn clone(message: &#internal::AnyMessage) -> #internal::AnyMessage {
-                #internal::AnyMessage::new(Clone::clone(cast_ref(message)))
+                #crate_::Message::upcast(Clone::clone(cast_ref(message)))
             }
 
             fn debug(message: &#internal::AnyMessage, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -271,7 +274,9 @@ pub fn message_impl(
 
             #network_fns
 
-            const VTABLE: &'static #internal::MessageVTable = &#internal::MessageVTable {
+            #[linkme::distributed_slice(MESSAGE_LIST)]
+            #[linkme(crate = linkme)]
+            static VTABLE: &'static #internal::MessageVTable = &#internal::MessageVTable {
                 name: #name_str,
                 protocol: #protocol,
                 labels: &[
@@ -284,10 +289,6 @@ pub fn message_impl(
                 erase,
                 #network_fns_ref
             };
-
-            #[linkme::distributed_slice(MESSAGE_LIST)]
-            #[linkme(crate = linkme)]
-            static VTABLE_STATIC: &'static #internal::MessageVTable = <#name as #crate_::Message>::VTABLE;
 
             // See [rust#47384](https://github.com/rust-lang/rust/issues/47384).
             #[doc(hidden)]

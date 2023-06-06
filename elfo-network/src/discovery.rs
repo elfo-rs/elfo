@@ -331,10 +331,7 @@ async fn accept_connection(
                 envelope =>
                     return Err(unexpected_message_error(
                         envelope,
-                        &[
-                            internode::SwitchToControl::VTABLE.name,
-                            internode::SwitchToData::VTABLE.name,
-                        ]
+                        &["SwitchToControl", "SwitchToData"]
                     )),
             })
         }
@@ -383,6 +380,7 @@ async fn handshake(socket: &mut Socket, this_node: &NodeInfo) -> Result<(NodeNo,
 }
 
 async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
+    let name = msg.name();
     let msg = Envelope::with_trace_id(
         msg,
         MessageKind::Regular { sender: Addr::NULL },
@@ -394,7 +392,7 @@ async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
         .write
         .send_flush(msg, Addr::NULL)
         .await
-        .wrap_err_with(|| eyre!("cannot send {}", M::VTABLE.name))
+        .wrap_err_with(|| eyre!("cannot send {}", name))
 }
 
 async fn recv(socket: &mut Socket) -> Result<Envelope> {
@@ -410,11 +408,14 @@ async fn recv(socket: &mut Socket) -> Result<Envelope> {
 async fn recv_regular<M: Message>(socket: &mut Socket) -> Result<M> {
     msg!(match recv(socket).await? {
         msg @ M => Ok(msg),
-        envelope => Err(unexpected_message_error(envelope, &[M::VTABLE.name])),
+        envelope => Err(unexpected_message_error(
+            envelope,
+            &[&elfo_core::dumping::extract_name_by_type::<M>().to_string()]
+        )),
     })
 }
 
-fn unexpected_message_error(envelope: Envelope, expected: &[&'static str]) -> eyre::Report {
+fn unexpected_message_error(envelope: Envelope, expected: &[&str]) -> eyre::Report {
     let message = envelope.message();
     eyre!(
         "unexpected message: {}, expected: {}",
