@@ -44,9 +44,12 @@ impl ReadHalf {
     }
 }
 
+// TODO: set backpressure boundary
 pub(crate) struct WriteHalf(FramedWrite<tcp::OwnedWriteHalf, Encoder>);
 
 impl WriteHalf {
+    // TODO: it would be nice to have only `&Envelope` here.
+    // It requires either to replace `FramedWrite` or make `Message: Sync`.
     pub(crate) async fn send(&mut self, envelope: Envelope, addr: Addr) -> Result<()> {
         // TODO: timeout, it should be clever
         self.0.send((envelope, addr)).await?;

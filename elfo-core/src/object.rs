@@ -49,7 +49,7 @@ impl Object {
     pub(crate) async fn send<C, K>(
         &self,
         ctx: &Context<C, K>,
-        recipient: Option<Addr>,
+        recipient: Addr,
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>> {
         match &self.kind {
@@ -104,7 +104,7 @@ impl Object {
 
     pub(crate) fn try_send(
         &self,
-        recipient: Option<Addr>,
+        recipient: Addr,
         envelope: Envelope,
     ) -> Result<(), TrySendError<Envelope>> {
         match &self.kind {
