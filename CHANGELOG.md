@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Changed
+- message: now `AnyMessage` implements `Message`, but it's still hidden.
+- message: add `Message::{name,protocol,labels,upcast}`.
 
 ## [0.2.0-alpha.4] - 2023-07-06
 

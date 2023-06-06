@@ -8,9 +8,9 @@ use elfo::{_priv::AnyMessage, prelude::*, Message};
 
 fn parse<A: Message + PartialEq, B: Message + PartialEq>(input: A, expected: B) -> Result<()> {
     let mut buf = [0; 128];
-    let input = AnyMessage::new(input);
+    let input = input.upcast();
     let size = input.write_msgpack(&mut buf)?;
-    let actual = AnyMessage::read_msgpack(B::VTABLE.protocol, B::VTABLE.name, &buf[..size])?
+    let actual = AnyMessage::read_msgpack(expected.protocol(), expected.name(), &buf[..size])?
         .ok_or_else(|| anyhow!("no such message"))?
         .downcast::<B>()
         .map_err(|_| anyhow!("cannot downcast"))?;

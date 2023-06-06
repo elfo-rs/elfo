@@ -84,7 +84,7 @@ impl<M: Message> Envelope<M> {
             created_time: self.created_time,
             trace_id: self.trace_id,
             kind: self.kind,
-            message: AnyMessage::new(self.message),
+            message: self.message.upcast(),
         }
     }
 
@@ -137,8 +137,9 @@ impl Envelope {
         })
     }
 
+    // TODO: remove the method?
     pub(crate) fn set_message<M: Message>(&mut self, message: M) {
-        self.message = AnyMessage::new(message);
+        self.message = message.upcast();
     }
 }
 

@@ -1,6 +1,7 @@
-use elfo::{message, Message, Request};
 use serde::Serialize;
 use static_assertions::*;
+
+use elfo::{message, Message, Request};
 
 #[message]
 struct SimpleMessage {}
@@ -32,16 +33,14 @@ fn transparent() {
 
 #[test]
 fn name() {
-    assert_eq!(SimpleMessage::VTABLE.name, "SimpleMessage");
-    assert_eq!(SimpleRequest::VTABLE.name, "SimpleRequest");
-
-    assert_eq!(elfo::messages::UpdateConfig::VTABLE.name, "UpdateConfig");
+    assert_eq!(SimpleMessage {}.name(), "SimpleMessage");
+    assert_eq!(SimpleRequest {}.name(), "SimpleRequest");
+    assert_eq!(elfo::messages::Ping::default().name(), "Ping");
 }
 
 #[test]
 fn protocol() {
-    assert_eq!(SimpleMessage::VTABLE.protocol, "elfo");
-    assert_eq!(SimpleRequest::VTABLE.protocol, "elfo");
-
-    assert_eq!(elfo::messages::UpdateConfig::VTABLE.protocol, "elfo-core");
+    assert_eq!(SimpleMessage {}.protocol(), "elfo");
+    assert_eq!(SimpleRequest {}.protocol(), "elfo");
+    assert_eq!(elfo::messages::Ping::default().protocol(), "elfo-core");
 }

@@ -22,7 +22,7 @@ use tokio_util::codec;
 
 use elfo_core::{
     tracing::TraceId,
-    Addr, Envelope,
+    Addr, Envelope, Message,
     _priv::{AnyMessage, MessageKind},
 };
 
@@ -208,11 +208,8 @@ mod tests {
         let recipient = Addr::NULL;
 
         let trace_id = TraceId::try_from(42).unwrap();
-        let envelope = Envelope::with_trace_id(
-            AnyMessage::new(test),
-            MessageKind::Regular { sender },
-            trace_id,
-        );
+        let envelope =
+            Envelope::with_trace_id(test.upcast(), MessageKind::Regular { sender }, trace_id);
 
         let mut encoder = Encoder::new(1024);
         let mut decoder = Decoder::new(1024);
