@@ -1,0 +1,10 @@
+[system.telemeters]
+sink = "Prometheus"
+address = "0.0.0.0:9100"
+
+[system.dumpers]
+path = "example.alice.{class}.dump"
+
+[system.network]
+listen = ["tcp://127.0.0.1:9200"]
+discovery.predefined = ["tcp://127.0.0.1:9201"]
