@@ -294,6 +294,7 @@ cfg_network!({
             remote_group_name: &str,
             handle: impl RemoteHandle,
         ) -> RegisterRemoteGroupGuard {
+            // Register the handle to make `send_to(addr)` work.
             // XXX: get rid of `MAX` here.
             let entry = self.book.vacant_entry(GroupNo::MAX);
             let handle_addr = entry.addr();
@@ -303,18 +304,21 @@ cfg_network!({
             self.book
                 .register_remote(local_group, remote_group, handle_addr);
 
+            // Update the demux to make `send()` work,
+            // but only if this remote group is declared in the topology.
             let inner = self.inner.write();
             let group = inner
                 .remotes
                 .iter()
-                .find(|group| group.name == remote_group_name)
-                .expect("remote group not found");
+                .find(|group| group.name == remote_group_name);
 
-            group.nodes[&local_group].rcu(|nodes| {
-                let mut nodes = (**nodes).clone();
-                nodes.insert(remote_group.0, handle_addr);
-                nodes
-            });
+            if let Some(group) = group {
+                group.nodes[&local_group].rcu(|nodes| {
+                    let mut nodes = (**nodes).clone();
+                    nodes.insert(remote_group.0, handle_addr);
+                    nodes
+                });
+            }
 
             RegisterRemoteGroupGuard(())
         }

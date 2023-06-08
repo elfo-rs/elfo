@@ -35,9 +35,10 @@ impl<'de> Deserialize<'de> for Transport {
     where
         D: Deserializer<'de>,
     {
-        let s: &str = Deserialize::deserialize(deserializer)?;
+        // FIXME: cannot use `&str` here: `expected borrowed string`.
+        let s: String = Deserialize::deserialize(deserializer)?;
 
-        parse_transport(s)
+        parse_transport(&s)
             .map_err(|err| de::Error::custom(format!(r#"unsupported transport: "{}", {}"#, s, err)))
     }
 }

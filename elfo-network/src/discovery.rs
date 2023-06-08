@@ -402,7 +402,7 @@ async fn recv(socket: &mut Socket) -> Result<Envelope> {
         .read
         .recv()
         .await
-        .wrap_err("cannot receive an message")?
+        .wrap_err("cannot receive a message")?
         .ok_or_else(|| eyre!("connection closed before receiving any messages"))?;
 
     ensure!(
@@ -410,6 +410,7 @@ async fn recv(socket: &mut Socket) -> Result<Envelope> {
         "unexpected message kind"
     );
 
+    // TODO: should we skip changing here if it's an initiator?
     scope::set_trace_id(envelope.trace_id);
 
     Ok(Envelope::new(

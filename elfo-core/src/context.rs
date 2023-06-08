@@ -287,7 +287,7 @@ impl<C, K> Context<C, K> {
             let recipient = addrs[0];
             return match self.book.get_owned(recipient) {
                 Some(object) => object
-                    .send(self, recipient, envelope)
+                    .send(self, Addr::NULL, envelope)
                     .await
                     .map_err(|err| SendError(e2m(err.0))),
                 None => Err(SendError(e2m(envelope))),
@@ -306,7 +306,7 @@ impl<C, K> Context<C, K> {
             match self.book.get_owned(addr) {
                 Some(object) => {
                     unused = object
-                        .send(self, addr, envelope)
+                        .send(self, Addr::NULL, envelope)
                         .await
                         .err()
                         .map(|err| err.0);
