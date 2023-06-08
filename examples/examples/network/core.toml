@@ -1,9 +1,0 @@
-[system.telemeters]
-sink = "Prometheus"
-address = "0.0.0.0:9042"
-
-[system.dumpers]
-path = "example.core.{class}.dump"
-
-[system.network]
-listener.tcp = "127.0.0.1:3042"
