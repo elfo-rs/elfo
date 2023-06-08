@@ -1,6 +1,6 @@
 //! This module contains `Encoder` and `Decoder` instances
 //! implementing the following frame structure of messages:
-//! * size of rest frame, `u32`
+//! * size of whole frame, `u32`
 //! * TODO: checksum
 //! * protocol's length, `u8`
 //! * protocol
@@ -107,7 +107,7 @@ impl codec::Encoder<NetworkEnvelope> for Encoder {
         // message
         dst.extend_from_slice(&self.buffer[..message_size]);
 
-        let size = dst.len() - original_len - 4;
+        let size = dst.len() - original_len;
         (&mut dst[original_len..]).put_u32_le(size as u32);
 
         Ok(())
@@ -139,9 +139,7 @@ impl codec::Decoder for Decoder {
             return Ok(None);
         }
 
-        let mut buffer = &src[..];
-        let size = buffer.get_u32_le();
-
+        let size = (&src[..]).get_u32_le();
         ensure!(
             size <= self.max_frame_size,
             "frame of length {} is too large, max allowed length is {}",
@@ -150,13 +148,13 @@ impl codec::Decoder for Decoder {
         );
 
         let size = size as usize;
-        if buffer.len() < size {
-            let additional = size - buffer.len();
+        if src.len() < size {
+            let additional = size - src.len();
             src.reserve(additional);
             return Ok(None);
         }
 
-        let data = decode(&buffer[..size]);
+        let data = decode(&src[4..size]);
         src.advance(size);
 
         if let Err(err) = &data {
@@ -174,7 +172,7 @@ fn decode(mut frame: &[u8]) -> Result<NetworkEnvelope> {
 
     let trace_id = TraceId::try_from(frame.get_u64_le())?;
     let sender = Addr::from_bits(frame.get_u64_le());
-    let recipient = Addr::from_bits(frame.get_u64_le());
+    let recipient = Addr::from_bits(frame.get_u64_le()).into_local();
 
     let kind = match frame.get_u8() {
         0 => NetworkMessageKind::Regular,
@@ -236,32 +234,34 @@ mod tests {
     fn it_works() {
         #[message]
         #[derive(PartialEq)]
-        struct Test(u32);
+        struct Test(u64);
 
-        let test = Test(42);
-        let sender = Addr::NULL;
-        let recipient = Addr::NULL;
-
-        let trace_id = TraceId::try_from(42).unwrap();
-        let envelope = NetworkEnvelope {
-            sender,
-            recipient,
-            trace_id,
-            kind: NetworkMessageKind::Regular,
-            message: test.upcast(),
-        };
-
+        let mut bytes = BytesMut::new();
         let mut encoder = Encoder::new(1024);
         let mut decoder = Decoder::new(1024);
 
-        let mut bytes = BytesMut::new();
-        encoder.encode(envelope, &mut bytes).unwrap();
+        for i in 1..5 {
+            let test = Test(i);
+            let sender = Addr::NULL;
+            let recipient = Addr::NULL;
 
-        let actual = decoder.decode(&mut bytes).unwrap().unwrap();
+            let trace_id = TraceId::try_from(i).unwrap();
+            let envelope = NetworkEnvelope {
+                sender,
+                recipient,
+                trace_id,
+                kind: NetworkMessageKind::Regular,
+                message: test.upcast(),
+            };
 
-        assert_eq!(actual.trace_id, trace_id);
-        assert_eq!(actual.sender, sender);
-        assert_eq!(actual.recipient, recipient);
-        assert_eq!(actual.message.downcast::<Test>().unwrap(), Test(42));
+            encoder.encode(envelope, &mut bytes).unwrap();
+
+            let actual = decoder.decode(&mut bytes).unwrap().unwrap();
+
+            assert_eq!(actual.trace_id, trace_id);
+            assert_eq!(actual.sender, sender);
+            assert_eq!(actual.recipient, recipient);
+            assert_eq!(actual.message.downcast::<Test>().unwrap(), Test(i));
+        }
     }
 }

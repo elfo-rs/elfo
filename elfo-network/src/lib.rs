@@ -11,6 +11,7 @@ use std::{
 };
 
 use elfo_core::{
+    group::RestartPolicy,
     messages::UpdateConfig,
     msg,
     node::NodeNo,
@@ -57,6 +58,8 @@ pub fn new(topology: &Topology) -> Blueprint {
 
     ActorGroup::new()
         .config::<Config>()
+        // TODO: actually, we want to restart, but only the discrovery actor.
+        .restart_policy(RestartPolicy::never())
         .router(MapRouter::new(|envelope| {
             msg!(match envelope {
                 UpdateConfig => Outcome::Unicast(ActorKey::Discovery),
