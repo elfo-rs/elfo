@@ -6,6 +6,7 @@ use elfo_core::{
     messages::Impossible,
     msg,
     node::NodeNo,
+    scope,
     stream::Stream,
     Addr, Context, Envelope, GroupNo, Topology, UnattachedSource,
 };
@@ -131,6 +132,9 @@ fn make_socket_rx_handler(
     Stream::once(async move {
         // TODO: error handling.
         while let Some(mut network_envelope) = rx.recv().await.unwrap() {
+            scope::set_trace_id(network_envelope.trace_id);
+
+            // `NULL` means we should route to the group.
             if network_envelope.recipient == Addr::NULL {
                 network_envelope.recipient = group_addr;
             }

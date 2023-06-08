@@ -68,6 +68,7 @@ impl codec::Encoder<NetworkEnvelope> for Encoder {
         dst.put_u64_le(u64::from(envelope.trace_id));
 
         // sender
+        // TODO: avoid `into_remote`, transform on the caller's site.
         let sender = envelope.sender.into_remote().into_bits();
         dst.put_u64_le(sender);
 
@@ -172,6 +173,7 @@ fn decode(mut frame: &[u8]) -> Result<NetworkEnvelope> {
 
     let trace_id = TraceId::try_from(frame.get_u64_le())?;
     let sender = Addr::from_bits(frame.get_u64_le());
+    // TODO: avoid `into_local`, transform on the caller's site.
     let recipient = Addr::from_bits(frame.get_u64_le()).into_local();
 
     let kind = match frame.get_u8() {
