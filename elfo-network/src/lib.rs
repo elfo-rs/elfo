@@ -3,6 +3,8 @@
 #![warn(rust_2018_idioms, unreachable_pub, missing_docs)]
 
 #[macro_use]
+extern crate static_assertions;
+#[macro_use]
 extern crate elfo_utils;
 
 use std::{
@@ -25,6 +27,7 @@ mod codec;
 mod config;
 mod connection;
 mod discovery;
+mod flow_control;
 mod node_map;
 mod protocol;
 mod socket;
