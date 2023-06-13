@@ -11,6 +11,14 @@ use crate::{
 pub type GroupNo = u8;
 
 /// Represents the global unique address of an actor.
+///
+/// # Using addresses in messages
+/// The current implementation of network depends on the fact that
+/// `Addr` cannot be sent inside messages. It prevents from different
+/// possible errors like responding without having a valid connection.
+/// The only way to get an address of remote actor is `envelope.sender()`.
+/// If sending `Addr` inside a message is unavoidable, use `Local<Addr>`,
+/// however it won't be possible to send such message to a remote actor.
 // Structure (64b platform):
 //  64           48         40           30      21                0
 //  +------------+----------+------------+-------+-----------------+
@@ -46,10 +54,7 @@ pub type GroupNo = u8;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Addr(u64); // TODO: make it NonZero
 
-// The current implementation of network is depends on the fact that
-// `Addr` cannot be sent inside messages. It prevents from different
-// possible errors like responding without having a valid connection.
-// TODO: https://github.com/nvzqz/static-assertions-rs/issues/30
+// See `Addr` docs for more details.
 assert_not_impl_all!(Addr: serde::Serialize, serde::Deserialize<'static>);
 
 impl fmt::Display for Addr {
@@ -94,6 +99,12 @@ impl Addr {
     #[inline]
     pub fn is_local(self) -> bool {
         self.node_no() == node::LOCAL_NODE_NO
+    }
+
+    #[stability::unstable]
+    #[inline]
+    pub fn is_remote(self) -> bool {
+        !self.is_local()
     }
 
     #[stability::unstable]
@@ -190,7 +201,7 @@ impl AddressBook {
 
     pub(crate) fn get(&self, mut addr: Addr) -> Option<ObjectRef<'_>> {
         #[cfg(feature = "network")]
-        if !addr.is_local() {
+        if addr.is_remote() {
             addr = self.remote.get(addr)?;
         }
 
@@ -199,7 +210,7 @@ impl AddressBook {
 
     pub(crate) fn get_owned(&self, mut addr: Addr) -> Option<ObjectArc> {
         #[cfg(feature = "network")]
-        if !addr.is_local() {
+        if addr.is_remote() {
             addr = self.remote.get(addr)?;
         }
 
@@ -262,7 +273,7 @@ cfg_network!({
         }
 
         pub(super) fn get(&self, remote_addr: Addr) -> Option<Addr> {
-            debug_assert!(!remote_addr.is_local());
+            debug_assert!(remote_addr.is_remote());
 
             let local = crate::scope::with(|scope| scope.group()).node_no_group_no();
             let remote = remote_addr.node_no_group_no();

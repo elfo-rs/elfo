@@ -1,4 +1,4 @@
-use elfo_core::{message, node::NodeNo, GroupNo, MoveOwnership};
+use elfo_core::{message, node::NodeNo, Addr, GroupNo, MoveOwnership};
 
 use crate::{node_map::LaunchId, socket::Socket};
 
@@ -9,6 +9,8 @@ pub(crate) struct HandleConnection {
     pub(crate) local: (GroupNo, String),
     pub(crate) remote: (NodeNo, GroupNo, String),
     pub(crate) socket: MoveOwnership<Socket>,
+    /// Initial window size of every flow.
+    pub(crate) initial_window: i32,
 }
 
 pub(crate) mod internode {
@@ -34,6 +36,9 @@ pub(crate) mod internode {
     //      SwitchToData -->
     //                   <-- SwitchToData
     //                  ...
+    //      UpdateFlow -->
+    //                  ...
+    //                     <-- UpdateFlow
     //
     //             any connection
     //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -69,6 +74,21 @@ pub(crate) mod internode {
         pub(crate) my_group_no: GroupNo,
         /// Local group's number of a server.
         pub(crate) your_group_no: GroupNo,
+        /// Initial window size for every flow.
+        pub(crate) initial_window: i32,
+    }
+
+    #[message]
+    pub(crate) struct UpdateFlow {
+        #[serde(with = "sendable_addr")]
+        pub(crate) addr: Addr,
+        pub(crate) window_delta: i32,
+    }
+
+    #[message]
+    pub(crate) struct CloseFlow {
+        #[serde(with = "sendable_addr")]
+        pub(crate) addr: Addr,
     }
 
     #[message]
@@ -79,5 +99,26 @@ pub(crate) mod internode {
     #[message]
     pub(crate) struct Pong {
         pub(crate) payload: u64,
+    }
+}
+
+// See docs of `Addr` for details why it's required.
+mod sendable_addr {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::*;
+
+    pub(super) fn serialize<S: Serializer>(addr: &Addr, serializer: S) -> Result<S::Ok, S::Error> {
+        debug_assert!(addr.is_remote());
+        addr.into_bits().serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Addr, D::Error> {
+        let bits = u64::deserialize(deserializer)?;
+        let addr = Addr::from_bits(bits);
+        debug_assert!(addr.is_remote());
+        Ok(addr)
     }
 }

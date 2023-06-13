@@ -22,6 +22,10 @@ use crate::{
     NetworkContext,
 };
 
+/// Initial window size of every flow.
+/// TODO: should be mailbox limit.
+const INITIAL_WINDOW_SIZE: i32 = 100_000;
+
 #[message]
 struct ConnectionEstablished {
     role: ConnectionRole,
@@ -250,6 +254,7 @@ impl Discovery {
                             ConnectionRole::Data(internode::SwitchToData {
                                 my_group_no: local_group_no,
                                 your_group_no: remote_group_no,
+                                initial_window: INITIAL_WINDOW_SIZE,
                             }),
                         );
                     });
@@ -285,6 +290,7 @@ impl Discovery {
                         local: (remote.your_group_no, local_group_name),
                         remote: (msg.node_no, remote.my_group_no, remote_group_name),
                         socket: socket.into(),
+                        initial_window: remote.initial_window,
                     },
                 );
 
@@ -345,6 +351,7 @@ async fn accept_connection(
                     let my_msg = internode::SwitchToData {
                         my_group_no: msg.your_group_no,
                         your_group_no: msg.my_group_no,
+                        initial_window: INITIAL_WINDOW_SIZE,
                     };
                     send_regular(&mut socket, my_msg).await?;
                     (false, ConnectionRole::Data(msg))

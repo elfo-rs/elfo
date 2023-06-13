@@ -1,28 +1,36 @@
+use std::sync::Arc;
+
 use eyre::Result;
 
 use elfo_core::{
-    _priv::MessageKind,
+    _priv::{AnyMessage, MessageKind},
     errors::{SendError, TrySendError},
     messages::Impossible,
     msg,
     node::NodeNo,
-    scope,
+    remote, scope,
     stream::Stream,
     Addr, Context, Envelope, GroupNo, Topology, UnattachedSource,
 };
+use elfo_utils::unlikely;
 
+use self::flows_tx::{Acquire, TryAcquire, TxFlows};
 use crate::{
     codec::{NetworkEnvelope, NetworkMessageKind},
-    protocol::HandleConnection,
+    protocol::{internode, HandleConnection},
     socket::{ReadHalf, WriteHalf},
     NetworkContext,
 };
+
+mod flow_control;
+mod flows_tx;
 
 pub(crate) struct Connection {
     ctx: NetworkContext,
     topology: Topology,
     local: (GroupNo, String),
     remote: (NodeNo, GroupNo, String),
+    flows: Arc<TxFlows>,
 }
 
 impl Connection {
@@ -37,19 +45,26 @@ impl Connection {
             topology,
             local,
             remote,
+            flows: Default::default(),
         }
     }
 
     pub(super) async fn main(mut self) -> Result<()> {
         // Receive the socket. It must always be a first message.
-        let socket = msg!(match self.ctx.try_recv().await? {
-            HandleConnection { socket, .. } => socket.take().unwrap(),
+        let first_message = msg!(match self.ctx.try_recv().await? {
+            msg @ HandleConnection => msg,
             _ => unreachable!("unexpected initial message"),
         });
 
+        self.flows.configure(first_message.initial_window);
+        let socket = first_message.socket.take().unwrap();
+
         // Register `RemoteHandle`. Now we can receive messages from local groups.
         let (local_tx, local_rx) = kanal::unbounded_async();
-        let remote_handle = RemoteHandle { tx: local_tx };
+        let remote_handle = RemoteHandle {
+            tx: local_tx,
+            flows: self.flows.clone(),
+        };
         let _guard = self.topology.register_remote(
             self.local.0,
             (self.remote.0, self.remote.1),
@@ -62,17 +77,18 @@ impl Connection {
             .attach(make_local_rx_handler(local_rx, socket.write));
 
         // Start handling network incoming messages.
-        let group_addr = self
-            .topology
-            .locals()
-            .map(|g| g.addr)
-            .find(|a| a.group_no() == self.local.0)
-            .expect("invalid local group");
-        self.ctx.attach(make_socket_rx_handler(
-            socket.read,
-            self.ctx.pruned(),
-            group_addr,
-        ));
+        let sr = SocketReader {
+            ctx: self.ctx.pruned(),
+            rx: socket.read,
+            group_addr: self
+                .topology
+                .locals()
+                .map(|g| g.addr)
+                .find(|a| a.group_no() == self.local.0)
+                .expect("invalid local group"),
+            tx_flows: self.flows.clone(),
+        };
+        self.ctx.attach(Stream::once(sr.exec()));
 
         while let Some(_envelope) = self.ctx.recv().await {
             // TODO: graceful termination
@@ -124,19 +140,33 @@ fn make_local_rx_handler(
     })
 }
 
-fn make_socket_rx_handler(
-    mut rx: ReadHalf,
+// === SocketReader ===
+
+/// Subtask that reads messages from the socket and routes them to local groups.
+struct SocketReader {
     ctx: Context,
+    rx: ReadHalf,
     group_addr: Addr,
-) -> UnattachedSource<Stream<Impossible>> {
-    Stream::once(async move {
+    tx_flows: Arc<TxFlows>,
+}
+
+impl SocketReader {
+    async fn exec(mut self) -> Impossible {
         // TODO: error handling.
-        while let Some(mut network_envelope) = rx.recv().await.unwrap() {
+        while let Some(mut network_envelope) = self.rx.recv().await.unwrap() {
             scope::set_trace_id(network_envelope.trace_id);
+
+            // System messages have a special handling.
+            if unlikely(self.handle_system_message(&network_envelope.message)) {
+                continue;
+            }
+
+            // Recipients can respond to the sender, so we should add a flow.
+            self.tx_flows.add_flow_if_needed(network_envelope.sender);
 
             // `NULL` means we should route to the group.
             if network_envelope.recipient == Addr::NULL {
-                network_envelope.recipient = group_addr;
+                network_envelope.recipient = self.group_addr;
             }
             assert!(
                 matches!(network_envelope.kind, NetworkMessageKind::Regular),
@@ -144,36 +174,70 @@ fn make_socket_rx_handler(
             );
 
             // TODO: backpressure + spawn as another source.
-            ctx.do_send_to(
-                network_envelope.recipient,
-                network_envelope.message,
-                MessageKind::Regular {
-                    sender: network_envelope.sender,
-                },
-            )
-            .await // TODO
-            .unwrap();
+            self.ctx
+                .do_send_to(
+                    network_envelope.recipient,
+                    network_envelope.message,
+                    MessageKind::Regular {
+                        sender: network_envelope.sender,
+                    },
+                )
+                .await // TODO
+                .unwrap();
         }
 
         todo!()
-    })
+    }
+
+    fn handle_system_message(&self, message: &AnyMessage) -> bool {
+        if let Some(msg) = message.downcast_ref::<internode::UpdateFlow>() {
+            self.tx_flows.update_flow(msg);
+            true
+        } else if let Some(msg) = message.downcast_ref::<internode::CloseFlow>() {
+            self.tx_flows.close_flow(msg);
+            true
+        } else {
+            // TODO: ping/pong
+            false
+        }
+    }
 }
 
 // === RemoteHandle ===
 
 struct RemoteHandle {
     tx: kanal::AsyncSender<(Addr, Envelope)>,
+    flows: Arc<TxFlows>,
 }
 
-impl elfo_core::remote::RemoteHandle for RemoteHandle {
-    fn try_send(&self, recipient: Addr, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        // TODO: semaphore.
+impl remote::RemoteHandle for RemoteHandle {
+    fn send(&self, recipient: Addr, envelope: Envelope) -> remote::SendResult {
+        match self.flows.acquire(recipient) {
+            Acquire::Done => {
+                let mut item = Some((recipient, envelope));
+                match self.tx.try_send_option(&mut item) {
+                    Ok(true) => remote::SendResult::Ok,
+                    Ok(false) => unreachable!(),
+                    Err(_) => remote::SendResult::Err(SendError(item.take().unwrap().1)),
+                }
+            }
+            Acquire::Full(notified) => remote::SendResult::Wait(notified, envelope),
+            Acquire::Closed => remote::SendResult::Err(SendError(envelope)),
+        }
+    }
 
-        let mut item = Some((recipient, envelope));
-        match self.tx.try_send_option(&mut item) {
-            Ok(true) => Ok(()),
-            Ok(false) => unreachable!(),
-            Err(_) => Err(TrySendError::Closed(item.take().unwrap().1)),
+    fn try_send(&self, recipient: Addr, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
+        match self.flows.try_acquire(recipient) {
+            TryAcquire::Done => {
+                let mut item = Some((recipient, envelope));
+                match self.tx.try_send_option(&mut item) {
+                    Ok(true) => Ok(()),
+                    Ok(false) => unreachable!(),
+                    Err(_) => Err(TrySendError::Closed(item.take().unwrap().1)),
+                }
+            }
+            TryAcquire::Full => Err(TrySendError::Full(envelope)),
+            TryAcquire::Closed => Err(TrySendError::Closed(envelope)),
         }
     }
 
@@ -182,6 +246,10 @@ impl elfo_core::remote::RemoteHandle for RemoteHandle {
         recipient: Addr,
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>> {
+        if !self.flows.do_acquire(recipient) {
+            return Err(SendError(envelope));
+        }
+
         let mut item = Some((recipient, envelope));
         match self.tx.try_send_option(&mut item) {
             Ok(true) => Ok(()),

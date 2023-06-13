@@ -27,7 +27,6 @@ mod codec;
 mod config;
 mod connection;
 mod discovery;
-mod flow_control;
 mod node_map;
 mod protocol;
 mod socket;

@@ -2,7 +2,7 @@ use derive_more::From;
 use futures::future::{join_all, BoxFuture};
 
 #[cfg(feature = "network")]
-use crate::remote::RemoteHandle;
+use crate::remote::{self, RemoteHandle};
 use crate::{
     actor::Actor,
     address_book::SlabConfig,
@@ -46,6 +46,7 @@ impl Object {
         self.addr
     }
 
+    // TODO: pass `&mut Option<(Addr, Envelope)>` to avoid extra moves.
     pub(crate) async fn send<C, K>(
         &self,
         ctx: &Context<C, K>,
@@ -97,8 +98,20 @@ impl Object {
                 }
                 RouteReport::Closed(envelope) => Err(SendError(envelope)),
             },
-            #[cfg(feature = "network")] // TODO: `handle.send()`
-            ObjectKind::Remote(handle) => handle.unbounded_send(recipient, envelope),
+            #[cfg(feature = "network")]
+            ObjectKind::Remote(handle) => {
+                let mut envelope = envelope;
+                loop {
+                    match handle.send(recipient, envelope) {
+                        remote::SendResult::Ok => break Ok(()),
+                        remote::SendResult::Err(err) => break Err(err),
+                        remote::SendResult::Wait(notified, e) => {
+                            envelope = e;
+                            notified.await;
+                        }
+                    }
+                }
+            }
         }
     }
 
