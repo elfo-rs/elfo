@@ -7,10 +7,6 @@
 #system.logging.max_level = "Info" # one of: Trace, Debug, Info, Warn, Error, Off.
 #system.logging.max_rate_per_level = 1000    # per second
 #
-# It's possible to override `max_level` for a specific target:
-#system.logging.targets.hyper.max_level = "Trace"
-#system.logging.targets."hyper::server".max_level = "Warn"
-#
 # Dumping
 #system.dumping.disabled = false
 #system.dumping.max_rate = 100_000 # per second
@@ -26,6 +22,13 @@
 #path = "example.log"
 #format.with_location = false
 #format.with_module = false
+#
+# Global max level filters all logs.
+#max_level = "Info"
+#
+# It's possible to override `max_level` for a specific target:
+#targets.hyper.max_level = "Trace"
+#targets."hyper::server".max_level = "Warn"
 
 [system.telemeters]
 sink = "Prometheus"

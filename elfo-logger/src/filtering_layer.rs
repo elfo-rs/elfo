@@ -11,10 +11,9 @@ use elfo_core::{logging::_priv::CheckResult, scope};
 
 use crate::stats;
 
-#[derive(Debug)]
-pub(crate) struct FilteringConfig {
-    pub(crate) targets: Targets,
-    pub(crate) max_level: LevelFilter,
+struct FilteringConfig {
+    targets: Targets,
+    max_level: LevelFilter,
 }
 
 impl Default for FilteringConfig {
@@ -50,19 +49,36 @@ impl FilteringLayer {
             config
                 .targets
                 .iter()
+                // Remove entries that are equal to default anyway.
                 .filter(|(_, target_config)| target_config.max_level != config.max_level)
                 .map(|(target, target_config)| (target, target_config.max_level))
+                // Calculate a total max level for cheap access.
                 .inspect(|(_target, level)| max_level = max_level.max(*level)),
         );
+
         self.inner
             .config
             .store(Arc::new(FilteringConfig { max_level, targets }));
+
+        tracing::callsite::rebuild_interest_cache();
     }
 }
 
 impl<S: Subscriber> Layer<S> for FilteringLayer {
-    fn register_callsite(&self, _meta: &'static Metadata<'static>) -> Interest {
-        Interest::sometimes()
+    fn register_callsite(&self, meta: &'static Metadata<'static>) -> Interest {
+        let config = self.inner.config.load();
+        // Probably a cheaper check than `.would_enable()` below.
+        if meta.level() > &config.max_level {
+            // Won't be ever allowed by the `.targets`, because `.max_level` is max of all
+            // their levels.
+            Interest::never()
+        } else if config.targets.would_enable(meta.target(), meta.level()) {
+            // Not `::always()`, because actor could impose its own limits.
+            Interest::sometimes()
+        } else {
+            // Won't be ever allowed by the `.targets`.
+            Interest::never()
+        }
     }
 
     fn enabled(&self, meta: &Metadata<'_>, cx: Context<'_, S>) -> bool {
@@ -81,17 +97,16 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
                     false
                 }
             }
-        })
-        .unwrap_or(true);
+        });
 
-        if !passed_by_actor {
+        if passed_by_actor == Some(false) {
             return false;
         }
 
-        let config = self.inner.config.load();
-        config.targets.enabled(meta, cx)
+        self.inner.config.load().targets.enabled(meta, cx)
     }
 
+    // REVIEW: that's a private API lol
     fn max_level_hint(&self) -> Option<LevelFilter> {
         Some(self.inner.config.load().max_level)
     }
