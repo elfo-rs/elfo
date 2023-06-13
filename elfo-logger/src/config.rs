@@ -15,7 +15,10 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) format: Format,
 
-    #[serde(deserialize_with = "deserialize_level_filter", default = "default_max_level")]
+    #[serde(
+        deserialize_with = "deserialize_level_filter",
+        default = "default_max_level"
+    )]
     pub(crate) max_level: LevelFilter,
     #[serde(default)]
     pub(crate) targets: FxHashMap<String, LoggingTargetConfig>,

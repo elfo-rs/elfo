@@ -9,7 +9,6 @@ pub(crate) struct LoggingConfig {
     pub(crate) max_rate_per_level: u64,
 }
 
-
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
