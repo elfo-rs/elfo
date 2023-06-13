@@ -1,4 +1,3 @@
-use fxhash::FxHashMap;
 use serde::{Deserialize, Deserializer};
 use tracing::level_filters::LevelFilter;
 
@@ -8,13 +7,15 @@ pub(crate) struct LoggingConfig {
     #[serde(deserialize_with = "deserialize_level_filter")]
     pub(crate) max_level: LevelFilter,
     pub(crate) max_rate_per_level: u64,
-    pub(crate) targets: FxHashMap<String, LoggingTargetConfig>,
 }
 
-#[derive(Deserialize)]
-pub(crate) struct LoggingTargetConfig {
-    #[serde(deserialize_with = "deserialize_level_filter")]
-    pub(crate) max_level: LevelFilter,
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            max_level: LevelFilter::INFO,
+            max_rate_per_level: 1000,
+        }
+    }
 }
 
 fn deserialize_level_filter<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
@@ -43,14 +44,4 @@ where
         Error => LevelFilter::ERROR,
         Off => LevelFilter::OFF,
     })
-}
-
-impl Default for LoggingConfig {
-    fn default() -> Self {
-        Self {
-            max_level: LevelFilter::INFO,
-            max_rate_per_level: 1000,
-            targets: FxHashMap::default(),
-        }
-    }
 }

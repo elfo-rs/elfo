@@ -1,35 +1,87 @@
-use tracing::{subscriber::Interest, Level, Metadata, Subscriber};
-use tracing_subscriber::layer::{Context, Layer};
+use std::sync::Arc;
+
+use arc_swap::ArcSwap;
+use fxhash::FxHashMap;
+use tracing::{metadata::LevelFilter, subscriber::Interest, Metadata, Subscriber};
+use tracing_subscriber::{
+    filter::Targets,
+    layer::{Context, Layer},
+};
 
 use elfo_core::{logging::_priv::CheckResult, scope};
 
-use crate::stats;
+use crate::{config::LoggingTargetConfig, stats};
 
-#[non_exhaustive]
+#[derive(PartialEq)]
+struct FilteringConfig {
+    targets: Targets,
+}
+
+impl Default for FilteringConfig {
+    fn default() -> Self {
+        Self {
+            targets: Targets::new().with_default(LevelFilter::TRACE),
+        }
+    }
+}
+
+struct Inner {
+    config: ArcSwap<FilteringConfig>,
+}
+
+#[derive(Clone)]
 pub(crate) struct FilteringLayer {
-    other_max_level: Level,
+    inner: Arc<Inner>,
 }
 
 impl FilteringLayer {
-    pub(crate) fn new(other_max_level: Level) -> Self {
-        Self { other_max_level }
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                config: ArcSwap::new(Arc::new(FilteringConfig::default())),
+            }),
+        }
+    }
+
+    pub(crate) fn configure(&self, targets: &FxHashMap<String, LoggingTargetConfig>) {
+        let targets = Targets::new()
+            .with_default(LevelFilter::TRACE)
+            .with_targets(
+                targets
+                    .iter()
+                    .map(|(target, target_config)| (target, target_config.max_level)),
+            );
+
+        let config = Arc::new(FilteringConfig { targets });
+        let old_config = self.inner.config.swap(Arc::clone(&config));
+        if config != old_config {
+            tracing::callsite::rebuild_interest_cache();
+        }
     }
 }
 
 impl<S: Subscriber> Layer<S> for FilteringLayer {
-    fn register_callsite(&self, _meta: &'static Metadata<'static>) -> Interest {
-        Interest::sometimes()
+    fn register_callsite(&self, meta: &'static Metadata<'static>) -> Interest {
+        let config = self.inner.config.load();
+        if config.targets.would_enable(meta.target(), meta.level()) {
+            // Not `::always()`, because actor can impose its own limits.
+            Interest::sometimes()
+        } else {
+            // Won't be ever allowed by the `.targets`.
+            Interest::never()
+        }
     }
 
-    fn enabled(&self, meta: &Metadata<'_>, cx: Context<'_, S>) -> bool {
+    fn enabled(&self, meta: &Metadata<'_>, _cx: Context<'_, S>) -> bool {
+        // We don't need to recheck `.targets` here, because `.register_callsite()`
+        // would already eliminate logs that would be filtered by it.
+        let level = *meta.level();
         scope::try_with(|scope| {
-            let level = *meta.level();
-
             if !scope.permissions().is_logging_enabled(level) {
                 return false;
             }
 
-            match scope.logging().check(meta, cx) {
+            match scope.logging().check(meta) {
                 CheckResult::Passed => true,
                 CheckResult::NotInterested => false,
                 CheckResult::Limited => {
@@ -38,9 +90,9 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
                 }
             }
         })
-        // TODO: limit events outside the actor system?
-        .unwrap_or_else(|| *meta.level() <= self.other_max_level)
+        // `INFO` is a global cap for non-actor logs.
+        .unwrap_or(level <= LevelFilter::INFO)
     }
 
-    // TODO: implement `max_level_hint()`
+    // TODO: global max level and `max_level_hint()`.
 }

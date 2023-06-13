@@ -10,7 +10,7 @@ use crate::{stats, PreparedEvent, Shared, SpanData, StringId};
 
 mod visitor;
 
-pub struct PrintingLayer {
+pub(crate) struct PrintingLayer {
     shared: Arc<Shared>,
 }
 

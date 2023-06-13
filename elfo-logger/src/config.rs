@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use fxhash::FxHashMap;
+use serde::{Deserialize, Deserializer};
+use tracing::metadata::LevelFilter;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Config {
@@ -9,6 +11,15 @@ pub(crate) struct Config {
     pub(crate) path: Option<PathBuf>,
     #[serde(default)]
     pub(crate) format: Format,
+
+    #[serde(default)]
+    pub(crate) targets: FxHashMap<String, LoggingTargetConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct LoggingTargetConfig {
+    #[serde(deserialize_with = "deserialize_level_filter")]
+    pub(crate) max_level: LevelFilter,
 }
 
 #[derive(Debug, Default, PartialEq, Deserialize)]
@@ -26,4 +37,33 @@ pub(crate) struct Format {
     #[serde(default)]
     pub(crate) with_module: bool,
     // TODO: colors
+}
+
+// TODO: deduplicate with core
+fn deserialize_level_filter<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use PrettyLevelFilter::*;
+
+    #[derive(Deserialize)]
+    pub(crate) enum PrettyLevelFilter {
+        Trace,
+        Debug,
+        Info,
+        Warn,
+        Error,
+        Off,
+    }
+
+    let pretty = PrettyLevelFilter::deserialize(deserializer)?;
+
+    Ok(match pretty {
+        Trace => LevelFilter::TRACE,
+        Debug => LevelFilter::DEBUG,
+        Info => LevelFilter::INFO,
+        Warn => LevelFilter::WARN,
+        Error => LevelFilter::ERROR,
+        Off => LevelFilter::OFF,
+    })
 }

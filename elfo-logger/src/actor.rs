@@ -19,6 +19,7 @@ use elfo_core::{
 
 use crate::{
     config::{Config, Sink},
+    filtering_layer::FilteringLayer,
     formatters::Formatter,
     theme, PreparedEvent, Shared,
 };
@@ -26,6 +27,7 @@ use crate::{
 pub(crate) struct Logger {
     ctx: Context<Config>,
     shared: Arc<Shared>,
+    filtering_layer: FilteringLayer,
     buffer: String,
 }
 
@@ -38,17 +40,19 @@ pub struct ReopenLogFile {}
 impl Logger {
     // TODO: rename it?
     #[allow(clippy::new_ret_no_self)]
-    pub(crate) fn blueprint(shared: Arc<Shared>) -> Blueprint {
+    pub(crate) fn blueprint(shared: Arc<Shared>, filtering_layer: FilteringLayer) -> Blueprint {
         ActorGroup::new()
             .config::<Config>()
             .termination_policy(TerminationPolicy::manually())
-            .exec(move |ctx| Logger::new(ctx, shared.clone()).main())
+            .exec(move |ctx| Logger::new(ctx, shared.clone(), filtering_layer.clone()).main())
     }
 
-    fn new(ctx: Context<Config>, shared: Arc<Shared>) -> Self {
+    fn new(ctx: Context<Config>, shared: Arc<Shared>, filtering_layer: FilteringLayer) -> Self {
+        filtering_layer.configure(&ctx.config().targets);
         Self {
             ctx,
             shared,
+            filtering_layer,
             buffer: String::with_capacity(1024),
         }
     }
@@ -89,9 +93,14 @@ impl Logger {
                 envelope = self.ctx.recv() => {
                     let envelope = ward!(envelope, break);
                     msg!(match envelope {
-                        ReopenLogFile | ConfigUpdated => {
+                        ReopenLogFile => {
                             file = open_file(self.ctx.config()).await;
                             use_colors = can_use_colors(self.ctx.config());
+                        },
+                        ConfigUpdated => {
+                            file = open_file(self.ctx.config()).await;
+                            use_colors = can_use_colors(self.ctx.config());
+                            self.filtering_layer.configure(&self.ctx.config().targets);
                         },
                         Terminate => {
                             // TODO: use phases instead of hardcoded delay.
