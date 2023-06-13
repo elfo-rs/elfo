@@ -23,9 +23,6 @@
 #format.with_location = false
 #format.with_module = false
 #
-# Global max level filters all logs.
-#max_level = "Info"
-#
 # It's possible to override `max_level` for a specific target:
 #targets.hyper.max_level = "Trace"
 #targets."hyper::server".max_level = "Warn"

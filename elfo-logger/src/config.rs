@@ -1,6 +1,3 @@
-// REVIEW: remove before merge
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 
 use fxhash::FxHashMap;
@@ -15,11 +12,6 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) format: Format,
 
-    #[serde(
-        deserialize_with = "deserialize_level_filter",
-        default = "default_max_level"
-    )]
-    pub(crate) max_level: LevelFilter,
     #[serde(default)]
     pub(crate) targets: FxHashMap<String, LoggingTargetConfig>,
 }
@@ -45,10 +37,6 @@ pub(crate) struct Format {
     #[serde(default)]
     pub(crate) with_module: bool,
     // TODO: colors
-}
-
-fn default_max_level() -> LevelFilter {
-    LevelFilter::INFO
 }
 
 // REVIEW: deduplicate with core

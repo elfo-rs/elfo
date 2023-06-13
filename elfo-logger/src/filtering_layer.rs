@@ -13,14 +13,12 @@ use crate::stats;
 
 struct FilteringConfig {
     targets: Targets,
-    max_level: LevelFilter,
 }
 
 impl Default for FilteringConfig {
     fn default() -> Self {
         Self {
             targets: Targets::new().with_default(LevelFilter::INFO),
-            max_level: LevelFilter::INFO,
         }
     }
 }
@@ -44,21 +42,18 @@ impl FilteringLayer {
     }
 
     pub(crate) fn configure(&self, config: &crate::config::Config) {
-        let mut max_level = config.max_level;
-        let targets = Targets::new().with_default(config.max_level).with_targets(
-            config
-                .targets
-                .iter()
-                // Remove entries that are equal to default anyway.
-                .filter(|(_, target_config)| target_config.max_level != config.max_level)
-                .map(|(target, target_config)| (target, target_config.max_level))
-                // Calculate a total max level for cheap access.
-                .inspect(|(_target, level)| max_level = max_level.max(*level)),
-        );
+        let targets = Targets::new()
+            .with_default(LevelFilter::TRACE)
+            .with_targets(
+                config
+                    .targets
+                    .iter()
+                    .map(|(target, target_config)| (target, target_config.max_level)),
+            );
 
         self.inner
             .config
-            .store(Arc::new(FilteringConfig { max_level, targets }));
+            .store(Arc::new(FilteringConfig { targets }));
 
         tracing::callsite::rebuild_interest_cache();
     }
@@ -67,13 +62,8 @@ impl FilteringLayer {
 impl<S: Subscriber> Layer<S> for FilteringLayer {
     fn register_callsite(&self, meta: &'static Metadata<'static>) -> Interest {
         let config = self.inner.config.load();
-        // Probably a cheaper check than `.would_enable()` below.
-        if meta.level() > &config.max_level {
-            // Won't be ever allowed by the `.targets`, because `.max_level` is max of all
-            // their levels.
-            Interest::never()
-        } else if config.targets.would_enable(meta.target(), meta.level()) {
-            // Not `::always()`, because actor could impose its own limits.
+        if config.targets.would_enable(meta.target(), meta.level()) {
+            // Not `::always()`, because actor can impose its own limits.
             Interest::sometimes()
         } else {
             // Won't be ever allowed by the `.targets`.
@@ -82,7 +72,10 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
     }
 
     fn enabled(&self, meta: &Metadata<'_>, cx: Context<'_, S>) -> bool {
-        let passed_by_actor = scope::try_with(|scope| {
+        let config = self.inner.config.load();
+        let targets_enabled = config.targets.enabled(meta, cx);
+
+        scope::try_with(|scope| {
             let level = *meta.level();
 
             if !scope.permissions().is_logging_enabled(level) {
@@ -90,24 +83,16 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
             }
 
             match scope.logging().check(meta) {
-                CheckResult::Passed => true,
+                CheckResult::Passed => targets_enabled,
                 CheckResult::NotInterested => false,
                 CheckResult::Limited => {
                     stats::counter_per_level("elfo_limited_events_total", level);
                     false
                 }
             }
-        });
-
-        if passed_by_actor == Some(false) {
-            return false;
-        }
-
-        self.inner.config.load().targets.enabled(meta, cx)
+        })
+        .unwrap_or(targets_enabled)
     }
 
-    // REVIEW: that's a private API lol
-    fn max_level_hint(&self) -> Option<LevelFilter> {
-        Some(self.inner.config.load().max_level)
-    }
+    // TODO: global max level and `max_level_hint()`.
 }
