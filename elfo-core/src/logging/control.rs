@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use tracing::{level_filters::LevelFilter, Level, Metadata, Subscriber};
-use tracing_subscriber::layer::Context;
+use tracing::{level_filters::LevelFilter, Level, Metadata};
 
 use elfo_utils::{CachePadded, RateLimit, RateLimiter};
 
@@ -28,8 +27,8 @@ impl LoggingControl {
         self.filter.load().max_level_hint()
     }
 
-    pub fn check(&self, meta: &Metadata<'_>, cx: Context<'_, impl Subscriber>) -> CheckResult {
-        if !self.filter.load().enabled(meta, cx) {
+    pub fn check(&self, meta: &Metadata<'_>) -> CheckResult {
+        if !self.filter.load().enabled(meta) {
             return CheckResult::NotInterested;
         }
 

@@ -11,7 +11,7 @@ use futures_intrusive::{buffer::GrowingHeapBuf, channel::GenericChannel};
 use fxhash::FxBuildHasher;
 use parking_lot::RawMutex;
 use sharded_slab::Pool;
-use tracing::{span::Id as SpanId, Level, Metadata, Subscriber};
+use tracing::{span::Id as SpanId, Metadata, Subscriber};
 use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 
 use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
@@ -54,7 +54,7 @@ struct PreparedEvent {
 }
 
 // TODO: revise factory (return also `FilteringLayer` somehow).
-pub fn new() -> (PrintingLayer, Blueprint) {
+pub fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
     let shared = Shared {
         channel: GenericChannel::with_capacity(CHANNEL_CAPACITY),
         pool: Pool::default(),
@@ -62,15 +62,16 @@ pub fn new() -> (PrintingLayer, Blueprint) {
     };
 
     let shared = Arc::new(shared);
-    let layer = PrintingLayer::new(shared.clone());
-    let blueprint = Logger::blueprint(shared);
+    let printing_layer = PrintingLayer::new(shared.clone());
+    let filtering_layer = FilteringLayer::new();
+    let blueprint = Logger::blueprint(shared, filtering_layer.clone());
 
-    (layer, blueprint)
+    (printing_layer, filtering_layer, blueprint)
 }
 
 pub fn init() -> Blueprint {
     // TODO: log instead of panicking.
-    let (printer, blueprint) = new();
+    let (printer, filter, blueprint) = new();
     let registry = Registry::default();
 
     if env::var(EnvFilter::DEFAULT_ENV).is_ok() {
@@ -78,8 +79,6 @@ pub fn init() -> Blueprint {
         let subscriber = registry.with(filter).with(printer);
         install_subscriber(subscriber);
     } else {
-        // TODO: get the default level via arguments.
-        let filter = FilteringLayer::new(Level::INFO);
         let subscriber = registry.with(filter).with(printer);
         install_subscriber(subscriber);
     };

@@ -14,6 +14,7 @@ readme.workspace = true
 elfo-core = { version = "0.2.0-alpha.1", path = "../elfo-core", features = ["unstable"] }
 elfo-utils = { version = "0.2.3", path = "../elfo-utils" }
 
+arc-swap = "1.2.0"
 derive_more = "0.99.11"
 futures-intrusive = "0.5"
 tokio = { version = "1.5", features = ["macros", "fs", "io-util"] }
