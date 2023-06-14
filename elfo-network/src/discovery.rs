@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use eyre::{ensure, eyre, Result, WrapErr};
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use quanta::Instant;
 use tracing::{debug, error, info, warn};
 
@@ -172,7 +172,7 @@ impl Discovery {
         );
 
         let node_map = self.node_map.clone();
-        self.ctx.attach(Stream::once(async move {
+        let stream = stream::once(async move {
             let peer = socket.peer.clone();
 
             accept_connection(socket, msg.role, &node_map.this)
@@ -181,7 +181,10 @@ impl Discovery {
                     error: err.to_string(),
                     peer,
                 })
-        }));
+                .transpose()
+        })
+        .filter_map(|result| async { result });
+        self.ctx.attach(Stream::once_stream(stream));
     }
 
     async fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
@@ -293,7 +296,7 @@ async fn accept_connection(
     mut socket: Socket,
     role: ConnectionRole,
     this_node: &NodeInfo,
-) -> Result<ConnectionAccepted> {
+) -> Result<Option<ConnectionAccepted>> {
     let start = Instant::now();
     let (node_no, launch_id) = handshake(&mut socket, this_node).await.map_err(|err| {
         debug!(
@@ -310,6 +313,14 @@ async fn accept_connection(
         peer = %socket.peer,
         elapsed = ?start.elapsed(),
     );
+
+    if node_no == this_node.node_no {
+        debug!(
+            message = "connection to self ignored",
+            peer = %socket.peer,
+        );
+        return Ok(None);
+    }
 
     let (is_initiator, role) = match role {
         ConnectionRole::Unknown => {
@@ -348,13 +359,13 @@ async fn accept_connection(
         }
     };
 
-    Ok(ConnectionAccepted {
+    Ok(Some(ConnectionAccepted {
         is_initiator,
         role,
         node_no,
         launch_id,
         socket: socket.into(),
-    })
+    }))
 }
 
 fn infer_connections<'a>(
