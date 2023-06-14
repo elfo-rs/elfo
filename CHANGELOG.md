@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- next-header -->
 
+## [Unreleased] - ReleaseDate
+### Added
+- logger: add `targets` section to the config ([#92]).
+
+### Changed
+- **BREAKING** remove `system.logging.targets` section ([#92]).
+
+[#92]: https://github.com/elfo-rs/elfo/pull/92
+
 ## [0.2.0-alpha.1] - 2023-06-01
 ### Changed
 - **BREAKING** supervisor: actors discard `ValidateConfig` by default ([#49], [#87]).
