@@ -1,6 +1,6 @@
 [package]
 name = "elfo-macros"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 description = "Macros for matching and deriving messages"
 keywords = ["elfo", "actor", "distributed", "tokio", "macros"]
 
@@ -14,7 +14,7 @@ readme.workspace = true
 proc-macro = true
 
 [dependencies]
-elfo-macros-impl = { version = "0.2.0-alpha.1", path = "../elfo-macros-impl" }
+elfo-macros-impl = { version = "0.2.0-alpha.2", path = "../elfo-macros-impl" }
 
 proc-macro2 = "1.0.24"
 syn = { version = "2", features = ["parsing", "printing"] }

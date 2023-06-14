@@ -1,6 +1,6 @@
 [package]
 name = "elfo-core"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 description = "The core of the elfo system"
 keywords = ["elfo", "actor", "distributed", "tokio"]
 
@@ -16,7 +16,7 @@ unstable = []
 unstable-stuck-detection = ["dep:thread_local"]
 
 [dependencies]
-elfo-macros = { version = "0.2.0-alpha.1", path = "../elfo-macros" }
+elfo-macros = { version = "0.2.0-alpha.2", path = "../elfo-macros" }
 elfo-utils = { version = "0.2.3", path = "../elfo-utils" }
 
 tokio = { version = "1.16", features = ["rt", "sync", "time", "signal", "macros"] }

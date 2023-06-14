@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.2] - 2023-06-14
 ### Added
 - logger: add `targets` section to the config ([#92]).
 
@@ -451,7 +453,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.1...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.2...HEAD
+[0.2.0-alpha.2]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.1...elfo-v0.2.0-alpha.2
 [0.2.0-alpha.1]: https://github.com/elfo-rs/elfo/compare/elfo-0.2.0-alpha.0...elfo-v0.2.0-alpha.1
 [0.2.0-alpha.0]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.2.0-alpha.0
 [0.1.40]: https://github.com/elfo-rs/elfo/compare/elfo-0.1.39...elfo-0.1.40

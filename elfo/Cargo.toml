@@ -1,6 +1,6 @@
 [package]
 name = "elfo"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 description = "Your next actor system"
 keywords = ["elfo", "actor", "distributed", "tokio"]
 
@@ -27,17 +27,17 @@ unstable = ["elfo-core/unstable", "elfo-telemeter/unstable" ]
 unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.1", path = "../elfo-core" }
-elfo-macros = { version = "0.2.0-alpha.1", path = "../elfo-macros" }
-elfo-test = { version = "0.2.0-alpha.1", path = "../elfo-test", optional = true }
-elfo-configurer = { version = "0.2.0-alpha.1", path = "../elfo-configurer", optional = true }
-elfo-logger = { version = "0.2.0-alpha.1", path = "../elfo-logger", optional = true }
-elfo-telemeter = { version = "0.2.0-alpha.1", path = "../elfo-telemeter", optional = true }
-elfo-dumper = { version = "0.2.0-alpha.1", path = "../elfo-dumper", optional = true }
-elfo-pinger = { version = "0.2.0-alpha.1", path = "../elfo-pinger", optional = true }
+elfo-core = { version = "0.2.0-alpha.2", path = "../elfo-core" }
+elfo-macros = { version = "0.2.0-alpha.2", path = "../elfo-macros" }
+elfo-test = { version = "0.2.0-alpha.2", path = "../elfo-test", optional = true }
+elfo-configurer = { version = "0.2.0-alpha.2", path = "../elfo-configurer", optional = true }
+elfo-logger = { version = "0.2.0-alpha.2", path = "../elfo-logger", optional = true }
+elfo-telemeter = { version = "0.2.0-alpha.2", path = "../elfo-telemeter", optional = true }
+elfo-dumper = { version = "0.2.0-alpha.2", path = "../elfo-dumper", optional = true }
+elfo-pinger = { version = "0.2.0-alpha.2", path = "../elfo-pinger", optional = true }
 
 [dev-dependencies]
-elfo-test = { version = "0.2.0-alpha.1", path = "../elfo-test" }
+elfo-test = { version = "0.2.0-alpha.2", path = "../elfo-test" }
 
 anyhow = "1.0.38"
 futures = "0.3.12"
