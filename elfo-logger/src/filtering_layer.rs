@@ -28,7 +28,7 @@ struct Inner {
 }
 
 #[derive(Clone)]
-pub struct FilteringLayer {
+pub(crate) struct FilteringLayer {
     inner: Arc<Inner>,
 }
 
@@ -71,19 +71,17 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
         }
     }
 
-    fn enabled(&self, meta: &Metadata<'_>, cx: Context<'_, S>) -> bool {
-        let config = self.inner.config.load();
-        let targets_enabled = config.targets.enabled(meta, cx);
-
+    fn enabled(&self, meta: &Metadata<'_>, _cx: Context<'_, S>) -> bool {
+        // We don't need to recheck `.targets` here, because `.register_callsite()`
+        // would already eliminate logs that would be filtered by it.
+        let level = *meta.level();
         scope::try_with(|scope| {
-            let level = *meta.level();
-
             if !scope.permissions().is_logging_enabled(level) {
                 return false;
             }
 
             match scope.logging().check(meta) {
-                CheckResult::Passed => targets_enabled,
+                CheckResult::Passed => true,
                 CheckResult::NotInterested => false,
                 CheckResult::Limited => {
                     stats::counter_per_level("elfo_limited_events_total", level);
@@ -91,7 +89,8 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
                 }
             }
         })
-        .unwrap_or(targets_enabled)
+        // `INFO` is a global cap for non-actor logs.
+        .unwrap_or(level <= LevelFilter::INFO)
     }
 
     // TODO: global max level and `max_level_hint()`.

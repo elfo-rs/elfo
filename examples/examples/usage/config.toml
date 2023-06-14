@@ -23,9 +23,11 @@
 #format.with_location = false
 #format.with_module = false
 #
-# It's possible to override `max_level` for a specific target:
+# It's possible to set `max_level` for a specific target:
 #targets.hyper.max_level = "Trace"
 #targets."hyper::server".max_level = "Warn"
+# Regardless of what's configured here, any `Debug` or `Trace` logs
+# from outside the actor system would be filtered out.
 
 [system.telemeters]
 sink = "Prometheus"

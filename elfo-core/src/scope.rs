@@ -218,14 +218,13 @@ impl ScopeGroupShared {
     pub(crate) fn configure(&self, config: &SystemConfig) {
         // Update the logging subsystem.
         self.logging.configure(&config.logging);
-        let max_level = self.logging.max_level_hint().into_level();
 
         // Update the dumping subsystem.
         self.dumping.configure(&config.dumping);
 
         // Update permissions.
         let mut perm = self.permissions.load();
-        perm.set_logging_enabled(max_level);
+        perm.set_logging_enabled(config.logging.max_level.into());
         perm.set_dumping_enabled(!config.dumping.disabled);
         perm.set_telemetry_per_actor_group_enabled(config.telemetry.per_actor_group);
         perm.set_telemetry_per_actor_key_enabled(config.telemetry.per_actor_key.is_enabled());

@@ -1,37 +1,23 @@
-use std::sync::Arc;
-
-use arc_swap::ArcSwap;
-use tracing::{level_filters::LevelFilter, Level, Metadata};
+use tracing::{Level, Metadata};
 
 use elfo_utils::{CachePadded, RateLimit, RateLimiter};
 
-use super::{config::LoggingConfig, filter::LogFilter};
+use super::config::LoggingConfig;
 
 #[derive(Default)]
 #[stability::unstable]
 pub struct LoggingControl {
-    filter: ArcSwap<LogFilter>,
     limiters: [CachePadded<RateLimiter>; 5],
 }
 
 impl LoggingControl {
     pub(crate) fn configure(&self, config: &LoggingConfig) {
-        self.filter.store(Arc::new(LogFilter::new(config)));
-
         for limiter in &self.limiters {
             limiter.configure(RateLimit::Rps(config.max_rate_per_level));
         }
     }
 
-    pub(crate) fn max_level_hint(&self) -> LevelFilter {
-        self.filter.load().max_level_hint()
-    }
-
     pub fn check(&self, meta: &Metadata<'_>) -> CheckResult {
-        if !self.filter.load().enabled(meta) {
-            return CheckResult::NotInterested;
-        }
-
         let limiter = &self.limiters[log_level_to_value(*meta.level())];
         if limiter.acquire() {
             CheckResult::Passed

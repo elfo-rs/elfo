@@ -53,8 +53,7 @@ struct PreparedEvent {
     payload_id: StringId,
 }
 
-// TODO: revise factory (return also `FilteringLayer` somehow).
-pub fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
+fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
     let shared = Shared {
         channel: GenericChannel::with_capacity(CHANNEL_CAPACITY),
         pool: Pool::default(),

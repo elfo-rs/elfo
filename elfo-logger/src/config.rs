@@ -39,7 +39,7 @@ pub(crate) struct Format {
     // TODO: colors
 }
 
-// REVIEW: deduplicate with core
+// TODO: deduplicate with core
 fn deserialize_level_filter<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
 where
     D: Deserializer<'de>,
