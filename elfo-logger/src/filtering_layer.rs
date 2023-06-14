@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use fxhash::FxHashMap;
 use tracing::{metadata::LevelFilter, subscriber::Interest, Metadata, Subscriber};
 use tracing_subscriber::{
     filter::Targets,
@@ -9,8 +10,9 @@ use tracing_subscriber::{
 
 use elfo_core::{logging::_priv::CheckResult, scope};
 
-use crate::stats;
+use crate::{config::LoggingTargetConfig, stats};
 
+#[derive(PartialEq)]
 struct FilteringConfig {
     targets: Targets,
 }
@@ -18,7 +20,7 @@ struct FilteringConfig {
 impl Default for FilteringConfig {
     fn default() -> Self {
         Self {
-            targets: Targets::new().with_default(LevelFilter::INFO),
+            targets: Targets::new().with_default(LevelFilter::TRACE),
         }
     }
 }
@@ -41,21 +43,20 @@ impl FilteringLayer {
         }
     }
 
-    pub(crate) fn configure(&self, config: &crate::config::Config) {
+    pub(crate) fn configure(&self, targets: &FxHashMap<String, LoggingTargetConfig>) {
         let targets = Targets::new()
             .with_default(LevelFilter::TRACE)
             .with_targets(
-                config
-                    .targets
+                targets
                     .iter()
                     .map(|(target, target_config)| (target, target_config.max_level)),
             );
 
-        self.inner
-            .config
-            .store(Arc::new(FilteringConfig { targets }));
-
-        tracing::callsite::rebuild_interest_cache();
+        let config = Arc::new(FilteringConfig { targets });
+        let old_config = self.inner.config.swap(Arc::clone(&config));
+        if config != old_config {
+            tracing::callsite::rebuild_interest_cache();
+        }
     }
 }
 

@@ -48,7 +48,7 @@ impl Logger {
     }
 
     fn new(ctx: Context<Config>, shared: Arc<Shared>, filtering_layer: FilteringLayer) -> Self {
-        filtering_layer.configure(ctx.config());
+        filtering_layer.configure(&ctx.config().targets);
         Self {
             ctx,
             shared,
@@ -100,7 +100,7 @@ impl Logger {
                         ConfigUpdated => {
                             file = open_file(self.ctx.config()).await;
                             use_colors = can_use_colors(self.ctx.config());
-                            self.filtering_layer.configure(self.ctx.config());
+                            self.filtering_layer.configure(&self.ctx.config().targets);
                         },
                         Terminate => {
                             // TODO: use phases instead of hardcoded delay.
