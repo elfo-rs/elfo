@@ -59,6 +59,7 @@ struct ConnectionAccepted {
 struct ConnectionRejected {
     error: String,
     peer: Transport,
+    retry: bool,
 }
 
 pub(super) struct Discovery {
@@ -172,19 +173,32 @@ impl Discovery {
         );
 
         let node_map = self.node_map.clone();
-        let stream = stream::once(async move {
+        self.ctx.attach(Stream::once(async move {
             let peer = socket.peer.clone();
 
-            accept_connection(socket, msg.role, &node_map.this)
-                .await
-                .map_err(|err| ConnectionRejected {
-                    error: err.to_string(),
+            let result = accept_connection(socket, msg.role, &node_map.this).await;
+            match result {
+                Ok(Some(accepted)) => Ok(accepted),
+                Ok(None) => Err(ConnectionRejected {
+                    error: "node attempted to connect to itself".into(),
                     peer,
-                })
-                .transpose()
-        })
-        .filter_map(|result| async { result });
-        self.ctx.attach(Stream::once_stream(stream));
+                    retry: false,
+                }),
+                Err(err) => {
+                    let error_msg = err.to_string();
+                    warn!(
+                        message = "new connection rejected",
+                        peer = %peer,
+                        error = %error_msg,
+                    );
+                    Err(ConnectionRejected {
+                        error: error_msg,
+                        peer,
+                        retry: true,
+                    })
+                }
+            }
+        }));
     }
 
     async fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
@@ -282,13 +296,8 @@ impl Discovery {
         }
     }
 
-    fn on_connection_rejected(&mut self, msg: ConnectionRejected) {
+    fn on_connection_rejected(&mut self, _msg: ConnectionRejected) {
         // TODO: something else? Retries?
-        warn!(
-            message = "new connection rejected",
-            peer = %msg.peer,
-            error = %msg.error,
-        );
     }
 }
 
@@ -315,7 +324,7 @@ async fn accept_connection(
     );
 
     if node_no == this_node.node_no {
-        debug!(
+        info!(
             message = "connection to self ignored",
             peer = %socket.peer,
         );

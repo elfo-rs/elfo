@@ -147,19 +147,12 @@ impl<M: StreamItem> Stream<M> {
         Self::from_futures03_inner(stream, true, false)
     }
 
-    pub fn once_stream<S>(stream: S) -> UnattachedSource<Self>
-    where
-        S: futures::Stream<Item = M> + Send + 'static,
-    {
-        Self::from_futures03_inner(stream, false, true)
-    }
-
     /// Creates an uattached source based on the provided future.
     pub fn once<F>(future: F) -> UnattachedSource<Self>
     where
         F: Future<Output = M> + Send + 'static,
     {
-        Self::once_stream(stream::once(future))
+        Self::from_futures03_inner(stream::once(future), false, true)
     }
 
     fn from_futures03_inner(
