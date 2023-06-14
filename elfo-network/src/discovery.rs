@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use eyre::{ensure, eyre, Result, WrapErr};
-use futures::{stream, StreamExt};
+use futures::StreamExt;
 use quanta::Instant;
 use tracing::{debug, error, info, warn};
 
