@@ -243,12 +243,6 @@ mod reporter {
                         tracing::info!(?summary, "summary");
                     }
 
-                    tokio::spawn(async {
-                        tracing::debug!("livin' outside the system");
-                    })
-                    .await
-                    .unwrap();
-
                     // How to use metrics.
                     increment_counter!("ticks_total");
                 }
