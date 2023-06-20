@@ -194,7 +194,7 @@ impl<C, K> Context<C, K> {
         if addrs.len() == 1 {
             return match self.book.get(addrs[0]) {
                 Some(object) => object
-                    .try_send(Addr::NULL, envelope)
+                    .try_send(self, Addr::NULL, envelope)
                     .map_err(|err| err.map(e2m)),
                 None => Err(TrySendError::Closed(e2m(envelope))),
             };
@@ -210,7 +210,7 @@ impl<C, K> Context<C, K> {
             let envelope = ward!(envelope, break);
 
             match self.book.get(addr) {
-                Some(object) => match object.try_send(Addr::NULL, envelope) {
+                Some(object) => match object.try_send(self, Addr::NULL, envelope) {
                     Ok(()) => success = true,
                     Err(err) => {
                         has_full |= err.is_full();
@@ -414,7 +414,7 @@ impl<C, K> Context<C, K> {
         let envelope = Envelope::new(message, kind);
 
         object
-            .try_send(recipient, envelope.upcast())
+            .try_send(self, recipient, envelope.upcast())
             .map_err(|err| err.map(e2m))
     }
 

@@ -144,7 +144,8 @@ impl Addr {
     }
 }
 
-pub(crate) struct SlabConfig;
+// Actually, it doesn't reexported.
+pub struct SlabConfig;
 
 #[cfg(target_pointer_width = "64")]
 impl sharded_slab::Config for SlabConfig {

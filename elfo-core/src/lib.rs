@@ -84,6 +84,7 @@ pub mod _priv {
         },
         init::do_start,
         message::{AnyMessage, MessageVTable, MESSAGE_LIST},
+        object::{GroupVisitor, ObjectArc},
         permissions::{AtomicPermissions, Permissions},
     };
     pub use linkme;

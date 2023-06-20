@@ -1,10 +1,13 @@
 use std::{fmt::Debug, future::Future, marker::PhantomData, sync::Arc};
 
+use futures::future::BoxFuture;
+
 use crate::{
     config::Config,
     context::Context,
-    exec::ExecResult,
-    object::{Group, Object},
+    envelope::Envelope,
+    exec::{Exec, ExecResult},
+    object::{GroupHandle, GroupVisitor, Object},
     routers::Router,
     runtime::RuntimeManager,
     supervisor::Supervisor,
@@ -82,13 +85,29 @@ impl<R, C> ActorGroup<R, C> {
                 self.termination_policy,
                 rt_manager,
             ));
-            let sv1 = sv.clone();
-            let router = Box::new(move |envelope| sv.handle(envelope));
-            let finished = Box::new(move || sv1.finished());
-            Object::new(addr, Group::new(router, finished))
+
+            Object::new(addr, Box::new(Handle(sv)) as Box<dyn GroupHandle>)
         };
 
         Blueprint { run: Box::new(run) }
+    }
+}
+
+struct Handle<R: Router<C>, C, X>(Arc<Supervisor<R, C, X>>);
+
+impl<R, C, X> GroupHandle for Handle<R, C, X>
+where
+    R: Router<C>,
+    X: Exec<Context<C, R::Key>>,
+    <X::Output as Future>::Output: ExecResult,
+    C: Config,
+{
+    fn handle(&self, envelope: Envelope, visitor: &mut dyn GroupVisitor) {
+        self.0.handle(envelope, visitor)
+    }
+
+    fn finished(&self) -> BoxFuture<'static, ()> {
+        self.0.finished()
     }
 }
 
