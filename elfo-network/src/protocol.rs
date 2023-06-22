@@ -11,6 +11,7 @@ pub(crate) struct HandleConnection {
     pub(crate) socket: MoveOwnership<Socket>,
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
+    // TODO: different windows for rx/tx and routed flows.
 }
 
 pub(crate) mod internode {
@@ -76,6 +77,7 @@ pub(crate) mod internode {
         pub(crate) your_group_no: GroupNo,
         /// Initial window size for every flow.
         pub(crate) initial_window: i32,
+        // TODO: different windows for rx/tx and routed flows.
     }
 
     #[message]
@@ -109,7 +111,7 @@ mod sendable_addr {
     use super::*;
 
     pub(super) fn serialize<S: Serializer>(addr: &Addr, serializer: S) -> Result<S::Ok, S::Error> {
-        debug_assert!(addr.is_remote());
+        debug_assert!(!addr.is_local());
         addr.into_bits().serialize(serializer)
     }
 
@@ -118,7 +120,7 @@ mod sendable_addr {
     ) -> Result<Addr, D::Error> {
         let bits = u64::deserialize(deserializer)?;
         let addr = Addr::from_bits(bits);
-        debug_assert!(addr.is_remote());
+        debug_assert!(!addr.is_local());
         Ok(addr)
     }
 }

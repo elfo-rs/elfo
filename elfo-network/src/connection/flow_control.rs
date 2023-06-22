@@ -69,17 +69,20 @@ pub(super) struct RxFlowControl {
 impl RxFlowControl {
     /// Creates a new controller with the given initial window.
     pub(super) fn new(initial: i32) -> Self {
-        assert!(initial > 0, "negative initial window");
+        assert!(initial >= 0, "initial window must be non-negative");
         Self {
             tx_window: initial,
             rx_window: initial,
         }
     }
 
-    /// Decreases the window by 1.
-    /// Called when a message is received.
-    pub(super) fn do_acquire(&mut self) {
-        self.tx_window = self.tx_window.checked_sub(1).expect("window underflow");
+    /// Decreases the window by 1. Called when a message is received.
+    /// `tx_knows = true` means the sender knew the address of an actor and
+    /// decreased its window, otherwise it used the routing subsystem.
+    pub(super) fn do_acquire(&mut self, tx_knows: bool) {
+        if tx_knows {
+            self.tx_window = self.tx_window.checked_sub(1).expect("window underflow");
+        }
         self.rx_window = self.rx_window.checked_sub(1).expect("window underflow");
     }
 
@@ -87,9 +90,13 @@ impl RxFlowControl {
     // Returns `Some(delta)` if the window update should be sent to the sender.
     pub(super) fn release(&mut self) -> Option<i32> {
         self.rx_window = self.rx_window.checked_add(1).expect("window overflow");
-        debug_assert!(self.rx_window > self.tx_window);
 
         if self.rx_window <= 0 {
+            return None;
+        }
+
+        if self.tx_window >= self.rx_window {
+            // TODO: send a negative window delta if the difference is too big.
             return None;
         }
 
@@ -113,7 +120,7 @@ mod tests {
 
     #[test]
     fn tx_flow_control() {
-        let mut fc = TxFlowControl::new(2);
+        let fc = TxFlowControl::new(2);
         assert!(fc.try_acquire());
         assert!(fc.try_acquire());
         assert!(!fc.try_acquire());
@@ -139,7 +146,7 @@ mod tests {
         let mut fc = RxFlowControl::new(1000);
         let total = 1000;
         let sent = (0..total).fold(0, |sent, _| {
-            fc.do_acquire();
+            fc.do_acquire(true);
             sent + u32::from(fc.release().is_some())
         });
         let ratio = sent as f64 / total as f64;

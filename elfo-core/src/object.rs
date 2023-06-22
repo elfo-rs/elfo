@@ -44,12 +44,14 @@ impl Object {
         }
     }
 
-    pub(crate) fn addr(&self) -> Addr {
+    #[stability::unstable]
+    pub fn addr(&self) -> Addr {
         self.addr
     }
 
     // TODO: pass `&mut Option<(Addr, Envelope)>` to avoid extra moves.
-    pub(crate) async fn send<C, K>(
+    #[stability::unstable]
+    pub async fn send<C, K>(
         &self,
         ctx: &Context<C, K>,
         recipient: Addr,
@@ -79,7 +81,8 @@ impl Object {
         }
     }
 
-    pub(crate) fn try_send<C, K>(
+    #[stability::unstable]
+    pub fn try_send<C, K>(
         &self,
         ctx: &Context<C, K>,
         recipient: Addr,
@@ -95,6 +98,15 @@ impl Object {
             #[cfg(feature = "network")]
             ObjectKind::Remote(handle) => handle.try_send(recipient, envelope),
         }
+    }
+
+    #[stability::unstable]
+    pub fn visit_group(&self, envelope: Envelope, visitor: &mut dyn GroupVisitor) {
+        let ObjectKind::Group(handle) = &self.kind else {
+            panic!("route() called on a non-group object");
+        };
+
+        handle.handle(envelope, visitor);
     }
 
     pub(crate) fn as_actor(&self) -> Option<&Actor> {

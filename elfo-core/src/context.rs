@@ -353,9 +353,7 @@ impl<C, K> Context<C, K> {
         self.do_send_to(recipient, message, kind).await
     }
 
-    #[doc(hidden)]
-    #[stability::unstable]
-    pub async fn do_send_to<M: Message>(
+    async fn do_send_to<M: Message>(
         &self,
         recipient: Addr,
         message: M,
@@ -737,7 +735,9 @@ impl<C, K> Context<C, K> {
         }
     }
 
-    pub(crate) fn book(&self) -> &AddressBook {
+    #[doc(hidden)]
+    #[stability::unstable]
+    pub fn book(&self) -> &AddressBook {
         &self.book
     }
 

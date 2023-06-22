@@ -118,7 +118,9 @@ impl Envelope {
 
     // XXX: why does `Envelope` know about `AddressBook`?
     // TODO: avoid `None` here?
-    pub(crate) fn duplicate(&self, book: &AddressBook) -> Option<Self> {
+    #[doc(hidden)]
+    #[stability::unstable]
+    pub fn duplicate(&self, book: &AddressBook) -> Option<Self> {
         Some(Self {
             created_time: self.created_time,
             trace_id: self.trace_id,

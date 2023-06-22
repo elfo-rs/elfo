@@ -79,12 +79,13 @@ pub mod _priv {
     }
 
     pub use crate::{
+        address_book::AddressBook,
         envelope::{
             AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned, MessageKind,
         },
         init::do_start,
         message::{AnyMessage, MessageVTable, MESSAGE_LIST},
-        object::{GroupVisitor, ObjectArc},
+        object::{GroupVisitor, Object, ObjectArc},
         permissions::{AtomicPermissions, Permissions},
     };
     pub use linkme;

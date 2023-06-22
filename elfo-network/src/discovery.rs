@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Initial window size of every flow.
-/// TODO: should be mailbox limit.
+/// TODO: should be different for groups and actors.
 const INITIAL_WINDOW_SIZE: i32 = 100_000;
 
 #[message]

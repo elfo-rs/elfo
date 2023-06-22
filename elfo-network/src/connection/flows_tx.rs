@@ -1,5 +1,3 @@
-use std::sync::atomic::{AtomicI32, Ordering};
-
 use dashmap::DashMap;
 use fxhash::FxBuildHasher;
 use tracing::{debug, warn};
@@ -15,8 +13,9 @@ use crate::protocol::internode;
 
 #[derive(Default)]
 pub(super) struct TxFlows {
+    // remote or null addr => flow data
     map: DashMap<Addr, TxFlow, FxBuildHasher>,
-    initial_window: AtomicI32,
+    initial_window: i32,
 }
 
 struct TxFlow {
@@ -37,11 +36,20 @@ pub(super) enum Acquire {
 }
 
 impl TxFlows {
-    pub(super) fn configure(&self, initial_window: i32) {
-        self.initial_window.store(initial_window, Ordering::Relaxed);
+    pub(super) fn new(initial_window: i32) -> Self {
+        let this = Self {
+            map: Default::default(),
+            initial_window,
+        };
+
+        // A flow for the group is always present.
+        this.add_flow_if_needed(Addr::NULL);
+        this
     }
 
     pub(super) fn acquire(&self, addr: Addr) -> Acquire {
+        debug_assert!(!addr.is_local());
+
         let Some(flow) = self.map.get(&addr) else { return Acquire::Closed };
 
         if flow.control.try_acquire() {
@@ -55,6 +63,8 @@ impl TxFlows {
     }
 
     pub(super) fn try_acquire(&self, addr: Addr) -> TryAcquire {
+        debug_assert!(!addr.is_local());
+
         let Some(flow) = self.map.get(&addr) else { return TryAcquire::Closed };
 
         if flow.control.try_acquire() {
@@ -65,6 +75,8 @@ impl TxFlows {
     }
 
     pub(super) fn do_acquire(&self, addr: Addr) -> bool {
+        debug_assert!(!addr.is_local());
+
         let Some(flow) = self.map.get(&addr) else { return false };
 
         flow.control.do_acquire();
@@ -72,13 +84,14 @@ impl TxFlows {
     }
 
     pub(super) fn add_flow_if_needed(&self, addr: Addr) {
+        debug_assert!(!addr.is_local());
+
         if likely(self.map.contains_key(&addr)) {
             return;
         }
 
-        let initial_window = self.initial_window.load(Ordering::Relaxed);
         self.map.entry(addr).or_insert_with(|| {
-            let control = TxFlowControl::new(initial_window);
+            let control = TxFlowControl::new(self.initial_window);
             TxFlow {
                 control,
                 waiters: SendNotify::default(),

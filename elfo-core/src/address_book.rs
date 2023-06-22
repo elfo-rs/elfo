@@ -77,6 +77,7 @@ impl fmt::Display for Addr {
 }
 
 impl Addr {
+    // TODO: make `0`
     pub const NULL: Addr = Addr(0x0000_ffff_ffff_ffff);
 
     fn new_local(slot_addr: usize, group_no: GroupNo) -> Self {
@@ -95,16 +96,19 @@ impl Addr {
         self.0
     }
 
-    #[stability::unstable]
     #[inline]
-    pub fn is_local(self) -> bool {
-        self.node_no() == node::LOCAL_NODE_NO
+    pub fn is_null(self) -> bool {
+        self == Self::NULL
     }
 
-    #[stability::unstable]
+    #[inline]
+    pub fn is_local(self) -> bool {
+        !self.is_null() && self.node_no() == node::LOCAL_NODE_NO
+    }
+
     #[inline]
     pub fn is_remote(self) -> bool {
-        !self.is_local()
+        !self.is_null() && self.node_no() != node::LOCAL_NODE_NO
     }
 
     #[stability::unstable]
@@ -130,7 +134,7 @@ impl Addr {
     #[stability::unstable]
     #[inline]
     pub fn into_remote(self) -> Self {
-        if self != Self::NULL && self.node_no() == node::LOCAL_NODE_NO {
+        if self.is_local() {
             Self(self.0 | u64::from(node::node_no()) << 48)
         } else {
             self
@@ -167,8 +171,9 @@ impl sharded_slab::Config for SlabConfig {
 #[cfg(target_pointer_width = "32")]
 const_assert_eq!(Slab::<Object, SlabConfig>::USED_BITS, 32);
 
+// Reexported in `_priv`.
 #[derive(Clone)]
-pub(crate) struct AddressBook {
+pub struct AddressBook {
     local: Arc<Slab<Object, SlabConfig>>,
     #[cfg(feature = "network")]
     remote: Arc<RemoteToHandleMap>, // TODO: use `arc_swap::cache::Cache` in TLS?
@@ -200,7 +205,7 @@ impl AddressBook {
         self.remote.insert(local_group, remote_group, handle_addr);
     }
 
-    pub(crate) fn get(&self, mut addr: Addr) -> Option<ObjectRef<'_>> {
+    pub fn get(&self, mut addr: Addr) -> Option<ObjectRef<'_>> {
         #[cfg(feature = "network")]
         if addr.is_remote() {
             addr = self.remote.get(addr)?;
@@ -209,7 +214,7 @@ impl AddressBook {
         self.local.get(addr.into_bits() as usize)
     }
 
-    pub(crate) fn get_owned(&self, mut addr: Addr) -> Option<ObjectArc> {
+    pub fn get_owned(&self, mut addr: Addr) -> Option<ObjectArc> {
         #[cfg(feature = "network")]
         if addr.is_remote() {
             addr = self.remote.get(addr)?;
