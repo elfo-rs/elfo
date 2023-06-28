@@ -12,7 +12,7 @@ use crate::{
     config::AnyConfig,
     demux::Demux,
     dumping::{Direction, Dump, Dumper, INTERNAL_CLASS},
-    envelope::{Envelope, MessageKind},
+    envelope::{AnyMessageBorrowed, AnyMessageOwned, Envelope, EnvelopeOwned, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     group::RestartPolicy,
     mailbox::RecvResult,
@@ -194,7 +194,7 @@ impl<C, K> Context<C, K> {
         if addrs.len() == 1 {
             return match self.book.get(addrs[0]) {
                 Some(object) => object
-                    .try_send(self, Addr::NULL, envelope)
+                    .try_send(Addr::NULL, envelope)
                     .map_err(|err| err.map(e2m)),
                 None => Err(TrySendError::Closed(e2m(envelope))),
             };
@@ -204,13 +204,9 @@ impl<C, K> Context<C, K> {
         let mut has_full = false;
         let mut success = false;
 
-        // TODO: use the visitor pattern in order to avoid extra cloning.
-        for addr in addrs {
-            let envelope = unused.take().or_else(|| envelope.duplicate(&self.book));
-            let envelope = ward!(envelope, break);
-
+        for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
             match self.book.get(addr) {
-                Some(object) => match object.try_send(self, Addr::NULL, envelope) {
+                Some(object) => match object.try_send(Addr::NULL, envelope) {
                     Ok(()) => success = true,
                     Err(err) => {
                         has_full |= err.is_full();
@@ -224,9 +220,9 @@ impl<C, K> Context<C, K> {
         if success {
             Ok(())
         } else if has_full {
-            Err(TrySendError::Full(e2m(envelope)))
+            Err(TrySendError::Full(e2m(unused.unwrap())))
         } else {
-            Err(TrySendError::Closed(e2m(envelope)))
+            Err(TrySendError::Closed(e2m(unused.unwrap())))
         }
     }
 
@@ -297,12 +293,8 @@ impl<C, K> Context<C, K> {
         let mut unused = None;
         let mut success = false;
 
-        // TODO: use the visitor pattern in order to avoid extra cloning.
         // TODO: send concurrently.
-        for addr in addrs {
-            let envelope = unused.take().or_else(|| envelope.duplicate(&self.book));
-            let envelope = ward!(envelope, break);
-
+        for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
             match self.book.get_owned(addr) {
                 Some(object) => {
                     unused = object
@@ -321,7 +313,7 @@ impl<C, K> Context<C, K> {
         if success {
             Ok(())
         } else {
-            Err(SendError(e2m(envelope)))
+            Err(SendError(e2m(unused.unwrap())))
         }
     }
 
@@ -412,7 +404,7 @@ impl<C, K> Context<C, K> {
         let envelope = Envelope::new(message, kind);
 
         object
-            .try_send(self, recipient, envelope.upcast())
+            .try_send(recipient, envelope.upcast())
             .map_err(|err| err.map(e2m))
     }
 
@@ -432,26 +424,24 @@ impl<C, K> Context<C, K> {
             return;
         }
 
-        let sender = token.sender;
+        let token = token.into_untyped();
+        let recipient = token.sender();
         let message = R::Wrapper::from(message);
         self.stats.on_sent_message(&message);
 
         let kind = MessageKind::Response {
             sender: self.addr(),
-            request_id: token.request_id,
+            request_id: token.request_id(),
         };
 
-        trace!(to = %sender, "> {:?}", message);
+        trace!(to = %recipient, "> {:?}", message);
         if let Some(permit) = DUMPER.acquire_m(&message) {
             permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
         let envelope = Envelope::new(message, kind).upcast();
-        let object = ward!(self.book.get(token.sender));
-        let actor = ward!(object.as_actor());
-        actor
-            .request_table()
-            .respond(token.into_untyped(), envelope);
+        let object = ward!(self.book.get(recipient));
+        object.respond(token, Ok(envelope));
     }
 
     /// Receives the next envelope from the mailbox or sources.
@@ -788,7 +778,10 @@ impl<C, K> Context<C, K> {
 }
 
 fn e2m<M: Message>(envelope: Envelope) -> M {
-    envelope.do_downcast::<M>().into_message()
+    envelope
+        .unpack_regular()
+        .downcast()
+        .expect("invalid message")
 }
 
 #[cold]
@@ -798,6 +791,26 @@ fn on_input_closed(stage: &mut Stage, actor: &Actor) {
     }
     *stage = Stage::Closed;
     trace!("input closed");
+}
+
+fn addrs_with_envelope(
+    envelope: Envelope,
+    addrs: &[Addr],
+) -> impl Iterator<Item = (Addr, Envelope)> + '_ {
+    let mut envelope = Some(envelope);
+
+    // TODO: use the visitor pattern in order to avoid extra cloning,
+    //       but think about response tokens first.
+    addrs.iter().enumerate().map(move |(i, addr)| {
+        (
+            *addr,
+            if i + 1 == addrs.len() {
+                envelope.take().unwrap()
+            } else {
+                envelope.as_ref().unwrap().duplicate()
+            },
+        )
+    })
 }
 
 impl Context {
@@ -881,15 +894,16 @@ impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
 // TODO: add `pub async fn id() { ... }`
 impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     /// Waits for the response.
-    pub async fn resolve(self) -> Result<R::Response, RequestError<R>> {
+    pub async fn resolve(self) -> Result<R::Response, RequestError> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.actor_addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor
-            .request_table()
-            .new_request(self.context.book.clone(), false);
-        let request_id = token.request_id;
+        let token =
+            actor
+                .request_table()
+                .new_request(self.context.book.clone(), scope::trace_id(), false);
+        let request_id = token.request_id();
         let kind = MessageKind::RequestAny(token);
 
         let res = if let Some(recipient) = self.to {
@@ -898,40 +912,29 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
             self.context.do_send(self.request, kind).await
         };
 
-        if let Err(err) = res {
-            return Err(RequestError::Closed(err.0));
+        if res.is_err() {
+            actor.request_table().cancel_request(request_id);
+            return Err(RequestError::Failed);
         }
 
-        let mut data = actor.request_table().wait(request_id).await;
-        if let Some(Some(envelope)) = data.pop() {
-            let envelope = envelope.do_downcast::<R::Wrapper>();
-
-            // TODO: increase a counter.
-            let message = envelope.message();
-            trace!("< {:?}", message);
-            if let Some(permit) = DUMPER.acquire_m(message) {
-                let kind = envelope.message_kind();
-                permit.record(Dump::message(message, kind, Direction::In));
-            }
-            Ok(envelope.into_message().into())
-        } else {
-            // TODO: should we dump it and increase a counter?
-            Err(RequestError::Ignored)
-        }
+        let mut responses = actor.request_table().wait(request_id).await;
+        debug_assert_eq!(responses.len(), 1);
+        prepare_response::<R>(responses.pop().expect("missing response"))
     }
 }
 
 impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
     /// Waits for the responses.
-    pub async fn resolve(self) -> Vec<Result<R::Response, RequestError<R>>> {
+    pub async fn resolve(self) -> Vec<Result<R::Response, RequestError>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.actor_addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token = actor
-            .request_table()
-            .new_request(self.context.book.clone(), true);
-        let request_id = token.request_id;
+        let token =
+            actor
+                .request_table()
+                .new_request(self.context.book.clone(), scope::trace_id(), true);
+        let request_id = token.request_id();
         let kind = MessageKind::RequestAll(token);
 
         let res = if let Some(recipient) = self.to {
@@ -940,8 +943,9 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
             self.context.do_send(self.request, kind).await
         };
 
-        if let Err(err) = res {
-            return vec![Err(RequestError::Closed(err.0))];
+        if res.is_err() {
+            actor.request_table().cancel_request(request_id);
+            return vec![Err(RequestError::Failed)];
         }
 
         actor
@@ -949,24 +953,23 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
             .wait(request_id)
             .await
             .into_iter()
-            .map(|opt| match opt {
-                Some(envelope) => Ok(envelope.do_downcast::<R::Wrapper>()),
-                None => Err(RequestError::Ignored),
-            })
-            .map(|res| {
-                let envelope = res?;
-
-                // TODO: increase a counter.
-                let message = envelope.message();
-                trace!("< {:?}", message);
-
-                // TODO: `acquire_many` or even unconditionally?
-                if let Some(permit) = DUMPER.acquire_m(message) {
-                    let kind = envelope.message_kind();
-                    permit.record(Dump::message(message, kind, Direction::In));
-                }
-                Ok(envelope.into_message().into())
-            })
+            .map(prepare_response::<R>)
             .collect()
     }
+}
+
+fn prepare_response<R: Request>(
+    response: Result<Envelope, RequestError>,
+) -> Result<R::Response, RequestError> {
+    let envelope = response?;
+    let message = envelope.message().downcast2::<R::Wrapper>();
+
+    // TODO: increase a counter.
+    trace!("< {:?}", message);
+    if let Some(permit) = DUMPER.acquire_m(message) {
+        let kind = envelope.message_kind();
+        permit.record(Dump::message(message, kind, Direction::In));
+    }
+
+    Ok(envelope.unpack_regular().downcast2::<R::Wrapper>().into())
 }

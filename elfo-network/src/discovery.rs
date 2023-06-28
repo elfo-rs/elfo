@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use eyre::{ensure, eyre, Result, WrapErr};
+use eyre::{bail, eyre, Result, WrapErr};
 use futures::StreamExt;
 use quanta::Instant;
 use tracing::{debug, error, info, warn};
@@ -11,7 +11,7 @@ use elfo_core::{
 };
 
 use crate::{
-    codec::{NetworkEnvelope, NetworkMessageKind},
+    codec::{NetworkEnvelope, NetworkEnvelopePayload},
     config::Transport,
     node_map::{LaunchId, NodeInfo, NodeMap},
     protocol::{
@@ -413,8 +413,9 @@ async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
         sender: Addr::NULL,    // doesn't matter
         recipient: Addr::NULL, // doesn't matter
         trace_id: scope::trace_id(),
-        kind: NetworkMessageKind::Regular,
-        message: msg.upcast(),
+        payload: NetworkEnvelopePayload::Regular {
+            message: msg.upcast(),
+        },
     };
 
     socket
@@ -432,16 +433,16 @@ async fn recv(socket: &mut Socket) -> Result<Envelope> {
         .wrap_err("cannot receive a message")?
         .ok_or_else(|| eyre!("connection closed before receiving any messages"))?;
 
-    ensure!(
-        matches!(envelope.kind, NetworkMessageKind::Regular),
-        "unexpected message kind"
-    );
+    let message = match envelope.payload {
+        NetworkEnvelopePayload::Regular { message } => message,
+        _ => bail!("unexpected message kind"),
+    };
 
     // TODO: should we skip changing here if it's an initiator?
     scope::set_trace_id(envelope.trace_id);
 
     Ok(Envelope::new(
-        envelope.message,
+        message,
         MessageKind::Regular {
             sender: envelope.sender,
         },

@@ -2,27 +2,28 @@ use std::sync::Arc;
 
 use eyre::Result;
 use parking_lot::Mutex;
-use tracing::{debug, error};
+use tracing::{debug, error, trace, warn};
 
 use elfo_core::{
     message, Local, Message,
-    _priv::{GroupVisitor, MessageKind, Object, ObjectArc},
-    errors::{SendError, TrySendError},
+    _priv::{EnvelopeOwned, GroupVisitor, MessageKind, Object, ObjectArc},
+    errors::{RequestError, SendError, TrySendError},
     messages::Impossible,
     msg,
     node::NodeNo,
     remote, scope,
     stream::Stream,
-    Addr, Context, Envelope, GroupNo, Topology, UnattachedSource,
+    Addr, Context, Envelope, GroupNo, ResponseToken, Topology,
 };
-use elfo_utils::unlikely;
+use elfo_utils::{likely, unlikely};
 
 use self::{
     flows_rx::RxFlows,
     flows_tx::{Acquire, TryAcquire, TxFlows},
+    requests::OutgoingRequests,
 };
 use crate::{
-    codec::{NetworkEnvelope, NetworkMessageKind},
+    codec::{NetworkEnvelope, NetworkEnvelopePayload},
     protocol::{internode, HandleConnection},
     socket::{ReadHalf, WriteHalf},
     NetworkContext,
@@ -31,6 +32,7 @@ use crate::{
 mod flow_control;
 mod flows_rx;
 mod flows_tx;
+mod requests;
 
 // TODO: send `CloseFlow` once an actor is closed, not only on incoming message.
 
@@ -71,6 +73,7 @@ impl Connection {
 
         let tx_flows = Arc::new(TxFlows::new(first_message.initial_window));
         let rx_flows = Arc::new(Mutex::new(RxFlows::new(first_message.initial_window)));
+        let requests = Arc::new(Mutex::new(OutgoingRequests::default()));
         let socket = first_message.socket.take().unwrap();
 
         // Register `RemoteHandle`. Now we can receive messages from local groups.
@@ -87,8 +90,12 @@ impl Connection {
         );
 
         // Start handling local incoming messages.
-        self.ctx
-            .attach(make_local_rx_handler(local_rx, socket.write));
+        let sw = SocketWriter {
+            rx: local_rx,
+            tx: socket.write,
+            requests: requests.clone(),
+        };
+        self.ctx.attach(Stream::once(sw.exec()));
 
         // Start handling network incoming messages.
         let sr = SocketReader {
@@ -103,6 +110,7 @@ impl Connection {
             tx: local_tx.clone(),
             tx_flows: tx_flows.clone(),
             rx_flows: rx_flows.clone(),
+            requests,
         };
         self.ctx.attach(Stream::once(sr.exec()));
 
@@ -128,58 +136,131 @@ impl Connection {
     }
 }
 
-fn make_local_rx_handler(
-    rx: kanal::AsyncReceiver<(Addr, Envelope)>,
-    mut tx: WriteHalf,
-) -> UnattachedSource<Stream<Impossible>> {
-    // We should write messages as many as possible at once to have better
-    // compression rate and reduce the number of system calls.
-    // On the other hand, we should minimize the time which every message is unsent.
-    // Thus, we should find a balance between these two factors, some trade-off.
-    // The current strategy is to send all available messages and then forcibly
-    // flush intermediate buffers to the socket.
-    //
-    // Also, tokio implements budget on sockets, so this subtask sometimes returns
-    // the execution back to the runtime even in case of a full incoming queue.
-    Stream::once(async move {
+// === SocketWriter ===
+
+/// A subtask that handles incoming messages from local actors and writes them
+/// to the socket.
+struct SocketWriter {
+    rx: kanal::AsyncReceiver<KanalItem>,
+    tx: WriteHalf,
+    requests: Arc<Mutex<OutgoingRequests>>,
+}
+
+impl SocketWriter {
+    async fn exec(mut self) -> Impossible {
+        // We should write messages as many as possible at once to have better
+        // compression rate and reduce the number of system calls.
+        // On the other hand, we should minimize the time which every message is unsent.
+        // Thus, we should find a balance between these two factors, some trade-off.
+        // The current strategy is to send all available messages and then forcibly
+        // flush intermediate buffers to the socket. So, frames besides the last
+        // one (before the channel is empty) are complete.
+        //
+        // TODO: tokio implements budget on sockets, so this subtask sometimes returns
+        // the execution back to the runtime even in case of a full incoming queue.
+        // We should use `tokio::task::unconstrained()` here and preempt the (sub)task
+        // after sending each batch of messages.
         loop {
             // TODO: trace_id (?), error handling, metrics.
-            let (mut recipient, mut envelope) = rx.recv().await.unwrap();
+            let mut item = self.rx.recv().await.unwrap();
             loop {
-                let network_envelope = NetworkEnvelope {
-                    sender: envelope.sender(),
-                    recipient,
-                    trace_id: envelope.trace_id(),
-                    kind: match envelope.message_kind() {
-                        MessageKind::Regular { .. } => NetworkMessageKind::Regular,
-                        _ => todo!(),
-                    },
-                    message: envelope.into_message(),
-                };
+                let network_envelope = self.make_network_envelope(item);
 
                 // This call can actually write to the socket if the buffer is full.
-                tx.send(network_envelope).await.unwrap();
-                (recipient, envelope) = ward!(rx.try_recv().unwrap(), break);
+                self.tx.send(network_envelope).await.unwrap();
+                item = ward!(self.rx.try_recv().unwrap(), break);
             }
 
             // Forcibly write to the socket remaining data in the buffer, because
             // we don't know how long we'll wait for the next message.
-            tx.flush().await.unwrap();
+            self.tx.flush().await.unwrap();
         }
-    })
+    }
+
+    fn make_network_envelope(&mut self, item: KanalItem) -> NetworkEnvelope {
+        let (sender, trace_id, payload) = match (item.envelope, item.token) {
+            (Ok(envelope), None) => {
+                let sender = envelope.sender();
+                let trace_id = envelope.trace_id();
+
+                let payload = match envelope.message_kind() {
+                    MessageKind::Regular { .. } => NetworkEnvelopePayload::Regular {
+                        message: envelope.unpack_regular(),
+                    },
+                    MessageKind::RequestAny(_) => {
+                        let (message, token) = envelope.unpack_request();
+                        let request_id = token.request_id();
+                        self.requests.lock().add_token(token);
+                        NetworkEnvelopePayload::RequestAny {
+                            request_id,
+                            message,
+                        }
+                    }
+                    MessageKind::RequestAll(_) => {
+                        let (message, token) = envelope.unpack_request();
+                        let request_id = token.request_id();
+                        self.requests.lock().add_token(token);
+                        NetworkEnvelopePayload::RequestAll {
+                            request_id,
+                            message,
+                        }
+                    }
+                    MessageKind::Response { .. } => unreachable!(),
+                };
+
+                (sender, trace_id, payload)
+            }
+            (Ok(envelope), Some(token)) => {
+                let sender = envelope.sender();
+                let trace_id = envelope.trace_id();
+
+                let payload = match envelope.message_kind() {
+                    MessageKind::Response { request_id, .. } => {
+                        debug_assert_eq!(*request_id, token.request_id());
+                        NetworkEnvelopePayload::Response {
+                            request_id: *request_id,
+                            message: Ok(envelope.unpack_regular()),
+                            is_last: token.is_last(),
+                        }
+                    }
+                    _ => unreachable!(),
+                };
+
+                (sender, trace_id, payload)
+            }
+            (Err(err), Some(token)) => (
+                Addr::NULL,
+                token.trace_id(),
+                NetworkEnvelopePayload::Response {
+                    request_id: token.request_id(),
+                    message: Err(err),
+                    is_last: token.is_last(),
+                },
+            ),
+            (Err(_), None) => unreachable!(),
+        };
+
+        NetworkEnvelope {
+            sender,
+            recipient: item.recipient,
+            trace_id,
+            payload,
+        }
+    }
 }
 
 // === SocketReader ===
 
 /// A subtask that reads messages from the socket and routes them to local
-/// groups.
+/// groups. If some messages cannot be sent right now, the pusher is spawned.
 struct SocketReader {
     ctx: Context,
     group_addr: Addr,
     rx: ReadHalf,
-    tx: kanal::AsyncSender<(Addr, Envelope)>,
+    tx: kanal::AsyncSender<KanalItem>,
     tx_flows: Arc<TxFlows>,
     rx_flows: Arc<Mutex<RxFlows>>,
+    requests: Arc<Mutex<OutgoingRequests>>,
 }
 
 impl SocketReader {
@@ -188,18 +269,8 @@ impl SocketReader {
         while let Some(network_envelope) = self.rx.recv().await.unwrap() {
             scope::set_trace_id(network_envelope.trace_id);
 
-            assert!(
-                matches!(network_envelope.kind, NetworkMessageKind::Regular),
-                "only regular messages are supported for now"
-            );
-
-            let envelope = Envelope::with_trace_id(
-                network_envelope.message,
-                MessageKind::Regular {
-                    sender: network_envelope.sender,
-                },
-                network_envelope.trace_id,
-            );
+            let (sender, recipient) = (network_envelope.sender, network_envelope.recipient);
+            let envelope = ward!(self.make_envelope(network_envelope), continue);
 
             // System messages have a special handling.
             if unlikely(self.handle_system_message(&envelope)) {
@@ -207,17 +278,98 @@ impl SocketReader {
             }
 
             // Recipients can respond to the sender, so we should add a flow.
-            self.tx_flows.add_flow_if_needed(network_envelope.sender);
+            self.tx_flows.add_flow_if_needed(sender);
 
             // `NULL` means we should route to the group.
-            if network_envelope.recipient == Addr::NULL {
+            if recipient == Addr::NULL {
                 self.handle_routed_message(envelope);
             } else {
-                self.handle_direct_message(network_envelope.recipient, envelope);
+                self.handle_direct_message(recipient, envelope);
             }
         }
 
         todo!()
+    }
+
+    fn make_envelope(&self, network_envelope: NetworkEnvelope) -> Option<Envelope> {
+        let (message, message_kind) = match network_envelope.payload {
+            NetworkEnvelopePayload::Regular { message } => (
+                message,
+                MessageKind::Regular {
+                    sender: network_envelope.sender,
+                },
+            ),
+            NetworkEnvelopePayload::RequestAny {
+                request_id,
+                message,
+            } => {
+                let token = ResponseToken::new(
+                    network_envelope.sender,
+                    request_id,
+                    network_envelope.trace_id,
+                    self.ctx.book().clone(),
+                );
+                (message, MessageKind::RequestAny(token))
+            }
+            NetworkEnvelopePayload::RequestAll {
+                request_id,
+                message,
+            } => {
+                let token = ResponseToken::new(
+                    network_envelope.sender,
+                    request_id,
+                    network_envelope.trace_id,
+                    self.ctx.book().clone(),
+                );
+                (message, MessageKind::RequestAll(token))
+            }
+            NetworkEnvelopePayload::Response {
+                request_id,
+                message,
+                is_last,
+            } => {
+                let sender = network_envelope.sender;
+                let trace_id = network_envelope.trace_id;
+                let recipient = network_envelope.recipient;
+
+                let Some(token) = self.requests.lock().get_token(recipient, request_id, is_last) else {
+                    warn!(
+                        message = "received response to unknown request",
+                        recipient = %recipient,
+                        request_id = ?request_id,
+                        is_last = is_last,
+                    );
+                    return None;
+                };
+
+                let Some(object) = self.ctx.book().get(recipient) else {
+                    debug!(
+                        message = "received response, but requester has gone",
+                        recipient = %recipient,
+                        request_id = ?request_id,
+                        is_last = is_last,
+                    );
+                    return None;
+                };
+
+                let envelope = message.map(|message| {
+                    Envelope::with_trace_id(
+                        message,
+                        MessageKind::Response { sender, request_id },
+                        trace_id,
+                    )
+                });
+
+                object.respond(token, envelope);
+                return None;
+            }
+        };
+
+        Some(Envelope::with_trace_id(
+            message,
+            message_kind,
+            network_envelope.trace_id,
+        ))
     }
 
     fn handle_system_message(&self, envelope: &Envelope) -> bool {
@@ -243,7 +395,7 @@ impl SocketReader {
 
         let Some(object) = book.get(recipient) else {
             if let Some(envelope) = flows.close(recipient).map(make_system_envelope) {
-                self.tx.try_send((Addr::NULL, envelope)).unwrap();
+                self.tx.try_send(KanalItem::simple(Addr::NULL, envelope)).unwrap();
             }
             return;
         };
@@ -265,7 +417,7 @@ impl SocketReader {
             }
 
             fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
-                let envelope = envelope.duplicate(self.this.ctx.book()).unwrap();
+                let envelope = envelope.duplicate();
                 self.this
                     .do_handle_message(self.flows, object, envelope, true);
             }
@@ -292,7 +444,9 @@ impl SocketReader {
         group.visit_group(envelope, &mut visitor);
 
         if let Some(envelope) = flows.release_routed().map(make_system_envelope) {
-            self.tx.try_send((Addr::NULL, envelope)).unwrap();
+            self.tx
+                .try_send(KanalItem::simple(Addr::NULL, envelope))
+                .unwrap();
         }
     }
 
@@ -317,14 +471,16 @@ impl SocketReader {
         }
 
         // Otherwise, try to send the message right now.
-        match object.try_send(&self.ctx, Addr::NULL, envelope) {
+        match object.try_send(Addr::NULL, envelope) {
             Ok(()) => {
                 if let Some(envelope) = flow.release_direct().map(make_system_envelope) {
-                    self.tx.try_send((Addr::NULL, envelope)).unwrap();
+                    let item = KanalItem::simple(Addr::NULL, envelope);
+                    self.tx.try_send(item).unwrap();
                 }
                 if routed {
                     if let Some(envelope) = flows.release_routed().map(make_system_envelope) {
-                        self.tx.try_send((Addr::NULL, envelope)).unwrap();
+                        let item = KanalItem::simple(Addr::NULL, envelope);
+                        self.tx.try_send(item).unwrap();
                     }
                 }
             }
@@ -339,7 +495,8 @@ impl SocketReader {
             }
             Err(TrySendError::Closed(_)) => {
                 if let Some(envelope) = flows.close(object.addr()).map(make_system_envelope) {
-                    self.tx.try_send((Addr::NULL, envelope)).unwrap();
+                    let item = KanalItem::simple(Addr::NULL, envelope);
+                    self.tx.try_send(item).unwrap();
                 }
             }
         }
@@ -355,11 +512,11 @@ fn make_system_envelope(message: impl Message) -> Envelope {
 
 // === Pusher ===
 
-/// A subtast that pushes pending messages to an unstable actor.
+/// A subtask that pushes pending messages to an unstable actor.
 struct Pusher {
     ctx: Context,
     actor_addr: Addr,
-    tx: kanal::AsyncSender<(Addr, Envelope)>,
+    tx: kanal::AsyncSender<KanalItem>,
     rx_flows: Arc<Mutex<RxFlows>>,
 }
 
@@ -375,7 +532,9 @@ impl Pusher {
             if !self.push(envelope, routed).await {
                 let mut flows = self.rx_flows.lock();
                 if let Some(envelope) = flows.close(self.actor_addr).map(make_system_envelope) {
-                    self.tx.try_send((Addr::NULL, envelope)).unwrap();
+                    self.tx
+                        .try_send(KanalItem::simple(Addr::NULL, envelope))
+                        .unwrap();
                 }
                 break;
             }
@@ -398,11 +557,15 @@ impl Pusher {
             };
 
             if let Some(envelope) = flow.release_direct().map(make_system_envelope) {
-                self.tx.try_send((Addr::NULL, envelope)).unwrap();
+                self.tx
+                    .try_send(KanalItem::simple(Addr::NULL, envelope))
+                    .unwrap();
             }
             if routed {
                 if let Some(envelope) = flows.release_routed().map(make_system_envelope) {
-                    self.tx.try_send((Addr::NULL, envelope)).unwrap();
+                    self.tx
+                        .try_send(KanalItem::simple(Addr::NULL, envelope))
+                        .unwrap();
                 }
             }
             true
@@ -414,8 +577,24 @@ impl Pusher {
 
 // === RemoteHandle ===
 
+struct KanalItem {
+    recipient: Addr,
+    envelope: Result<Envelope, RequestError>,
+    token: Option<ResponseToken>,
+}
+
+impl KanalItem {
+    fn simple(recipient: Addr, envelope: Envelope) -> Self {
+        Self {
+            recipient,
+            envelope: Ok(envelope),
+            token: None,
+        }
+    }
+}
+
 struct RemoteHandle {
-    tx: kanal::AsyncSender<(Addr, Envelope)>,
+    tx: kanal::AsyncSender<KanalItem>,
     tx_flows: Arc<TxFlows>,
 }
 
@@ -425,11 +604,13 @@ impl remote::RemoteHandle for RemoteHandle {
 
         match self.tx_flows.acquire(recipient) {
             Acquire::Done => {
-                let mut item = Some((recipient, envelope));
+                let mut item = Some(KanalItem::simple(recipient, envelope));
                 match self.tx.try_send_option(&mut item) {
                     Ok(true) => remote::SendResult::Ok,
                     Ok(false) => unreachable!(),
-                    Err(_) => remote::SendResult::Err(SendError(item.take().unwrap().1)),
+                    Err(_) => {
+                        remote::SendResult::Err(SendError(item.take().unwrap().envelope.unwrap()))
+                    }
                 }
             }
             Acquire::Full(notified) => remote::SendResult::Wait(notified, envelope),
@@ -442,11 +623,11 @@ impl remote::RemoteHandle for RemoteHandle {
 
         match self.tx_flows.try_acquire(recipient) {
             TryAcquire::Done => {
-                let mut item = Some((recipient, envelope));
+                let mut item = Some(KanalItem::simple(recipient, envelope));
                 match self.tx.try_send_option(&mut item) {
                     Ok(true) => Ok(()),
                     Ok(false) => unreachable!(),
-                    Err(_) => Err(TrySendError::Closed(item.take().unwrap().1)),
+                    Err(_) => Err(TrySendError::Closed(item.take().unwrap().envelope.unwrap())),
                 }
             }
             TryAcquire::Full => Err(TrySendError::Full(envelope)),
@@ -454,22 +635,24 @@ impl remote::RemoteHandle for RemoteHandle {
         }
     }
 
-    fn unbounded_send(
-        &self,
-        recipient: Addr,
-        envelope: Envelope,
-    ) -> Result<(), SendError<Envelope>> {
-        debug_assert!(!recipient.is_local());
+    fn respond(&self, token: ResponseToken, envelope: Result<Envelope, RequestError>) {
+        debug_assert!(!token.is_forgotten());
+        let recipient = token.sender();
+        debug_assert!(recipient.is_remote());
 
-        if !self.tx_flows.do_acquire(recipient) {
-            return Err(SendError(envelope));
+        if likely(self.tx_flows.do_acquire(recipient)) {
+            let item = KanalItem {
+                recipient,
+                envelope,
+                token: Some(token),
+            };
+            match self.tx.try_send(item) {
+                Ok(true) => return,
+                Ok(false) => unreachable!(),
+                Err(_) => {}
+            }
         }
 
-        let mut item = Some((recipient, envelope));
-        match self.tx.try_send_option(&mut item) {
-            Ok(true) => Ok(()),
-            Ok(false) => unreachable!(),
-            Err(_) => Err(SendError(item.take().unwrap().1)),
-        }
+        trace!(addr = %recipient, "flow is closed, response is lost");
     }
 }

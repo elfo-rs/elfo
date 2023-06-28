@@ -19,6 +19,7 @@ use crate::{
     envelope::Envelope,
     exec::{Exec, ExecResult},
     group::{RestartMode, RestartPolicy, TerminationPolicy},
+    message::Request,
     messages, msg,
     object::{GroupVisitor, Object, ObjectArc},
     routers::{Outcome, Router},
@@ -26,7 +27,7 @@ use crate::{
     scope::{self, Scope, ScopeGroupShared},
     subscription::SubscriptionManager,
     tracing::TraceId,
-    Addr,
+    Addr, ResponseToken,
 };
 
 mod backoff;
@@ -139,6 +140,8 @@ where
                         // to avoid a race condition at startup.
                         // So, we update the config on `ValidateConfig` at the first time.
                         self.update_config(&mut control, &config);
+                        let token = extract_response_token::<messages::ValidateConfig>(envelope);
+                        self.context.respond(token, Ok(()));
                         return visitor.done();
                     } else {
                         drop(control);
@@ -147,13 +150,9 @@ where
                     }
                 }
                 Err(reason) => {
-                    msg!(match envelope {
-                        (messages::ValidateConfig { .. }, token) => {
-                            let reject = messages::ConfigRejected { reason };
-                            self.context.respond(token, Err(reject));
-                        }
-                        _ => unreachable!(),
-                    });
+                    let reject = messages::ConfigRejected { reason };
+                    let token = extract_response_token::<messages::ValidateConfig>(envelope);
+                    self.context.respond(token, Err(reject));
                     return visitor.done();
                 }
             },
@@ -175,6 +174,8 @@ where
 
                     if only_spawn {
                         self.spawn_by_outcome(outcome);
+                        let token = extract_response_token::<messages::UpdateConfig>(envelope);
+                        self.context.respond(token, Ok(()));
                         return visitor.done();
                     } else {
                         // Send `UpdateConfig` across actors.
@@ -183,14 +184,12 @@ where
                     }
                 }
                 Err(reason) => {
-                    msg!(match envelope {
-                        (messages::UpdateConfig { .. }, token) => {
-                            self.in_scope(|| error!(group = %self.meta.group, %reason, "invalid config is ignored"));
-                            let reject = messages::ConfigRejected { reason };
-                            self.context.respond(token, Err(reject));
-                        }
-                        _ => unreachable!(),
-                    });
+                    self.in_scope(
+                        || error!(group = %self.meta.group, %reason, "invalid config is ignored"),
+                    );
+                    let reject = messages::ConfigRejected { reason };
+                    let token = extract_response_token::<messages::UpdateConfig>(envelope);
+                    self.context.respond(token, Err(reject));
                     return visitor.done();
                 }
             },
@@ -465,6 +464,13 @@ where
 
         Box::pin(fut)
     }
+}
+
+fn extract_response_token<R: Request>(envelope: Envelope) -> ResponseToken<R> {
+    msg!(match envelope {
+        (R, token) => token,
+        _ => unreachable!(),
+    })
 }
 
 fn panic_to_string(payload: Box<dyn Any>) -> String {

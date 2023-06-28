@@ -218,16 +218,17 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
         .map(|group| match (&group.kind, &group.arms[..]) {
             (GroupKind::Regular(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
-                    // TODO: replace with `static_assertions`.
-                    trait Forbidden<A, E> { fn test(_: &E) {} }
-                    impl<E, M> Forbidden<(), E> for M {}
-                    struct Invalid;
-                    impl<E: EnvelopeOwned, M: #crate_::Request> Forbidden<Invalid, E> for M {}
-                    let _ = <#path as Forbidden<_, _>>::test(&#envelope_ident);
-                    // -----
+                    // TODO: can it be replaced with `static_assertions`?
+                    let _ = {
+                        trait Forbidden<A, E> { fn test(_: &E) {} }
+                        impl<E, M> Forbidden<(), E> for M {}
+                        struct Invalid;
+                        impl<E: EnvelopeOwned, M: #crate_::Request> Forbidden<Invalid, E> for M {}
+                        <#path as Forbidden<_, _>>::test(&#envelope_ident)
+                    };
 
-                    let message = #envelope_ident.unpack_regular();
-                    match message.downcast2::<#path>() {
+                    let _elfo_message = #envelope_ident.unpack_regular();
+                    match _elfo_message.downcast2::<#path>() {
                         #(#arms)*
                     }
                 }
@@ -235,8 +236,9 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
             (GroupKind::Request(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
                     assert_impl_all!(#path: #crate_::Request);
-                    let (message, token) = #envelope_ident.unpack_request::<#path>();
-                    match (message.downcast2::<#path>(), token) {
+                    let (_elfo_message, _elfo_token) = #envelope_ident.unpack_request();
+                    let _elfo_token = _elfo_token.into_received::<#path>();
+                    match (_elfo_message.downcast2::<#path>(), _elfo_token) {
                         #(#arms)*
                     }
                 }

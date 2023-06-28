@@ -1,17 +1,36 @@
-//! This module contains `Encoder` and `Decoder` instances
-//! implementing the following frame structure of messages:
-//! * size of whole frame, `u32`
-//! * TODO: checksum
-//! * protocol's length, `u8`
-//! * protocol
-//! * name's length, `u8`
-//! * name
-//! * trace_id, `u64`
-//! * sender, `u64`
-//! * recipient, `u64`
-//! * kind, `u8`: 0 = Regular, 1 = RequestAny, 2 = RequestAll, 3 = Response
-//! * correlation_id (for RequestAny, RequestAll and Response kinds), `u64`
-//! * message, rest of frame
+//! This module contains `Encoder` and `Decoder` instances.
+//!
+//! The structure of the network envelope:
+//!           name           bits       presence
+//! +-----------------------+----+---------------------+
+//! | size of whole frame   | 32 |                     |
+//! +-----------------------+----+                     |
+//! | flags                 |  4 |                     | flags:
+//! +-----------------------+----+                     | - <reserved>       = 1
+//! | kind                  |  4 |                     | - <reserved>       = 2
+//! +-----------------------+----+       always        | - <reserved>       = 4
+//! | sender                | 64 |                     | - is last response = 8
+//! +-----------------------+----+                     |
+//! | recipient             | 64 |                     |
+//! +-----------------------+----+                     |
+//! | trace id              | 64 |                     | kinds:
+//! +-----------------------+----+---------------------+ - Regular           = 0
+//! | request id            | 64 | if kind != Regular  | - RequestAny        = 1
+//! +-----------------------+----+---------------------+ - RequestAll        = 2
+//! | protocol's length (P) |  8 |                     | - Response::Ok      = 3
+//! +-----------------------+----+                     | - Response::Failed  = 4
+//! | protocol              | 8P |                     | - Response::Ignored = 5
+//! +-----------------------+----+ if kind !=          |
+//! | msg name's length (N) |  8 | - Response::Failed  |
+//! +-----------------------+----+ - Response::Ignored |
+//! | msg name              | 8N |                     |
+//! +-----------------------+----+                     |
+//! | msg payload           |rest|                     |
+//! +-----------------------+----+---------------------+
+//!
+//! All fields are encoded using LE ordering.
+
+// TODO: send message ID instead of protocol/name.
 
 use std::{convert::TryFrom, str};
 
@@ -19,7 +38,23 @@ use bytes::{Buf, BufMut, BytesMut};
 use eyre::{bail, ensure, eyre, Error, Result};
 use tokio_util::codec;
 
-use elfo_core::{tracing::TraceId, Addr, Message, _priv::AnyMessage};
+use elfo_core::{
+    errors::RequestError,
+    tracing::TraceId,
+    Addr, Message,
+    _priv::{AnyMessage, RequestId},
+};
+
+// Flags are shifted by 4 bits to the left because of the kind.
+const FLAG_IS_LAST_RESPONSE: u8 = 1 << 7;
+
+const KIND_MASK: u8 = 0xF;
+const KIND_REGULAR: u8 = 0;
+const KIND_REQUEST_ANY: u8 = 1;
+const KIND_REQUEST_ALL: u8 = 2;
+const KIND_RESPONSE_OK: u8 = 3;
+const KIND_RESPONSE_FAILED: u8 = 4;
+const KIND_RESPONSE_IGNORED: u8 = 5;
 
 // === Encoder ===
 
@@ -49,23 +84,42 @@ impl codec::Encoder<NetworkEnvelope> for Encoder {
     fn encode(&mut self, envelope: NetworkEnvelope, dst: &mut BytesMut) -> Result<()> {
         let original_len = dst.len();
 
+        use NetworkEnvelopePayload::*;
+        let (is_last_response, kind, request_id, message) = match &envelope.payload {
+            Regular { message } => (false, KIND_REGULAR, None, Some(message)),
+            RequestAny {
+                request_id,
+                message,
+            } => (false, KIND_REQUEST_ANY, Some(*request_id), Some(message)),
+            RequestAll {
+                request_id,
+                message,
+            } => (false, KIND_REQUEST_ALL, Some(*request_id), Some(message)),
+            Response {
+                request_id,
+                message,
+                is_last,
+            } => (
+                *is_last,
+                match &message {
+                    Ok(_) => KIND_RESPONSE_OK,
+                    Err(RequestError::Failed) => KIND_RESPONSE_FAILED,
+                    Err(RequestError::Ignored) => KIND_RESPONSE_IGNORED,
+                },
+                Some(*request_id),
+                message.as_ref().ok(),
+            ),
+        };
+
         // size
         dst.put_u32_le(0); // will be rewritten below.
 
-        // protocol
-        let protocol_len = envelope.message.protocol().len();
-        assert!(protocol_len <= 255);
-        dst.put_u8(protocol_len as u8);
-        dst.extend_from_slice(envelope.message.protocol().as_bytes());
-
-        // name
-        let message_name_len = envelope.message.name().len();
-        assert!(message_name_len <= 255);
-        dst.put_u8(message_name_len as u8);
-        dst.extend_from_slice(envelope.message.name().as_bytes());
-
-        // trace_id
-        dst.put_u64_le(u64::from(envelope.trace_id));
+        // flags and kind
+        let mut flags = 0;
+        if is_last_response {
+            flags |= FLAG_IS_LAST_RESPONSE;
+        }
+        dst.put_u8(flags | kind);
 
         // sender
         // TODO: avoid `into_remote`, transform on the caller's site.
@@ -75,44 +129,46 @@ impl codec::Encoder<NetworkEnvelope> for Encoder {
         // recipient
         dst.put_u64_le(envelope.recipient.into_bits());
 
-        // kind
-        match envelope.kind {
-            NetworkMessageKind::Regular => dst.put_u8(0),
-            NetworkMessageKind::RequestAny(correlation_id) => {
-                dst.put_u8(1);
-                dst.put_u64_le(correlation_id);
-            }
-            NetworkMessageKind::RequestAll(correlation_id) => {
-                dst.put_u8(2);
-                dst.put_u64_le(correlation_id);
-            }
-            NetworkMessageKind::Response(correlation_id) => {
-                dst.put_u8(3);
-                dst.put_u64_le(correlation_id);
-            }
-            NetworkMessageKind::LastResponse(correlation_id) => {
-                dst.put_u8(4);
-                dst.put_u64_le(correlation_id);
-            }
+        // trace_id
+        dst.put_u64_le(u64::from(envelope.trace_id));
+
+        // request_id
+        if let Some(request_id) = request_id {
+            dst.put_u64_le(request_id.to_ffi());
         }
 
-        // TODO: resize buffer on failures & limit size.
-        let message_size = match envelope.message.write_msgpack(&mut self.buffer) {
-            Ok(size) => size,
-            Err(err) => {
-                dst.truncate(original_len);
-                return Err(err.into());
-            }
-        };
+        if let Some(message) = message {
+            // protocol
+            put_str(dst, message.protocol());
 
-        // message
-        dst.extend_from_slice(&self.buffer[..message_size]);
+            // name
+            put_str(dst, message.name());
+
+            // TODO: resize buffer on failures & limit size.
+            let message_size = match message.write_msgpack(&mut self.buffer) {
+                Ok(size) => size,
+                Err(err) => {
+                    dst.truncate(original_len);
+                    return Err(err.into());
+                }
+            };
+
+            // message
+            dst.extend_from_slice(&self.buffer[..message_size]);
+        }
 
         let size = dst.len() - original_len;
         (&mut dst[original_len..]).put_u32_le(size as u32);
 
         Ok(())
     }
+}
+
+fn put_str(dst: &mut BytesMut, s: &str) {
+    let size = s.len();
+    assert!(size <= 255);
+    dst.put_u8(size as u8);
+    dst.extend_from_slice(s.as_bytes());
 }
 
 // === Decoder ===
@@ -168,33 +224,62 @@ impl codec::Decoder for Decoder {
 }
 
 fn decode(mut frame: &[u8]) -> Result<NetworkEnvelope> {
-    let protocol = get_str(&mut frame)?;
-    let name = get_str(&mut frame)?;
+    let flags = frame.get_u8();
+    let kind = flags & KIND_MASK;
 
-    let trace_id = TraceId::try_from(frame.get_u64_le())?;
     let sender = Addr::from_bits(frame.get_u64_le());
     // TODO: avoid `into_local`, transform on the caller's site.
     let recipient = Addr::from_bits(frame.get_u64_le()).into_local();
+    let trace_id = TraceId::try_from(frame.get_u64_le())?;
 
-    let kind = match frame.get_u8() {
-        0 => NetworkMessageKind::Regular,
-        1 => NetworkMessageKind::RequestAny(frame.get_u64_le()),
-        2 => NetworkMessageKind::RequestAll(frame.get_u64_le()),
-        3 => NetworkMessageKind::Response(frame.get_u64_le()),
-        4 => NetworkMessageKind::LastResponse(frame.get_u64_le()),
+    use NetworkEnvelopePayload::*;
+    let payload = match kind {
+        KIND_REGULAR => Regular {
+            message: get_message(&mut frame)?,
+        },
+        KIND_REQUEST_ANY => RequestAny {
+            request_id: get_request_id(&mut frame),
+            message: get_message(&mut frame)?,
+        },
+        KIND_REQUEST_ALL => RequestAll {
+            request_id: get_request_id(&mut frame),
+            message: get_message(&mut frame)?,
+        },
+        KIND_RESPONSE_OK => Response {
+            request_id: get_request_id(&mut frame),
+            message: Ok(get_message(&mut frame)?),
+            is_last: flags & FLAG_IS_LAST_RESPONSE != 0,
+        },
+        KIND_RESPONSE_FAILED => Response {
+            request_id: get_request_id(&mut frame),
+            message: Err(RequestError::Failed),
+            is_last: flags & FLAG_IS_LAST_RESPONSE != 0,
+        },
+        KIND_RESPONSE_IGNORED => Response {
+            request_id: get_request_id(&mut frame),
+            message: Err(RequestError::Ignored),
+            is_last: flags & FLAG_IS_LAST_RESPONSE != 0,
+        },
         n => bail!("invalid message kind: {n}"),
     };
-
-    let message = AnyMessage::read_msgpack(protocol, name, frame)?
-        .ok_or_else(|| eyre!("unknown message {}::{}", protocol, name))?;
 
     Ok(NetworkEnvelope {
         sender,
         recipient,
         trace_id,
-        kind,
-        message,
+        payload,
     })
+}
+
+fn get_request_id(frame: &mut &[u8]) -> RequestId {
+    RequestId::from_ffi(frame.get_u64_le())
+}
+
+fn get_message(frame: &mut &[u8]) -> Result<AnyMessage> {
+    let protocol = get_str(frame)?;
+    let name = get_str(frame)?;
+    AnyMessage::read_msgpack(protocol, name, frame)?
+        .ok_or_else(|| eyre!("unknown message {}::{}", protocol, name))
 }
 
 fn get_str<'a>(frame: &mut &'a [u8]) -> Result<&'a str> {
@@ -212,16 +297,26 @@ pub(crate) struct NetworkEnvelope {
     pub(crate) sender: Addr,
     pub(crate) recipient: Addr,
     pub(crate) trace_id: TraceId,
-    pub(crate) kind: NetworkMessageKind,
-    pub(crate) message: AnyMessage,
+    pub(crate) payload: NetworkEnvelopePayload,
 }
 
-pub(crate) enum NetworkMessageKind {
-    Regular,
-    RequestAny(u64),
-    RequestAll(u64),
-    Response(u64),
-    LastResponse(u64),
+pub(crate) enum NetworkEnvelopePayload {
+    Regular {
+        message: AnyMessage,
+    },
+    RequestAny {
+        request_id: RequestId,
+        message: AnyMessage,
+    },
+    RequestAll {
+        request_id: RequestId,
+        message: AnyMessage,
+    },
+    Response {
+        request_id: RequestId,
+        message: Result<AnyMessage, RequestError>,
+        is_last: bool,
+    },
 }
 
 #[cfg(test)]
@@ -233,7 +328,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn smoke() {
         #[message]
         #[derive(PartialEq)]
         struct Test(u64);
@@ -252,8 +347,9 @@ mod tests {
                 sender,
                 recipient,
                 trace_id,
-                kind: NetworkMessageKind::Regular,
-                message: test.upcast(),
+                payload: NetworkEnvelopePayload::Regular {
+                    message: test.upcast(),
+                },
             };
 
             encoder.encode(envelope, &mut bytes).unwrap();
@@ -263,7 +359,12 @@ mod tests {
             assert_eq!(actual.trace_id, trace_id);
             assert_eq!(actual.sender, sender);
             assert_eq!(actual.recipient, recipient);
-            assert_eq!(actual.message.downcast::<Test>().unwrap(), Test(i));
+
+            if let NetworkEnvelopePayload::Regular { message } = actual.payload {
+                assert_eq!(message.downcast::<Test>().unwrap(), Test(i));
+            } else {
+                panic!("unexpected message kind");
+            }
         }
     }
 }

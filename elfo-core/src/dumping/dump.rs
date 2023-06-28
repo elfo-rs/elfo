@@ -295,7 +295,7 @@ impl MessageKind {
         match kind {
             MK::Regular { .. } => Self::Regular,
             MK::RequestAny(token) | MK::RequestAll(token) => {
-                Self::Request(token.request_id.data().as_ffi())
+                Self::Request(token.request_id().to_ffi())
             }
             MK::Response { request_id, .. } => Self::Response(request_id.data().as_ffi()),
         }

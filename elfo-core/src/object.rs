@@ -9,7 +9,8 @@ use crate::{
     address_book::{AddressBook, SlabConfig},
     context::Context,
     envelope::Envelope,
-    errors::{SendError, TrySendError},
+    errors::{RequestError, SendError, TrySendError},
+    request_table::ResponseToken,
     Addr,
 };
 
@@ -82,21 +83,30 @@ impl Object {
     }
 
     #[stability::unstable]
-    pub fn try_send<C, K>(
+    pub fn try_send(
         &self,
-        ctx: &Context<C, K>,
         recipient: Addr,
         envelope: Envelope,
     ) -> Result<(), TrySendError<Envelope>> {
         match &self.kind {
             ObjectKind::Actor(handle) => handle.try_send(envelope),
             ObjectKind::Group(handle) => {
-                let mut visitor = TrySendGroupVisitor::new(ctx.book());
+                let mut visitor = TrySendGroupVisitor::default();
                 handle.handle(envelope, &mut visitor);
                 visitor.finish()
             }
             #[cfg(feature = "network")]
             ObjectKind::Remote(handle) => handle.try_send(recipient, envelope),
+        }
+    }
+
+    #[stability::unstable]
+    pub fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestError>) {
+        match &self.kind {
+            ObjectKind::Actor(handle) => handle.request_table().resolve(token, response),
+            ObjectKind::Group(_handle) => unreachable!(),
+            #[cfg(feature = "network")]
+            ObjectKind::Remote(handle) => handle.respond(token, response),
         }
     }
 
@@ -257,10 +267,8 @@ impl GroupVisitor for SendGroupVisitor<'_> {
     }
 
     fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
-        // If a requester has died, go out.
-        if let Some(envelope) = self.extra.take().or_else(|| envelope.duplicate(self.book)) {
-            self.try_send(object, envelope);
-        }
+        let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
+        self.try_send(object, envelope);
     }
 
     fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
@@ -270,23 +278,14 @@ impl GroupVisitor for SendGroupVisitor<'_> {
 
 // === TrySendGroupVisitor ===
 
-struct TrySendGroupVisitor<'a> {
-    book: &'a AddressBook,
+#[derive(Default)]
+struct TrySendGroupVisitor {
     extra: Option<Envelope>,
     has_ok: bool,
     has_full: bool,
 }
 
-impl<'a> TrySendGroupVisitor<'a> {
-    fn new(book: &'a AddressBook) -> Self {
-        Self {
-            book,
-            extra: None,
-            has_ok: false,
-            has_full: false,
-        }
-    }
-
+impl TrySendGroupVisitor {
     // We must send while visiting to ensure that a message starting a new actor
     // is actually the first message that the actor receives.
     fn try_send(&mut self, object: &ObjectArc, envelope: Envelope) {
@@ -316,7 +315,7 @@ impl<'a> TrySendGroupVisitor<'a> {
     }
 }
 
-impl GroupVisitor for TrySendGroupVisitor<'_> {
+impl GroupVisitor for TrySendGroupVisitor {
     fn done(&mut self) {
         debug_assert!(self.extra.is_none());
         debug_assert!(!self.has_ok);
@@ -330,10 +329,8 @@ impl GroupVisitor for TrySendGroupVisitor<'_> {
     }
 
     fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
-        // If a requester has died, go out.
-        if let Some(envelope) = self.extra.take().or_else(|| envelope.duplicate(self.book)) {
-            self.try_send(object, envelope);
-        }
+        let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
+        self.try_send(object, envelope);
     }
 
     fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {

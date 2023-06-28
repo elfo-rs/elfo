@@ -87,6 +87,7 @@ pub mod _priv {
         message::{AnyMessage, MessageVTable, MESSAGE_LIST},
         object::{GroupVisitor, Object, ObjectArc},
         permissions::{AtomicPermissions, Permissions},
+        request_table::RequestId,
     };
     pub use linkme;
     pub use metrics;
