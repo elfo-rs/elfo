@@ -95,5 +95,4 @@ pub mod _priv {
     pub use rmp_serde as rmps;
     pub use serde;
     pub use smallbox;
-    pub use static_assertions::assert_impl_all;
 }

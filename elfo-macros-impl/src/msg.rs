@@ -218,14 +218,16 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
         .map(|group| match (&group.kind, &group.arms[..]) {
             (GroupKind::Regular(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
-                    // TODO: can it be replaced with `static_assertions`?
-                    let _ = {
-                        trait Forbidden<A, E> { fn test(_: &E) {} }
-                        impl<E, M> Forbidden<(), E> for M {}
+                    // Ensure it's not a request, or a request but only in a borrowed context.
+                    // We cannot use `static_assertions` here because it wraps the check into
+                    // a closure that forbids us to use generic `msg!`: (`msg!(match e { M => .. })`).
+                    {
+                        trait MustBeRegularNotRequest<A, E> { fn test(_: &E) {} }
+                        impl<E, M> MustBeRegularNotRequest<(), E> for M {}
                         struct Invalid;
-                        impl<E: EnvelopeOwned, M: #crate_::Request> Forbidden<Invalid, E> for M {}
-                        <#path as Forbidden<_, _>>::test(&#envelope_ident)
-                    };
+                        impl<E: EnvelopeOwned, M: #crate_::Request> MustBeRegularNotRequest<Invalid, E> for M {}
+                        <#path as MustBeRegularNotRequest<_, _>>::test(&#envelope_ident)
+                    }
 
                     let _elfo_message = #envelope_ident.unpack_regular();
                     match _elfo_message.downcast2::<#path>() {
@@ -235,7 +237,14 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
             },
             (GroupKind::Request(path), arms) => quote! {
                 else if #envelope_ident.is::<#path>() {
-                    assert_impl_all!(#path: #crate_::Request);
+                    // Ensure it's a request. We cannot use `static_assertions` here
+                    // because it wraps the check into a closure that forbids us to
+                    // use generic `msg!`: (`msg!(match e { (R, token) => .. })`).
+                    {
+                        fn must_be_request<R: #crate_::Request>() {}
+                        must_be_request::<#path>();
+                    }
+
                     let (_elfo_message, _elfo_token) = #envelope_ident.unpack_request();
                     let _elfo_token = _elfo_token.into_received::<#path>();
                     match (_elfo_message.downcast2::<#path>(), _elfo_token) {

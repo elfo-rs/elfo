@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - message: add `Message::{name,protocol,labels,upcast}`.
 ### Fixed
 - request: now `RequestError::Ignored` can be returned only if the envelope is received.
+- macros: allow generic requests in `msg!`: `msg!(match e { (R, token) => .. })`.
 
 ## [0.2.0-alpha.4] - 2023-07-06
 
