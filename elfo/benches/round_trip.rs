@@ -153,7 +153,7 @@ async fn run<const FLAGS: Flags>(
         AnyConfig::default(),
     ));
 
-    elfo::_priv::do_start(topology, |ctx, _| async move {
+    elfo::_priv::do_start(topology, false, |ctx, _| async move {
         let elapsed = ctx
             .request_to(producers_addr, Summarize)
             .all()

@@ -1,12 +1,85 @@
+use std::{
+    collections::BTreeMap,
+    fmt::{Debug, Display},
+};
+
 use derive_more::{Display, Error};
 
-#[derive(Debug, Display, Error)]
+#[derive(Error)]
 #[non_exhaustive]
-pub enum StartError {
-    /// Configs must be valid at the start-up.
-    #[display(fmt = "invalid config")]
-    InvalidConfig,
-    Other(#[error(not(source))] String),
+pub struct StartError {
+    pub errors: Vec<StartGroupError>,
+}
+
+impl StartError {
+    pub(crate) fn single(group: String, reason: String) -> Self {
+        Self {
+            errors: vec![StartGroupError { group, reason }],
+        }
+    }
+
+    pub(crate) fn multiple(errors: Vec<StartGroupError>) -> Self {
+        Self { errors }
+    }
+}
+
+fn group_errors(errors: Vec<StartGroupError>) -> BTreeMap<String, Vec<String>> {
+    // `BTreeMap` is used purely to provide consistent group order in error
+    // messages.
+    let mut group_errors = BTreeMap::<String, Vec<String>>::new();
+    for error in errors {
+        group_errors
+            .entry(error.group)
+            .or_default()
+            .push(error.reason);
+    }
+    // Sort errors to provide consistent order.
+    for errors in group_errors.values_mut() {
+        errors.sort();
+    }
+    group_errors
+}
+
+impl Debug for StartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            let mut s = f.debug_struct("StartError");
+            s.field("errors", &self.errors);
+            s.finish()
+        } else {
+            write!(f, "failed to start, see errors by actor groups\n\n")?;
+            for (group, errors) in group_errors(self.errors.clone()) {
+                writeln!(f, "{group}:")?;
+                for error in errors {
+                    writeln!(f, "- {error}")?;
+                }
+                writeln!(f)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+impl Display for StartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "failed to start, see errors: ")?;
+        let mut i = 1;
+        for (group, errors) in group_errors(self.errors.clone()) {
+            for error in errors {
+                write!(f, "{i}. {error} ({group}); ")?;
+                i += 1;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Display, Error)]
+#[non_exhaustive]
+#[display(fmt = "error from group {group}: {reason}")]
+pub struct StartGroupError {
+    pub group: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Display, Error)]

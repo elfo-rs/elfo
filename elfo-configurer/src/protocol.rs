@@ -29,6 +29,6 @@ pub struct ReloadConfigsRejected {
 #[message(part)]
 #[non_exhaustive]
 pub struct ReloadConfigsError {
-    // TODO: meta
+    pub group: String,
     pub reason: String,
 }

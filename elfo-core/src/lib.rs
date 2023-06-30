@@ -17,7 +17,7 @@ pub use crate::{
     context::{Context, RequestBuilder},
     envelope::Envelope,
     group::{ActorGroup, Blueprint, RestartPolicy, TerminationPolicy},
-    init::{start, try_start},
+    init::{check_only, start, try_start},
     local::{Local, MoveOwnership},
     message::{Message, Request},
     request_table::ResponseToken,
