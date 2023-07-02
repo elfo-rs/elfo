@@ -24,9 +24,15 @@ pub(crate) struct Socket {
 impl Socket {
     fn tcp(stream: TcpStream, peer: Transport) -> Self {
         let (rx, tx) = stream.into_split();
+        let read = FramedRead::new(rx, Decoder::new());
+        let mut write = FramedWrite::new(tx, Encoder::new());
+
+        // TODO: how should it work with compression?
+        write.set_backpressure_boundary(128 * 1024);
+
         Self {
-            read: ReadHalf(FramedRead::new(rx, Decoder::new())),
-            write: WriteHalf(FramedWrite::new(tx, Encoder::new())),
+            read: ReadHalf(read),
+            write: WriteHalf(write),
             peer,
         }
     }
@@ -40,7 +46,6 @@ impl ReadHalf {
     }
 }
 
-// TODO: set backpressure boundary
 pub(crate) struct WriteHalf(FramedWrite<tcp::OwnedWriteHalf, Encoder>);
 
 impl WriteHalf {
