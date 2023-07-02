@@ -53,7 +53,7 @@ impl WriteHalf {
     // It requires either to replace `FramedWrite` or make `Message: Sync`.
     pub(crate) async fn send(&mut self, envelope: NetworkEnvelope) -> Result<()> {
         // TODO: timeout, it should be clever
-        self.0.send(envelope).await?;
+        self.0.feed(envelope).await?;
         Ok(())
     }
 
