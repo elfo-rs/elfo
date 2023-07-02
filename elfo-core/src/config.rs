@@ -204,7 +204,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Secret<T> {
 
 impl<T: Serialize> Serialize for Secret<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // TODO: it should depend on the context (network or dumping).
-        serializer.serialize_str("<secret>")
+        if crate::scope::serde_mode() != crate::scope::SerdeMode::Network {
+            serializer.serialize_str("<secret>")
+        } else {
+            self.0.serialize(serializer)
+        }
     }
 }

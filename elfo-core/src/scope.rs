@@ -323,9 +323,10 @@ thread_local! {
 pub enum SerdeMode {
     /// A default mode, regular ser/de calls.
     Normal,
-    /// Serialzation for dumping purposes.
+    /// Serialization for dumping purposes.
     Dumping,
-    // Network
+    /// Serialization for network purposes.
+    Network,
 }
 
 /// Sets the specified serde mode and runs the function.

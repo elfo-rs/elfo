@@ -40,6 +40,7 @@ use tokio_util::codec;
 
 use elfo_core::{
     errors::RequestError,
+    scope,
     tracing::TraceId,
     Addr, Message,
     _priv::{AnyMessage, RequestId},
@@ -147,7 +148,11 @@ impl Encoder {
             let max_limit = u32::MAX as usize - (dst.len() - start_pos);
             let limit = self.limit.map_or(max_limit, |limit| limit.min(max_limit));
             self.buffer.clear();
-            message.write_msgpack(&mut self.buffer, limit)?;
+
+            scope::with_serde_mode(scope::SerdeMode::Network, || {
+                message.write_msgpack(&mut self.buffer, limit)
+            })?;
+
             dst.extend_from_slice(&self.buffer);
         }
 
