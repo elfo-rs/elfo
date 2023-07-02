@@ -58,32 +58,34 @@ const KIND_RESPONSE_IGNORED: u8 = 5;
 
 // === Encoder ===
 
-const BUFFER_INITIAL_CAPACITY: usize = 4096;
+const BUFFER_INITIAL_CAPACITY: usize = 8192;
 
 pub(crate) struct Encoder {
-    max_frame_size: u32,
-    buffer: Vec<u8>, // TODO: use `UninitSlice` or a limited writer to avoid copying.
+    /// A dedicated buffer to serialize a message. Serialization into `Vec<u8>`
+    /// with following extending `BytesMut` works twice faster than
+    /// serialization directly into `BytesMut` according to micro-benchmarks.
+    buffer: Vec<u8>,
+    limit: Option<usize>,
 }
 
 impl Encoder {
-    pub(crate) fn new(max_frame_size: u32) -> Self {
+    pub(crate) fn new() -> Self {
+        Self::with_limit(None)
+    }
+
+    fn with_limit(limit: Option<usize>) -> Self {
         Self {
-            max_frame_size,
-            buffer: vec![0; BUFFER_INITIAL_CAPACITY],
+            buffer: Vec::with_capacity(BUFFER_INITIAL_CAPACITY),
+            limit,
         }
     }
 
-    pub(crate) fn configure(&mut self, max_frame_size: u32) {
-        self.max_frame_size = max_frame_size;
-    }
-}
-
-impl codec::Encoder<NetworkEnvelope> for Encoder {
-    type Error = Error;
-
-    fn encode(&mut self, envelope: NetworkEnvelope, dst: &mut BytesMut) -> Result<()> {
-        let original_len = dst.len();
-
+    fn do_encode(
+        &mut self,
+        envelope: &NetworkEnvelope,
+        dst: &mut BytesMut,
+        start_pos: usize,
+    ) -> Result<()> {
         use NetworkEnvelopePayload::*;
         let (is_last_response, kind, request_id, message) = match &envelope.payload {
             Regular { message } => (false, KIND_REGULAR, None, Some(message)),
@@ -110,9 +112,6 @@ impl codec::Encoder<NetworkEnvelope> for Encoder {
                 message.as_ref().ok(),
             ),
         };
-
-        // size
-        dst.put_u32_le(0); // will be rewritten below.
 
         // flags and kind
         let mut flags = 0;
@@ -144,22 +143,35 @@ impl codec::Encoder<NetworkEnvelope> for Encoder {
             // name
             put_str(dst, message.name());
 
-            // TODO: resize buffer on failures & limit size.
-            let message_size = match message.write_msgpack(&mut self.buffer) {
-                Ok(size) => size,
-                Err(err) => {
-                    dst.truncate(original_len);
-                    return Err(err.into());
-                }
-            };
-
             // message
-            dst.extend_from_slice(&self.buffer[..message_size]);
+            let max_limit = u32::MAX as usize - (dst.len() - start_pos);
+            let limit = self.limit.map_or(max_limit, |limit| limit.min(max_limit));
+            self.buffer.clear();
+            message.write_msgpack(&mut self.buffer, limit)?;
+            dst.extend_from_slice(&self.buffer);
+        }
+
+        Ok(())
+    }
+}
+
+impl codec::Encoder<NetworkEnvelope> for Encoder {
+    type Error = Error;
+
+    fn encode(&mut self, envelope: NetworkEnvelope, dst: &mut BytesMut) -> Result<()> {
+        let original_len = dst.len();
+
+        // size
+        dst.put_u32_le(0); // will be rewritten below.
+
+        if let Err(err) = self.do_encode(&envelope, dst, original_len) {
+            // TODO: if the limit is reached, we need to release memory of the buffer.
+            dst.truncate(original_len);
+            return Err(err);
         }
 
         let size = dst.len() - original_len;
         (&mut dst[original_len..]).put_u32_le(size as u32);
-
         Ok(())
     }
 }
@@ -173,17 +185,11 @@ fn put_str(dst: &mut BytesMut, s: &str) {
 
 // === Decoder ===
 
-pub(crate) struct Decoder {
-    max_frame_size: u32,
-}
+pub(crate) struct Decoder;
 
 impl Decoder {
-    pub(crate) fn new(max_frame_size: u32) -> Self {
-        Self { max_frame_size }
-    }
-
-    pub(crate) fn configure(&mut self, max_frame_size: u32) {
-        self.max_frame_size = max_frame_size;
+    pub(crate) fn new() -> Self {
+        Self
     }
 }
 
@@ -196,15 +202,7 @@ impl codec::Decoder for Decoder {
             return Ok(None);
         }
 
-        let size = (&src[..]).get_u32_le();
-        ensure!(
-            size <= self.max_frame_size,
-            "frame of length {} is too large, max allowed length is {}",
-            size,
-            self.max_frame_size,
-        );
-
-        let size = size as usize;
+        let size = (&src[..]).get_u32_le() as usize;
         if src.len() < size {
             let additional = size - src.len();
             src.reserve(additional);
@@ -278,7 +276,7 @@ fn get_request_id(frame: &mut &[u8]) -> RequestId {
 fn get_message(frame: &mut &[u8]) -> Result<AnyMessage> {
     let protocol = get_str(frame)?;
     let name = get_str(frame)?;
-    AnyMessage::read_msgpack(protocol, name, frame)?
+    AnyMessage::read_msgpack(frame, protocol, name)?
         .ok_or_else(|| eyre!("unknown message {}::{}", protocol, name))
 }
 
@@ -334,8 +332,8 @@ mod tests {
         struct Test(u64);
 
         let mut bytes = BytesMut::new();
-        let mut encoder = Encoder::new(1024);
-        let mut decoder = Decoder::new(1024);
+        let mut encoder = Encoder::new();
+        let mut decoder = Decoder::new();
 
         for i in 1..5 {
             let test = Test(i);
@@ -367,4 +365,6 @@ mod tests {
             }
         }
     }
+
+    // TODO: test errors.
 }

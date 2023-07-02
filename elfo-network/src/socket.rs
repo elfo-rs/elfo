@@ -11,8 +11,6 @@ use crate::{
     config::Transport,
 };
 
-const MAX_FRAME_SIZE: u32 = 65536; // TODO: make it configurable.
-
 // === Socket ===
 
 // TODO: versioning, compression settings etc.
@@ -27,8 +25,8 @@ impl Socket {
     fn tcp(stream: TcpStream, peer: Transport) -> Self {
         let (rx, tx) = stream.into_split();
         Self {
-            read: ReadHalf(FramedRead::new(rx, Decoder::new(MAX_FRAME_SIZE))),
-            write: WriteHalf(FramedWrite::new(tx, Encoder::new(MAX_FRAME_SIZE))),
+            read: ReadHalf(FramedRead::new(rx, Decoder::new())),
+            write: WriteHalf(FramedWrite::new(tx, Encoder::new())),
             peer,
         }
     }

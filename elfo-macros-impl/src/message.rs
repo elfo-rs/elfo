@@ -162,9 +162,9 @@ pub fn message_impl(
             #[message(not(Debug), name = #wrapper_name_str, elfo = #crate_)]
             pub struct _elfo_Wrapper(#ret);
 
-            impl fmt::Debug for _elfo_Wrapper {
+            impl ::std::fmt::Debug for _elfo_Wrapper {
                 #[inline]
-                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                     self.0.fmt(f)
                 }
             }
@@ -218,16 +218,16 @@ pub fn message_impl(
 
     let network_fns = if cfg!(feature = "network") {
         quote! {
-            use #internal::rmps;
-
-            fn write_msgpack(message: &#internal::AnyMessage, mut buffer: &mut [u8]) -> Result<usize, rmps::encode::Error> {
-                let initial_size = buffer.len();
-                rmps::encode::write_named(&mut buffer, cast_ref(message))?;
-                Ok(initial_size - buffer.len())
+            fn write_msgpack(
+                message: &#internal::AnyMessage,
+                buffer: &mut Vec<u8>,
+                limit: usize
+            ) -> Result<(), #internal::rmps::encode::Error> {
+                #internal::write_msgpack(buffer, limit, cast_ref(message))
             }
 
-            fn read_msgpack(buffer: &[u8]) -> Result<#internal::AnyMessage, rmps::decode::Error> {
-                rmps::decode::from_slice::<#name>(buffer).map(#crate_::Message::upcast)
+            fn read_msgpack(buffer: &[u8]) -> Result<#internal::AnyMessage, #internal::rmps::decode::Error> {
+                #internal::read_msgpack::<#name>(buffer).map(#crate_::Message::upcast)
             }
         }
     } else {
@@ -264,8 +264,8 @@ pub fn message_impl(
                 #crate_::Message::upcast(Clone::clone(cast_ref(message)))
             }
 
-            fn debug(message: &#internal::AnyMessage, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt::Debug::fmt(cast_ref(message), f)
+            fn debug(message: &#internal::AnyMessage, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                ::std::fmt::Debug::fmt(cast_ref(message), f)
             }
 
             fn erase(message: &#internal::AnyMessage) -> #crate_::dumping::ErasedMessage {
@@ -280,8 +280,8 @@ pub fn message_impl(
                 name: #name_str,
                 protocol: #protocol,
                 labels: &[
-                    metrics::Label::from_static_parts("message", #name_str),
-                    metrics::Label::from_static_parts("protocol", #protocol),
+                    #internal::metrics::Label::from_static_parts("message", #name_str),
+                    #internal::metrics::Label::from_static_parts("protocol", #protocol),
                 ],
                 dumping_allowed: #dumping_allowed,
                 clone,
@@ -333,8 +333,7 @@ pub fn message_impl(
         const _: () = {
             // Keep this list as minimal as possible to avoid possible collisions with `#name`.
             // Especially avoid `PascalCase`.
-            use ::std::fmt;
-            use #internal::{MESSAGE_LIST, smallbox::smallbox, linkme, metrics};
+            use #internal::{MESSAGE_LIST, smallbox::smallbox, linkme};
 
             #impl_message
             #impl_request

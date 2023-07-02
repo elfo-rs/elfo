@@ -84,7 +84,7 @@ pub mod _priv {
             AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned, MessageKind,
         },
         init::do_start,
-        message::{AnyMessage, MessageVTable, MESSAGE_LIST},
+        message::*,
         object::{GroupVisitor, Object, ObjectArc},
         permissions::{AtomicPermissions, Permissions},
         request_table::RequestId,

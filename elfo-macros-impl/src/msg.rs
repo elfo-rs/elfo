@@ -204,6 +204,7 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
     let input = parse_macro_input!(input as ExprMatch);
     let mut groups = Vec::<MessageGroup>::with_capacity(input.arms.len());
     let crate_ = path_to_elfo;
+    let internal = quote![#crate_::_priv];
 
     for arm in input.arms.into_iter() {
         add_groups(&mut groups, arm).expect("invalid pattern");
@@ -225,12 +226,19 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
                         trait MustBeRegularNotRequest<A, E> { fn test(_: &E) {} }
                         impl<E, M> MustBeRegularNotRequest<(), E> for M {}
                         struct Invalid;
-                        impl<E: EnvelopeOwned, M: #crate_::Request> MustBeRegularNotRequest<Invalid, E> for M {}
+                        impl<E: #internal::EnvelopeOwned, M: #crate_::Request>
+                            MustBeRegularNotRequest<Invalid, E> for M {}
                         <#path as MustBeRegularNotRequest<_, _>>::test(&#envelope_ident)
                     }
 
-                    let _elfo_message = #envelope_ident.unpack_regular();
-                    match _elfo_message.downcast2::<#path>() {
+                    match {
+                        // Support both owned and borrowed contexts, relying on the type inference.
+                        use #internal::{
+                            EnvelopeOwned as _, EnvelopeBorrowed as _,
+                            AnyMessageOwned as _, AnyMessageBorrowed as _,
+                        };
+                        #envelope_ident.unpack_regular().downcast2::<#path>()
+                    } {
                         #(#arms)*
                     }
                 }
@@ -245,9 +253,12 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
                         must_be_request::<#path>();
                     }
 
-                    let (_elfo_message, _elfo_token) = #envelope_ident.unpack_request();
-                    let _elfo_token = _elfo_token.into_received::<#path>();
-                    match (_elfo_message.downcast2::<#path>(), _elfo_token) {
+                    match {
+                        // Only the owned context is supported.
+                        use #internal::{EnvelopeOwned as _, AnyMessageOwned as _};
+                        let (message, token) = #envelope_ident.unpack_request();
+                        (message.downcast2::<#path>(), token.into_received::<#path>())
+                    } {
                         #(#arms)*
                     }
                 }
@@ -264,7 +275,6 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
 
     // TODO: propagate `input.attrs`?
     let expanded = quote! {{
-        use #crate_::_priv::*;
         let #envelope_ident = #match_expr;
         if false { unreachable!(); }
         #(#groups)*

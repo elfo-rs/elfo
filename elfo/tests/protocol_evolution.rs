@@ -7,10 +7,10 @@ use anyhow::{anyhow, ensure, Result};
 use elfo::{_priv::AnyMessage, prelude::*, Message};
 
 fn parse<A: Message + PartialEq, B: Message + PartialEq>(input: A, expected: B) -> Result<()> {
-    let mut buf = [0; 128];
+    let mut buf = Vec::new();
     let input = input.upcast();
-    let size = input.write_msgpack(&mut buf)?;
-    let actual = AnyMessage::read_msgpack(expected.protocol(), expected.name(), &buf[..size])?
+    input.write_msgpack(&mut buf, 512)?;
+    let actual = AnyMessage::read_msgpack(&buf, expected.protocol(), expected.name())?
         .ok_or_else(|| anyhow!("no such message"))?
         .downcast::<B>()
         .map_err(|_| anyhow!("cannot downcast"))?;

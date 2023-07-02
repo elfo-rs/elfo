@@ -6,6 +6,8 @@ use metrics::Label;
 use serde::{Deserialize, Serialize};
 use smallbox::{smallbox, SmallBox};
 
+use elfo_utils::unlikely;
+
 use crate::dumping;
 
 pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deserialize<'de> {
@@ -102,26 +104,6 @@ impl AnyMessage {
         message._touch();
         Ok(message)
     }
-
-    #[doc(hidden)]
-    #[cfg(feature = "network")]
-    #[inline]
-    pub fn write_msgpack(&self, buffer: &mut [u8]) -> Result<usize, rmp_serde::encode::Error> {
-        (self.vtable.write_msgpack)(self, buffer)
-    }
-
-    #[doc(hidden)]
-    #[cfg(feature = "network")]
-    #[inline]
-    pub fn read_msgpack(
-        protocol: &str,
-        name: &str,
-        buffer: &[u8],
-    ) -> Result<Option<Self>, rmp_serde::decode::Error> {
-        lookup_vtable(protocol, name)
-            .map(|vtable| (vtable.read_msgpack)(buffer))
-            .transpose()
-    }
 }
 
 impl Message for AnyMessage {
@@ -179,6 +161,73 @@ impl<'de> Deserialize<'de> for AnyMessage {
     }
 }
 
+cfg_network!({
+    use rmp_serde as rmps;
+
+    impl AnyMessage {
+        #[doc(hidden)]
+        #[inline]
+        pub fn read_msgpack(
+            buffer: &[u8],
+            protocol: &str,
+            name: &str,
+        ) -> Result<Option<Self>, rmps::decode::Error> {
+            lookup_vtable(protocol, name)
+                .map(|vtable| (vtable.read_msgpack)(buffer))
+                .transpose()
+        }
+
+        #[doc(hidden)]
+        #[inline]
+        pub fn write_msgpack(
+            &self,
+            buffer: &mut Vec<u8>,
+            limit: usize,
+        ) -> Result<(), rmps::encode::Error> {
+            (self.vtable.write_msgpack)(self, buffer, limit)
+        }
+    }
+
+    // For monomorphization in the `#[message]` macro.
+    // Reexported in `elfo::_priv`.
+    #[inline]
+    pub fn read_msgpack<M: Message>(buffer: &[u8]) -> Result<M, rmps::decode::Error> {
+        rmps::decode::from_slice(buffer)
+    }
+
+    // For monomorphization in the `#[message]` macro.
+    // Reexported in `elfo::_priv`.
+    #[inline]
+    pub fn write_msgpack(
+        buffer: &mut Vec<u8>,
+        limit: usize,
+        message: &impl Message,
+    ) -> Result<(), rmps::encode::Error> {
+        let mut wr = LimitedWrite(buffer, limit);
+        rmps::encode::write_named(&mut wr, message)
+    }
+
+    struct LimitedWrite<W>(W, usize);
+
+    impl<W: std::io::Write> std::io::Write for LimitedWrite<W> {
+        #[inline]
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if unlikely(buf.len() > self.1) {
+                self.1 = 0;
+                return Ok(0);
+            }
+
+            self.1 -= buf.len();
+            self.0.write(buf)
+        }
+
+        #[inline]
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.0.flush()
+        }
+    }
+});
+
 // === MessageVTable ===
 
 // Reexported in `elfo::_priv`.
@@ -196,9 +245,9 @@ pub struct MessageVTable {
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
     #[cfg(feature = "network")]
-    pub write_msgpack: fn(&AnyMessage, &mut [u8]) -> Result<usize, rmp_serde::encode::Error>,
+    pub write_msgpack: fn(&AnyMessage, &mut Vec<u8>, usize) -> Result<(), rmps::encode::Error>,
     #[cfg(feature = "network")]
-    pub read_msgpack: fn(&[u8]) -> Result<AnyMessage, rmp_serde::decode::Error>,
+    pub read_msgpack: fn(&[u8]) -> Result<AnyMessage, rmps::decode::Error>,
 }
 
 // Reexported in `elfo::_priv`.
