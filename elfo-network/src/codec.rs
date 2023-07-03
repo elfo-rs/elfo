@@ -35,8 +35,10 @@
 use std::{convert::TryFrom, str};
 
 use bytes::{Buf, BufMut, BytesMut};
+use derive_more::From;
 use eyre::{bail, ensure, eyre, Error, Result};
 use tokio_util::codec;
+use tracing::error;
 
 use elfo_core::{
     errors::RequestError,
@@ -45,6 +47,7 @@ use elfo_core::{
     Addr, Message,
     _priv::{AnyMessage, RequestId},
 };
+use elfo_utils::likely;
 
 // Flags are shifted by 4 bits to the left because of the kind.
 const FLAG_IS_LAST_RESPONSE: u8 = 1 << 7;
@@ -160,24 +163,43 @@ impl Encoder {
     }
 }
 
-impl codec::Encoder<NetworkEnvelope> for Encoder {
-    type Error = Error;
+#[derive(Debug, From)]
+pub(crate) enum EncodeError {
+    Fatal(std::io::Error),
+    Skipped,
+}
 
-    fn encode(&mut self, envelope: NetworkEnvelope, dst: &mut BytesMut) -> Result<()> {
-        let original_len = dst.len();
+impl codec::Encoder<NetworkEnvelope> for Encoder {
+    type Error = EncodeError;
+
+    fn encode(&mut self, envelope: NetworkEnvelope, dst: &mut BytesMut) -> Result<(), EncodeError> {
+        let start_pos = dst.len();
 
         // size
         dst.put_u32_le(0); // will be rewritten below.
 
-        if let Err(err) = self.do_encode(&envelope, dst, original_len) {
-            // TODO: if the limit is reached, we need to release memory of the buffer.
-            dst.truncate(original_len);
-            return Err(err);
+        let res = self.do_encode(&envelope, dst, start_pos);
+
+        if likely(res.is_ok()) {
+            let size = dst.len() - start_pos;
+            (&mut dst[start_pos..]).put_u32_le(size as u32);
+            return Ok(());
         }
 
-        let size = dst.len() - original_len;
-        (&mut dst[original_len..]).put_u32_le(size as u32);
-        Ok(())
+        let err = res.unwrap_err();
+        // TODO: if the limit is reached, we need also to release memory of the buffer.
+
+        dst.truncate(start_pos);
+
+        // TODO: cooldown/metrics
+        let (protocol, name) = envelope.payload.protocol_and_name();
+        error!(
+            message = "cannot encode message, skipping",
+            error = %err,
+            protocol = %protocol,
+            name = %name,
+        );
+        Err(EncodeError::Skipped)
     }
 }
 
@@ -218,8 +240,8 @@ impl codec::Decoder for Decoder {
         src.advance(size);
 
         if let Err(err) = &data {
-            // TODO: cooldown.
-            tracing::error!(message = "cannot decode message, skipping", error = %err);
+            // TODO: cooldown/metrics, more info (protocol and name if available)
+            error!(message = "cannot decode message, skipping", error = %err);
         }
 
         Ok(data.ok())
@@ -322,6 +344,28 @@ pub(crate) enum NetworkEnvelopePayload {
     },
 }
 
+impl NetworkEnvelopePayload {
+    fn protocol_and_name(&self) -> (&'static str, &'static str) {
+        match self {
+            Self::Regular { message } => (message.protocol(), message.name()),
+            Self::RequestAny { message, .. } => (message.protocol(), message.name()),
+            Self::RequestAll { message, .. } => (message.protocol(), message.name()),
+            Self::Response {
+                message: Ok(message),
+                ..
+            } => (message.protocol(), message.name()),
+            Self::Response {
+                message: Err(RequestError::Failed),
+                ..
+            } => ("", "RequestError::Failed"),
+            Self::Response {
+                message: Err(RequestError::Ignored),
+                ..
+            } => ("", "RequestError::Ignored"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tokio_util::codec::{Decoder as _, Encoder as _};
@@ -336,8 +380,11 @@ mod tests {
         #[derive(PartialEq)]
         struct Test(u64);
 
+        #[message]
+        struct Big(String);
+
         let mut bytes = BytesMut::new();
-        let mut encoder = Encoder::new();
+        let mut encoder = Encoder::with_limit(Some(100));
         let mut decoder = Decoder::new();
 
         for i in 1..5 {
@@ -346,6 +393,8 @@ mod tests {
             let recipient = Addr::NULL;
 
             let trace_id = TraceId::try_from(i).unwrap();
+
+            // Regular message.
             let envelope = NetworkEnvelope {
                 sender,
                 recipient,
@@ -354,8 +403,21 @@ mod tests {
                     message: test.upcast(),
                 },
             };
-
             encoder.encode(envelope, &mut bytes).unwrap();
+
+            // A big message.
+            let envelope = NetworkEnvelope {
+                sender,
+                recipient,
+                trace_id,
+                payload: NetworkEnvelopePayload::Regular {
+                    message: Big("oops".repeat(100)).upcast(),
+                },
+            };
+            assert!(matches!(
+                encoder.encode(envelope, &mut bytes,).unwrap_err(),
+                EncodeError::Skipped
+            ));
 
             let actual = decoder.decode(&mut bytes).unwrap().unwrap();
 

@@ -420,7 +420,7 @@ async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
 
     socket
         .write
-        .send_flush(envelope)
+        .send(envelope)
         .await
         .wrap_err_with(|| eyre!("cannot send {}", name))
 }

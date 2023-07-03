@@ -261,6 +261,12 @@ impl ResponseToken {
         }
     }
 
+    #[doc(hidden)]
+    #[inline]
+    pub fn forget(mut self) {
+        self.data = None;
+    }
+
     fn do_duplicate(&self) -> Option<Arc<ResponseTokenData>> {
         let data = self.data.as_ref()?;
 

@@ -161,13 +161,21 @@ impl SocketWriter {
         // We should use `tokio::task::unconstrained()` here and preempt the (sub)task
         // after sending each batch of messages.
         loop {
-            // TODO: trace_id (?), error handling, metrics.
+            // TODO: error handling, metrics.
             let mut item = self.rx.recv().await.unwrap();
             loop {
-                let network_envelope = self.make_network_envelope(item);
+                let (network_envelope, response_token) = make_network_envelope(item);
+                scope::set_trace_id(network_envelope.trace_id);
 
                 // This call can actually write to the socket if the buffer is full.
-                self.tx.send(network_envelope).await.unwrap();
+                if self.tx.feed(network_envelope).await.unwrap() {
+                    // Store the response token only if the message is added.
+                    // Otherwise, it will be dropped with the `Failed` reason.
+                    if let Some(token) = response_token {
+                        self.requests.lock().add_token(token);
+                    }
+                }
+
                 item = ward!(self.rx.try_recv().unwrap(), break);
             }
 
@@ -176,77 +184,96 @@ impl SocketWriter {
             self.tx.flush().await.unwrap();
         }
     }
+}
 
-    fn make_network_envelope(&mut self, item: KanalItem) -> NetworkEnvelope {
-        let (sender, trace_id, payload) = match (item.envelope, item.token) {
-            (Ok(envelope), None) => {
-                let sender = envelope.sender();
-                let trace_id = envelope.trace_id();
+fn make_network_envelope(item: KanalItem) -> (NetworkEnvelope, Option<ResponseToken>) {
+    let (sender, trace_id, payload, token) = match (item.envelope, item.token) {
+        // Regular, RequestAny, RequestAll
+        (Ok(envelope), None) => {
+            let sender = envelope.sender();
+            let trace_id = envelope.trace_id();
 
-                let payload = match envelope.message_kind() {
-                    MessageKind::Regular { .. } => NetworkEnvelopePayload::Regular {
+            let (payload, token) = match envelope.message_kind() {
+                MessageKind::Regular { .. } => (
+                    NetworkEnvelopePayload::Regular {
                         message: envelope.unpack_regular(),
                     },
-                    MessageKind::RequestAny(_) => {
-                        let (message, token) = envelope.unpack_request();
-                        let request_id = token.request_id();
-                        self.requests.lock().add_token(token);
+                    None,
+                ),
+                MessageKind::RequestAny(_) => {
+                    let (message, token) = envelope.unpack_request();
+                    (
                         NetworkEnvelopePayload::RequestAny {
-                            request_id,
+                            request_id: token.request_id(),
                             message,
-                        }
-                    }
-                    MessageKind::RequestAll(_) => {
-                        let (message, token) = envelope.unpack_request();
-                        let request_id = token.request_id();
-                        self.requests.lock().add_token(token);
+                        },
+                        Some(token),
+                    )
+                }
+                MessageKind::RequestAll(_) => {
+                    let (message, token) = envelope.unpack_request();
+                    (
                         NetworkEnvelopePayload::RequestAll {
-                            request_id,
+                            request_id: token.request_id(),
                             message,
-                        }
-                    }
-                    MessageKind::Response { .. } => unreachable!(),
-                };
+                        },
+                        Some(token),
+                    )
+                }
+                MessageKind::Response { .. } => unreachable!(),
+            };
 
-                (sender, trace_id, payload)
-            }
-            (Ok(envelope), Some(token)) => {
-                let sender = envelope.sender();
-                let trace_id = envelope.trace_id();
-
-                let payload = match envelope.message_kind() {
-                    MessageKind::Response { request_id, .. } => {
-                        debug_assert_eq!(*request_id, token.request_id());
-                        NetworkEnvelopePayload::Response {
-                            request_id: *request_id,
-                            message: Ok(envelope.unpack_regular()),
-                            is_last: token.is_last(),
-                        }
-                    }
-                    _ => unreachable!(),
-                };
-
-                (sender, trace_id, payload)
-            }
-            (Err(err), Some(token)) => (
-                Addr::NULL,
-                token.trace_id(),
-                NetworkEnvelopePayload::Response {
-                    request_id: token.request_id(),
-                    message: Err(err),
-                    is_last: token.is_last(),
-                },
-            ),
-            (Err(_), None) => unreachable!(),
-        };
-
-        NetworkEnvelope {
-            sender,
-            recipient: item.recipient,
-            trace_id,
-            payload,
+            (sender, trace_id, payload, token)
         }
-    }
+        // Response
+        (Ok(envelope), Some(token)) => {
+            let sender = envelope.sender();
+            let trace_id = envelope.trace_id();
+
+            let payload = match envelope.message_kind() {
+                MessageKind::Response { request_id, .. } => {
+                    debug_assert_eq!(*request_id, token.request_id());
+                    NetworkEnvelopePayload::Response {
+                        request_id: *request_id,
+                        message: Ok(envelope.unpack_regular()),
+                        is_last: token.is_last(),
+                    }
+                }
+                _ => unreachable!(),
+            };
+
+            // The token is semantically moved to another node.
+            token.forget();
+
+            (sender, trace_id, payload, None)
+        }
+        // Failed/Ignored Response
+        (Err(err), Some(token)) => {
+            let sender = Addr::NULL;
+            let trace_id = token.trace_id();
+
+            let payload = NetworkEnvelopePayload::Response {
+                request_id: token.request_id(),
+                message: Err(err),
+                is_last: token.is_last(),
+            };
+
+            // The token is semantically moved to another node.
+            token.forget();
+
+            (sender, trace_id, payload, None)
+        }
+        (Err(_), None) => unreachable!(),
+    };
+
+    let envelope = NetworkEnvelope {
+        sender,
+        recipient: item.recipient,
+        trace_id,
+        payload,
+    };
+
+    (envelope, token)
 }
 
 // === SocketReader ===

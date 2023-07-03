@@ -7,7 +7,7 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::warn;
 
 use crate::{
-    codec::{Decoder, Encoder, NetworkEnvelope},
+    codec::{Decoder, EncodeError, Encoder, NetworkEnvelope},
     config::Transport,
 };
 
@@ -49,23 +49,35 @@ impl ReadHalf {
 pub(crate) struct WriteHalf(FramedWrite<tcp::OwnedWriteHalf, Encoder>);
 
 impl WriteHalf {
+    /// Encodes the message and flushes the internal buffer if needed.
+    ///
+    /// Returns
+    /// * `Ok(true)` if the message is added successfully.
+    /// * `Ok(false)` if the message is skipped because of encoding errors.
+    /// * `Err(err)` if an unrecoverable error happened.
     // TODO: it would be nice to have only `&NetworkEnvelope` here.
     // It requires either to replace `FramedWrite` or make `Message: Sync`.
-    pub(crate) async fn send(&mut self, envelope: NetworkEnvelope) -> Result<()> {
+    pub(crate) async fn feed(&mut self, envelope: NetworkEnvelope) -> Result<bool> {
         // TODO: timeout, it should be clever
-        self.0.feed(envelope).await?;
-        Ok(())
+        match self.0.feed(envelope).await {
+            Ok(()) => Ok(true),
+            Err(EncodeError::Skipped) => Ok(false),
+            Err(EncodeError::Fatal(err)) => Err(err.into()),
+        }
     }
 
+    /// Flushed the internal buffer unconditionally.
     pub(crate) async fn flush(&mut self) -> Result<()> {
-        self.0.flush().await?;
+        if let Err(EncodeError::Fatal(err)) = self.0.flush().await {
+            return Err(err.into());
+        }
         Ok(())
     }
 
-    pub(crate) async fn send_flush(&mut self, envelope: NetworkEnvelope) -> Result<()> {
-        self.send(envelope).await?;
-        self.flush().await?;
-        Ok(())
+    // Encodes the message and flushes the internal buffer.
+    pub(crate) async fn send(&mut self, envelope: NetworkEnvelope) -> Result<()> {
+        self.feed(envelope).await?;
+        self.flush().await
     }
 }
 
