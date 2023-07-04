@@ -22,6 +22,7 @@ pub use crate::{
     request_table::ResponseToken,
     source::{SourceHandle, UnattachedSource},
     topology::Topology,
+    init::try_start,
 };
 pub use elfo_macros::{message_core as message, msg_core as msg};
 
