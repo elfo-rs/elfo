@@ -222,11 +222,13 @@ pub fn message_impl(
                 message: &#internal::AnyMessage,
                 buffer: &mut Vec<u8>,
                 limit: usize
-            ) -> Result<(), #internal::rmps::encode::Error> {
+            ) -> ::std::result::Result<(), #internal::rmps::encode::Error> {
                 #internal::write_msgpack(buffer, limit, cast_ref(message))
             }
 
-            fn read_msgpack(buffer: &[u8]) -> Result<#internal::AnyMessage, #internal::rmps::decode::Error> {
+            fn read_msgpack(buffer: &[u8]) ->
+                ::std::result::Result<#internal::AnyMessage, #internal::rmps::decode::Error>
+            {
                 #internal::read_msgpack::<#name>(buffer).map(#crate_::Message::upcast)
             }
         }
