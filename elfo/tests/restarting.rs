@@ -8,7 +8,7 @@ use std::{
 
 use futures::FutureExt;
 
-use elfo::prelude::*;
+use elfo::{prelude::*, RestartPolicy};
 
 #[message]
 struct Terminate;
@@ -17,7 +17,7 @@ struct Terminate;
 struct Terminated;
 
 #[tokio::test]
-async fn it_restarts_explicitly() {
+async fn actor_restarts_explicitly() {
     let blueprint = ActorGroup::new().exec(move |mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
@@ -37,7 +37,7 @@ async fn it_restarts_explicitly() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn it_restarts_with_timeout_after_failures() {
+async fn actor_restarts_with_timeout_after_failures() {
     let blueprint = ActorGroup::new().exec(move |mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
@@ -60,6 +60,22 @@ async fn it_restarts_with_timeout_after_failures() {
         // https://github.com/tokio-rs/tokio/issues/3985
         tokio::time::sleep(Duration::from_millis(5000 * i + 1)).await;
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn actor_overrides_policy() {
+    #[message]
+    struct Started;
+
+    let blueprint = ActorGroup::new().exec(move |ctx| async move {
+        ctx.set_restart_policy(RestartPolicy::always());
+        let _ = ctx.send(Started).await;
+    });
+
+    let mut proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
+
+    assert_msg!(proxy.recv().await, Started);
+    assert_msg!(proxy.recv().await, Started);
 }
 
 #[message(ret = ())]

@@ -10,7 +10,7 @@ use crate::{
     addr::Addr,
     envelope::Envelope,
     errors::{SendError, TrySendError},
-    group::TerminationPolicy,
+    group::{RestartPolicy, TerminationPolicy},
     mailbox::{Mailbox, RecvResult},
     messages::{ActorStatusReport, Terminate},
     msg,
@@ -131,6 +131,8 @@ pub(crate) struct Actor {
 
 struct ControlBlock {
     status: ActorStatus,
+    /// If `None`, a group's policy will be used.
+    restart_policy: Option<RestartPolicy>,
 }
 
 impl Actor {
@@ -147,6 +149,7 @@ impl Actor {
             request_table: RequestTable::new(addr),
             control: RwLock::new(ControlBlock {
                 status: ActorStatus::INITIALIZING,
+                restart_policy: None,
             }),
             finished: ManualResetEvent::new(false),
             status_subscription,
@@ -204,6 +207,14 @@ impl Actor {
 
     pub(crate) fn request_table(&self) -> &RequestTable {
         &self.request_table
+    }
+
+    pub(crate) fn restart_policy(&self) -> Option<RestartPolicy> {
+        self.control.read().restart_policy.clone()
+    }
+
+    pub(crate) fn set_restart_policy(&self, policy: Option<RestartPolicy>) {
+        self.control.write().restart_policy = policy;
     }
 
     // Note that this method should be called inside a right scope.

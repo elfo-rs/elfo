@@ -351,21 +351,23 @@ where
                 Err(panic) => ActorStatus::FAILED.with_details(panic_to_string(panic)),
             };
 
-            let should_restart = match sv.restart_policy.mode {
-                RestartMode::Always => true,
-                RestartMode::OnFailures => new_status.is_failed(),
-                RestartMode::Never => false,
+            let should_restart = {
+                let object = sv.objects.get(&key).expect("where is the current actor?");
+                let actor = object.as_actor().expect("a supervisor stores only actors");
+
+                let rp_override = actor.restart_policy();
+                let restart_policy = rp_override.as_ref().unwrap_or(&sv.restart_policy);
+                let should_restart = match restart_policy.mode {
+                    RestartMode::Always => true,
+                    RestartMode::OnFailures => new_status.is_failed(),
+                    RestartMode::Never => false,
+                };
+
+                actor.set_status(new_status);
+                should_restart
             };
 
             let need_to_restart = should_restart && !sv.control.read().stop_spawning;
-
-            sv.objects
-                .get(&key)
-                .expect("where is the current actor?")
-                .as_actor()
-                .expect("a supervisor stores only actors")
-                .set_status(new_status);
-
             if need_to_restart {
                 let after = backoff.next();
 

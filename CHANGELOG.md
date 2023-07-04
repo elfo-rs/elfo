@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- context: add `Context::set_restart_policy` to override a group's default restart policy.
+
+### Changed
+- **BREAKING** group: make the module private, reexport `TerminationPolicy` and `RestartPolicy`.
 
 ## [0.2.0-alpha.2] - 2023-06-14
 ### Added

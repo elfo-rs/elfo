@@ -9,12 +9,11 @@ use tokio::{
 use tracing::Metadata;
 
 use elfo_core::{
-    group::TerminationPolicy,
     message,
     messages::{ConfigUpdated, Terminate},
     msg,
     signal::{Signal, SignalKind},
-    ActorGroup, Blueprint, Context,
+    ActorGroup, Blueprint, Context, TerminationPolicy,
 };
 
 use crate::{

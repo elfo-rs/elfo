@@ -8,7 +8,6 @@ use tracing::{error, info};
 
 use elfo_core::{
     dumping::INTERNAL_CLASS,
-    group::TerminationPolicy,
     message,
     messages::{ConfigUpdated, Terminate, UpdateConfig},
     msg,
@@ -16,7 +15,7 @@ use elfo_core::{
     scope::{self, SerdeMode},
     signal::{Signal, SignalKind},
     time::Interval,
-    ActorGroup, Blueprint, Context,
+    ActorGroup, Blueprint, Context, TerminationPolicy,
 };
 use elfo_utils::ward;
 

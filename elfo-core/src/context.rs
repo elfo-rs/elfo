@@ -15,6 +15,7 @@ use crate::{
     dumping::{self, Direction, Dump, Dumper, INTERNAL_CLASS},
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
+    group::RestartPolicy,
     mailbox::RecvResult,
     message::{Message, Request},
     messages, msg,
@@ -89,11 +90,35 @@ impl<C, K> Context<C, K> {
 
     /// Updates the actor's status.
     ///
-    /// ```ignore
-    /// ctx.set_status(ActorStatus::ALARMING.with_details("something wrong"));
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # fn exec(ctx: elfo::Context) {
+    /// ctx.set_status(elfo::ActorStatus::ALARMING.with_details("something wrong"));
+    /// # }
     /// ```
     pub fn set_status(&self, status: ActorStatus) {
         ward!(self.actor.as_ref().and_then(|o| o.as_actor())).set_status(status);
+    }
+
+    /// Overrides the group's default restart policy.
+    ///
+    /// Note: after restart the actor will be created from scratch, so this
+    /// override will be also reset to the group's default restart policy.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # fn exec(ctx: elfo::Context) {
+    /// // Override the group's default restart policy.
+    /// ctx.set_restart_policy(elfo::RestartPolicy::never());
+    ///
+    /// // Set the group's default restart policy.
+    /// ctx.set_restart_policy(None);
+    /// # }
+    /// ```
+    pub fn set_restart_policy(&self, policy: impl Into<Option<RestartPolicy>>) {
+        ward!(self.actor.as_ref().and_then(|o| o.as_actor())).set_restart_policy(policy.into());
     }
 
     /// Closes the mailbox, that leads to returning `None` from `recv()` and

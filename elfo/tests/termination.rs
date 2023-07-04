@@ -1,6 +1,6 @@
 #![cfg(feature = "test-util")]
 
-use elfo::{group::TerminationPolicy, messages::Terminate, prelude::*};
+use elfo::{messages::Terminate, prelude::*, TerminationPolicy};
 
 #[message]
 #[derive(PartialEq)]

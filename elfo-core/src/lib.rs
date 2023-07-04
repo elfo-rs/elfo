@@ -16,7 +16,7 @@ pub use crate::{
     config::Config,
     context::{Context, RequestBuilder},
     envelope::Envelope,
-    group::{ActorGroup, Blueprint},
+    group::{ActorGroup, Blueprint, RestartPolicy, TerminationPolicy},
     init::{start, try_start},
     local::{Local, MoveOwnership},
     message::{Message, Request},
@@ -29,7 +29,6 @@ pub use elfo_macros::{message_core as message, msg_core as msg};
 pub mod config;
 pub mod dumping;
 pub mod errors;
-pub mod group;
 pub mod logging;
 pub mod messages;
 pub mod node;
@@ -50,6 +49,7 @@ mod context;
 mod demux;
 mod envelope;
 mod exec;
+mod group;
 mod init;
 mod local;
 mod macros;
