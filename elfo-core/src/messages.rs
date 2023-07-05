@@ -52,6 +52,28 @@ impl<R: Display> From<R> for ConfigRejected {
     }
 }
 
+#[message(ret = Result<(), StartEntrypointRejected>)]
+#[derive(Constructor)]
+#[non_exhaustive]
+pub struct StartEntrypoint {
+    pub is_check_only: bool,
+}
+
+#[message(part)]
+#[derive(Constructor)]
+#[non_exhaustive]
+pub struct StartEntrypointRejected {
+    pub errors: Vec<EntrypointError>,
+}
+
+#[message(part)]
+#[derive(Constructor)]
+#[non_exhaustive]
+pub struct EntrypointError {
+    pub group: String,
+    pub reason: String,
+}
+
 #[message]
 #[non_exhaustive]
 pub struct ConfigUpdated {

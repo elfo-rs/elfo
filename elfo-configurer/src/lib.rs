@@ -15,9 +15,12 @@ use tracing::{debug, error, info, warn};
 
 use elfo_core::{
     config::AnyConfig,
-    errors::RequestError,
-    messages::{Ping, UpdateConfig, ValidateConfig},
-    msg,
+    errors::{RequestError, TryRecvError},
+    messages::{
+        EntrypointError, Ping, StartEntrypoint, StartEntrypointRejected, UpdateConfig,
+        ValidateConfig,
+    },
+    msg, scope,
     signal::{Signal, SignalKind},
     ActorGroup, ActorStatus, Addr, Blueprint, Context, Topology,
 };
@@ -76,18 +79,73 @@ impl Configurer {
     }
 
     async fn main(mut self) {
+        let mut validated_configs = false;
+        let mut first_envelope = match self.ctx.try_recv().await {
+            Ok(e) => {
+                msg!(match e {
+                    // We do not expect the first message to be `ConfigUpdated` because when the
+                    // actor is first started, `UpdateConfig` is consumed by the supervisor.
+                    (StartEntrypoint { is_check_only, .. }, token) => {
+                        fn convert_to_protocol(
+                            errors: Vec<ReloadConfigsError>,
+                        ) -> Vec<EntrypointError> {
+                            errors
+                                .into_iter()
+                                .map(|e| EntrypointError::new(e.group, e.reason))
+                                .collect()
+                        }
+
+                        if is_check_only {
+                            match self.load_and_check_configs().await {
+                                Ok(_) => self.ctx.respond(token, Ok(())),
+                                Err(errors) => self.ctx.respond(
+                                    token,
+                                    Err(StartEntrypointRejected::new(convert_to_protocol(errors))),
+                                ),
+                            }
+                            return;
+                        } else {
+                            match self.load_and_update_configs(true).await {
+                                Ok(_) => self.ctx.respond(token, Ok(())),
+                                Err(errors) => {
+                                    self.ctx.respond(
+                                        token,
+                                        Err(StartEntrypointRejected::new(convert_to_protocol(
+                                            errors,
+                                        ))),
+                                    );
+                                    panic!("configs are invalid at startup");
+                                }
+                            }
+                        }
+                        validated_configs = true;
+                        None
+                    }
+                    // In case the actor was restarted by the supervisor, no `StartEntrypoint`
+                    // message is sent and we need to process any incoming envelopes normally.
+                    e => Some(e),
+                })
+            }
+            Err(TryRecvError::Empty) => None,
+            // We treat `Closed` as a symptom of termination and stop the actor straightaway.
+            Err(TryRecvError::Closed) => return,
+        };
+
+        // Reload and validate configs in case the actor was restarted by the
+        // supervisor.
+        if !validated_configs && self.load_and_update_configs(true).await.is_ok() {
+            panic!("configs are invalid at startup");
+        }
+
         let signal = Signal::new(SignalKind::UnixHangup, ReloadConfigs::default());
         self.ctx.attach(signal);
         let signal = Signal::new(SignalKind::UnixUser2, ReloadConfigs::forcing());
         self.ctx.attach(signal);
 
-        let can_start = self.load_and_update_configs(true).await.is_ok();
-
-        if !can_start {
-            panic!("configs are invalid at startup");
-        }
-
-        while let Some(envelope) = self.ctx.recv().await {
+        while let Some(envelope) = match first_envelope.take() {
+            e @ Some(..) => e,
+            None => self.ctx.recv().await,
+        } {
             msg!(match envelope {
                 (ReloadConfigs { force }, token) => {
                     let response = self
@@ -101,10 +159,7 @@ impl Configurer {
         }
     }
 
-    async fn load_and_update_configs(
-        &mut self,
-        force: bool,
-    ) -> Result<(), Vec<ReloadConfigsError>> {
+    async fn load_configs(&self) -> Result<Value, Vec<ReloadConfigsError>> {
         let config = match &self.source {
             ConfigSource::File(path) => {
                 info!(message = "loading a config", path = %path.to_string_lossy());
@@ -120,30 +175,47 @@ impl Configurer {
             Ok(config) => config,
             Err(error) => {
                 error!(%error, "invalid config");
-                return Err(vec![ReloadConfigsError { reason: error }]);
-            }
-        };
-
-        let config = match Deserialize::deserialize(config) {
-            Ok(config) => config,
-            Err(error) => {
-                error!(%error, "invalid config");
                 return Err(vec![ReloadConfigsError {
-                    reason: error.to_string(),
+                    group: scope::meta().group.clone(),
+                    reason: error,
                 }]);
             }
         };
+
+        Deserialize::deserialize(config).map_err(|error| {
+            error!(%error, "invalid config");
+            vec![ReloadConfigsError {
+                group: scope::meta().group.clone(),
+                reason: error.to_string(),
+            }]
+        })
+    }
+
+    async fn load_and_check_configs(&self) -> Result<(), Vec<ReloadConfigsError>> {
+        let configs = self.load_configs().await?;
+
+        // Here we rely on the fact that the first `ValidateConfig` message is consumed
+        // by the supervisor and no actors are actually started.
+        let configs_with_meta = match_configs(&self.topology, &configs, TopologyFilter::All);
+        self.validate_all(&configs_with_meta).await
+    }
+
+    async fn load_and_update_configs(
+        &mut self,
+        force: bool,
+    ) -> Result<(), Vec<ReloadConfigsError>> {
+        let configs = self.load_configs().await?;
 
         let mut updated_groups = Vec::new();
 
         debug!("updating configs of system groups");
         updated_groups.extend(
-            self.update_configs(&config, TopologyFilter::System, force)
+            self.update_configs(&configs, TopologyFilter::System, force)
                 .await?,
         );
         debug!("updating configs of user groups");
         updated_groups.extend(
-            self.update_configs(&config, TopologyFilter::User, force)
+            self.update_configs(&configs, TopologyFilter::User, force)
                 .await?,
         );
 
@@ -240,7 +312,7 @@ impl Configurer {
             })
             // TODO: include actor keys in the error message.
             .inspect(|(group, reason)| error!(%group, %reason, "invalid config"))
-            .map(|(_, reason)| ReloadConfigsError { reason })
+            .map(|(group, reason)| ReloadConfigsError { group, reason })
             .collect::<Vec<_>>();
 
         if errors.is_empty() {
@@ -324,6 +396,7 @@ async fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
 enum TopologyFilter {
     System,
     User,
+    All,
 }
 
 fn match_configs(
@@ -338,6 +411,7 @@ fn match_configs(
         .filter(|group| match filter {
             TopologyFilter::System => group.name.starts_with("system."),
             TopologyFilter::User => !group.name.starts_with("system."),
+            TopologyFilter::All => true,
         })
         .map(|group| {
             let empty = Value::Map(Default::default());

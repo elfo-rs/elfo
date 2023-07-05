@@ -250,7 +250,7 @@ pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>
 
     let (tx, rx) = shared::oneshot_channel();
     testers.mount(self::testers(tx));
-    do_start(topology, |_, _| future::ready(()))
+    do_start(topology, false, |_, _| future::ready(()))
         .await
         .expect("cannot start");
 

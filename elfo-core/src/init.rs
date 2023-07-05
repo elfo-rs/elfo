@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
-use futures::{future::join_all, TryFutureExt};
+use futures::future::join_all;
 use tokio::{
     pin, select,
     time::{sleep, timeout, Instant},
@@ -13,10 +13,10 @@ use crate::{
     config::SystemConfig,
     context::Context,
     demux::Demux,
-    errors::{RequestError, StartError},
+    errors::{RequestError, StartError, StartGroupError},
     memory_tracker::MemoryTracker,
     message,
-    messages::{Ping, Terminate, UpdateConfig},
+    messages::{StartEntrypoint, Terminate, UpdateConfig},
     msg,
     object::Object,
     scope::{Scope, ScopeGroupShared},
@@ -29,48 +29,67 @@ use crate::{
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
 
-async fn start_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
+async fn start_entrypoints(ctx: &Context, topology: &Topology, is_check_only: bool) -> Result<()> {
     let futures = topology
         .actor_groups()
         .filter(|group| group.is_entrypoint)
-        .map(|group| {
-            let config = Default::default();
-            ctx.request_to(group.addr, UpdateConfig { config })
+        .map(|group| async move {
+            let response = ctx
+                .request_to(
+                    group.addr,
+                    UpdateConfig {
+                        config: Default::default(),
+                    },
+                )
                 .resolve()
-                .or_else(|err| async move {
-                    match err {
-                        RequestError::Ignored => Ok(Ok(())),
-                        _ => Err(StartError::Other(
-                            "initial messages cannot be delivered".into(),
-                        )),
-                    }
-                })
+                .await;
+            match response {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => Err(StartError::single(group.name.clone(), e.reason)),
+                Err(RequestError::Ignored) => Ok(()),
+                Err(RequestError::Closed(..)) => Err(StartError::single(
+                    group.name.clone(),
+                    "config cannot be delivered to the entrypoint".into(),
+                )),
+            }?;
+
+            let response = ctx
+                .request_to(group.addr, StartEntrypoint { is_check_only })
+                .resolve()
+                .await;
+            match response {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => {
+                    let group_errors: Vec<StartGroupError> = e
+                        .errors
+                        .into_iter()
+                        .map(|e| StartGroupError {
+                            group: e.group,
+                            reason: e.reason,
+                        })
+                        .collect();
+                    Err(StartError::multiple(group_errors))
+                }
+                Err(RequestError::Ignored) => Ok(()),
+                Err(RequestError::Closed(..)) => Err(StartError::single(
+                    group.name,
+                    "starting message cannot be delivered to the entrypoint".into(),
+                )),
+            }
         });
 
-    let error_count = futures::future::try_join_all(futures)
-        .await?
+    let errors: Vec<StartGroupError> = futures::future::join_all(futures)
+        .await
         .into_iter()
         .filter_map(Result::err)
-        .count();
+        .flat_map(|e| e.errors.into_iter())
+        .collect();
 
-    if error_count == 0 {
+    if errors.is_empty() {
         Ok(())
     } else {
-        Err(StartError::InvalidConfig)
+        Err(StartError::multiple(errors))
     }
-}
-
-async fn wait_entrypoints(ctx: &Context, topology: &Topology) -> Result<()> {
-    let futures = topology
-        .actor_groups()
-        .filter(|group| group.is_entrypoint)
-        .map(|group| ctx.request_to(group.addr, Ping).resolve());
-
-    futures::future::try_join_all(futures)
-        .await
-        .map_err(|_| StartError::Other("entrypoint cannot start".into()))?;
-
-    Ok(())
 }
 
 /// Starts a node with the provided topology.
@@ -85,7 +104,7 @@ pub async fn start(topology: Topology) {
 
 /// The same as `start()`, but returns an error rather than panics.
 pub async fn try_start(topology: Topology) -> Result<()> {
-    let res = do_start(topology, termination).await;
+    let res = do_start(topology, false, termination).await;
 
     if res.is_err() {
         // XXX: give enough time to the logger.
@@ -95,10 +114,19 @@ pub async fn try_start(topology: Topology) -> Result<()> {
     res
 }
 
+/// Starts node in "check only" mode. Entrypoints are started, then the system
+/// is immediately gracefully terminated.
+pub async fn check_only(topology: Topology) -> Result<()> {
+    // The logger is not supposed to be initialized in this mode, so we do not wait
+    // for it before exiting.
+    do_start(topology, true, do_termination).await
+}
+
 #[doc(hidden)]
 pub async fn do_start<F: Future>(
     topology: Topology,
-    f: impl FnOnce(Context, Topology) -> F,
+    is_check_only: bool,
+    and_then: impl FnOnce(Context, Topology) -> F,
 ) -> Result<F::Output> {
     message::init();
 
@@ -131,12 +159,11 @@ pub async fn do_start<F: Future>(
     // It must be called after `entry.insert()`.
     let ctx = ctx.with_addr(addr);
 
-    let f = async move {
-        start_entrypoints(&ctx, &topology).await?;
-        wait_entrypoints(&ctx, &topology).await?;
-        Ok(f(ctx, topology).await)
+    let init = async move {
+        start_entrypoints(&ctx, &topology, is_check_only).await?;
+        Ok(and_then(ctx, topology).await)
     };
-    scope.within(f).await
+    scope.within(init).await
 }
 
 #[message]

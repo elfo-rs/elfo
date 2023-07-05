@@ -94,5 +94,5 @@ async fn main() {
         AnyConfig::default(),
     ));
 
-    elfo::start(topology).await;
+    elfo::init::start(topology).await;
 }

@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **BREAKING** group: make the module private, reexport `TerminationPolicy` and `RestartPolicy`.
+- **BREAKING** core: `start` and `try_start` functions are moved to `elfo::init` module ([#95]).
+
+### Added
+- init,configurer: allow to check configs without starting the system ([#95]).
+
+[#95]: https://github.com/elfo-rs/elfo/pull/95
 
 ## [0.2.0-alpha.2] - 2023-06-14
 ### Added

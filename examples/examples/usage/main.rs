@@ -313,5 +313,5 @@ fn topology() -> elfo::Topology {
 
 #[tokio::main]
 async fn main() {
-    elfo::start(topology()).await;
+    elfo::init::start(topology()).await;
 }
