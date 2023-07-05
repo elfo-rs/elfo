@@ -10,5 +10,5 @@ async fn main() {
         _ => unreachable!(),
     };
 
-    elfo::start(topology).await;
+    elfo::init::start(topology).await;
 }

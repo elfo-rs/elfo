@@ -13,12 +13,11 @@ use std::{
 };
 
 use elfo_core::{
-    group::RestartPolicy,
     messages::UpdateConfig,
     msg,
     node::NodeNo,
     routers::{MapRouter, Outcome},
-    ActorGroup, Blueprint, Context, GroupNo, Topology,
+    ActorGroup, Blueprint, Context, GroupNo, RestartPolicy, Topology,
 };
 
 use crate::{config::Config, protocol::HandleConnection};
