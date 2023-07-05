@@ -47,7 +47,7 @@ impl Debug for StartError {
             s.field("errors", &self.errors);
             s.finish()
         } else {
-            write!(f, "failed to start, see errors by actor groups\n\n")?;
+            write!(f, "failed to start\n\n")?;
             for (group, errors) in group_errors(self.errors.clone()) {
                 writeln!(f, "{group}:")?;
                 for error in errors {
@@ -62,7 +62,7 @@ impl Debug for StartError {
 
 impl Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "failed to start, see errors: ")?;
+        write!(f, "failed to start: ")?;
         let mut i = 1;
         for (group, errors) in group_errors(self.errors.clone()) {
             for error in errors {
