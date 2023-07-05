@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use eyre::{Result, WrapErr};
 use futures::{SinkExt, StreamExt};
+use metrics::counter;
 use tokio::net::{tcp, TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::warn;
@@ -42,7 +43,17 @@ pub(crate) struct ReadHalf(FramedRead<tcp::OwnedReadHalf, Decoder>);
 
 impl ReadHalf {
     pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>> {
-        self.0.next().await.transpose()
+        let result = self.0.next().await.transpose();
+
+        let stats = self.0.decoder_mut().take_stats();
+        counter!("elfo_network_received_messages_total", stats.messages);
+        counter!(
+            "elfo_network_received_uncompressed_bytes_total",
+            stats.bytes
+        );
+        // TODO: elfo_network_received_compressed_bytes_total
+
+        result
     }
 }
 
@@ -59,6 +70,7 @@ impl WriteHalf {
     // It requires either to replace `FramedWrite` or make `Message: Sync`.
     pub(crate) async fn feed(&mut self, envelope: NetworkEnvelope) -> Result<bool> {
         // TODO: timeout, it should be clever
+        // TODO: we should also emit metrics here, not only in `flush()`.
         match self.0.feed(envelope).await {
             Ok(()) => Ok(true),
             Err(EncodeError::Skipped) => Ok(false),
@@ -68,9 +80,17 @@ impl WriteHalf {
 
     /// Flushed the internal buffer unconditionally.
     pub(crate) async fn flush(&mut self) -> Result<()> {
-        if let Err(EncodeError::Fatal(err)) = self.0.flush().await {
+        let result = self.0.flush().await;
+
+        let stats = self.0.encoder_mut().take_stats();
+        counter!("elfo_network_sent_messages_total", stats.messages);
+        counter!("elfo_network_sent_uncompressed_bytes_total", stats.bytes);
+        // TODO: elfo_network_sent_compressed_bytes_total
+
+        if let Err(EncodeError::Fatal(err)) = result {
             return Err(err.into());
         }
+
         Ok(())
     }
 

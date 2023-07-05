@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use eyre::Result;
+use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::Mutex;
 use tracing::{debug, error, trace, warn};
 
@@ -359,7 +360,11 @@ impl SocketReader {
                 let trace_id = network_envelope.trace_id;
                 let recipient = network_envelope.recipient;
 
-                let Some(token) = self.requests.lock().get_token(recipient, request_id, is_last) else {
+                let Some(token) = self
+                    .requests
+                    .lock()
+                    .get_token(recipient, request_id, is_last)
+                else {
                     warn!(
                         message = "received response to unknown request",
                         recipient = %recipient,
@@ -422,7 +427,9 @@ impl SocketReader {
 
         let Some(object) = book.get(recipient) else {
             if let Some(envelope) = flows.close(recipient).map(make_system_envelope) {
-                self.tx.try_send(KanalItem::simple(Addr::NULL, envelope)).unwrap();
+                self.tx
+                    .try_send(KanalItem::simple(Addr::NULL, envelope))
+                    .unwrap();
             }
             return;
         };
@@ -550,6 +557,7 @@ struct Pusher {
 impl Pusher {
     async fn exec(self) -> PusherStopped {
         debug!(actor_addr = %self.actor_addr, "pusher started");
+        increment_gauge!("elfo_network_pushers", 1.);
 
         loop {
             let Some((envelope, routed)) = self.rx_flows.lock().dequeue(self.actor_addr) else {
@@ -599,6 +607,12 @@ impl Pusher {
         } else {
             false
         }
+    }
+}
+
+impl Drop for Pusher {
+    fn drop(&mut self) {
+        decrement_gauge!("elfo_network_pushers", 1.);
     }
 }
 

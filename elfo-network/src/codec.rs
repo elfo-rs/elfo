@@ -32,7 +32,7 @@
 
 // TODO: send message ID instead of protocol/name.
 
-use std::{convert::TryFrom, str};
+use std::{convert::TryFrom, mem, str};
 
 use bytes::{Buf, BufMut, BytesMut};
 use derive_more::From;
@@ -70,6 +70,13 @@ pub(crate) struct Encoder {
     /// serialization directly into `BytesMut` according to micro-benchmarks.
     buffer: Vec<u8>,
     limit: Option<usize>,
+    stats: EncoderDeltaStats,
+}
+
+#[derive(Default)]
+pub(crate) struct EncoderDeltaStats {
+    pub(crate) messages: u64,
+    pub(crate) bytes: u64,
 }
 
 impl Encoder {
@@ -81,7 +88,12 @@ impl Encoder {
         Self {
             buffer: Vec::with_capacity(BUFFER_INITIAL_CAPACITY),
             limit,
+            stats: EncoderDeltaStats::default(),
         }
+    }
+
+    pub(crate) fn take_stats(&mut self) -> EncoderDeltaStats {
+        mem::take(&mut self.stats)
     }
 
     fn do_encode(
@@ -183,6 +195,10 @@ impl codec::Encoder<NetworkEnvelope> for Encoder {
         if likely(res.is_ok()) {
             let size = dst.len() - start_pos;
             (&mut dst[start_pos..]).put_u32_le(size as u32);
+
+            self.stats.messages += 1;
+            self.stats.bytes += size as u64;
+
             return Ok(());
         }
 
@@ -212,11 +228,25 @@ fn put_str(dst: &mut BytesMut, s: &str) {
 
 // === Decoder ===
 
-pub(crate) struct Decoder;
+pub(crate) struct Decoder {
+    stats: DecoderDeltaStats,
+}
+
+#[derive(Default)]
+pub(crate) struct DecoderDeltaStats {
+    pub(crate) messages: u64,
+    pub(crate) bytes: u64,
+}
 
 impl Decoder {
     pub(crate) fn new() -> Self {
-        Self
+        Self {
+            stats: DecoderDeltaStats::default(),
+        }
+    }
+
+    pub(crate) fn take_stats(&mut self) -> DecoderDeltaStats {
+        mem::take(&mut self.stats)
     }
 }
 
@@ -238,6 +268,9 @@ impl codec::Decoder for Decoder {
 
         let data = decode(&src[4..size]);
         src.advance(size);
+
+        self.stats.messages += 1;
+        self.stats.bytes += size as u64;
 
         if let Err(err) = &data {
             // TODO: cooldown/metrics, more info (protocol and name if available)

@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use fxhash::FxBuildHasher;
+use metrics::{decrement_gauge, increment_gauge};
 use tracing::{debug, warn};
 
 use elfo_core::{
@@ -21,6 +22,12 @@ pub(super) struct TxFlows {
 struct TxFlow {
     control: TxFlowControl,
     waiters: SendNotify,
+}
+
+impl Drop for TxFlow {
+    fn drop(&mut self) {
+        decrement_gauge!("elfo_network_tx_flows", 1.);
+    }
 }
 
 pub(super) enum TryAcquire {
@@ -50,7 +57,9 @@ impl TxFlows {
     pub(super) fn acquire(&self, addr: Addr) -> Acquire {
         debug_assert!(!addr.is_local());
 
-        let Some(flow) = self.map.get(&addr) else { return Acquire::Closed };
+        let Some(flow) = self.map.get(&addr) else {
+            return Acquire::Closed;
+        };
 
         if flow.control.try_acquire() {
             Acquire::Done
@@ -65,7 +74,9 @@ impl TxFlows {
     pub(super) fn try_acquire(&self, addr: Addr) -> TryAcquire {
         debug_assert!(!addr.is_local());
 
-        let Some(flow) = self.map.get(&addr) else { return TryAcquire::Closed };
+        let Some(flow) = self.map.get(&addr) else {
+            return TryAcquire::Closed;
+        };
 
         if flow.control.try_acquire() {
             TryAcquire::Done
@@ -77,7 +88,9 @@ impl TxFlows {
     pub(super) fn do_acquire(&self, addr: Addr) -> bool {
         debug_assert!(!addr.is_local());
 
-        let Some(flow) = self.map.get(&addr) else { return false };
+        let Some(flow) = self.map.get(&addr) else {
+            return false;
+        };
 
         flow.control.do_acquire();
         true
@@ -92,6 +105,7 @@ impl TxFlows {
 
         self.map.entry(addr).or_insert_with(|| {
             let control = TxFlowControl::new(self.initial_window);
+            increment_gauge!("elfo_network_tx_flows", 1.);
             TxFlow {
                 control,
                 waiters: SendNotify::default(),

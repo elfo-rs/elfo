@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use fxhash::FxHashMap;
+use metrics::{decrement_gauge, increment_gauge};
 use tracing::{debug, info};
 
 use elfo_core::{Addr, Envelope};
@@ -9,6 +10,8 @@ use super::flow_control::RxFlowControl;
 use crate::protocol::internode;
 
 // TODO: `CloseFlow` ratelimiting.
+// TODO: add `kind="Routed|Direct"` to the `elfo_network_rx_flows`.
+// TODO: add `stability="Stable|Unstable"` to the `elfo_network_rx_flows`.
 
 // For direct messages:
 // * acquire_direct(true)
@@ -26,7 +29,16 @@ pub(super) struct RxFlows {
     // local addr => flow data
     map: FxHashMap<Addr, RxFlowData>,
     routed_control: RxFlowControl,
+    routed_used: bool,
     initial_window: i32,
+}
+
+impl Drop for RxFlows {
+    fn drop(&mut self) {
+        if self.routed_used {
+            decrement_gauge!("elfo_network_rx_flows", 1.);
+        }
+    }
 }
 
 struct RxFlowData {
@@ -36,11 +48,18 @@ struct RxFlowData {
     queue: Option<VecDeque<(Envelope, bool)>>,
 }
 
+impl Drop for RxFlowData {
+    fn drop(&mut self) {
+        decrement_gauge!("elfo_network_rx_flows", 1.);
+    }
+}
+
 impl RxFlows {
     pub(super) fn new(initial_window: i32) -> Self {
         Self {
             map: Default::default(),
             routed_control: RxFlowControl::new(initial_window),
+            routed_used: false,
             initial_window,
         }
     }
@@ -55,9 +74,12 @@ impl RxFlows {
         debug_assert!(addr.is_local());
 
         let initial_window = self.initial_window;
-        let flow = self.map.entry(addr).or_insert_with(|| RxFlowData {
-            control: RxFlowControl::new(initial_window),
-            queue: None,
+        let flow = self.map.entry(addr).or_insert_with(|| {
+            increment_gauge!("elfo_network_rx_flows", 1.);
+            RxFlowData {
+                control: RxFlowControl::new(initial_window),
+                queue: None,
+            }
         });
 
         RxFlow { addr, flow }
@@ -65,6 +87,11 @@ impl RxFlows {
 
     pub(super) fn acquire_routed(&mut self, tx_knows: bool) {
         self.routed_control.do_acquire(tx_knows);
+
+        if !self.routed_used {
+            increment_gauge!("elfo_network_rx_flows", 1.);
+            self.routed_used = true;
+        }
     }
 
     pub(super) fn release_routed(&mut self) -> Option<internode::UpdateFlow> {
@@ -101,7 +128,7 @@ impl RxFlows {
         debug!(
             message = "flow closed",
             addr = %addr,
-            dropped = flow.queue.map_or(0, |q| q.len()),
+            dropped = flow.queue.as_ref().map_or(0, |q| q.len()),
         );
         Some(internode::CloseFlow {
             addr: addr.into_remote(),
