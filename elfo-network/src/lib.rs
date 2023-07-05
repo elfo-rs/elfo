@@ -29,6 +29,7 @@ mod connection;
 mod discovery;
 mod node_map;
 mod protocol;
+mod rtt;
 mod socket;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
@@ -64,6 +65,7 @@ pub fn new(topology: &Topology) -> Blueprint {
         .restart_policy(RestartPolicy::never())
         .router(MapRouter::new(|envelope| {
             msg!(match envelope {
+                // TODO: send to all connections.
                 UpdateConfig => Outcome::Unicast(ActorKey::Discovery),
                 msg @ HandleConnection => Outcome::Unicast(ActorKey::Connection {
                     local: msg.local.clone(),

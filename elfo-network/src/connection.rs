@@ -1,19 +1,21 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use eyre::Result;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::Mutex;
+use quanta::Instant;
 use tracing::{debug, error, trace, warn};
 
 use elfo_core::{
     message, Local, Message,
     _priv::{EnvelopeOwned, GroupVisitor, MessageKind, Object, ObjectArc},
     errors::{RequestError, SendError, TrySendError},
-    messages::Impossible,
+    messages::{ConfigUpdated, Impossible},
     msg,
     node::NodeNo,
     remote, scope,
     stream::Stream,
+    time::Interval,
     Addr, Context, Envelope, GroupNo, ResponseToken, Topology,
 };
 use elfo_utils::{likely, unlikely};
@@ -26,6 +28,7 @@ use self::{
 use crate::{
     codec::{NetworkEnvelope, NetworkEnvelopePayload},
     protocol::{internode, HandleConnection},
+    rtt::Rtt,
     socket::{ReadHalf, WriteHalf},
     NetworkContext,
 };
@@ -42,6 +45,9 @@ struct StartPusher(Local<Addr>);
 
 #[message]
 struct PusherStopped;
+
+#[message]
+struct PingTick;
 
 pub(crate) struct Connection {
     ctx: NetworkContext,
@@ -72,6 +78,7 @@ impl Connection {
             _ => unreachable!("unexpected initial message"),
         });
 
+        let time_origin = Instant::now();
         let tx_flows = Arc::new(TxFlows::new(first_message.initial_window));
         let rx_flows = Arc::new(Mutex::new(RxFlows::new(first_message.initial_window)));
         let requests = Arc::new(Mutex::new(OutgoingRequests::default()));
@@ -107,6 +114,10 @@ impl Connection {
                 .map(|g| g.addr)
                 .find(|a| a.group_no() == self.local.0)
                 .expect("invalid local group"),
+            time_origin,
+            // TODO: the number of samples should be calculated based on telemetry scrape
+            //       interval, but it's not povideded for now by the elfo core.
+            rtt: Rtt::new(5),
             rx: socket.read,
             tx: local_tx.clone(),
             tx_flows: tx_flows.clone(),
@@ -115,11 +126,26 @@ impl Connection {
         };
         self.ctx.attach(Stream::once(sr.exec()));
 
+        // Start ping ticks.
+        let ping_interval = self.ctx.attach(Interval::new(PingTick));
+        ping_interval.start_after(Duration::ZERO, self.ctx.config().ping_interval);
+
         while let Some(envelope) = self.ctx.recv().await {
             // TODO: graceful termination
             // TODO: handle another `HandleConnection`
 
             msg!(match envelope {
+                ConfigUpdated => {
+                    ping_interval.set_period(self.ctx.config().ping_interval);
+                }
+                PingTick => {
+                    let envelope = make_system_envelope(internode::Ping {
+                        payload: time_origin.elapsed().as_nanos() as u64,
+                    });
+                    let _ = local_tx.try_send(KanalItem::simple(Addr::NULL, envelope));
+
+                    // TODO: perform health check
+                }
                 StartPusher(addr) => {
                     let pusher = Pusher {
                         ctx: self.ctx.pruned(),
@@ -284,6 +310,8 @@ fn make_network_envelope(item: KanalItem) -> (NetworkEnvelope, Option<ResponseTo
 struct SocketReader {
     ctx: Context,
     group_addr: Addr,
+    time_origin: Instant,
+    rtt: Rtt,
     rx: ReadHalf,
     tx: kanal::AsyncSender<KanalItem>,
     tx_flows: Arc<TxFlows>,
@@ -404,21 +432,28 @@ impl SocketReader {
         ))
     }
 
-    fn handle_system_message(&self, envelope: &Envelope) -> bool {
+    fn handle_system_message(&mut self, envelope: &Envelope) -> bool {
         msg!(match envelope {
             msg @ internode::UpdateFlow => {
                 self.tx_flows.update_flow(msg);
-                true
             }
             msg @ internode::CloseFlow => {
                 self.tx_flows.close_flow(msg);
-                true
             }
-            // TODO: Ping/Pong
-            _ => {
-                false
+            msg @ internode::Ping => {
+                let envelope = make_system_envelope(internode::Pong {
+                    payload: msg.payload,
+                });
+                let _ = self.tx.try_send(KanalItem::simple(Addr::NULL, envelope));
             }
-        })
+            msg @ internode::Pong => {
+                let time_ns = self.time_origin.elapsed().as_nanos() as u64 - msg.payload;
+                self.rtt.push(Duration::from_nanos(time_ns));
+            }
+            _ => return false,
+        });
+
+        true
     }
 
     fn handle_direct_message(&self, recipient: Addr, envelope: Envelope) {

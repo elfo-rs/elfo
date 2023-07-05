@@ -9,8 +9,14 @@ use serde::{
 #[derive(Debug, Deserialize)]
 pub(crate) struct Config {
     pub(crate) listen: Vec<Transport>,
+    #[serde(with = "humantime_serde", default = "default_ping_interval")]
+    pub(crate) ping_interval: Duration,
     #[serde(default)]
     pub(crate) discovery: DiscoveryConfig, // TODO: optional?
+}
+
+fn default_ping_interval() -> Duration {
+    Duration::from_secs(5)
 }
 
 #[derive(Debug, Deserialize, Default)]
