@@ -15,7 +15,7 @@ use tracing::{debug, error, info, warn};
 
 use elfo_core::{
     config::AnyConfig,
-    errors::{RequestError, TryRecvError},
+    errors::RequestError,
     messages::{
         EntrypointError, Ping, StartEntrypoint, StartEntrypointRejected, UpdateConfig,
         ValidateConfig,
@@ -80,8 +80,8 @@ impl Configurer {
 
     async fn main(mut self) {
         let mut validated_configs = false;
-        let mut first_envelope = match self.ctx.try_recv().await {
-            Ok(e) => {
+        let mut first_envelope = match self.ctx.recv().await {
+            Some(e) => {
                 msg!(match e {
                     // We do not expect the first message to be `ConfigUpdated` because when the
                     // actor is first started, `UpdateConfig` is consumed by the supervisor.
@@ -126,9 +126,8 @@ impl Configurer {
                     e => Some(e),
                 })
             }
-            Err(TryRecvError::Empty) => None,
-            // We treat `Closed` as a symptom of termination and stop the actor straightaway.
-            Err(TryRecvError::Closed) => return,
+            // We treat `None` as a symptom of termination and stop the actor straightaway.
+            None => return,
         };
 
         // Reload and validate configs in case the actor was restarted by the
