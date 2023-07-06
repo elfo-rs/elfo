@@ -1,13 +1,11 @@
 use std::{char, collections::HashMap};
 
-use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
     parse_macro_input, spanned::Spanned, Arm, ExprMatch, Ident, Pat, PatIdent, PatWild, Path, Token,
 };
 
-// TODO: use `proc-macro-error` instead of `panic!`.
-// TODO: use `proc-macro-crate`?
+use crate::errors::emit_error;
 
 #[derive(Debug)]
 struct MessageGroup {
@@ -85,11 +83,20 @@ fn extract_kind(pat: &Pat) -> Result<GroupKind, &'static str> {
         Pat::Slice(_) => Err("slice patterns are forbidden"),
         Pat::Struct(pat) => Ok(GroupKind::Regular(extract_path_to_type(&pat.path))),
         Pat::Tuple(pat) => {
-            assert_eq!(pat.elems.len(), 2, "invalid request pattern");
+            if pat.elems.len() != 2 {
+                return Err("invalid request pattern");
+            }
 
             match pat.elems.last().unwrap() {
-                Pat::Ident(pat) if is_valid_token_ident(pat) => {}
-                _ => panic!("the token must be used"),
+                Pat::Ident(pat) => {
+                    if !is_valid_token_ident(pat) {
+                        emit_error!(
+                            pat.span(),
+                            "the token must be used, or call `drop(_)` explicitly"
+                        )
+                    }
+                }
+                _ => return Err("token must be identifier"),
             }
 
             match extract_kind(pat.elems.first().unwrap())? {
@@ -130,6 +137,7 @@ fn refine_pat(pat: &mut Pat) {
         // `(e @ SomeType, token)`
         // `(SomeType, token)`
         Pat::Tuple(pat) => {
+            // It's ok to use `assert_eq!` here because it must be already checked.
             assert_eq!(pat.elems.len(), 2, "invalid request pattern");
 
             match pat.elems.first_mut() {
@@ -156,7 +164,7 @@ fn refine_pat(pat: &mut Pat) {
     };
 }
 
-fn add_groups(groups: &mut Vec<MessageGroup>, mut arm: Arm) -> Result<(), &'static str> {
+fn add_groups(groups: &mut Vec<MessageGroup>, mut arm: Arm) {
     let mut add = |kind, arm: Arm| {
         // println!("group {:?} {:#?}", kind, arm.pat);
         match groups.iter_mut().find(|common| common.kind == kind) {
@@ -172,7 +180,13 @@ fn add_groups(groups: &mut Vec<MessageGroup>, mut arm: Arm) -> Result<(), &'stat
         let mut map = HashMap::new();
 
         for pat in &pat.cases {
-            let kind = extract_kind(pat)?;
+            let kind = match extract_kind(pat) {
+                Ok(kind) => kind,
+                Err(err) => {
+                    emit_error!(pat.span(), "{err}");
+                    continue;
+                }
+            };
             let new_arm = map.entry(kind).or_insert_with(|| {
                 let mut arm = arm.clone();
                 if let Pat::Or(pat) = &mut arm.pat {
@@ -192,22 +206,23 @@ fn add_groups(groups: &mut Vec<MessageGroup>, mut arm: Arm) -> Result<(), &'stat
             add(kind, arm);
         }
     } else {
-        let kind = extract_kind(&arm.pat)?;
+        let kind = match extract_kind(&arm.pat) {
+            Ok(kind) => kind,
+            Err(err) => return emit_error!(arm.pat.span(), "{err}"),
+        };
         refine_pat(&mut arm.pat);
         add(kind, arm);
     }
-
-    Ok(())
 }
 
-pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
+pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as ExprMatch);
     let mut groups = Vec::<MessageGroup>::with_capacity(input.arms.len());
     let crate_ = path_to_elfo;
     let internal = quote![#crate_::_priv];
 
     for arm in input.arms.into_iter() {
-        add_groups(&mut groups, arm).expect("invalid pattern");
+        add_groups(&mut groups, arm);
     }
 
     let envelope_ident = quote! { _elfo_envelope };
@@ -263,12 +278,22 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
                     }
                 }
             },
-            (GroupKind::Wild, [arm]) => quote! {
-                else {
-                    match #envelope_ident { #arm }
+            (GroupKind::Wild, arms) => {
+                let mut arms_iter = arms.iter();
+                let arm = arms_iter.next().unwrap();
+
+                let expanded = quote! {
+                    else {
+                        match #envelope_ident { #arm }
+                    }
+                };
+
+                for arm in arms_iter {
+                    emit_error!(arm.pat.span(), "this branch will never be matched");
                 }
-            },
-            (GroupKind::Wild, _) => panic!("too many default branches"),
+
+                expanded
+            }
         });
 
     let match_expr = input.expr;
@@ -280,5 +305,10 @@ pub fn msg_impl(input: TokenStream, path_to_elfo: Path) -> TokenStream {
         #(#groups)*
     }};
 
-    TokenStream::from(expanded)
+    // Errors must be checked after expansion, otherwise some errors can be lost.
+    if let Some(errors) = crate::errors::into_tokens() {
+        quote! {{ #errors #expanded }}.into()
+    } else {
+        expanded.into()
+    }
 }

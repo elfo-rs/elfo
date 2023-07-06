@@ -9,7 +9,7 @@ thread_local! {
 
 macro_rules! emit_error {
     ($span:expr, $($tt:tt)*) => {
-        crate::errors::emit(Error::new($span, format!($($tt)*)));
+        crate::errors::emit(syn::Error::new($span, format!($($tt)*)))
     }
 }
 
@@ -27,10 +27,6 @@ pub(crate) fn emit(error: Error) {
     });
 }
 
-pub(crate) fn into_tokens() -> TokenStream {
-    if let Some(error) = ERROR.with(|e| e.borrow_mut().take()) {
-        error.into_compile_error()
-    } else {
-        TokenStream::new()
-    }
+pub(crate) fn into_tokens() -> Option<TokenStream> {
+    ERROR.with(|e| e.borrow_mut().take().map(|e| e.into_compile_error()))
 }

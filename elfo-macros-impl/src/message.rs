@@ -1,14 +1,13 @@
 use std::{env, sync::Mutex};
 
-use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
     parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
-    Data, DeriveInput, Error, Ident, LitStr, Path, Token, Type,
+    Data, DeriveInput, Ident, LitStr, Path, Token, Type,
 };
 
 use crate::errors::emit_error;
@@ -102,7 +101,7 @@ impl Parse for MessageArgs {
     }
 }
 
-fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream2) -> TokenStream2 {
+fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream) -> TokenStream {
     let tokens = if blacklist.iter().all(|x| x != name) {
         quote! { #[derive(#path)] }
     } else {
@@ -112,7 +111,7 @@ fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream2) -> Toke
     tokens.into_token_stream()
 }
 
-fn gen_impl_debug(input: &DeriveInput) -> TokenStream2 {
+fn gen_impl_debug(input: &DeriveInput) -> TokenStream {
     let name = &input.ident;
     let field = match &input.data {
         Data::Struct(data) if data.fields.len() == 1 => Some(data.fields.iter().next().unwrap()),
@@ -124,7 +123,7 @@ fn gen_impl_debug(input: &DeriveInput) -> TokenStream2 {
             name.span(),
             "`transparent` is applicable only for structs with one field"
         );
-        return TokenStream2::new();
+        return TokenStream::new();
     };
 
     let propagate_fmt = if let Some(ident) = field.ident.as_ref() {
@@ -169,10 +168,10 @@ fn ensure_proto_name_uniqueness(protocol: &str, name: &str) {
 }
 
 pub fn message_impl(
-    args: TokenStream,
-    input: TokenStream,
+    args: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
     default_path_to_elfo: Path,
-) -> TokenStream {
+) -> proc_macro::TokenStream {
     let args = parse_macro_input!(args as MessageArgs);
     let crate_ = args.crate_.unwrap_or(default_path_to_elfo);
 
@@ -197,38 +196,6 @@ pub fn message_impl(
     if !args.part {
         ensure_proto_name_uniqueness(&protocol_str, &name_str);
     }
-
-    let ret_wrapper = if let Some(ret) = &args.ret {
-        let wrapper_name_str = format!("{name_str}::Response");
-
-        quote! {
-            #[message(not(Debug), protocol = #protocol_str, name = #wrapper_name_str, elfo = #crate_)]
-            pub struct _elfo_Wrapper(#ret);
-
-            impl ::std::fmt::Debug for _elfo_Wrapper {
-                #[inline]
-                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                    self.0.fmt(f)
-                }
-            }
-
-            impl From<#ret> for _elfo_Wrapper {
-                #[inline]
-                fn from(inner: #ret) -> Self {
-                    _elfo_Wrapper(inner)
-                }
-            }
-
-            impl From<_elfo_Wrapper> for #ret {
-                #[inline]
-                fn from(wrapper: _elfo_Wrapper) -> Self {
-                    wrapper.0
-                }
-            }
-        }
-    } else {
-        quote! {}
-    };
 
     let derive_debug = if !args.transparent {
         gen_derive_attr(&args.not, "Debug", quote![Debug])
@@ -299,8 +266,6 @@ pub fn message_impl(
                 }
             }
 
-            #ret_wrapper
-
             fn cast_ref(message: &#internal::AnyMessage) -> &#name {
                 message.downcast_ref::<#name>().expect("invalid vtable")
             }
@@ -345,6 +310,8 @@ pub fn message_impl(
     };
 
     let impl_request = if let Some(ret) = &args.ret {
+        let wrapper_name_str = format!("{name_str}::Response");
+
         if args.part {
             emit_error!(ret.span(), "`part` and `ret` attributes are incompatible");
         }
@@ -353,6 +320,30 @@ pub fn message_impl(
             impl #crate_::Request for #name {
                 type Response = #ret;
                 type Wrapper = _elfo_Wrapper;
+            }
+
+            #[message(not(Debug), protocol = #protocol_str, name = #wrapper_name_str, elfo = #crate_)]
+            pub struct _elfo_Wrapper(#ret);
+
+            impl ::std::fmt::Debug for _elfo_Wrapper {
+                #[inline]
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    self.0.fmt(f)
+                }
+            }
+
+            impl From<#ret> for _elfo_Wrapper {
+                #[inline]
+                fn from(inner: #ret) -> Self {
+                    _elfo_Wrapper(inner)
+                }
+            }
+
+            impl From<_elfo_Wrapper> for #ret {
+                #[inline]
+                fn from(wrapper: _elfo_Wrapper) -> Self {
+                    wrapper.0
+                }
             }
         }
     } else {
@@ -365,9 +356,7 @@ pub fn message_impl(
         quote! {}
     };
 
-    let errors = crate::errors::into_tokens();
-
-    TokenStream::from(quote! {
+    let expanded = quote! {
         #derive_debug
         #derive_clone
         #derive_serialize
@@ -387,8 +376,13 @@ pub fn message_impl(
             #impl_message
             #impl_request
             #impl_debug
-
-            #errors
         };
-    })
+    };
+
+    // Errors must be checked after expansion, otherwise some errors can be lost.
+    if let Some(errors) = crate::errors::into_tokens() {
+        quote! { #expanded #errors }.into()
+    } else {
+        expanded.into()
+    }
 }
