@@ -10,7 +10,7 @@ edition.workspace = true
 readme.workspace = true
 
 [dev-dependencies]
-elfo = { version = "0.2.0-alpha.3", path = "../elfo", features = ["full", "test-util"] }
+elfo = { version = "0.2.0-alpha.4", path = "../elfo", features = ["full", "test-util"] }
 
 anyhow = "1.0.40"
 futures = "0.3.12"
