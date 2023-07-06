@@ -19,7 +19,7 @@ struct MessageArgs {
     ret: Option<Type>,
     part: bool,
     transparent: bool,
-    dumping_allowed: bool,
+    dumping_allowed: Option<bool>,
     crate_: Option<Path>,
     not: Vec<String>,
 }
@@ -32,7 +32,7 @@ impl Parse for MessageArgs {
             protocol: None,
             part: false,
             transparent: false,
-            dumping_allowed: true,
+            dumping_allowed: None,
             crate_: None,
             not: Vec::new(),
         };
@@ -70,7 +70,7 @@ impl Parse for MessageArgs {
                     let s: LitStr = input.parse()?;
 
                     if s.value() == "disabled" {
-                        args.dumping_allowed = false;
+                        args.dumping_allowed = Some(false);
                     } else {
                         return Err(input.error("only `dumping = \"disabled\"` is supported"));
                     }
@@ -98,6 +98,23 @@ impl Parse for MessageArgs {
         }
 
         Ok(args)
+    }
+}
+
+impl MessageArgs {
+    fn validate(&self) {
+        if self.part {
+            fn incompatible(spanned: &Option<impl Spanned>, name: &str) {
+                if let Some(span) = spanned.as_ref().map(|s| s.span()) {
+                    emit_error!(span, "`part` and `{name}` attributes are incompatible");
+                }
+            }
+
+            incompatible(&self.ret, "ret");
+            incompatible(&self.name, "name");
+            incompatible(&self.protocol, "protocol");
+            incompatible(&self.dumping_allowed, "dumping_allowed");
+        }
     }
 }
 
@@ -173,6 +190,8 @@ pub fn message_impl(
     default_path_to_elfo: Path,
 ) -> proc_macro::TokenStream {
     let args = parse_macro_input!(args as MessageArgs);
+    args.validate();
+
     let crate_ = args.crate_.unwrap_or(default_path_to_elfo);
 
     // TODO: what about parsing into something cheaper?
@@ -224,7 +243,7 @@ pub fn message_impl(
     };
 
     // TODO: pass to `_elfo_Wrapper`.
-    let dumping_allowed = args.dumping_allowed;
+    let dumping_allowed = args.dumping_allowed.unwrap_or(true);
 
     let network_fns = if cfg!(feature = "network") {
         quote! {
@@ -311,10 +330,6 @@ pub fn message_impl(
 
     let impl_request = if let Some(ret) = &args.ret {
         let wrapper_name_str = format!("{name_str}::Response");
-
-        if args.part {
-            emit_error!(ret.span(), "`part` and `ret` attributes are incompatible");
-        }
 
         quote! {
             impl #crate_::Request for #name {
