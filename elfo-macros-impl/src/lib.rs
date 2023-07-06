@@ -1,5 +1,6 @@
 extern crate proc_macro;
 
+mod errors;
 mod message;
 mod msg;
 

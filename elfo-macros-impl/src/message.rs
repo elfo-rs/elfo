@@ -1,15 +1,22 @@
+use std::{env, sync::Mutex};
+
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{quote, ToTokens};
 use syn::{
     parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
-    parse_macro_input, Data, DeriveInput, Ident, LitStr, Path, Token, Type,
+    parse_macro_input,
+    spanned::Spanned,
+    Data, DeriveInput, Error, Ident, LitStr, Path, Token, Type,
 };
+
+use crate::errors::emit_error;
 
 #[derive(Debug)]
 struct MessageArgs {
     name: Option<LitStr>,
+    protocol: Option<LitStr>,
     ret: Option<Type>,
     part: bool,
     transparent: bool,
@@ -23,6 +30,7 @@ impl Parse for MessageArgs {
         let mut args = MessageArgs {
             ret: None,
             name: None,
+            protocol: None,
             part: false,
             transparent: false,
             dumping_allowed: true,
@@ -32,6 +40,7 @@ impl Parse for MessageArgs {
 
         // `#[message]`
         // `#[message(name = "N")]`
+        // `#[message(protocol = "P")]`
         // `#[message(ret = A)]`
         // `#[message(part)]`
         // `#[message(part, transparent)]`
@@ -46,6 +55,10 @@ impl Parse for MessageArgs {
                     let _: Token![=] = input.parse()?;
                     args.name = Some(input.parse()?);
                 }
+                "protocol" => {
+                    let _: Token![=] = input.parse()?;
+                    args.protocol = Some(input.parse()?);
+                }
                 "ret" => {
                     let _: Token![=] = input.parse()?;
                     args.ret = Some(input.parse()?);
@@ -57,13 +70,11 @@ impl Parse for MessageArgs {
                     let _: Token![=] = input.parse()?;
                     let s: LitStr = input.parse()?;
 
-                    assert_eq!(
-                        s.value(),
-                        "disabled",
-                        "only `dumping = \"disabled\"` is supported"
-                    );
-
-                    args.dumping_allowed = false;
+                    if s.value() == "disabled" {
+                        args.dumping_allowed = false;
+                    } else {
+                        return Err(input.error("only `dumping = \"disabled\"` is supported"));
+                    }
                 }
                 // TODO: call it `crate` like in linkme?
                 "elfo" => {
@@ -79,7 +90,7 @@ impl Parse for MessageArgs {
                         .map(|ident| ident.to_string())
                         .collect();
                 }
-                attr => panic!("invalid attribute: {attr}"),
+                _ => return Err(input.error("unknown attribute")),
             }
 
             if !input.is_empty() {
@@ -101,20 +112,19 @@ fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream2) -> Toke
     tokens.into_token_stream()
 }
 
-// TODO: add `T: Debug` for type arguments.
 fn gen_impl_debug(input: &DeriveInput) -> TokenStream2 {
     let name = &input.ident;
     let field = match &input.data {
-        Data::Struct(data) => {
-            assert_eq!(
-                data.fields.len(),
-                1,
-                "`transparent` is applicable only for structs with one field"
-            );
-            data.fields.iter().next().unwrap()
-        }
-        Data::Enum(_) => panic!("`transparent` is applicable for structs only"),
-        Data::Union(_) => panic!("`transparent` is applicable for structs only"),
+        Data::Struct(data) if data.fields.len() == 1 => Some(data.fields.iter().next().unwrap()),
+        _ => None,
+    };
+
+    let Some(field) = field else {
+        emit_error!(
+            name.span(),
+            "`transparent` is applicable only for structs with one field"
+        );
+        return TokenStream2::new();
     };
 
     let propagate_fmt = if let Some(ident) = field.ident.as_ref() {
@@ -133,6 +143,31 @@ fn gen_impl_debug(input: &DeriveInput) -> TokenStream2 {
     }
 }
 
+fn package_name() -> String {
+    env::var("CARGO_PKG_NAME").expect("building without cargo is unsupported for now")
+}
+
+fn ensure_proto_name_uniqueness(protocol: &str, name: &str) {
+    static MESSAGE_TITLES: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+    // Skip checks for tests in the `elfo` crate.
+    // Note: it doesn't affect other `elfo-*` crates.
+    if package_name() == "elfo" {
+        return;
+    }
+
+    let mut set = MESSAGE_TITLES.lock().unwrap();
+    if set.iter().any(|(p, n)| p == protocol && n == name) {
+        emit_error!(
+            name.span(),
+            "duplicate message `{name}` in protocol `{protocol}`\n\
+             consider renaming, moving to another crate or specifying protocol explicitly",
+        );
+    }
+
+    set.push((protocol.to_string(), name.to_string()));
+}
+
 pub fn message_impl(
     args: TokenStream,
     input: TokenStream,
@@ -147,19 +182,27 @@ pub fn message_impl(
     let serde_crate = format!("{}::_priv::serde", crate_.to_token_stream());
     let internal = quote![#crate_::_priv];
 
-    let protocol = std::env::var("CARGO_PKG_NAME").expect("building without cargo?");
-
     let name_str = args
         .name
         .as_ref()
         .map(LitStr::value)
         .unwrap_or_else(|| input.ident.to_string());
 
+    let protocol_str = args
+        .protocol
+        .as_ref()
+        .map(LitStr::value)
+        .unwrap_or_else(package_name);
+
+    if !args.part {
+        ensure_proto_name_uniqueness(&protocol_str, &name_str);
+    }
+
     let ret_wrapper = if let Some(ret) = &args.ret {
         let wrapper_name_str = format!("{name_str}::Response");
 
         quote! {
-            #[message(not(Debug), name = #wrapper_name_str, elfo = #crate_)]
+            #[message(not(Debug), protocol = #protocol_str, name = #wrapper_name_str, elfo = #crate_)]
             pub struct _elfo_Wrapper(#ret);
 
             impl ::std::fmt::Debug for _elfo_Wrapper {
@@ -280,10 +323,10 @@ pub fn message_impl(
             #[linkme(crate = linkme)]
             static VTABLE: &'static #internal::MessageVTable = &#internal::MessageVTable {
                 name: #name_str,
-                protocol: #protocol,
+                protocol: #protocol_str,
                 labels: &[
                     #internal::metrics::Label::from_static_parts("message", #name_str),
-                    #internal::metrics::Label::from_static_parts("protocol", #protocol),
+                    #internal::metrics::Label::from_static_parts("protocol", #protocol_str),
                 ],
                 dumping_allowed: #dumping_allowed,
                 clone,
@@ -302,7 +345,9 @@ pub fn message_impl(
     };
 
     let impl_request = if let Some(ret) = &args.ret {
-        assert!(!args.part, "`part` and `ret` attributes are incompatible");
+        if args.part {
+            emit_error!(ret.span(), "`part` and `ret` attributes are incompatible");
+        }
 
         quote! {
             impl #crate_::Request for #name {
@@ -319,6 +364,8 @@ pub fn message_impl(
     } else {
         quote! {}
     };
+
+    let errors = crate::errors::into_tokens();
 
     TokenStream::from(quote! {
         #derive_debug
@@ -340,6 +387,8 @@ pub fn message_impl(
             #impl_message
             #impl_request
             #impl_debug
+
+            #errors
         };
     })
 }
