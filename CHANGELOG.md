@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+- configurer: fix data race with empty mailbox ([#97])
+
+[#97]: https://github.com/elfo-rs/elfo/pull/97
+
 ## [0.2.0-alpha.3] - 2023-07-05
 ### Added
 - context: add `Context::set_restart_policy` to override a group's default restart policy ([#48]).
