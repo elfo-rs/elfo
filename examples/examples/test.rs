@@ -66,10 +66,6 @@ async fn it_works() {
 
     // How to check request-response.
     assert_eq!(proxy.request(Summarize).await, 40);
-
-    // By default, the proxy checks that there are no more unfetched messages
-    // (in `impl Drop`). It's possible to alter this behavior.
-    proxy.non_exhaustive();
 }
 
 #[tokio::test]
@@ -83,11 +79,11 @@ async fn it_uses_subproxies() {
     // Note that API is likely to be changed in the future.
     let mut subproxy = proxy.subproxy().await;
     assert_eq!(subproxy.request(Summarize).await, 0);
-    assert!(proxy.try_recv().is_none());
+    assert!(proxy.try_recv().await.is_none());
 
     // `send(..)` and `request(..)` always send messages to the original proxy.
     subproxy.send(Increment).await;
-    assert!(subproxy.try_recv().is_none());
+    assert!(subproxy.try_recv().await.is_none());
     assert_msg_eq!(proxy.recv().await, Added(20));
 }
 
