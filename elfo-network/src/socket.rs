@@ -1,21 +1,102 @@
 use std::net::SocketAddr;
 
+use bytes::{BytesMut, Bytes, BufMut};
+use elfo_core::node::NodeNo;
 use eyre::{Result, WrapErr};
 use futures::{SinkExt, StreamExt};
 use metrics::counter;
-use tokio::net::{tcp, TcpListener, TcpStream};
+use tokio::{net::{tcp::{self, OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpStream}, io::{AsyncWriteExt, AsyncReadExt}};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::warn;
 
 use crate::{
     codec::{Decoder, EncodeError, Encoder, NetworkEnvelope},
     config::Transport,
+    node_map::{NodeInfo, LaunchId},
 };
 
 // === Socket ===
 
 // TODO: versioning, compression settings etc.
 
+bitflags::bitflags! {
+    pub struct Capabilities: u32 {
+        const LZ4 = 0b01;
+    }
+}
+
+pub(crate) struct Handshake {
+    pub(crate) version: u8,
+    pub(crate) node_no: NodeNo,
+    pub(crate) launch_id: LaunchId,
+    pub(crate) capabilities: Capabilities,
+}
+
+impl Handshake {
+    pub(crate) fn new(this_node: &NodeInfo) -> Self {
+        // TODO: fill version and capabilities with meaningful values.
+        Self {
+            version: 0,
+            node_no: this_node.node_no,
+            launch_id: this_node.launch_id,
+            capabilities: Capabilities::empty(),
+        }
+    }
+
+    pub(crate) fn into_bytes(&self) -> Bytes {
+        const EXPECTED_LENGTH: usize = 39;
+        let mut buf = BytesMut::with_capacity(EXPECTED_LENGTH);
+        // Magic number.
+        buf.put_u64_le(0xE1F0E1F0E1F0E1F0);
+        buf.put_u8(self.version);
+        buf.put_u16_le(self.node_no.into());
+        buf.put_u64_le(self.launch_id.into());
+        buf.put_u32_le(self.capabilities.bits());
+        // Reserved space.
+        buf.put_slice(&[0; 16]);
+
+        let result = buf.freeze();
+        debug_assert!(result.len() == EXPECTED_LENGTH);
+        result
+    }
+
+    pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self> {
+
+        todo!()
+    }
+}
+
+pub(crate) struct TcpSocket {
+    read: OwnedReadHalf,
+    write: OwnedWriteHalf,
+    pub(crate) peer: Transport,
+}
+
+impl TcpSocket {
+    fn new(stream: TcpStream, peer: Transport) -> Self {
+        let (read, write) = stream.into_split();
+        Self {
+            read,
+            write,
+            peer,
+        }
+    }
+
+    pub(crate) async fn handshake(mut self, this_node: &NodeInfo) -> Result<Socket> {
+        let mut this_node_handshake = Handshake::new(this_node).into_bytes();
+        self.write.write_all_buf(&mut this_node_handshake).await?;
+        // let mut buf = BytesMut::with_capacity(64);
+        // self.write.write_all_buf(src)
+
+        Ok(Socket {
+            read: ReadHalf(FramedRead::new(self.read, Decoder::new())),
+            write: WriteHalf(FramedWrite::new(self.write, Encoder::new())),
+            peer: self.peer,
+        })
+    }
+}
+
+// TODO: Make `Socket`, `ReadHalf` and `WriteHalf` generic over transport type.
 pub(crate) struct Socket {
     pub(crate) read: ReadHalf,
     pub(crate) write: WriteHalf,

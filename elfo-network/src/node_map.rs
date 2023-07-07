@@ -60,6 +60,12 @@ pub(crate) struct NodeInfo {
 #[derive(Copy, PartialEq, Eq, Display)]
 pub(crate) struct LaunchId(u64);
 
+impl From<LaunchId> for u64 {
+    fn from(value: LaunchId) -> Self {
+        value.0
+    }
+}
+
 impl LaunchId {
     pub(crate) fn generate() -> Self {
         use std::{
