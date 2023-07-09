@@ -271,6 +271,8 @@ cfg_network!({
 
     use crate::{node::NodeNo, remote::RemoteHandle};
 
+    /// Contains nodes available for routing between one specific local group
+    /// and set of remote ones with the same group name.
     type Nodes = Arc<ArcSwap<FxHashMap<NodeNo, Addr>>>;
 
     // TODO: remove `Clone` here, possible footgun in the future.
@@ -280,6 +282,7 @@ cfg_network!({
     #[non_exhaustive]
     pub struct RemoteActorGroup {
         pub name: String,
+        /// Local group => nodes for this remote group.
         nodes: FxHashMap<GroupNo, Nodes>,
     }
 
@@ -293,9 +296,9 @@ cfg_network!({
             remote_group: (NodeNo, GroupNo),
             remote_group_name: &str,
             handle: impl RemoteHandle,
-        ) -> RegisterRemoteGroupGuard {
+        ) -> RegisterRemoteGroupGuard<'_> {
             // Register the handle to make `send_to(addr)` work.
-            // XXX: get rid of `MAX` here.
+            // XXX: get rid of `MAX` here, use system.network's group_no.
             let entry = self.book.vacant_entry(GroupNo::MAX);
             let handle_addr = entry.addr();
             let object = Object::new(handle_addr, Box::new(handle) as Box<dyn RemoteHandle>);
@@ -305,22 +308,30 @@ cfg_network!({
                 .register_remote(local_group, remote_group, handle_addr);
 
             // Update the demux to make `send()` work,
-            // but only if this remote group is declared in the topology.
-            let inner = self.inner.write();
-            let group = inner
-                .remotes
-                .iter()
-                .find(|group| group.name == remote_group_name);
+            // but only if there is a route between these groups.
+            let nodes = {
+                let inner = self.inner.write();
+                inner
+                    .remotes
+                    .iter()
+                    .find(|group| group.name == remote_group_name)
+                    .and_then(|group| group.nodes.get(&local_group).cloned())
+            };
 
-            if let Some(group) = group {
-                group.nodes[&local_group].rcu(|nodes| {
+            if let Some(nodes) = &nodes {
+                nodes.rcu(|nodes| {
                     let mut nodes = (**nodes).clone();
                     nodes.insert(remote_group.0, handle_addr);
                     nodes
                 });
             }
 
-            RegisterRemoteGroupGuard(())
+            RegisterRemoteGroupGuard {
+                book: &self.book,
+                handle_addr,
+                remote_node: remote_group.0,
+                nodes,
+            }
         }
 
         /// Declares a new remote group.
@@ -431,11 +442,31 @@ cfg_network!({
     pub struct NodeDiscovery(());
 
     #[stability::unstable]
-    pub struct RegisterRemoteGroupGuard(());
+    pub struct RegisterRemoteGroupGuard<'a> {
+        book: &'a AddressBook,
+        handle_addr: Addr,
+        remote_node: NodeNo,
+        nodes: Option<Nodes>,
+    }
 
-    impl Drop for RegisterRemoteGroupGuard {
+    impl Drop for RegisterRemoteGroupGuard<'_> {
         fn drop(&mut self) {
-            // TODO: unregister
+            // Disable direct messaging.
+            self.book.remove(self.handle_addr);
+
+            // Disable routing to this node if it was possible.
+            if let Some(nodes) = &self.nodes {
+                nodes.rcu(|nodes| {
+                    let mut nodes = (**nodes).clone();
+
+                    // We don't want to remove the node if it was re-registered by another handle.
+                    if nodes.get(&self.remote_node) == Some(&self.handle_addr) {
+                        nodes.remove(&self.remote_node);
+                    }
+
+                    nodes
+                });
+            }
         }
     }
 });
