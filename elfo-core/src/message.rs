@@ -1,4 +1,4 @@
-use std::{any::Any, fmt};
+use std::{any::Any, fmt, ops::Deref};
 
 use fxhash::FxHashMap;
 use linkme::distributed_slice;
@@ -227,6 +227,37 @@ cfg_network!({
         }
     }
 });
+
+// === ProtocolExtractor ===
+// Reexported in `elfo::_priv`.
+// See https://github.com/GoldsteinE/gh-blog/blob/master/const_deref_specialization/src/lib.md
+
+pub struct ProtocolExtractor;
+
+pub trait ProtocolHolder {
+    const PROTOCOL: Option<&'static str>;
+}
+
+pub struct DefaultProtocolHolder;
+
+impl ProtocolHolder for DefaultProtocolHolder {
+    // `None` means a crate's name is used.
+    const PROTOCOL: Option<&'static str> = None;
+}
+
+impl Deref for ProtocolExtractor {
+    type Target = DefaultProtocolHolder;
+
+    fn deref(&self) -> &Self::Target {
+        &DefaultProtocolHolder
+    }
+}
+
+impl DefaultProtocolHolder {
+    pub fn holder(&self) -> Self {
+        Self
+    }
+}
 
 // === MessageVTable ===
 
