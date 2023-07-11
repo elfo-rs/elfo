@@ -8,6 +8,11 @@ use eyre::Result;
 
 const BUFFER_INITIAL_CAPACITY: usize = 8192;
 
+pub(crate) enum FrameState {
+    Accumulating,
+    FlushAdvised,
+}
+
 pub(crate) enum FramedWrite {
     LZ4(LZ4FramedWrite),
 }
@@ -19,7 +24,7 @@ impl FramedWrite {
 }
 
 pub(crate) trait FramedWriteStrategy {
-    fn write(&mut self, envelope: &NetworkEnvelope) -> Result<(), EncodeError>;
+    fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError>;
 
     fn prepare_next_frame(&mut self);
 
@@ -31,7 +36,7 @@ pub(crate) trait FramedWriteStrategy {
 /// Hand-rolled dynamic dispatch to use branch predictor and allow
 /// optimizations.
 impl FramedWriteStrategy for FramedWrite {
-    fn write(&mut self, envelope: &NetworkEnvelope) -> Result<(), EncodeError> {
+    fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
         match self {
             FramedWrite::LZ4(lz4) => lz4.write(envelope),
         }
@@ -75,13 +80,15 @@ impl LZ4FramedWrite {
 }
 
 impl FramedWriteStrategy for LZ4FramedWrite {
-    fn write(&mut self, envelope: &NetworkEnvelope) -> Result<(), EncodeError> {
+    fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
         codec_direct::encode(
             envelope,
             &mut self.uncompressed_buffer,
             &mut self.stats,
             self.envelope_size_limit,
-        )
+        )?;
+        // TODO: allow multiple envelopes in the frame.
+        Ok(FrameState::FlushAdvised)
     }
 
     fn prepare_next_frame(&mut self) {

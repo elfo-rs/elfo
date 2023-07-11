@@ -20,7 +20,7 @@ use tracing::{info, warn};
 use crate::{
     codec::{Decoder, EncodeError, NetworkEnvelope},
     config::Transport,
-    frame::{FramedWrite, FramedWriteStrategy},
+    frame::{FrameState, FramedWrite, FramedWriteStrategy},
     node_map::{LaunchId, NodeInfo},
 };
 
@@ -222,13 +222,19 @@ impl WriteHalf {
     ) -> impl Future<Output = Result<bool>> + 'a + Send {
         // TODO: timeout, it should be clever
         // TODO: we should also emit metrics here, not only in `flush()`.
-        // TODO: backpressure. how should it work with compression?
-        let result = match self.framing.write(&envelope) {
-            Ok(()) => Ok(true),
-            Err(EncodeError::Skipped) => Ok(false),
-            Err(EncodeError::Fatal(err)) => Err(err.into()),
-        };
-        async { result }
+        let write_result = self.framing.write(envelope);
+        async move {
+            let state = match write_result {
+                Ok(state) => state,
+                Err(EncodeError::Skipped) => return Ok(false),
+                Err(EncodeError::Fatal(err)) => return Err(err.into()),
+            };
+
+            if matches!(state, FrameState::FlushAdvised) {
+                self.flush().await?;
+            }
+            Ok(true)
+        }
     }
 
     /// Flushed the internal buffer unconditionally.
