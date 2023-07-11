@@ -20,7 +20,7 @@ use tracing::{info, warn};
 use crate::{
     codec::{Decoder, EncodeError, NetworkEnvelope},
     config::Transport,
-    frame::{FrameState, FramedWrite, FramedWriteStrategy},
+    frame::write::{FrameState, FramedWrite, FramedWriteStrategy},
     node_map::{LaunchId, NodeInfo},
 };
 

@@ -1,7 +1,7 @@
 use crate::{
     codec::{EncodeError, EncoderDeltaStats, NetworkEnvelope},
     codec_direct,
-    lz4::LZ4Buffer,
+    frame::lz4::LZ4Buffer,
 };
 
 use eyre::Result;
