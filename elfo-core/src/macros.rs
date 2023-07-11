@@ -65,13 +65,20 @@ macro_rules! get_protocol {
         use $crate::_priv::{ProtocolExtractor, ProtocolHolder};
 
         const fn extract_protocol_name<H: ProtocolHolder>(_: &impl FnOnce() -> H) -> &'static str {
-            match H::PROTOCOL {
-                Some(protocol) => protocol,
-                None => env!(
-                    "CARGO_PKG_NAME",
-                    "building without cargo is unsupported for now"
-                ),
+            // Get a protocol name from the relevant `set_protocol!` call.
+            if let Some(proto_override) = H::PROTOCOL {
+                return proto_override;
             }
+
+            // If `set_protocol!` hasn't been used, take the package name.
+            if let Some(pkg_name) = option_env!("CARGO_PKG_NAME") {
+                return pkg_name;
+            }
+
+            panic!(
+                "if the crate is built without cargo, \
+                 the protocol must be set explicitly by calling `elfo::set_protocol!(..)`"
+            );
         }
 
         extract_protocol_name(&|| ProtocolExtractor.holder())
