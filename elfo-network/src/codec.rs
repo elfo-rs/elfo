@@ -35,7 +35,7 @@
 use std::{convert::TryFrom, mem, str};
 
 use bytes::{Buf, BufMut, BytesMut};
-use derive_more::From;
+use derive_more::{Display, From};
 use eyre::{bail, ensure, eyre, Error, Result};
 use tokio_util::codec;
 use tracing::error;
@@ -175,7 +175,7 @@ impl Encoder {
     }
 }
 
-#[derive(Debug, From)]
+#[derive(Debug, Display, From)]
 pub(crate) enum EncodeError {
     Fatal(std::io::Error),
     Skipped,
@@ -378,7 +378,7 @@ pub(crate) enum NetworkEnvelopePayload {
 }
 
 impl NetworkEnvelopePayload {
-    fn protocol_and_name(&self) -> (&'static str, &'static str) {
+    pub(crate) fn protocol_and_name(&self) -> (&'static str, &'static str) {
         match self {
             Self::Regular { message } => (message.protocol(), message.name()),
             Self::RequestAny { message, .. } => (message.protocol(), message.name()),

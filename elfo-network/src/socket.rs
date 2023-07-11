@@ -3,8 +3,9 @@ use std::net::SocketAddr;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use derive_more::Display;
 use elfo_core::node::NodeNo;
+use elfo_utils::likely;
 use eyre::{eyre, Result, WrapErr};
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use metrics::counter;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -13,12 +14,13 @@ use tokio::{
         TcpListener, TcpStream,
     },
 };
-use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio_util::codec::FramedRead;
 use tracing::{info, warn};
 
 use crate::{
-    codec::{Decoder, EncodeError, Encoder, NetworkEnvelope},
+    codec::{Decoder, EncodeError, NetworkEnvelope},
     config::Transport,
+    frame::{FramedWrite, LZ4FramedWrite},
     node_map::{LaunchId, NodeInfo},
 };
 
@@ -172,14 +174,13 @@ impl Socket {
         _capabilities: Capabilities,
     ) -> Self {
         let read = FramedRead::new(read, Decoder::new());
-        let mut write = FramedWrite::new(write, Encoder::new());
-
-        // TODO: how should it work with compression?
-        write.set_backpressure_boundary(128 * 1024);
 
         Self {
             read: ReadHalf(read),
-            write: WriteHalf(write),
+            write: WriteHalf {
+                framing: LZ4FramedWrite::new(),
+                write,
+            },
             peer,
         }
     }
@@ -203,7 +204,13 @@ impl ReadHalf {
     }
 }
 
-pub(crate) struct WriteHalf(FramedWrite<tcp::OwnedWriteHalf, Encoder>);
+// TODO: make generic over framing strategy. Not yet sure how, since it depends
+// on the capabilities, so there has to be dynamic dispatch somewhere. We
+// obviously do not want that on every message.
+pub(crate) struct WriteHalf {
+    framing: LZ4FramedWrite,
+    write: tcp::OwnedWriteHalf,
+}
 
 impl WriteHalf {
     /// Encodes the message and flushes the internal buffer if needed.
@@ -217,7 +224,8 @@ impl WriteHalf {
     pub(crate) async fn feed(&mut self, envelope: NetworkEnvelope) -> Result<bool> {
         // TODO: timeout, it should be clever
         // TODO: we should also emit metrics here, not only in `flush()`.
-        match self.0.feed(envelope).await {
+        // TODO: backpressure. how should it work with compression?
+        match self.framing.write(&envelope) {
             Ok(()) => Ok(true),
             Err(EncodeError::Skipped) => Ok(false),
             Err(EncodeError::Fatal(err)) => Err(err.into()),
@@ -226,18 +234,26 @@ impl WriteHalf {
 
     /// Flushed the internal buffer unconditionally.
     pub(crate) async fn flush(&mut self) -> Result<()> {
-        let result = self.0.flush().await;
+        let finalized = self.framing.finalize()?;
+        let mut result = self
+            .write
+            .write_all(finalized)
+            .await
+            .context("failed to write frame");
+        if likely(result.is_ok()) {
+            result = self
+                .write
+                .flush()
+                .await
+                .context("failed to flush the frame");
+        }
 
-        let stats = self.0.encoder_mut().take_stats();
+        let stats = self.framing.take_stats();
         counter!("elfo_network_sent_messages_total", stats.messages);
         counter!("elfo_network_sent_uncompressed_bytes_total", stats.bytes);
         // TODO: elfo_network_sent_compressed_bytes_total
 
-        if let Err(EncodeError::Fatal(err)) = result {
-            return Err(err.into());
-        }
-
-        Ok(())
+        result
     }
 
     // Encodes the message and flushes the internal buffer.

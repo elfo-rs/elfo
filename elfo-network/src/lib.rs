@@ -23,9 +23,12 @@ use elfo_core::{
 use crate::{config::Config, protocol::HandleConnection};
 
 mod codec;
+mod codec_direct;
 mod config;
 mod connection;
 mod discovery;
+mod frame;
+mod lz4;
 mod node_map;
 mod protocol;
 mod rtt;
