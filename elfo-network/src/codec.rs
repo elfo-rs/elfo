@@ -337,7 +337,7 @@ fn get_message(frame: &mut &[u8]) -> Result<AnyMessage> {
     let protocol = get_str(frame)?;
     let name = get_str(frame)?;
     AnyMessage::read_msgpack(frame, protocol, name)?
-        .ok_or_else(|| eyre!("unknown message {}::{}", protocol, name))
+        .ok_or_else(|| eyre!("unknown message {}/{}", protocol, name))
 }
 
 fn get_str<'a>(frame: &mut &'a [u8]) -> Result<&'a str> {

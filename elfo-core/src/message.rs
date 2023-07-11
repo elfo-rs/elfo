@@ -1,8 +1,9 @@
 use std::{any::Any, fmt, ops::Deref};
 
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use linkme::distributed_slice;
 use metrics::Label;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use smallbox::{smallbox, SmallBox};
 
@@ -263,7 +264,6 @@ impl DefaultProtocolHolder {
 
 // Reexported in `elfo::_priv`.
 /// Message Virtual Table.
-#[derive(Clone)]
 pub struct MessageVTable {
     /// Just a message's name.
     pub name: &'static str,
@@ -285,13 +285,13 @@ pub struct MessageVTable {
 #[distributed_slice]
 pub static MESSAGE_LIST: [&'static MessageVTable] = [..];
 
-thread_local! {
-    static MESSAGES: FxHashMap<(&'static str, &'static str), &'static MessageVTable> = {
-        MESSAGE_LIST.iter()
+static MESSAGES: Lazy<FxHashMap<(&'static str, &'static str), &'static MessageVTable>> =
+    Lazy::new(|| {
+        MESSAGE_LIST
+            .iter()
             .map(|vtable| ((vtable.protocol, vtable.name), *vtable))
             .collect()
-    };
-}
+    });
 
 #[cfg(feature = "network")]
 fn lookup_vtable(protocol: &str, name: &str) -> Option<&'static MessageVTable> {
@@ -304,9 +304,26 @@ fn lookup_vtable(protocol: &str, name: &str) -> Option<&'static MessageVTable> {
         )
     };
 
-    MESSAGES.with(|messages| messages.get(&(protocol, name)).copied())
+    MESSAGES.get(&(protocol, name)).copied()
 }
 
-pub(crate) fn init() {
-    MESSAGES.with(|_| ());
+pub(crate) fn check_uniqueness() -> Result<(), Vec<(String, String)>> {
+    if MESSAGES.len() == MESSAGE_LIST.len() {
+        return Ok(());
+    }
+
+    fn vtable_eq(lhs: &'static MessageVTable, rhs: &'static MessageVTable) -> bool {
+        std::ptr::eq(lhs, rhs)
+    }
+
+    Err(MESSAGE_LIST
+        .iter()
+        .filter(|vtable| {
+            let stored = MESSAGES.get(&(vtable.protocol, vtable.name)).unwrap();
+            !vtable_eq(stored, vtable)
+        })
+        .map(|vtable| (vtable.protocol.to_string(), vtable.name.to_string()))
+        .collect::<FxHashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>())
 }

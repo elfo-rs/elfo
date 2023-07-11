@@ -108,3 +108,12 @@ fn protocol() {
     assert_eq!(one::three::SimpleMessage {}.protocol(), "three");
     assert_eq!(elfo::messages::Ping::default().protocol(), "elfo-core");
 }
+
+#[test]
+fn uniqueness() {
+    // Duplicate message definition.
+    #[message]
+    struct SimpleMessage {}
+
+    assert!(elfo::init::check_messages_uniqueness().is_err());
+}
