@@ -5,7 +5,7 @@ use derive_more::Display;
 use elfo_core::node::NodeNo;
 use elfo_utils::likely;
 use eyre::{eyre, Result, WrapErr};
-use futures::StreamExt;
+use futures::{Future, StreamExt};
 use metrics::counter;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -221,15 +221,19 @@ impl WriteHalf {
     /// * `Err(err)` if an unrecoverable error happened.
     // TODO: it would be nice to have only `&NetworkEnvelope` here.
     // It requires either to replace `FramedWrite` or make `Message: Sync`.
-    pub(crate) async fn feed(&mut self, envelope: NetworkEnvelope) -> Result<bool> {
+    pub(crate) fn feed<'a>(
+        &'a mut self,
+        envelope: &NetworkEnvelope,
+    ) -> impl Future<Output = Result<bool>> + 'a + Send {
         // TODO: timeout, it should be clever
         // TODO: we should also emit metrics here, not only in `flush()`.
         // TODO: backpressure. how should it work with compression?
-        match self.framing.write(&envelope) {
+        let result = match self.framing.write(&envelope) {
             Ok(()) => Ok(true),
             Err(EncodeError::Skipped) => Ok(false),
             Err(EncodeError::Fatal(err)) => Err(err.into()),
-        }
+        };
+        async { result }
     }
 
     /// Flushed the internal buffer unconditionally.
@@ -257,9 +261,19 @@ impl WriteHalf {
     }
 
     // Encodes the message and flushes the internal buffer.
-    pub(crate) async fn send(&mut self, envelope: NetworkEnvelope) -> Result<()> {
-        self.feed(envelope).await?;
-        self.flush().await
+    pub(crate) fn send<'a>(
+        &'a mut self,
+        envelope: &NetworkEnvelope,
+    ) -> impl Future<Output = Result<()>> + 'a + Send {
+        // NOTE: We are not used `feed()` here to avoid double flushing.
+        let result = self
+            .framing
+            .write(envelope)
+            .map_err(|_| eyre!("failed to serialize envelope"));
+        async move {
+            result?;
+            self.flush().await
+        }
     }
 }
 

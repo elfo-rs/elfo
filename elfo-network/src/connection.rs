@@ -195,10 +195,8 @@ impl SocketWriter {
                 scope::set_trace_id(network_envelope.trace_id);
 
                 // This call can actually write to the socket if the buffer is full.
-                // TODO: figure out how to only pass reference here. The main problem is the
-                // await point, which creates the requirement `NetworkEnvelope:
-                // Sync`.
-                if self.tx.feed(network_envelope).await.unwrap() {
+                let feed_future = self.tx.feed(&network_envelope);
+                if feed_future.await.unwrap() {
                     // Store the response token only if the message is added.
                     // Otherwise, it will be dropped with the `Failed` reason.
                     if let Some(token) = response_token {

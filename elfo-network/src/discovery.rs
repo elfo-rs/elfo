@@ -377,9 +377,8 @@ async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
         },
     };
 
-    socket
-        .write
-        .send(envelope)
+    let send_future = socket.write.send(&envelope);
+    send_future
         .await
         .wrap_err_with(|| eyre!("cannot send {}", name))
 }
