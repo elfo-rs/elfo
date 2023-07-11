@@ -8,8 +8,10 @@ pub(crate) struct LZ4Buffer {
 }
 
 impl LZ4Buffer {
-    pub(crate) fn new() -> Self {
-        Self { buffer: Vec::new() }
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(capacity),
+        }
     }
 
     pub(crate) fn reset(&mut self) {

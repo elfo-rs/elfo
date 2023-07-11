@@ -20,7 +20,7 @@ use tracing::{info, warn};
 use crate::{
     codec::{Decoder, EncodeError, NetworkEnvelope},
     config::Transport,
-    frame::{FramedWrite, LZ4FramedWrite},
+    frame::{FramedWrite, FramedWriteStrategy},
     node_map::{LaunchId, NodeInfo},
 };
 
@@ -178,7 +178,7 @@ impl Socket {
         Self {
             read: ReadHalf(read),
             write: WriteHalf {
-                framing: LZ4FramedWrite::new(),
+                framing: FramedWrite::lz4(None),
                 write,
             },
             peer,
@@ -204,11 +204,8 @@ impl ReadHalf {
     }
 }
 
-// TODO: make generic over framing strategy. Not yet sure how, since it depends
-// on the capabilities, so there has to be dynamic dispatch somewhere. We
-// obviously do not want that on every message.
 pub(crate) struct WriteHalf {
-    framing: LZ4FramedWrite,
+    framing: FramedWrite,
     write: tcp::OwnedWriteHalf,
 }
 
@@ -219,8 +216,6 @@ impl WriteHalf {
     /// * `Ok(true)` if the message is added successfully.
     /// * `Ok(false)` if the message is skipped because of encoding errors.
     /// * `Err(err)` if an unrecoverable error happened.
-    // TODO: it would be nice to have only `&NetworkEnvelope` here.
-    // It requires either to replace `FramedWrite` or make `Message: Sync`.
     pub(crate) fn feed<'a>(
         &'a mut self,
         envelope: &NetworkEnvelope,
