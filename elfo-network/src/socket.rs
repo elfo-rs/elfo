@@ -14,7 +14,7 @@ use tokio::{
         TcpListener, TcpStream,
     },
 };
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     codec::{EncodeError, NetworkEnvelope},
@@ -213,8 +213,11 @@ impl ReadHalf {
 impl ReadHalf {
     pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>> {
         let envelope = loop {
-            let length_estimate = match self.framing.read(&self.buffer)? {
-                DecodeState::NeedMoreData { length_estimate } => length_estimate,
+            let length_estimate = match self.framing.read(&self.buffer[self.position..])? {
+                DecodeState::NeedMoreData { length_estimate } => {
+                    error!(message = "laplab: read half requested more data", min = %length_estimate);
+                    length_estimate
+                }
                 DecodeState::Done {
                     bytes_consumed,
                     decoded: None,
@@ -223,6 +226,12 @@ impl ReadHalf {
                     // of the buffer.
                     self.position += bytes_consumed;
                     self.buffer.drain(..self.position);
+                    error!(
+                        message = "laplab: frame consumed",
+                        last_pos = self.position,
+                        was = (self.position + self.buffer.len()),
+                        remaining = self.buffer.len()
+                    );
                     self.position = 0;
                     // We now need to ask the decoder once more for the length estimate.
                     continue;
@@ -232,6 +241,10 @@ impl ReadHalf {
                     decoded: Some(envelope),
                 } => {
                     // One of the envelopes inside the frame was decoded.
+                    error!(
+                        message = "laplab: read half got an envelope",
+                        envelope = format!("{:?}", envelope)
+                    );
                     self.position += bytes_consumed;
                     break envelope;
                 }
@@ -257,6 +270,11 @@ impl ReadHalf {
                 }
                 buffer_position += bytes_read;
             }
+            error!(
+                message = "laplab: read half read bytes",
+                count = (buffer_position - old_buffer_size)
+            );
+            self.buffer.resize(buffer_position, 0);
         };
 
         let stats = self.framing.take_stats();
@@ -319,6 +337,11 @@ impl WriteHalf {
                 .await
                 .context("failed to flush the frame");
         }
+
+        error!(
+            message = "laplab: write half sent bytes",
+            count = finalized.len()
+        );
 
         let stats = self.framing.take_stats();
         counter!("elfo_network_sent_messages_total", stats.messages);

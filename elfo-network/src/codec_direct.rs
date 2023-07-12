@@ -13,7 +13,7 @@ use elfo_core::{
     tracing::TraceId,
 };
 use elfo_utils::likely;
-use eyre::{bail, ensure, eyre};
+use eyre::{bail, ensure, eyre, Context};
 use tracing::error;
 
 /// TODO(laplab): merge with codec.rs
@@ -163,8 +163,8 @@ fn get_request_id(frame: &mut Cursor<&[u8]>) -> eyre::Result<RequestId> {
 }
 
 fn get_message(frame: &mut Cursor<&[u8]>) -> eyre::Result<AnyMessage> {
-    let protocol = get_str(frame)?;
-    let name = get_str(frame)?;
+    let protocol = get_str(frame).wrap_err("invalid message protocol")?;
+    let name = get_str(frame).wrap_err("invalid message name")?;
 
     // TODO: replace with `Cursor::remaining_slice` once it becomes stable.
     let position = frame.position() as usize;
@@ -181,7 +181,7 @@ fn get_str<'a>(frame: &mut Cursor<&'a [u8]>) -> eyre::Result<&'a str> {
     let string_end = frame.position() as usize + len;
 
     // TODO: It's not enough, still can fail if `len` is wrong.
-    ensure!(frame.get_ref().len() < string_end, "invalid header");
+    ensure!(frame.get_ref().len() >= string_end, "invalid string header");
 
     let bytes_slice = &frame.get_ref()[frame.position() as usize..string_end];
     let decoded_string = std::str::from_utf8(bytes_slice)?;
@@ -266,6 +266,9 @@ pub(crate) fn decode(
 
     let err = decode_result.unwrap_err();
     // TODO: cooldown/metrics, more info (protocol and name if available)
-    error!(message = "cannot decode message, skipping", error = %err);
+    error!(
+        message = "cannot decode message, skipping",
+        error = format!("{:#}", err)
+    );
     Err(err)
 }

@@ -189,7 +189,7 @@ impl Discovery {
             match result {
                 Ok(accepted) => Ok(accepted),
                 Err(err) => {
-                    let error_msg = err.to_string();
+                    let error_msg = format!("{:#}", err);
                     warn!(
                         message = "new connection rejected",
                         peer = %peer,

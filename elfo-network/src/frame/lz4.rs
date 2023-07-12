@@ -1,5 +1,6 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
+use tracing::error;
 
 use eyre::{eyre, Result};
 
@@ -52,7 +53,8 @@ impl LZ4Buffer {
         self.buffer.resize(decompressed_size, 0);
 
         // TODO: replace with `Cursor::remaining_slice` once it becomes stable.
-        let remaining_slice = &input.get_ref()[input.position() as usize..];
+        error!(message = "laplab: decompressing frame", frame_size = %frame_size, data_size = %decompressed_size);
+        let remaining_slice = &input.get_ref()[input.position() as usize..frame_size];
         let actual_size = lz4_flex::block::decompress_into(remaining_slice, &mut self.buffer)?;
         if actual_size != decompressed_size {
             return Err(eyre!(
@@ -86,8 +88,13 @@ impl LZ4Buffer {
         let remaining_slice = &mut output.get_mut()[position..];
         let compressed_size = lz4_flex::block::compress_into(input, remaining_slice)?;
 
+        let frame_size = compressed_size + 8;
         output.set_position(0);
-        output.write_u32::<LittleEndian>((compressed_size + 8) as u32)?;
+        output.write_u32::<LittleEndian>(frame_size as u32)?;
+
+        self.buffer.resize(frame_size, 0);
+
+        error!(message = "laplab: compressed frame", %frame_size, data_size = (input.len() as u32));
 
         Ok(&self.buffer)
     }
