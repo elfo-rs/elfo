@@ -5,7 +5,7 @@ use derive_more::Display;
 use elfo_core::node::NodeNo;
 use elfo_utils::likely;
 use eyre::{eyre, Result, WrapErr};
-use futures::{Future, StreamExt};
+use futures::Future;
 use metrics::counter;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -14,13 +14,16 @@ use tokio::{
         TcpListener, TcpStream,
     },
 };
-use tokio_util::codec::FramedRead;
 use tracing::{info, warn};
 
 use crate::{
-    codec::{Decoder, EncodeError, NetworkEnvelope},
+    codec::{EncodeError, NetworkEnvelope},
+    codec_direct::DecodeState,
     config::Transport,
-    frame::write::{FrameState, FramedWrite, FramedWriteStrategy},
+    frame::{
+        read::{FramedRead, FramedReadStrategy},
+        write::{FrameState, FramedWrite, FramedWriteStrategy},
+    },
     node_map::{LaunchId, NodeInfo},
 };
 
@@ -173,10 +176,10 @@ impl Socket {
         _version: u8,
         _capabilities: Capabilities,
     ) -> Self {
-        let read = FramedRead::new(read, Decoder::new());
-
+        // TODO: maybe do something with the version.
+        // TODO: use capabilities to switch between framing strategies.
         Self {
-            read: ReadHalf(read),
+            read: ReadHalf::new(FramedRead::lz4(), read),
             write: WriteHalf {
                 framing: FramedWrite::lz4(None),
                 write,
@@ -186,13 +189,77 @@ impl Socket {
     }
 }
 
-pub(crate) struct ReadHalf(FramedRead<tcp::OwnedReadHalf, Decoder>);
+pub(crate) struct ReadHalf {
+    framing: FramedRead,
+    buffer: Vec<u8>,
+    position: usize,
+    read: tcp::OwnedReadHalf,
+}
+
+const BUFFER_INITIAL_CAPACITY: usize = 8192;
+const BUFFER_CHUNK_SIZE: usize = 512;
+
+impl ReadHalf {
+    pub(crate) fn new(framing: FramedRead, read: tcp::OwnedReadHalf) -> Self {
+        Self {
+            framing,
+            buffer: Vec::with_capacity(BUFFER_INITIAL_CAPACITY),
+            position: 0,
+            read,
+        }
+    }
+}
 
 impl ReadHalf {
     pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>> {
-        let result = self.0.next().await.transpose();
+        let envelope = loop {
+            let length_estimate = match self.framing.read(&self.buffer)? {
+                DecodeState::NeedMoreData { length_estimate } => length_estimate,
+                DecodeState::Done {
+                    bytes_consumed,
+                    decoded: None,
+                } => {
+                    // The frame was fully decoded, so we remove now unused bytes at the beginning
+                    // of the buffer.
+                    self.position += bytes_consumed;
+                    self.buffer.drain(..self.position);
+                    self.position = 0;
+                    // We now need to ask the decoder once more for the length estimate.
+                    continue;
+                }
+                DecodeState::Done {
+                    bytes_consumed,
+                    decoded: Some(envelope),
+                } => {
+                    // One of the envelopes inside the frame was decoded.
+                    self.position += bytes_consumed;
+                    break envelope;
+                }
+            };
 
-        let stats = self.0.decoder_mut().take_stats();
+            // Decoder requested for more data to be read. We round up the number of
+            // requested bytes to be a multiple of the chunk size to avoid
+            // reading too few bytes per syscall.
+            let old_buffer_size = self.buffer.len();
+            debug_assert!(length_estimate > old_buffer_size);
+            let new_buffer_size =
+                ((length_estimate + BUFFER_CHUNK_SIZE - 1) / BUFFER_CHUNK_SIZE) * BUFFER_CHUNK_SIZE;
+            self.buffer.resize(new_buffer_size, 0);
+
+            // We try to read the whole chunk, but as soon as we have enough for the decoder
+            // to work with, we stop.
+            let mut buffer_position = old_buffer_size;
+            while buffer_position < length_estimate {
+                let bytes_read = self.read.read(&mut self.buffer[buffer_position..]).await?;
+                if bytes_read == 0 {
+                    // EOF.
+                    return Ok(None);
+                }
+                buffer_position += bytes_read;
+            }
+        };
+
+        let stats = self.framing.take_stats();
         counter!("elfo_network_received_messages_total", stats.messages);
         counter!(
             "elfo_network_received_uncompressed_bytes_total",
@@ -200,7 +267,7 @@ impl ReadHalf {
         );
         // TODO: elfo_network_received_compressed_bytes_total
 
-        result
+        Ok(Some(envelope))
     }
 }
 

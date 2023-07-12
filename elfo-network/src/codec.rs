@@ -351,6 +351,7 @@ fn get_str<'a>(frame: &mut &'a [u8]) -> Result<&'a str> {
 
 // === NetworkEnvelope ===
 
+#[derive(Debug)]
 pub(crate) struct NetworkEnvelope {
     pub(crate) sender: Addr,
     pub(crate) recipient: Addr,
@@ -358,6 +359,7 @@ pub(crate) struct NetworkEnvelope {
     pub(crate) payload: NetworkEnvelopePayload,
 }
 
+#[derive(Debug)]
 pub(crate) enum NetworkEnvelopePayload {
     Regular {
         message: AnyMessage,
