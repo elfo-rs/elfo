@@ -1,6 +1,6 @@
 use std::{char, collections::HashMap};
 
-use quote::quote;
+use quote::{quote, quote_spanned};
 use syn::{
     parse_macro_input, spanned::Spanned, Arm, ExprMatch, Ident, Pat, PatIdent, PatWild, Path, Token,
 };
@@ -232,7 +232,10 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
     let groups = groups
         .iter()
         .map(|group| match (&group.kind, &group.arms[..]) {
-            (GroupKind::Regular(path), arms) => quote! {
+            // Specify the span for better error localization:
+            // - used the regular syntax while the request one is expected
+            // - unexhaustive match
+            (GroupKind::Regular(path), arms) => quote_spanned! { path.span()=>
                 else if #envelope_ident.is::<#path>() {
                     // Ensure it's not a request, or a request but only in a borrowed context.
                     // We cannot use `static_assertions` here because it wraps the check into
@@ -248,6 +251,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
 
                     match {
                         // Support both owned and borrowed contexts, relying on the type inference.
+                        #[allow(unused_imports)]
                         use #internal::{
                             EnvelopeOwned as _, EnvelopeBorrowed as _,
                             AnyMessageOwned as _, AnyMessageBorrowed as _,
@@ -258,7 +262,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                     }
                 }
             },
-            (GroupKind::Request(path), arms) => quote! {
+            (GroupKind::Request(path), arms) => quote_spanned! { path.span()=>
                 else if #envelope_ident.is::<#path>() {
                     // Ensure it's a request. We cannot use `static_assertions` here
                     // because it wraps the check into a closure that forbids us to
@@ -270,6 +274,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
 
                     match {
                         // Only the owned context is supported.
+                        #[allow(unused_imports)]
                         use #internal::{EnvelopeOwned as _, AnyMessageOwned as _};
                         let (message, token) = #envelope_ident.unpack_request();
                         (message.downcast2::<#path>(), token.into_received::<#path>())
@@ -301,6 +306,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
     // TODO: propagate `input.attrs`?
     let expanded = quote! {{
         let #envelope_ident = #match_expr;
+        #[allow(clippy::suspicious_else_formatting)]
         if false { unreachable!(); }
         #(#groups)*
     }};
