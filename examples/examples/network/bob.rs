@@ -1,7 +1,7 @@
 use elfo::prelude::*;
 use tracing::{info, warn};
 
-use crate::common::Hello;
+use crate::common::{AskName, Hello};
 
 fn consumer() -> Blueprint {
     ActorGroup::new().exec(|mut ctx| async move {
@@ -15,6 +15,10 @@ fn consumer() -> Blueprint {
                     if let Err(err) = ctx.send_to(sender, Hello(i)).await {
                         warn!("cannot say Hello({}) back: {}", i, err);
                     }
+                }
+                (AskName, token) => {
+                    info!("asked for name");
+                    ctx.respond(token, "Bob".into());
                 }
             });
         }
