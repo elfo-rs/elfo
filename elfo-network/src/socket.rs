@@ -499,7 +499,7 @@ mod tests {
         };
 
         let envelope = make_envelope(TestSocketMessage("a".repeat(100)).upcast());
-        for _ in 0..10 {
+        for _ in 0..100 {
             client_socket
                 .write
                 .feed(&envelope)
@@ -509,7 +509,7 @@ mod tests {
             client_socket.write.flush().await.expect("failed to flush");
         });
 
-        for _ in 0..10 {
+        for _ in 0..100 {
             let recv_envelope = server_socket
                 .read
                 .recv()

@@ -13,7 +13,7 @@ const BUFFER_INITIAL_CAPACITY: usize = 8192;
 
 #[derive(PartialEq, Eq)]
 pub(crate) enum FrameState {
-    // Accumulating,
+    Accumulating,
     FlushAdvised,
 }
 
@@ -75,6 +75,8 @@ impl LZ4FramedWrite {
     }
 }
 
+const COMPRESSED_DATA_FLUSH_THRESHOLD: usize = 64 * 1024;
+
 impl FramedWriteStrategy for LZ4FramedWrite {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
         codec::encode::encode(
@@ -83,13 +85,25 @@ impl FramedWriteStrategy for LZ4FramedWrite {
             &mut self.stats,
             self.envelope_size_limit,
         )?;
-        // TODO: allow multiple envelopes in the frame.
-        Ok(FrameState::FlushAdvised)
+        // We conservatively estimate that LZ4 will provide us with x2 compression rate
+        // on msgpack data.
+        // TODO: improve estimate on actual compression rates.
+        let compressed_size_estimate = self.uncompressed_buffer.len() / 2;
+        Ok(
+            if compressed_size_estimate > COMPRESSED_DATA_FLUSH_THRESHOLD {
+                FrameState::FlushAdvised
+            } else {
+                FrameState::Accumulating
+            },
+        )
     }
 
     fn finalize(&mut self) -> Result<&[u8]> {
-        self.compressed_buffer
-            .compress_frame(&self.uncompressed_buffer)
+        let result = self
+            .compressed_buffer
+            .compress_frame(&self.uncompressed_buffer);
+        self.uncompressed_buffer.clear();
+        result
     }
 
     fn take_stats(&mut self) -> EncoderDeltaStats {
