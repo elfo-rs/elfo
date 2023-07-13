@@ -441,3 +441,95 @@ async fn listen_tcp(
         accept,
     )))
 }
+
+#[cfg(test)]
+mod tests {
+    use elfo_core::{message, tracing::TraceId, Addr, Message};
+    use futures::{future, stream::StreamExt};
+    use std::{
+        convert::TryFrom,
+        net::{IpAddr, Ipv4Addr},
+    };
+
+    use crate::codec::format::NetworkEnvelopePayload;
+
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tracing_test::traced_test]
+    async fn read_write() {
+        let server_node = NodeInfo {
+            node_no: 0,
+            launch_id: LaunchId::generate(),
+            groups: vec![],
+        };
+        let server_transport = Transport::Tcp(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            9200,
+        ));
+
+        let mut listen_stream = listen(&server_transport, &server_node)
+            .await
+            .expect("failed to bind server to a port");
+        let server_socket_fut = listen_stream.next();
+
+        let client_node = NodeInfo {
+            node_no: 1,
+            launch_id: LaunchId::generate(),
+            groups: vec![],
+        };
+        let client_socket_fut = connect(&server_transport, &client_node);
+
+        let (server_socket, client_socket) =
+            future::join(server_socket_fut, client_socket_fut).await;
+        let mut server_socket = server_socket.expect("server failed");
+        let mut client_socket = client_socket
+            .expect("failed to connect to the server")
+            .expect("handshake failed");
+
+        #[message]
+        #[derive(PartialEq)]
+        struct TestSocketMessage(String);
+
+        let make_envelope = |message| NetworkEnvelope {
+            sender: Addr::NULL,
+            recipient: Addr::NULL,
+            trace_id: TraceId::try_from(1).unwrap(),
+            payload: NetworkEnvelopePayload::Regular { message },
+        };
+
+        let envelope = make_envelope(TestSocketMessage("a".repeat(100)).upcast());
+        for _ in 0..10 {
+            client_socket
+                .write
+                .feed(&envelope)
+                .expect("failed to feed message");
+        }
+        let flush_handle = tokio::spawn(async move {
+            client_socket.write.flush().await.expect("failed to flush");
+        });
+
+        for _ in 0..10 {
+            let recv_envelope = server_socket
+                .read
+                .recv()
+                .await
+                .expect("error receiving the message")
+                .expect("unexpected EOF");
+            assert_eq!(recv_envelope.recipient, envelope.recipient);
+            assert_eq!(recv_envelope.sender, envelope.sender);
+            assert_eq!(recv_envelope.trace_id, envelope.trace_id);
+
+            if let NetworkEnvelopePayload::Regular { message } = recv_envelope.payload {
+                assert_eq!(
+                    message.downcast::<TestSocketMessage>().unwrap(),
+                    TestSocketMessage("a".repeat(100))
+                );
+            } else {
+                panic!("unexpected message kind");
+            }
+        }
+
+        flush_handle.await.expect("flush panicked");
+    }
+}
