@@ -4,7 +4,7 @@ use tracing::error;
 
 use eyre::{eyre, Result};
 
-use crate::codec_direct::DecodeState;
+use crate::codec::decode::DecodeState;
 
 pub(crate) struct LZ4Buffer {
     buffer: Vec<u8>,

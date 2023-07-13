@@ -1,6 +1,9 @@
 use crate::{
-    codec::{EncodeError, EncoderDeltaStats, NetworkEnvelope},
-    codec_direct,
+    codec::{
+        self,
+        encode::{EncodeError, EncoderDeltaStats},
+        format::NetworkEnvelope,
+    },
     frame::lz4::LZ4Buffer,
 };
 
@@ -9,7 +12,7 @@ use eyre::Result;
 const BUFFER_INITIAL_CAPACITY: usize = 8192;
 
 pub(crate) enum FrameState {
-    Accumulating,
+    // Accumulating,
     FlushAdvised,
 }
 
@@ -81,7 +84,7 @@ impl LZ4FramedWrite {
 
 impl FramedWriteStrategy for LZ4FramedWrite {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
-        codec_direct::encode(
+        codec::encode::encode(
             envelope,
             &mut self.uncompressed_buffer,
             &mut self.stats,

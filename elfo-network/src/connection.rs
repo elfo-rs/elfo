@@ -26,7 +26,7 @@ use self::{
     requests::OutgoingRequests,
 };
 use crate::{
-    codec::{NetworkEnvelope, NetworkEnvelopePayload},
+    codec::format::{NetworkEnvelope, NetworkEnvelopePayload},
     protocol::{internode, HandleConnection},
     rtt::Rtt,
     socket::{ReadHalf, WriteHalf},

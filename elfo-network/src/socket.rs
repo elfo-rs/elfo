@@ -17,8 +17,7 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::{
-    codec::{EncodeError, NetworkEnvelope},
-    codec_direct::DecodeState,
+    codec::{decode::DecodeState, encode::EncodeError, format::NetworkEnvelope},
     config::Transport,
     frame::{
         read::{FramedRead, FramedReadStrategy},

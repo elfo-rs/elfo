@@ -1,6 +1,9 @@
 use crate::{
-    codec::{DecoderDeltaStats, NetworkEnvelope},
-    codec_direct::{self, DecodeState},
+    codec::{
+        self,
+        decode::{DecodeState, DecoderDeltaStats},
+        format::NetworkEnvelope,
+    },
     frame::lz4::LZ4Buffer,
 };
 
@@ -98,10 +101,10 @@ impl FramedReadStrategy for LZ4FramedRead {
         }
 
         let envelope_buffer = &uncompressed_buffer[position..];
-        let codec_state = codec_direct::decode(envelope_buffer, &mut self.stats)?;
+        let codec_state = codec::decode::decode(envelope_buffer, &mut self.stats)?;
         match codec_state {
             DecodeState::NeedMoreData { .. } => {
-                return Err(eyre!("lz4 decompressed data contains truncated envelopes"))
+                Err(eyre!("lz4 decompressed data contains truncated envelopes"))
             }
             DecodeState::Done {
                 bytes_consumed,
@@ -113,10 +116,10 @@ impl FramedReadStrategy for LZ4FramedRead {
                 };
                 // We do not want the outer code to move the input buffer yet, so we return as
                 // if we consumed zero bytes.
-                return Ok(DecodeState::Done {
+                Ok(DecodeState::Done {
                     bytes_consumed: 0,
                     decoded: Some(decoded),
-                });
+                })
             }
         }
     }

@@ -10,7 +10,7 @@ use elfo_core::{
 };
 
 use crate::{
-    codec::{NetworkEnvelope, NetworkEnvelopePayload},
+    codec::format::{NetworkEnvelope, NetworkEnvelopePayload},
     config::Transport,
     node_map::{NodeInfo, NodeMap},
     protocol::{

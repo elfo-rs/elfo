@@ -23,7 +23,6 @@ use elfo_core::{
 use crate::{config::Config, protocol::HandleConnection};
 
 mod codec;
-mod codec_direct;
 mod config;
 mod connection;
 mod discovery;
