@@ -7,21 +7,21 @@ use tokio::{
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
+#[cfg(target_os = "linux")]
+use crate::{memory_tracker::MemoryTracker, time::Interval};
+
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
     config::SystemConfig,
     context::Context,
     demux::Demux,
     errors::{RequestError, StartError, StartGroupError},
-    memory_tracker::MemoryTracker,
     message,
     messages::{StartEntrypoint, Terminate, UpdateConfig},
-    msg,
     object::Object,
     scope::{Scope, ScopeGroupShared},
     signal::{Signal, SignalKind},
     subscription::SubscriptionManager,
-    time::Interval,
     topology::Topology,
     tracing::TraceId,
     Addr,
@@ -175,45 +175,51 @@ struct CheckMemoryUsageTick;
 // TODO: make these values configurable.
 const SEND_CLOSING_TERMINATE_AFTER: Duration = Duration::from_secs(30);
 const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(45);
-const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
-const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(3);
 
 async fn termination(mut ctx: Context, topology: Topology) {
     ctx.attach(Signal::new(SignalKind::UnixTerminate, TerminateSystem));
     ctx.attach(Signal::new(SignalKind::UnixInterrupt, TerminateSystem));
     ctx.attach(Signal::new(SignalKind::WindowsCtrlC, TerminateSystem));
 
-    let memory_tracker = match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
-        Ok(tracker) => {
-            ctx.attach(Interval::new(CheckMemoryUsageTick))
-                .start(CHECK_MEMORY_USAGE_INTERVAL);
-            Some(tracker)
-        }
-        Err(err) => {
-            warn!(error = %err, "memory tracker is unavailable, disabled");
-            None
+    #[cfg(target_os = "linux")]
+    let memory_tracker = {
+        const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
+        const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(3);
+
+        match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
+            Ok(tracker) => {
+                ctx.attach(Interval::new(CheckMemoryUsageTick))
+                    .start(CHECK_MEMORY_USAGE_INTERVAL);
+                Some(tracker)
+            }
+            Err(err) => {
+                warn!(error = %err, "memory tracker is unavailable, disabled");
+                None
+            }
         }
     };
 
     let mut oom_prevented = false;
 
     while let Some(envelope) = ctx.recv().await {
-        msg!(match envelope {
-            TerminateSystem => break, // TODO: use `Terminate`?
-            CheckMemoryUsageTick => {
-                match memory_tracker.as_ref().map(|mt| mt.check()) {
-                    Some(Ok(true)) | None => {}
-                    Some(Ok(false)) => {
-                        error!("maximum memory usage is reached, forcibly terminating");
-                        let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
-                        oom_prevented = true;
-                    }
-                    Some(Err(err)) => {
-                        warn!(error = %err, "memory tracker cannot check memory usage");
-                    }
+        if envelope.is::<TerminateSystem>() {
+            break;
+        }
+
+        #[cfg(target_os = "linux")]
+        if envelope.is::<CheckMemoryUsageTick>() {
+            match memory_tracker.as_ref().map(|mt| mt.check()) {
+                Some(Ok(true)) | None => {}
+                Some(Ok(false)) => {
+                    error!("maximum memory usage is reached, forcibly terminating");
+                    let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
+                    oom_prevented = true;
+                }
+                Some(Err(err)) => {
+                    warn!(error = %err, "memory tracker cannot check memory usage");
                 }
             }
-        });
+        }
     }
 
     ctx.set_status(ActorStatus::TERMINATING);
