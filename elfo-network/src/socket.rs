@@ -294,30 +294,20 @@ pub(crate) struct WriteHalf {
 }
 
 impl WriteHalf {
-    /// Encodes the message and flushes the internal buffer if needed.
+    /// Encodes the message into the internal buffer.
     ///
     /// Returns
-    /// * `Ok(true)` if the message is added successfully.
-    /// * `Ok(false)` if the message is skipped because of encoding errors.
+    /// * `Ok(Some(FrameState))` if the message is added successfully.
+    /// * `Ok(None)` if the message is skipped because of encoding errors.
     /// * `Err(err)` if an unrecoverable error happened.
-    pub(crate) fn feed<'a>(
-        &'a mut self,
-        envelope: &NetworkEnvelope,
-    ) -> impl Future<Output = Result<bool>> + 'a + Send {
+    pub(crate) fn feed(&mut self, envelope: &NetworkEnvelope) -> Result<Option<FrameState>> {
         // TODO: timeout, it should be clever
         // TODO: we should also emit metrics here, not only in `flush()`.
         let write_result = self.framing.write(envelope);
-        async move {
-            let state = match write_result {
-                Ok(state) => state,
-                Err(EncodeError::Skipped) => return Ok(false),
-                Err(EncodeError::Fatal(err)) => return Err(err.into()),
-            };
-
-            if matches!(state, FrameState::FlushAdvised) {
-                self.flush().await?;
-            }
-            Ok(true)
+        match write_result {
+            Ok(state) => Ok(Some(state)),
+            Err(EncodeError::Skipped) => Ok(None),
+            Err(EncodeError::Fatal(err)) => Err(err.into()),
         }
     }
 
@@ -355,13 +345,11 @@ impl WriteHalf {
         &'a mut self,
         envelope: &NetworkEnvelope,
     ) -> impl Future<Output = Result<()>> + 'a + Send {
-        // NOTE: We are not used `feed()` here to avoid double flushing.
-        let result = self
-            .framing
-            .write(envelope)
-            .map_err(|_| eyre!("failed to serialize envelope"));
+        let result = self.feed(envelope);
         async move {
-            result?;
+            result
+                .wrap_err("fatal serialization error")?
+                .ok_or(eyre!("non-fatal serialization error"))?;
             self.flush().await
         }
     }

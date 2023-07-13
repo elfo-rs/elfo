@@ -11,6 +11,7 @@ use eyre::Result;
 
 const BUFFER_INITIAL_CAPACITY: usize = 8192;
 
+#[derive(PartialEq, Eq)]
 pub(crate) enum FrameState {
     // Accumulating,
     FlushAdvised,
