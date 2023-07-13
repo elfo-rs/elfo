@@ -23,10 +23,6 @@ impl LZ4Buffer {
         }
     }
 
-    pub(crate) fn reset(&mut self) {
-        self.buffer.clear();
-    }
-
     pub(crate) fn decompress_frame(&mut self, raw: &[u8]) -> Result<DecodeState<&[u8]>> {
         if raw.len() < 4 {
             return Ok(DecodeState::NeedMoreData { length_estimate: 4 });

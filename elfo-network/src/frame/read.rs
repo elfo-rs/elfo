@@ -9,8 +9,6 @@ use crate::{
 
 use eyre::{eyre, Result};
 
-const BUFFER_INITIAL_CAPACITY: usize = 8192;
-
 pub(crate) enum FramedRead {
     LZ4(LZ4FramedRead),
 }
@@ -57,10 +55,12 @@ pub(crate) struct LZ4FramedRead {
     stats: DecoderDeltaStats,
 }
 
+const UNCOMPRESSED_DATA_BUFFER_CAPACITY: usize = 128 * 1024;
+
 impl LZ4FramedRead {
     pub(crate) fn new() -> Self {
         Self {
-            buffer: LZ4Buffer::with_capacity(BUFFER_INITIAL_CAPACITY),
+            buffer: LZ4Buffer::with_capacity(UNCOMPRESSED_DATA_BUFFER_CAPACITY),
             state: LZ4DecodingState::FrameDecompression,
             stats: Default::default(),
         }

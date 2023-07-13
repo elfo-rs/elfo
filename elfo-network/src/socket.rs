@@ -195,14 +195,14 @@ pub(crate) struct ReadHalf {
     read: tcp::OwnedReadHalf,
 }
 
-const BUFFER_INITIAL_CAPACITY: usize = 8192;
+const RAW_DATA_BUFFER_CAPACITY: usize = 64 * 1024;
 const BUFFER_CHUNK_SIZE: usize = 512;
 
 impl ReadHalf {
     pub(crate) fn new(framing: FramedRead, read: tcp::OwnedReadHalf) -> Self {
         Self {
             framing,
-            buffer: Vec::with_capacity(BUFFER_INITIAL_CAPACITY),
+            buffer: Vec::with_capacity(RAW_DATA_BUFFER_CAPACITY),
             position: 0,
             read,
         }
