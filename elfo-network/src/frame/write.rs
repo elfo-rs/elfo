@@ -30,8 +30,6 @@ impl FramedWrite {
 pub(crate) trait FramedWriteStrategy {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError>;
 
-    fn prepare_next_frame(&mut self);
-
     fn finalize(&mut self) -> Result<&[u8]>;
 
     fn take_stats(&mut self) -> EncoderDeltaStats;
@@ -43,12 +41,6 @@ impl FramedWriteStrategy for FramedWrite {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
         match self {
             FramedWrite::LZ4(lz4) => lz4.write(envelope),
-        }
-    }
-
-    fn prepare_next_frame(&mut self) {
-        match self {
-            FramedWrite::LZ4(lz4) => lz4.prepare_next_frame(),
         }
     }
 
@@ -93,11 +85,6 @@ impl FramedWriteStrategy for LZ4FramedWrite {
         )?;
         // TODO: allow multiple envelopes in the frame.
         Ok(FrameState::FlushAdvised)
-    }
-
-    fn prepare_next_frame(&mut self) {
-        self.uncompressed_buffer.clear();
-        self.compressed_buffer.reset();
     }
 
     fn finalize(&mut self) -> Result<&[u8]> {

@@ -75,7 +75,6 @@ impl LZ4Buffer {
     }
 
     pub(crate) fn compress_frame(&mut self, input: &[u8]) -> Result<&[u8]> {
-        self.buffer.clear();
         self.buffer
             .resize(8 + lz4_flex::block::get_maximum_output_size(input.len()), 0);
 
