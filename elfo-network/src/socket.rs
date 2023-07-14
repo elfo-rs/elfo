@@ -367,6 +367,7 @@ async fn connect_tcp(peer: SocketAddr, this_node: &NodeInfo) -> Result<Option<So
     // TODO: timeout
     // TODO: settings (Nagle's algorithm etc.)
     let stream = TcpStream::connect(peer).await?;
+    stream.set_nodelay(true)?;
     let socket = TcpSocket::new(stream, Transport::Tcp(peer));
     socket.handshake(this_node).await
 }
@@ -395,6 +396,14 @@ async fn listen_tcp(
         loop {
             match listener.accept().await {
                 Ok((stream, peer)) => {
+                    if let Err(err) = stream.set_nodelay(true) {
+                        error!(
+                            message = "cannot turn off Nagle's algorithm for incoming connection",
+                            error = %err,
+                            listener = %addr,
+                        );
+                        continue;
+                    }
                     let socket = TcpSocket::new(stream, Transport::Tcp(peer));
                     match socket.handshake(&this_node).await {
                         Ok(connection) => {
