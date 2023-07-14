@@ -13,7 +13,7 @@ pub(crate) struct LZ4Buffer {
 // TODO: checksums.
 // TODO: proper framing. Currently the whole encoding is:
 // 1. Size of the whole frame
-// 2. Size of the uncompressed data
+// 2. Size of the decompressed data
 // 3. LZ4 compressed data
 
 impl LZ4Buffer {
@@ -42,7 +42,7 @@ impl LZ4Buffer {
 
         let decompressed_size = input.read_u32::<LittleEndian>()? as usize;
         if decompressed_size >= 200_000_000 {
-            return Err(eyre!("uncompressed size is too big"));
+            return Err(eyre!("decompressed size is too big"));
         }
 
         self.buffer.clear();

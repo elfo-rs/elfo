@@ -17,10 +17,10 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::{
-    codec::{decode::DecodeState, encode::EncodeError, format::NetworkEnvelope},
+    codec::{encode::EncodeError, format::NetworkEnvelope},
     config::Transport,
     frame::{
-        read::{FramedRead, FramedReadStrategy},
+        read::{FramedRead, FramedReadState, FramedReadStrategy},
         write::{FrameState, FramedWrite, FramedWriteStrategy},
     },
     node_map::{LaunchId, NodeInfo},
@@ -190,53 +190,29 @@ impl Socket {
 
 pub(crate) struct ReadHalf {
     framing: FramedRead,
-    buffer: Vec<u8>,
-    position: usize,
     read: tcp::OwnedReadHalf,
 }
 
-const RAW_DATA_BUFFER_CAPACITY: usize = 64 * 1024;
-const BUFFER_CHUNK_SIZE: usize = 512;
-
 impl ReadHalf {
     pub(crate) fn new(framing: FramedRead, read: tcp::OwnedReadHalf) -> Self {
-        Self {
-            framing,
-            buffer: Vec::with_capacity(RAW_DATA_BUFFER_CAPACITY),
-            position: 0,
-            read,
-        }
+        Self { framing, read }
     }
 }
 
 impl ReadHalf {
     pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>> {
         let envelope = loop {
-            let length_estimate = match self.framing.read(&self.buffer[self.position..])? {
-                DecodeState::NeedMoreData { length_estimate } => {
-                    error!(message = "laplab: read half requested more data", min = %length_estimate);
-                    length_estimate
+            let (buffer, min_bytes) = match self.framing.read()? {
+                FramedReadState::NeedMoreData { buffer, min_bytes } => {
+                    error!(message = "laplab: read half requested more data");
+                    (buffer, min_bytes)
                 }
-                DecodeState::Done {
-                    bytes_consumed,
-                    decoded: None,
-                } => {
-                    // The frame was fully decoded, so we remove now unused bytes at the beginning
-                    // of the buffer.
-                    self.position += bytes_consumed;
-                    self.buffer.drain(..self.position);
-                    error!(
-                        message = "laplab: frame consumed",
-                        last_pos = self.position,
-                        was = (self.position + self.buffer.len()),
-                        remaining = self.buffer.len()
-                    );
-                    self.position = 0;
-                    // We now need to ask the decoder once more for the length estimate.
+                FramedReadState::Done { decoded: None } => {
+                    error!(message = "laplab: frame consumed");
+                    // We now need to ask the decoder for the buffer to read into once more.
                     continue;
                 }
-                DecodeState::Done {
-                    bytes_consumed,
+                FramedReadState::Done {
                     decoded: Some(envelope),
                 } => {
                     // One of the envelopes inside the frame was decoded.
@@ -244,42 +220,32 @@ impl ReadHalf {
                         message = "laplab: read half got an envelope",
                         envelope = format!("{:?}", envelope)
                     );
-                    self.position += bytes_consumed;
                     break envelope;
                 }
             };
 
-            // Decoder requested for more data to be read. We round up the number of
-            // requested bytes to be a multiple of the chunk size to avoid
-            // reading too few bytes per syscall.
-            let old_buffer_size = self.buffer.len();
-            debug_assert!(length_estimate > old_buffer_size);
-            let new_buffer_size =
-                ((length_estimate + BUFFER_CHUNK_SIZE - 1) / BUFFER_CHUNK_SIZE) * BUFFER_CHUNK_SIZE;
-            self.buffer.resize(new_buffer_size, 0);
-
-            // We try to read the whole chunk, but as soon as we have enough for the decoder
-            // to work with, we stop.
-            let mut buffer_position = old_buffer_size;
-            while buffer_position < length_estimate {
-                let bytes_read = self.read.read(&mut self.buffer[buffer_position..]).await?;
+            // We try to fill the whole buffer, but as soon as we have enough for the
+            // decoder to work with, we stop.
+            let mut total_bytes_read = 0;
+            while total_bytes_read < min_bytes {
+                let bytes_read = self.read.read(&mut buffer[total_bytes_read..]).await?;
                 if bytes_read == 0 {
                     // EOF.
                     return Ok(None);
                 }
-                buffer_position += bytes_read;
+                total_bytes_read += bytes_read;
             }
             error!(
                 message = "laplab: read half read bytes",
-                count = (buffer_position - old_buffer_size)
+                count = total_bytes_read
             );
-            self.buffer.resize(buffer_position, 0);
+            self.framing.advance(total_bytes_read);
         };
 
         let stats = self.framing.take_stats();
         counter!("elfo_network_received_messages_total", stats.messages);
         counter!(
-            "elfo_network_received_uncompressed_bytes_total",
+            "elfo_network_received_decompressed_bytes_total",
             stats.bytes
         );
         // TODO: elfo_network_received_compressed_bytes_total
@@ -334,7 +300,7 @@ impl WriteHalf {
 
         let stats = self.framing.take_stats();
         counter!("elfo_network_sent_messages_total", stats.messages);
-        counter!("elfo_network_sent_uncompressed_bytes_total", stats.bytes);
+        counter!("elfo_network_sent_decompressed_bytes_total", stats.bytes);
         // TODO: elfo_network_sent_compressed_bytes_total
 
         result
@@ -464,6 +430,59 @@ mod tests {
 
     use super::*;
 
+    #[message]
+    #[derive(PartialEq)]
+    struct TestSocketMessage(String);
+
+    fn feed_frame(client_socket: &mut Socket, envelope: &NetworkEnvelope) {
+        for _ in 0..100 {
+            client_socket
+                .write
+                .feed(envelope)
+                .expect("failed to feed message");
+        }
+    }
+
+    async fn read_frame(server_socket: &mut Socket, sent_envelope: &NetworkEnvelope) {
+        for _ in 0..100 {
+            let recv_envelope = server_socket
+                .read
+                .recv()
+                .await
+                .expect("error receiving the message")
+                .expect("unexpected EOF");
+            assert_eq!(recv_envelope.recipient, sent_envelope.recipient);
+            assert_eq!(recv_envelope.sender, sent_envelope.sender);
+            assert_eq!(recv_envelope.trace_id, sent_envelope.trace_id);
+
+            if let NetworkEnvelopePayload::Regular {
+                message: recv_message,
+            } = recv_envelope.payload
+            {
+                if let NetworkEnvelopePayload::Regular {
+                    message: sent_message,
+                } = &sent_envelope.payload
+                {
+                    assert_eq!(
+                        recv_message.downcast_ref::<TestSocketMessage>().unwrap(),
+                        sent_message.downcast_ref::<TestSocketMessage>().unwrap(),
+                    );
+                } else {
+                    panic!("unexpected kind of the sent message");
+                }
+            } else {
+                panic!("unexpected kind of the received message");
+            }
+        }
+    }
+
+    fn spawn_flush(mut client_socket: Socket) -> tokio::task::JoinHandle<Socket> {
+        tokio::spawn(async move {
+            client_socket.write.flush().await.expect("failed to flush");
+            client_socket
+        })
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[tracing_test::traced_test]
     async fn read_write() {
@@ -496,49 +515,20 @@ mod tests {
             .expect("failed to connect to the server")
             .expect("handshake failed");
 
-        #[message]
-        #[derive(PartialEq)]
-        struct TestSocketMessage(String);
+        for i in 0..10 {
+            let envelope = NetworkEnvelope {
+                sender: Addr::NULL,
+                recipient: Addr::NULL,
+                trace_id: TraceId::try_from(1).unwrap(),
+                payload: NetworkEnvelopePayload::Regular {
+                    message: TestSocketMessage("a".repeat(i * 10)).upcast(),
+                },
+            };
 
-        let make_envelope = |message| NetworkEnvelope {
-            sender: Addr::NULL,
-            recipient: Addr::NULL,
-            trace_id: TraceId::try_from(1).unwrap(),
-            payload: NetworkEnvelopePayload::Regular { message },
-        };
-
-        let envelope = make_envelope(TestSocketMessage("a".repeat(100)).upcast());
-        for _ in 0..100 {
-            client_socket
-                .write
-                .feed(&envelope)
-                .expect("failed to feed message");
+            feed_frame(&mut client_socket, &envelope);
+            let flush_handle = spawn_flush(client_socket);
+            read_frame(&mut server_socket, &envelope).await;
+            client_socket = flush_handle.await.expect("flush panicked");
         }
-        let flush_handle = tokio::spawn(async move {
-            client_socket.write.flush().await.expect("failed to flush");
-        });
-
-        for _ in 0..100 {
-            let recv_envelope = server_socket
-                .read
-                .recv()
-                .await
-                .expect("error receiving the message")
-                .expect("unexpected EOF");
-            assert_eq!(recv_envelope.recipient, envelope.recipient);
-            assert_eq!(recv_envelope.sender, envelope.sender);
-            assert_eq!(recv_envelope.trace_id, envelope.trace_id);
-
-            if let NetworkEnvelopePayload::Regular { message } = recv_envelope.payload {
-                assert_eq!(
-                    message.downcast::<TestSocketMessage>().unwrap(),
-                    TestSocketMessage("a".repeat(100))
-                );
-            } else {
-                panic!("unexpected message kind");
-            }
-        }
-
-        flush_handle.await.expect("flush panicked");
     }
 }

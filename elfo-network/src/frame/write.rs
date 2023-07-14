@@ -58,7 +58,7 @@ impl FramedWriteStrategy for FramedWrite {
 }
 
 pub(crate) struct LZ4FramedWrite {
-    uncompressed_buffer: Vec<u8>,
+    decompressed_buffer: Vec<u8>,
     compressed_buffer: LZ4Buffer,
     stats: EncoderDeltaStats,
     envelope_size_limit: Option<usize>,
@@ -67,7 +67,7 @@ pub(crate) struct LZ4FramedWrite {
 impl LZ4FramedWrite {
     pub(crate) fn new(envelope_size_limit: Option<usize>) -> Self {
         Self {
-            uncompressed_buffer: Vec::with_capacity(BUFFER_INITIAL_CAPACITY),
+            decompressed_buffer: Vec::with_capacity(BUFFER_INITIAL_CAPACITY),
             compressed_buffer: LZ4Buffer::with_capacity(BUFFER_INITIAL_CAPACITY),
             stats: Default::default(),
             envelope_size_limit,
@@ -81,14 +81,14 @@ impl FramedWriteStrategy for LZ4FramedWrite {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
         codec::encode::encode(
             envelope,
-            &mut self.uncompressed_buffer,
+            &mut self.decompressed_buffer,
             &mut self.stats,
             self.envelope_size_limit,
         )?;
         // We conservatively estimate that LZ4 will provide us with x2 compression rate
         // on msgpack data.
         // TODO: improve estimate on actual compression rates.
-        let compressed_size_estimate = self.uncompressed_buffer.len() / 2;
+        let compressed_size_estimate = self.decompressed_buffer.len() / 2;
         Ok(
             if compressed_size_estimate > COMPRESSED_DATA_FLUSH_THRESHOLD {
                 FrameState::FlushAdvised
@@ -101,8 +101,8 @@ impl FramedWriteStrategy for LZ4FramedWrite {
     fn finalize(&mut self) -> Result<&[u8]> {
         let result = self
             .compressed_buffer
-            .compress_frame(&self.uncompressed_buffer);
-        self.uncompressed_buffer.clear();
+            .compress_frame(&self.decompressed_buffer);
+        self.decompressed_buffer.clear();
         result
     }
 
