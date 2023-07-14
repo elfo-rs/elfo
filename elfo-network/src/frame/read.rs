@@ -69,7 +69,8 @@ enum LZ4DecodingState {
 
 pub(crate) struct LZ4FramedRead {
     compressed_buffer: Vec<u8>,
-    compressed_buffer_end: usize,
+    position: usize,
+    filled: usize,
     decompressed_buffer: LZ4Buffer,
     state: LZ4DecodingState,
     stats: DecoderDeltaStats,
@@ -82,7 +83,8 @@ impl LZ4FramedRead {
     pub(crate) fn new() -> Self {
         Self {
             compressed_buffer: Vec::with_capacity(COMPRESSED_DATA_BUFFER_CAPACITY),
-            compressed_buffer_end: 0,
+            position: 0,
+            filled: 0,
             decompressed_buffer: LZ4Buffer::with_capacity(DECOMPRESSED_DATA_BUFFER_CAPACITY),
             state: LZ4DecodingState::FrameDecompression,
             stats: Default::default(),
@@ -98,20 +100,49 @@ impl FramedReadStrategy for LZ4FramedRead {
             LZ4DecodingState::FrameDecompression => {
                 let lz4_state = self
                     .decompressed_buffer
-                    .decompress_frame(&self.compressed_buffer[..self.compressed_buffer_end])?;
+                    .decompress_frame(&self.compressed_buffer[self.position..self.filled])?;
                 match lz4_state {
                     DecodeState::NeedMoreData { length_estimate } => {
-                        // TODO: avoid zeroing memory.
                         // Decoder requested for more data to be read. We round up the number of
                         // requested bytes to be a multiple of the chunk size to avoid
                         // reading too few bytes per syscall.
-                        debug_assert!(length_estimate > self.compressed_buffer_end);
-                        let new_buffer_size = ((length_estimate + BUFFER_CHUNK_SIZE - 1)
+                        debug_assert!(length_estimate > self.filled - self.position);
+                        let rounded_length = ((length_estimate + BUFFER_CHUNK_SIZE - 1)
                             / BUFFER_CHUNK_SIZE)
                             * BUFFER_CHUNK_SIZE;
-                        self.compressed_buffer.resize(new_buffer_size, 0);
+
+                        let postfix_free_space = self.compressed_buffer.len() - self.filled;
+                        if rounded_length <= postfix_free_space {
+                            // There is enough space in the buffer for the
+                            // requested data to be read
+                            // into.
+                        } else {
+                            // Shift the data into the beginning of the buffer.
+                            unsafe {
+                                let buffer_start = self.compressed_buffer.as_mut_ptr();
+                                let data_start = buffer_start.add(self.position);
+                                let len = self.filled - self.position;
+                                std::ptr::copy(data_start, buffer_start, len);
+
+                                self.position = 0;
+                                self.filled = len;
+                            }
+
+                            let total_free_space = self.compressed_buffer.len() - self.filled;
+                            if rounded_length > total_free_space {
+                                // If there is still not enough space after the shift, we need to
+                                // reallocate.
+                                let new_buffer_size = self.filled + rounded_length;
+                                self.compressed_buffer.reserve(new_buffer_size);
+                                unsafe {
+                                    // Set len directly to avoid zeroing freshly allocated bytes.
+                                    self.compressed_buffer.set_len(new_buffer_size);
+                                }
+                            }
+                        }
+
                         return Ok(FramedReadState::NeedMoreData {
-                            buffer: &mut self.compressed_buffer[self.compressed_buffer_end..],
+                            buffer: &mut self.compressed_buffer[self.filled..],
                             min_bytes: length_estimate,
                         });
                     }
@@ -132,13 +163,7 @@ impl FramedReadStrategy for LZ4FramedRead {
 
         let decompressed_buffer = self.decompressed_buffer.get_ref();
         if position >= decompressed_buffer.len() {
-            // We have finished decoding the current frame. In total, we have have processed
-            // `compressed_size` bytes, but there still might be data left in the
-            // `compressed_buffer` after that position. So we remove only the processed
-            // data, keeping any tail left in the buffer untouched.
-            // TODO: avoid zeroing memory.
-            self.compressed_buffer.drain(..compressed_size);
-            self.compressed_buffer_end -= compressed_size;
+            self.position = self.filled;
             self.state = LZ4DecodingState::FrameDecompression;
             return Ok(FramedReadState::Done { decoded: None });
         }
@@ -165,8 +190,8 @@ impl FramedReadStrategy for LZ4FramedRead {
     }
 
     fn advance(&mut self, count: usize) {
-        debug_assert!(self.compressed_buffer_end + count < self.compressed_buffer.len());
-        self.compressed_buffer_end += count;
+        debug_assert!(self.filled + count < self.compressed_buffer.len());
+        self.filled += count;
     }
 
     fn take_stats(&mut self) -> DecoderDeltaStats {
