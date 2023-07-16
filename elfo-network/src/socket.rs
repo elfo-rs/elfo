@@ -111,8 +111,9 @@ pub(crate) async fn connect(transport: &Transport) -> Result<Socket> {
 
 async fn connect_tcp(peer: SocketAddr) -> Result<Socket> {
     // TODO: timeout
-    // TODO: settings (Nagle's algorithm etc.)
+    // TODO: settings (keepalive, linger, etc.)
     let stream = TcpStream::connect(peer).await?;
+    let _ = stream.set_nodelay(true);
     Ok(Socket::tcp(stream, Transport::Tcp(peer)))
 }
 
@@ -136,6 +137,7 @@ async fn listen_tcp(addr: SocketAddr) -> Result<futures::stream::BoxStream<'stat
         loop {
             match listener.accept().await {
                 Ok((stream, peer)) => {
+                    let _ = stream.set_nodelay(true);
                     let connection = Socket::tcp(stream, Transport::Tcp(peer));
                     return Some((connection, listener));
                 }
