@@ -1,5 +1,3 @@
-use std::mem::MaybeUninit;
-
 use crate::{
     codec::{
         self,
@@ -70,7 +68,7 @@ enum LZ4DecodingState {
 }
 
 pub(crate) struct LZ4FramedRead {
-    compressed_buffer: Vec<MaybeUninit<u8>>,
+    compressed_buffer: Vec<u8>,
     position: usize,
     filled: usize,
     decompressed_buffer: LZ4Buffer,
@@ -96,35 +94,13 @@ impl LZ4FramedRead {
 
 const BUFFER_CHUNK_SIZE: usize = 512;
 
-// TODO: replace with `MaybeUninit::slice_assume_init_ref` once it becomes
-// stable.
-unsafe fn slice_assume_init_ref(slice: &[MaybeUninit<u8>]) -> &[u8] {
-    // SAFETY: casting `slice` to a `*const [u8]` is safe since the caller
-    // guarantees that `slice` is initialized, and `MaybeUninit` is guaranteed
-    // to have the same layout as `u8`. The pointer obtained is valid since it
-    // refers to memory owned by `slice` which is a reference and thus
-    // guaranteed to be valid for reads.
-    unsafe { &*(slice as *const [MaybeUninit<u8>] as *const [u8]) }
-}
-
-// TODO: replace with `MaybeUninit::slice_assume_init_mut` once it becomes
-// stable.
-unsafe fn slice_assume_init_mut(slice: &mut [MaybeUninit<u8>]) -> &mut [u8] {
-    // SAFETY: similar to safety notes for `slice_assume_init_ref`, but we have a
-    // mutable reference which is also guaranteed to be valid for writes.
-    unsafe { &mut *(slice as *mut [MaybeUninit<u8>] as *mut [u8]) }
-}
-
 impl FramedReadStrategy for LZ4FramedRead {
     fn read(&mut self) -> Result<FramedReadState<'_>> {
         let (compressed_size, position) = match self.state {
             LZ4DecodingState::FrameDecompression => {
-                let compressed_slice = unsafe {
-                    slice_assume_init_ref(&self.compressed_buffer[self.position..self.filled])
-                };
                 let lz4_state = self
                     .decompressed_buffer
-                    .decompress_frame(compressed_slice)?;
+                    .decompress_frame(&self.compressed_buffer[self.position..self.filled])?;
                 match lz4_state {
                     DecodeState::NeedMoreData { length_estimate } => {
                         // Decoder requested for more data to be read. We round up the number of
@@ -157,16 +133,12 @@ impl FramedReadStrategy for LZ4FramedRead {
                                 // If there is still not enough space after the shift, we need to
                                 // reallocate.
                                 let new_buffer_size = self.filled + rounded_length;
-                                self.compressed_buffer
-                                    .resize(new_buffer_size, MaybeUninit::uninit());
+                                self.compressed_buffer.resize(new_buffer_size, 0);
                             }
                         }
 
-                        let compressed_slice = unsafe {
-                            slice_assume_init_mut(&mut self.compressed_buffer[self.filled..])
-                        };
                         return Ok(FramedReadState::NeedMoreData {
-                            buffer: compressed_slice,
+                            buffer: &mut self.compressed_buffer[self.filled..],
                             min_bytes: length_estimate,
                         });
                     }
