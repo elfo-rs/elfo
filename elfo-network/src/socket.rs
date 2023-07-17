@@ -240,7 +240,7 @@ impl ReadHalf {
                 total_bytes_read += bytes_read;
             }
 
-            self.framing.advance(total_bytes_read);
+            self.framing.mark_filled(total_bytes_read);
 
             debug!(
                 message = "read bytes from the socket",

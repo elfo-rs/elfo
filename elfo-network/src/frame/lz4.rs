@@ -1,3 +1,23 @@
+//! This module implements custom LZ4 framing.
+//!
+//! Single LZ4 frame contains one or more envelopes compressed as a single
+//! LZ4 block along with some meta information like frame size. We do NOT
+//! use standard LZ4 framing.
+//!
+//! Structure of a single frame:
+//!           name           bits
+//! +---------------------------+----+
+//! | size of whole frame       | 32 |
+//! +---------------------------+----+
+//! | size of decompressed data | 32 |
+//! +---------------------------+----+
+//! | LZ4 block                 |rest|
+//! +---------------------------+----+
+//!
+//! All fields are encoded using LE ordering.
+
+// TODO: checksums.
+
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
 
@@ -24,12 +44,6 @@ pub(crate) struct CompressStats {
     /// How many uncompressed bytes were produced during compression so far.
     pub(crate) total_compressed_bytes: u64,
 }
-
-// TODO: checksums.
-// TODO: proper framing. Currently the whole encoding is:
-// 1. Size of the whole frame
-// 2. Size of the decompressed data
-// 3. LZ4 compressed data
 
 impl LZ4Buffer {
     pub(crate) fn with_capacity(capacity: usize) -> Self {
