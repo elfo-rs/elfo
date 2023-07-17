@@ -7,11 +7,14 @@ use crate::{
     frame::lz4::LZ4Buffer,
 };
 
+use derive_more::Display;
 use eyre::{eyre, Result};
 
 use super::lz4::DecompressStats;
 
+#[derive(Display)]
 pub(crate) enum FramedRead {
+    #[display(fmt = "LZ4")]
     LZ4(LZ4FramedRead),
 }
 

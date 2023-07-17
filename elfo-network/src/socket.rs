@@ -14,7 +14,7 @@ use tokio::{
         TcpListener, TcpStream,
     },
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     codec::{encode::EncodeError, format::NetworkEnvelope},
@@ -204,22 +204,26 @@ impl ReadHalf {
         let envelope = loop {
             let (buffer, min_bytes) = match self.framing.read()? {
                 FramedReadState::NeedMoreData { buffer, min_bytes } => {
-                    error!(message = "laplab: read half requested more data");
+                    debug!(
+                        message = "framed read strategy requested more data",
+                        min_bytes_to_fill = min_bytes,
+                    );
                     (buffer, min_bytes)
                 }
                 FramedReadState::Done { decoded: None } => {
-                    error!(message = "laplab: frame consumed");
+                    debug!(message = "framed read strategy finished decoding a frame");
                     // We now need to ask the decoder for the buffer to read into once more.
                     continue;
                 }
                 FramedReadState::Done {
                     decoded: Some(envelope),
                 } => {
-                    // One of the envelopes inside the frame was decoded.
-                    error!(
-                        message = "laplab: read half got an envelope",
-                        envelope = format!("{:?}", envelope)
+                    let (protocol, name) = envelope.payload.protocol_and_name();
+                    debug!(
+                        message = "framed read strategy decoded single envelope",
+                        protocol, name,
                     );
+                    // One of the envelopes inside the frame was decoded.
                     break envelope;
                 }
             };
@@ -235,11 +239,14 @@ impl ReadHalf {
                 }
                 total_bytes_read += bytes_read;
             }
-            error!(
-                message = "laplab: read half read bytes",
-                count = total_bytes_read
-            );
+
             self.framing.advance(total_bytes_read);
+
+            debug!(
+                message = "read bytes from the socket",
+                total_bytes_read,
+                min_bytes_requested = min_bytes,
+            );
         };
 
         let stats = self.framing.take_stats();
@@ -299,10 +306,7 @@ impl WriteHalf {
                 .context("failed to flush the frame");
         }
 
-        error!(
-            message = "laplab: write half sent bytes",
-            count = finalized.len()
-        );
+        debug!(message = "wrote bytes to socket", count = finalized.len());
 
         let stats = self.framing.take_stats();
         counter!(
