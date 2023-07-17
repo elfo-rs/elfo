@@ -1,13 +1,15 @@
 use crate::{
     codec::{
         self,
-        decode::{DecodeState, DecoderDeltaStats},
+        decode::{DecodeState, DecodeStats},
         format::NetworkEnvelope,
     },
     frame::lz4::LZ4Buffer,
 };
 
 use eyre::{eyre, Result};
+
+use super::lz4::DecompressStats;
 
 pub(crate) enum FramedRead {
     LZ4(LZ4FramedRead),
@@ -29,12 +31,20 @@ pub(crate) enum FramedReadState<'a> {
     },
 }
 
+#[derive(Default)]
+pub(crate) struct FramedReadStats {
+    /// Stats for decompression.
+    pub(crate) decompress_stats: DecompressStats,
+    /// Stats for decoding, which always happens on uncompressed data.
+    pub(crate) decode_stats: DecodeStats,
+}
+
 pub(crate) trait FramedReadStrategy {
     fn read(&mut self) -> Result<FramedReadState<'_>>;
 
     fn advance(&mut self, count: usize);
 
-    fn take_stats(&mut self) -> DecoderDeltaStats;
+    fn take_stats(&mut self) -> FramedReadStats;
 }
 
 /// Hand-rolled dynamic dispatch to use branch predictor and allow
@@ -52,7 +62,7 @@ impl FramedReadStrategy for FramedRead {
         }
     }
 
-    fn take_stats(&mut self) -> DecoderDeltaStats {
+    fn take_stats(&mut self) -> FramedReadStats {
         match self {
             FramedRead::LZ4(lz4) => lz4.take_stats(),
         }
@@ -73,7 +83,7 @@ pub(crate) struct LZ4FramedRead {
     filled: usize,
     decompressed_buffer: LZ4Buffer,
     state: LZ4DecodingState,
-    stats: DecoderDeltaStats,
+    stats: FramedReadStats,
 }
 
 const COMPRESSED_DATA_BUFFER_CAPACITY: usize = 64 * 1024;
@@ -98,9 +108,10 @@ impl FramedReadStrategy for LZ4FramedRead {
     fn read(&mut self) -> Result<FramedReadState<'_>> {
         let (compressed_size, position) = match self.state {
             LZ4DecodingState::FrameDecompression => {
-                let lz4_state = self
-                    .decompressed_buffer
-                    .decompress_frame(&self.compressed_buffer[self.position..self.filled])?;
+                let lz4_state = self.decompressed_buffer.decompress_frame(
+                    &self.compressed_buffer[self.position..self.filled],
+                    &mut self.stats.decompress_stats,
+                )?;
                 match lz4_state {
                     DecodeState::NeedMoreData { length_estimate } => {
                         // Decoder requested for more data to be read. We round up the number of
@@ -165,7 +176,7 @@ impl FramedReadStrategy for LZ4FramedRead {
         }
 
         let envelope_buffer = &decompressed_buffer[position..];
-        let codec_state = codec::decode::decode(envelope_buffer, &mut self.stats)?;
+        let codec_state = codec::decode::decode(envelope_buffer, &mut self.stats.decode_stats)?;
         match codec_state {
             DecodeState::NeedMoreData { .. } => {
                 Err(eyre!("lz4 decompressed data contains truncated envelopes"))
@@ -190,7 +201,7 @@ impl FramedReadStrategy for LZ4FramedRead {
         self.filled += count;
     }
 
-    fn take_stats(&mut self) -> DecoderDeltaStats {
+    fn take_stats(&mut self) -> FramedReadStats {
         std::mem::take(&mut self.stats)
     }
 }

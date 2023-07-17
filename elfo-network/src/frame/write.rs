@@ -1,10 +1,10 @@
 use crate::{
     codec::{
         self,
-        encode::{EncodeError, EncoderDeltaStats},
+        encode::{EncodeError, EncodeStats},
         format::NetworkEnvelope,
     },
-    frame::lz4::LZ4Buffer,
+    frame::lz4::{CompressStats, LZ4Buffer},
 };
 
 use eyre::Result;
@@ -27,12 +27,20 @@ impl FramedWrite {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct FramedWriteStats {
+    /// Stats for encoding, which always produces uncompressed data.
+    pub(crate) encode_stats: EncodeStats,
+    /// Stats for compression.
+    pub(crate) compress_stats: CompressStats,
+}
+
 pub(crate) trait FramedWriteStrategy {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError>;
 
     fn finalize(&mut self) -> Result<&[u8]>;
 
-    fn take_stats(&mut self) -> EncoderDeltaStats;
+    fn take_stats(&mut self) -> FramedWriteStats;
 }
 
 /// Hand-rolled dynamic dispatch to use branch predictor and allow
@@ -50,7 +58,7 @@ impl FramedWriteStrategy for FramedWrite {
         }
     }
 
-    fn take_stats(&mut self) -> EncoderDeltaStats {
+    fn take_stats(&mut self) -> FramedWriteStats {
         match self {
             FramedWrite::LZ4(lz4) => lz4.take_stats(),
         }
@@ -60,7 +68,7 @@ impl FramedWriteStrategy for FramedWrite {
 pub(crate) struct LZ4FramedWrite {
     decompressed_buffer: Vec<u8>,
     compressed_buffer: LZ4Buffer,
-    stats: EncoderDeltaStats,
+    stats: FramedWriteStats,
     envelope_size_limit: Option<usize>,
 }
 
@@ -82,7 +90,7 @@ impl FramedWriteStrategy for LZ4FramedWrite {
         codec::encode::encode(
             envelope,
             &mut self.decompressed_buffer,
-            &mut self.stats,
+            &mut self.stats.encode_stats,
             self.envelope_size_limit,
         )?;
         // We conservatively estimate that LZ4 will provide us with x2 compression rate
@@ -101,12 +109,12 @@ impl FramedWriteStrategy for LZ4FramedWrite {
     fn finalize(&mut self) -> Result<&[u8]> {
         let result = self
             .compressed_buffer
-            .compress_frame(&self.decompressed_buffer);
+            .compress_frame(&self.decompressed_buffer, &mut self.stats.compress_stats);
         self.decompressed_buffer.clear();
         result
     }
 
-    fn take_stats(&mut self) -> EncoderDeltaStats {
+    fn take_stats(&mut self) -> FramedWriteStats {
         std::mem::take(&mut self.stats)
     }
 }

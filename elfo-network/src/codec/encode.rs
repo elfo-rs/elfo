@@ -16,15 +16,17 @@ pub(crate) enum EncodeError {
 }
 
 #[derive(Default)]
-pub(crate) struct EncoderDeltaStats {
-    pub(crate) messages: u64,
-    pub(crate) bytes: u64,
+pub(crate) struct EncodeStats {
+    /// How many messages were encoded so far.
+    pub(crate) total_messages: u64,
+    /// How many bytes were produced during encoding so far.
+    pub(crate) total_bytes: u64,
 }
 
 pub(crate) fn encode(
     envelope: &NetworkEnvelope,
     dst: &mut Vec<u8>,
-    stats: &mut EncoderDeltaStats,
+    stats: &mut EncodeStats,
     limit: Option<usize>,
 ) -> Result<(), EncodeError> {
     let start_pos = dst.len();
@@ -39,8 +41,8 @@ pub(crate) fn encode(
         let size = dst.len() - start_pos;
         (&mut dst[start_pos..]).write_u32::<LittleEndian>(size as u32)?;
 
-        stats.messages += 1;
-        stats.bytes += size as u64;
+        stats.total_messages += 1;
+        stats.total_bytes += size as u64;
 
         return Ok(());
     }

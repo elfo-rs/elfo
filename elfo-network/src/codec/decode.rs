@@ -19,9 +19,11 @@ use eyre::{bail, ensure, eyre, WrapErr};
 use tracing::error;
 
 #[derive(Default)]
-pub(crate) struct DecoderDeltaStats {
-    pub(crate) messages: u64,
-    pub(crate) bytes: u64,
+pub(crate) struct DecodeStats {
+    /// How many messages were decoded so far.
+    pub(crate) total_messages: u64,
+    /// How many bytes were consumed during decoding so far.
+    pub(crate) total_bytes: u64,
 }
 
 pub(crate) enum DecodeState<T> {
@@ -31,7 +33,7 @@ pub(crate) enum DecodeState<T> {
 
 pub(crate) fn decode(
     input: &[u8],
-    stats: &mut DecoderDeltaStats,
+    stats: &mut DecodeStats,
 ) -> eyre::Result<DecodeState<NetworkEnvelope>> {
     if input.len() < 4 {
         return Ok(DecodeState::NeedMoreData { length_estimate: 4 });
@@ -48,8 +50,8 @@ pub(crate) fn decode(
 
     let decode_result = do_decode(&mut src);
     if likely(decode_result.is_ok()) {
-        stats.messages += 1;
-        stats.bytes += size as u64;
+        stats.total_messages += 1;
+        stats.total_bytes += size as u64;
         return Ok(DecodeState::Done {
             bytes_consumed: size,
             decoded: decode_result.unwrap(),

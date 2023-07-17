@@ -10,6 +10,22 @@ pub(crate) struct LZ4Buffer {
     buffer: Vec<u8>,
 }
 
+#[derive(Default)]
+pub(crate) struct DecompressStats {
+    /// How many compressed bytes were processed so far.
+    pub(crate) total_compressed_bytes: u64,
+    /// How many uncompressed bytes were produced during decompression so far.
+    pub(crate) total_uncompressed_bytes: u64,
+}
+
+#[derive(Default)]
+pub(crate) struct CompressStats {
+    /// How many uncompressed bytes were processed so far.
+    pub(crate) total_uncompressed_bytes: u64,
+    /// How many uncompressed bytes were produced during compression so far.
+    pub(crate) total_compressed_bytes: u64,
+}
+
 // TODO: checksums.
 // TODO: proper framing. Currently the whole encoding is:
 // 1. Size of the whole frame
@@ -23,7 +39,11 @@ impl LZ4Buffer {
         }
     }
 
-    pub(crate) fn decompress_frame(&mut self, raw: &[u8]) -> Result<DecodeState<&[u8]>> {
+    pub(crate) fn decompress_frame(
+        &mut self,
+        raw: &[u8],
+        stats: &mut DecompressStats,
+    ) -> Result<DecodeState<&[u8]>> {
         if raw.len() < 4 {
             return Ok(DecodeState::NeedMoreData { length_estimate: 4 });
         }
@@ -60,6 +80,9 @@ impl LZ4Buffer {
             ));
         }
 
+        stats.total_compressed_bytes += frame_size as u64;
+        stats.total_uncompressed_bytes += decompressed_size as u64;
+
         Ok(DecodeState::Done {
             bytes_consumed: frame_size,
             decoded: &self.buffer,
@@ -70,7 +93,11 @@ impl LZ4Buffer {
         &self.buffer
     }
 
-    pub(crate) fn compress_frame(&mut self, input: &[u8]) -> Result<&[u8]> {
+    pub(crate) fn compress_frame(
+        &mut self,
+        input: &[u8],
+        stats: &mut CompressStats,
+    ) -> Result<&[u8]> {
         self.buffer
             .resize(8 + lz4_flex::block::get_maximum_output_size(input.len()), 0);
 
@@ -90,6 +117,9 @@ impl LZ4Buffer {
         self.buffer.resize(frame_size, 0);
 
         error!(message = "laplab: compressed frame", %frame_size, data_size = (input.len() as u32));
+
+        stats.total_uncompressed_bytes += input.len() as u64;
+        stats.total_compressed_bytes += frame_size as u64;
 
         Ok(&self.buffer)
     }

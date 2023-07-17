@@ -243,12 +243,18 @@ impl ReadHalf {
         };
 
         let stats = self.framing.take_stats();
-        counter!("elfo_network_received_messages_total", stats.messages);
+        counter!(
+            "elfo_network_received_messages_total",
+            stats.decode_stats.total_messages
+        );
+        counter!(
+            "elfo_network_received_compressed_bytes_total",
+            stats.decompress_stats.total_compressed_bytes
+        );
         counter!(
             "elfo_network_received_decompressed_bytes_total",
-            stats.bytes
+            stats.decompress_stats.total_uncompressed_bytes
         );
-        // TODO: elfo_network_received_compressed_bytes_total
 
         Ok(Some(envelope))
     }
@@ -299,9 +305,18 @@ impl WriteHalf {
         );
 
         let stats = self.framing.take_stats();
-        counter!("elfo_network_sent_messages_total", stats.messages);
-        counter!("elfo_network_sent_decompressed_bytes_total", stats.bytes);
-        // TODO: elfo_network_sent_compressed_bytes_total
+        counter!(
+            "elfo_network_sent_messages_total",
+            stats.encode_stats.total_messages
+        );
+        counter!(
+            "elfo_network_sent_decompressed_bytes_total",
+            stats.compress_stats.total_uncompressed_bytes
+        );
+        counter!(
+            "elfo_network_sent_compressed_bytes_total",
+            stats.compress_stats.total_compressed_bytes
+        );
 
         result
     }
