@@ -58,7 +58,9 @@ impl LZ4Buffer {
         stats: &mut DecompressStats,
     ) -> Result<DecodeState<&[u8]>> {
         if raw.len() < 4 {
-            return Ok(DecodeState::NeedMoreData { length_estimate: 4 });
+            return Ok(DecodeState::NeedMoreData {
+                total_length_estimate: 4,
+            });
         }
 
         let mut input = Cursor::new(raw);
@@ -69,7 +71,7 @@ impl LZ4Buffer {
 
         if raw.len() < frame_size {
             return Ok(DecodeState::NeedMoreData {
-                length_estimate: frame_size,
+                total_length_estimate: frame_size,
             });
         }
 

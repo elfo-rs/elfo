@@ -17,22 +17,31 @@ use eyre::{eyre, Result};
 pub(crate) enum FramedRead {
     #[display(fmt = "LZ4")]
     LZ4(LZ4FramedRead),
+    #[display(fmt = "None")]
+    None(NoneFramedRead),
 }
 
 impl FramedRead {
     pub(crate) fn lz4() -> Self {
         FramedRead::LZ4(LZ4FramedRead::new())
     }
+
+    pub(crate) fn none() -> Self {
+        FramedRead::None(NoneFramedRead::new())
+    }
 }
 
 pub(crate) enum FramedReadState<'a> {
+    /// The stategy needs more data written at the beginning of the specified
+    /// `buffer`. At least `min_bytes` bytes are required to make progress,
+    /// but the capacity of `buffer` would be typically larger than that.
     NeedMoreData {
         buffer: &'a mut [u8],
         min_bytes: usize,
     },
-    Done {
-        decoded: Option<NetworkEnvelope>,
-    },
+    /// `Some(envelope)` means that the strategy successfully decoded and
+    /// envelope from the frame. `None` means that the frame has ended.
+    Done { decoded: Option<NetworkEnvelope> },
 }
 
 #[derive(Default)]
@@ -57,18 +66,21 @@ impl FramedReadStrategy for FramedRead {
     fn read(&mut self) -> Result<FramedReadState<'_>> {
         match self {
             FramedRead::LZ4(lz4) => lz4.read(),
+            FramedRead::None(none) => none.read(),
         }
     }
 
     fn mark_filled(&mut self, count: usize) {
         match self {
             FramedRead::LZ4(lz4) => lz4.mark_filled(count),
+            FramedRead::None(none) => none.mark_filled(count),
         }
     }
 
     fn take_stats(&mut self) -> FramedReadStats {
         match self {
             FramedRead::LZ4(lz4) => lz4.take_stats(),
+            FramedRead::None(none) => none.take_stats(),
         }
     }
 }
@@ -108,11 +120,15 @@ impl FramedReadStrategy for LZ4FramedRead {
                     &mut self.stats.decompress_stats,
                 )?;
                 match lz4_state {
-                    DecodeState::NeedMoreData { length_estimate } => {
-                        self.compressed_buffer.reserve(length_estimate);
+                    DecodeState::NeedMoreData {
+                        total_length_estimate,
+                    } => {
+                        self.compressed_buffer
+                            .extend_to_contain(total_length_estimate);
+                        let min_bytes = total_length_estimate - self.compressed_buffer.len();
                         return Ok(FramedReadState::NeedMoreData {
                             buffer: self.compressed_buffer.remaining(),
-                            min_bytes: length_estimate,
+                            min_bytes,
                         });
                     }
                     DecodeState::Done { bytes_consumed, .. } => {
@@ -160,6 +176,57 @@ impl FramedReadStrategy for LZ4FramedRead {
 
     fn mark_filled(&mut self, count: usize) {
         self.compressed_buffer.mark_filled(count);
+    }
+
+    fn take_stats(&mut self) -> FramedReadStats {
+        std::mem::take(&mut self.stats)
+    }
+}
+
+pub(crate) struct NoneFramedRead {
+    buffer: ReadBuffer,
+    stats: FramedReadStats,
+}
+
+impl NoneFramedRead {
+    pub(crate) fn new() -> Self {
+        Self {
+            buffer: ReadBuffer::with_capacity(DECOMPRESSED_DATA_BUFFER_CAPACITY),
+            stats: Default::default(),
+        }
+    }
+}
+
+impl FramedReadStrategy for NoneFramedRead {
+    fn read(&mut self) -> Result<FramedReadState<'_>> {
+        let codec_state =
+            codec::decode::decode(self.buffer.as_slice(), &mut self.stats.decode_stats)?;
+        match codec_state {
+            DecodeState::NeedMoreData {
+                total_length_estimate,
+            } => {
+                self.buffer.extend_to_contain(total_length_estimate);
+                let min_bytes = total_length_estimate - self.buffer.len();
+                Ok(FramedReadState::NeedMoreData {
+                    buffer: self.buffer.remaining(),
+                    min_bytes,
+                })
+            }
+            DecodeState::Done {
+                bytes_consumed,
+                decoded,
+            } => {
+                self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
+                self.buffer.consume(bytes_consumed);
+                Ok(FramedReadState::Done {
+                    decoded: Some(decoded),
+                })
+            }
+        }
+    }
+
+    fn mark_filled(&mut self, count: usize) {
+        self.buffer.mark_filled(count);
     }
 
     fn take_stats(&mut self) -> FramedReadStats {

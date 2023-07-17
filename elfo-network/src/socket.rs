@@ -28,13 +28,14 @@ use crate::{
 
 // === Socket ===
 
-// TODO: versioning, compression settings etc.
-
 bitflags::bitflags! {
+    #[derive(Clone, Copy)]
     pub struct Capabilities: u32 {
         const LZ4 = 0b01;
     }
 }
+
+const THIS_NODE_VERSION: u8 = 0;
 
 pub(crate) struct Handshake {
     pub(crate) version: u8,
@@ -54,13 +55,12 @@ impl Handshake {
         buffer
     }
 
-    pub(crate) fn new(this_node: &NodeInfo) -> Self {
-        // TODO laplab: fill version and capabilities with meaningful values.
+    pub(crate) fn new(this_node: &NodeInfo, capabilities: Capabilities) -> Self {
         Self {
-            version: 0,
+            version: THIS_NODE_VERSION,
             node_no: this_node.node_no,
             launch_id: this_node.launch_id,
-            capabilities: Capabilities::empty(),
+            capabilities,
         }
     }
 
@@ -116,8 +116,12 @@ impl TcpSocket {
         Self { read, write, peer }
     }
 
-    pub(crate) async fn handshake(mut self, this_node: &NodeInfo) -> Result<Option<Socket>> {
-        let this_node_handshake = Handshake::new(this_node);
+    pub(crate) async fn handshake(
+        mut self,
+        this_node: &NodeInfo,
+        capabilities: Capabilities,
+    ) -> Result<Option<Socket>> {
+        let this_node_handshake = Handshake::new(this_node, capabilities);
         self.write
             .write_all_buf(&mut this_node_handshake.as_bytes())
             .await?;
@@ -173,16 +177,19 @@ impl Socket {
         write: OwnedWriteHalf,
         peer: Peer,
         _version: u8,
-        _capabilities: Capabilities,
+        capabilities: Capabilities,
     ) -> Self {
         // TODO: maybe do something with the version.
-        // TODO: use capabilities to switch between framing strategies.
+
+        let (framed_read, framed_write) = if capabilities.contains(Capabilities::LZ4) {
+            (FramedRead::lz4(), FramedWrite::lz4(None))
+        } else {
+            (FramedRead::none(), FramedWrite::none(None))
+        };
+
         Self {
-            read: ReadHalf::new(FramedRead::lz4(), read),
-            write: WriteHalf {
-                framing: FramedWrite::lz4(None),
-                write,
-            },
+            read: ReadHalf::new(framed_read, read),
+            write: WriteHalf::new(framed_write, write),
             peer,
         }
     }
@@ -273,6 +280,10 @@ pub(crate) struct WriteHalf {
 }
 
 impl WriteHalf {
+    pub(crate) fn new(framing: FramedWrite, write: tcp::OwnedWriteHalf) -> Self {
+        Self { framing, write }
+    }
+
     /// Encodes the message into the internal buffer.
     ///
     /// Returns
@@ -342,19 +353,27 @@ impl WriteHalf {
 
 // === connect ===
 
-pub(crate) async fn connect(transport: &Transport, this_node: &NodeInfo) -> Result<Option<Socket>> {
+pub(crate) async fn connect(
+    transport: &Transport,
+    this_node: &NodeInfo,
+    capabilities: Capabilities,
+) -> Result<Option<Socket>> {
     match transport {
-        Transport::Tcp(addr) => connect_tcp(*addr, this_node).await,
+        Transport::Tcp(addr) => connect_tcp(*addr, this_node, capabilities).await,
     }
 }
 
-async fn connect_tcp(peer: SocketAddr, this_node: &NodeInfo) -> Result<Option<Socket>> {
+async fn connect_tcp(
+    peer: SocketAddr,
+    this_node: &NodeInfo,
+    capabilities: Capabilities,
+) -> Result<Option<Socket>> {
     // TODO: timeout
     // TODO: settings (Nagle's algorithm etc.)
     let stream = TcpStream::connect(peer).await?;
     stream.set_nodelay(true)?;
     let socket = TcpSocket::new(stream, Transport::Tcp(peer));
-    socket.handshake(this_node).await
+    socket.handshake(this_node, capabilities).await
 }
 
 // === listen ===
@@ -362,15 +381,17 @@ async fn connect_tcp(peer: SocketAddr, this_node: &NodeInfo) -> Result<Option<So
 pub(crate) async fn listen(
     transport: &Transport,
     this_node: &NodeInfo,
+    capabilities: Capabilities,
 ) -> Result<futures::stream::BoxStream<'static, Socket>> {
     match transport {
-        Transport::Tcp(addr) => listen_tcp(*addr, this_node.clone()).await,
+        Transport::Tcp(addr) => listen_tcp(*addr, this_node.clone(), capabilities).await,
     }
 }
 
 async fn listen_tcp(
     addr: SocketAddr,
     this_node: NodeInfo,
+    capabilities: Capabilities,
 ) -> Result<futures::stream::BoxStream<'static, Socket>> {
     // TODO: timeout
     let listener = TcpListener::bind(addr)
@@ -390,7 +411,7 @@ async fn listen_tcp(
                         continue;
                     }
                     let socket = TcpSocket::new(stream, Transport::Tcp(peer));
-                    match socket.handshake(&this_node).await {
+                    match socket.handshake(&this_node, capabilities).await {
                         Ok(connection) => {
                             match connection {
                                 Some(connection) => {
@@ -502,9 +523,7 @@ mod tests {
         })
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[tracing_test::traced_test]
-    async fn read_write() {
+    async fn ensure_read_write(capabilities: Capabilities, port: u16) {
         let server_node = NodeInfo {
             node_no: 0,
             launch_id: LaunchId::generate(),
@@ -512,10 +531,10 @@ mod tests {
         };
         let server_transport = Transport::Tcp(SocketAddr::new(
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            9200,
+            port,
         ));
 
-        let mut listen_stream = listen(&server_transport, &server_node)
+        let mut listen_stream = listen(&server_transport, &server_node, capabilities)
             .await
             .expect("failed to bind server to a port");
         let server_socket_fut = listen_stream.next();
@@ -525,7 +544,7 @@ mod tests {
             launch_id: LaunchId::generate(),
             groups: vec![],
         };
-        let client_socket_fut = connect(&server_transport, &client_node);
+        let client_socket_fut = connect(&server_transport, &client_node, capabilities);
 
         let (server_socket, client_socket) =
             future::join(server_socket_fut, client_socket_fut).await;
@@ -549,5 +568,17 @@ mod tests {
             read_frame(&mut server_socket, &envelope).await;
             client_socket = flush_handle.await.expect("flush panicked");
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tracing_test::traced_test]
+    async fn read_write_no_framing() {
+        ensure_read_write(Capabilities::empty(), 9200).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tracing_test::traced_test]
+    async fn read_write_lz4() {
+        ensure_read_write(Capabilities::LZ4, 9201).await;
     }
 }

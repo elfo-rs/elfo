@@ -13,6 +13,21 @@ pub(crate) struct Config {
     pub(crate) ping_interval: Duration,
     #[serde(default)]
     pub(crate) discovery: DiscoveryConfig, // TODO: optional?
+    #[serde(default)]
+    pub(crate) compression: CompressionConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct CompressionConfig {
+    #[serde(default)]
+    pub(crate) algorithm: CompressionAlgorithm,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Deserialize)]
+pub(crate) enum CompressionAlgorithm {
+    LZ4,
+    #[default]
+    None,
 }
 
 fn default_ping_interval() -> Duration {

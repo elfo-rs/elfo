@@ -9,7 +9,7 @@ use crate::{
 
 use eyre::Result;
 
-const BUFFER_INITIAL_CAPACITY: usize = 8192;
+use super::buffers::{COMPRESSED_DATA_BUFFER_CAPACITY, DECOMPRESSED_DATA_BUFFER_CAPACITY};
 
 #[derive(PartialEq, Eq)]
 pub(crate) enum FrameState {
@@ -19,11 +19,16 @@ pub(crate) enum FrameState {
 
 pub(crate) enum FramedWrite {
     LZ4(LZ4FramedWrite),
+    None(NoneFramedWrite),
 }
 
 impl FramedWrite {
     pub(crate) fn lz4(envelope_size_limit: Option<usize>) -> Self {
         FramedWrite::LZ4(LZ4FramedWrite::new(envelope_size_limit))
+    }
+
+    pub(crate) fn none(envelope_size_limit: Option<usize>) -> Self {
+        FramedWrite::None(NoneFramedWrite::new(envelope_size_limit))
     }
 }
 
@@ -49,18 +54,21 @@ impl FramedWriteStrategy for FramedWrite {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
         match self {
             FramedWrite::LZ4(lz4) => lz4.write(envelope),
+            FramedWrite::None(none) => none.write(envelope),
         }
     }
 
     fn finalize(&mut self) -> Result<&[u8]> {
         match self {
             FramedWrite::LZ4(lz4) => lz4.finalize(),
+            FramedWrite::None(none) => none.finalize(),
         }
     }
 
     fn take_stats(&mut self) -> FramedWriteStats {
         match self {
             FramedWrite::LZ4(lz4) => lz4.take_stats(),
+            FramedWrite::None(none) => none.take_stats(),
         }
     }
 }
@@ -75,15 +83,17 @@ pub(crate) struct LZ4FramedWrite {
 impl LZ4FramedWrite {
     pub(crate) fn new(envelope_size_limit: Option<usize>) -> Self {
         Self {
-            decompressed_buffer: Vec::with_capacity(BUFFER_INITIAL_CAPACITY),
-            compressed_buffer: LZ4Buffer::with_capacity(BUFFER_INITIAL_CAPACITY),
+            decompressed_buffer: Vec::with_capacity(DECOMPRESSED_DATA_BUFFER_CAPACITY),
+            compressed_buffer: LZ4Buffer::with_capacity(COMPRESSED_DATA_BUFFER_CAPACITY),
             stats: Default::default(),
             envelope_size_limit,
         }
     }
 }
 
-const COMPRESSED_DATA_FLUSH_THRESHOLD: usize = 64 * 1024;
+// We aim at writing 64Kb into socket and conservatively estimate that LZ4 will
+// provide us with x2 compression rate on msgpack data.
+const DECOMPRESSED_DATA_FLUSH_THRESHOLD: usize = 128 * 1024;
 
 impl FramedWriteStrategy for LZ4FramedWrite {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
@@ -93,12 +103,10 @@ impl FramedWriteStrategy for LZ4FramedWrite {
             &mut self.stats.encode_stats,
             self.envelope_size_limit,
         )?;
-        // We conservatively estimate that LZ4 will provide us with x2 compression rate
-        // on msgpack data.
+
         // TODO: improve estimate on actual compression rates.
-        let compressed_size_estimate = self.decompressed_buffer.len() / 2;
         Ok(
-            if compressed_size_estimate > COMPRESSED_DATA_FLUSH_THRESHOLD {
+            if self.decompressed_buffer.len() > DECOMPRESSED_DATA_FLUSH_THRESHOLD {
                 FrameState::FlushAdvised
             } else {
                 FrameState::Accumulating
@@ -112,6 +120,55 @@ impl FramedWriteStrategy for LZ4FramedWrite {
             .compress_frame(&self.decompressed_buffer, &mut self.stats.compress_stats);
         self.decompressed_buffer.clear();
         result
+    }
+
+    fn take_stats(&mut self) -> FramedWriteStats {
+        std::mem::take(&mut self.stats)
+    }
+}
+
+pub(crate) struct NoneFramedWrite {
+    buffer: Vec<u8>,
+    stats: FramedWriteStats,
+    after_finalize: bool,
+    envelope_size_limit: Option<usize>,
+}
+
+impl NoneFramedWrite {
+    pub(crate) fn new(envelope_size_limit: Option<usize>) -> Self {
+        Self {
+            buffer: Vec::with_capacity(DECOMPRESSED_DATA_BUFFER_CAPACITY),
+            stats: Default::default(),
+            after_finalize: false,
+            envelope_size_limit,
+        }
+    }
+}
+
+impl FramedWriteStrategy for NoneFramedWrite {
+    fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
+        if self.after_finalize {
+            self.buffer.clear();
+            self.after_finalize = false;
+        }
+
+        codec::encode::encode(
+            envelope,
+            &mut self.buffer,
+            &mut self.stats.encode_stats,
+            self.envelope_size_limit,
+        )?;
+
+        Ok(if self.buffer.len() > DECOMPRESSED_DATA_FLUSH_THRESHOLD {
+            FrameState::FlushAdvised
+        } else {
+            FrameState::Accumulating
+        })
+    }
+
+    fn finalize(&mut self) -> Result<&[u8]> {
+        self.after_finalize = true;
+        Ok(&self.buffer)
     }
 
     fn take_stats(&mut self) -> FramedWriteStats {

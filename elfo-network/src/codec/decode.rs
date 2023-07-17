@@ -27,7 +27,11 @@ pub(crate) struct DecodeStats {
 }
 
 pub(crate) enum DecodeState<T> {
-    NeedMoreData { length_estimate: usize },
+    /// Buffer needs to contain at least `total_length_estimate` bytes in total
+    /// in order for the decoder to make progress.
+    NeedMoreData { total_length_estimate: usize },
+    /// Decoder decoded a value, which occupied `bytes_consumed` bytes in the
+    /// buffer.
     Done { bytes_consumed: usize, decoded: T },
 }
 
@@ -36,7 +40,9 @@ pub(crate) fn decode(
     stats: &mut DecodeStats,
 ) -> eyre::Result<DecodeState<NetworkEnvelope>> {
     if input.len() < 4 {
-        return Ok(DecodeState::NeedMoreData { length_estimate: 4 });
+        return Ok(DecodeState::NeedMoreData {
+            total_length_estimate: 4,
+        });
     }
 
     let mut src = Cursor::new(input);
@@ -44,7 +50,7 @@ pub(crate) fn decode(
 
     if input.len() < size {
         return Ok(DecodeState::NeedMoreData {
-            length_estimate: size - input.len(),
+            total_length_estimate: size,
         });
     }
 

@@ -11,7 +11,7 @@ use elfo_core::{
 
 use crate::{
     codec::format::{NetworkEnvelope, NetworkEnvelopePayload},
-    config::Transport,
+    config::{CompressionAlgorithm, Transport},
     node_map::{NodeInfo, NodeMap},
     protocol::{
         internode::{self, GroupInfo},
@@ -101,9 +101,17 @@ impl Discovery {
         Ok(())
     }
 
+    fn get_capabilities(&self) -> socket::Capabilities {
+        let mut capabilities = socket::Capabilities::empty();
+        if self.ctx.config().compression.algorithm == CompressionAlgorithm::LZ4 {
+            capabilities |= socket::Capabilities::LZ4;
+        }
+        capabilities
+    }
+
     async fn listen(&mut self) -> Result<()> {
         for transport in self.ctx.config().listen.clone() {
-            let stream = socket::listen(&transport, &self.node_map.this)
+            let stream = socket::listen(&transport, &self.node_map.this, self.get_capabilities())
                 .await
                 .wrap_err_with(|| eyre!("cannot listen {}", transport))?
                 .map(|socket| ConnectionEstablished {
@@ -140,12 +148,13 @@ impl Discovery {
         let interval = self.ctx.config().discovery.attempt_interval;
         let peer = peer.clone();
         let this_node = self.node_map.this.clone();
+        let capabilities = self.get_capabilities();
 
         self.ctx.attach(Stream::once(async move {
             loop {
                 debug!(message = "connecting to peer", peer = %peer, role = ?role);
 
-                match socket::connect(&peer, &this_node).await {
+                match socket::connect(&peer, &this_node, capabilities).await {
                     Ok(socket) => match socket {
                         Some(socket) => {
                             break ConnectionEstablished {
