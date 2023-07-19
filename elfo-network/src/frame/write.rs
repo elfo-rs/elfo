@@ -91,9 +91,8 @@ impl LZ4FramedWrite {
     }
 }
 
-// We aim at writing 64Kb into socket and conservatively estimate that LZ4 will
-// provide us with x2 compression rate on msgpack data.
-const DECOMPRESSED_DATA_FLUSH_THRESHOLD: usize = 128 * 1024;
+/// How many bytes we aim at writing into the socket.
+const OUTPUT_FLUSH_THRESHOLD: usize = 64 * 1024;
 
 impl FramedWriteStrategy for LZ4FramedWrite {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
@@ -104,9 +103,11 @@ impl FramedWriteStrategy for LZ4FramedWrite {
             self.envelope_size_limit,
         )?;
 
+        // We conservatively estimate that LZ4 will provide us with x2 compression rate
+        // on msgpack data.
         // TODO: improve estimate on actual compression rates.
         Ok(
-            if self.decompressed_buffer.len() > DECOMPRESSED_DATA_FLUSH_THRESHOLD {
+            if self.decompressed_buffer.len() / 2 > OUTPUT_FLUSH_THRESHOLD {
                 FrameState::FlushAdvised
             } else {
                 FrameState::Accumulating
@@ -160,7 +161,7 @@ impl FramedWriteStrategy for NoneFramedWrite {
             self.envelope_size_limit,
         )?;
 
-        Ok(if self.buffer.len() > DECOMPRESSED_DATA_FLUSH_THRESHOLD {
+        Ok(if self.buffer.len() > OUTPUT_FLUSH_THRESHOLD {
             FrameState::FlushAdvised
         } else {
             FrameState::Accumulating

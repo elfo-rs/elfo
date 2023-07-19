@@ -130,8 +130,10 @@ impl LZ4Buffer {
     }
 
     pub(crate) fn compress_frame(&mut self, input: &[u8], stats: &mut CompressStats) -> Result<()> {
-        self.buffer
-            .resize(8 + lz4_flex::block::get_maximum_output_size(input.len()), 0);
+        let max_compressed_size = 8 + lz4_flex::block::get_maximum_output_size(input.len());
+        if max_compressed_size > self.buffer.len() {
+            self.buffer.resize(max_compressed_size, 0);
+        }
 
         let mut output = Cursor::new(self.buffer.as_mut_slice());
         output.write_u32::<LittleEndian>(0)?; // Overwritten below.
