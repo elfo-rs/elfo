@@ -103,7 +103,7 @@ impl Discovery {
 
     fn get_capabilities(&self) -> socket::Capabilities {
         let mut capabilities = socket::Capabilities::empty();
-        if self.ctx.config().compression.algorithm == CompressionAlgorithm::LZ4 {
+        if self.ctx.config().compression.algorithm == CompressionAlgorithm::Lz4 {
             capabilities |= socket::Capabilities::LZ4;
         }
         capabilities

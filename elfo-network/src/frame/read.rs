@@ -10,20 +10,16 @@ use crate::{
     },
 };
 
-use derive_more::Display;
 use eyre::{eyre, Result};
 
-#[derive(Display)]
 pub(crate) enum FramedRead {
-    #[display(fmt = "LZ4")]
-    LZ4(LZ4FramedRead),
-    #[display(fmt = "None")]
+    Lz4(LZ4FramedRead),
     None(NoneFramedRead),
 }
 
 impl FramedRead {
     pub(crate) fn lz4() -> Self {
-        FramedRead::LZ4(LZ4FramedRead::new())
+        FramedRead::Lz4(LZ4FramedRead::new())
     }
 
     pub(crate) fn none() -> Self {
@@ -60,21 +56,21 @@ pub(crate) trait FramedReadStrategy {
 impl FramedReadStrategy for FramedRead {
     fn read(&mut self) -> Result<FramedReadState<'_>> {
         match self {
-            FramedRead::LZ4(lz4) => lz4.read(),
+            FramedRead::Lz4(lz4) => lz4.read(),
             FramedRead::None(none) => none.read(),
         }
     }
 
     fn mark_filled(&mut self, count: usize) {
         match self {
-            FramedRead::LZ4(lz4) => lz4.mark_filled(count),
+            FramedRead::Lz4(lz4) => lz4.mark_filled(count),
             FramedRead::None(none) => none.mark_filled(count),
         }
     }
 
     fn take_stats(&mut self) -> FramedReadStats {
         match self {
-            FramedRead::LZ4(lz4) => lz4.take_stats(),
+            FramedRead::Lz4(lz4) => lz4.take_stats(),
             FramedRead::None(none) => none.take_stats(),
         }
     }
@@ -102,7 +98,7 @@ impl FramedReadStrategy for LZ4FramedRead {
     fn read(&mut self) -> Result<FramedReadState<'_>> {
         'decompression: loop {
             // We have finished decoding the current frame, try decompressing the next one.
-            if self.position == self.decompressed_buffer.get_ref().len() {
+            if self.position == self.decompressed_buffer.len() {
                 self.position = 0;
 
                 let lz4_state = self.decompressed_buffer.decompress_frame(
@@ -116,9 +112,9 @@ impl FramedReadStrategy for LZ4FramedRead {
                         // Decompression should not ask for less data than there is in the buffer.
                         debug_assert!(total_length_estimate > self.compressed_buffer.filled_len());
 
-                        // NOTE: Here we rely on the fact that the decompressed was cleared, so that
-                        // the next time `read()` method is called, we will go into this branch
-                        // again.
+                        // NOTE: Calling `decompress_frame()` above already set the length of the
+                        // buffer to zero. So we will continune the decompression process on the
+                        // next call.
                         return Ok(FramedReadState::NeedMoreData {
                             buffer: self
                                 .compressed_buffer
@@ -137,13 +133,13 @@ impl FramedReadStrategy for LZ4FramedRead {
             // messages to be invalid in the frame. In this case, all of them
             // will be skipped and we will try to decompress the next frame.
             'decoding: loop {
-                let envelope_buffer = &self.decompressed_buffer.get_ref()[self.position..];
+                let envelope_buffer = &self.decompressed_buffer.filled_slice()[self.position..];
                 let codec_state =
                     codec::decode::decode(envelope_buffer, &mut self.stats.decode_stats)?;
                 match codec_state {
                     DecodeState::NeedMoreData { .. } => {
-                        if self.position == self.decompressed_buffer.get_ref().len() {
-                            // All messages in the frame were invalid, try
+                        if self.position == self.decompressed_buffer.len() {
+                            // All messages in the frame were processed, try
                             // decompressing the next one.
                             continue 'decompression;
                         } else {

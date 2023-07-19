@@ -18,13 +18,13 @@ pub(crate) enum FrameState {
 }
 
 pub(crate) enum FramedWrite {
-    LZ4(LZ4FramedWrite),
+    Lz4(LZ4FramedWrite),
     None(NoneFramedWrite),
 }
 
 impl FramedWrite {
     pub(crate) fn lz4(envelope_size_limit: Option<usize>) -> Self {
-        FramedWrite::LZ4(LZ4FramedWrite::new(envelope_size_limit))
+        FramedWrite::Lz4(LZ4FramedWrite::new(envelope_size_limit))
     }
 
     pub(crate) fn none(envelope_size_limit: Option<usize>) -> Self {
@@ -53,21 +53,21 @@ pub(crate) trait FramedWriteStrategy {
 impl FramedWriteStrategy for FramedWrite {
     fn write(&mut self, envelope: &NetworkEnvelope) -> Result<FrameState, EncodeError> {
         match self {
-            FramedWrite::LZ4(lz4) => lz4.write(envelope),
+            FramedWrite::Lz4(lz4) => lz4.write(envelope),
             FramedWrite::None(none) => none.write(envelope),
         }
     }
 
     fn finalize(&mut self) -> Result<&[u8]> {
         match self {
-            FramedWrite::LZ4(lz4) => lz4.finalize(),
+            FramedWrite::Lz4(lz4) => lz4.finalize(),
             FramedWrite::None(none) => none.finalize(),
         }
     }
 
     fn take_stats(&mut self) -> FramedWriteStats {
         match self {
-            FramedWrite::LZ4(lz4) => lz4.take_stats(),
+            FramedWrite::Lz4(lz4) => lz4.take_stats(),
             FramedWrite::None(none) => none.take_stats(),
         }
     }
@@ -135,7 +135,7 @@ pub(crate) struct NoneFramedWrite {
 }
 
 impl NoneFramedWrite {
-    pub(crate) fn new(envelope_size_limit: Option<usize>) -> Self {
+    fn new(envelope_size_limit: Option<usize>) -> Self {
         Self {
             buffer: Vec::with_capacity(DECOMPRESSED_DATA_BUFFER_CAPACITY),
             stats: Default::default(),

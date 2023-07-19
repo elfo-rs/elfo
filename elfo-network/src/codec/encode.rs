@@ -52,7 +52,7 @@ pub(crate) fn encode(
     // TODO: if the limit is reached, we need also to release memory of the buffer.
 
     // If there was an encoding error, reset any changes to the buffer.
-    dst.resize(start_pos, 0);
+    dst.truncate(start_pos);
 
     // TODO: cooldown/metrics
     let (protocol, name) = envelope.payload.protocol_and_name();

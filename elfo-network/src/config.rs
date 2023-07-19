@@ -25,7 +25,7 @@ pub(crate) struct CompressionConfig {
 
 #[derive(Debug, Default, PartialEq, Eq, Deserialize)]
 pub(crate) enum CompressionAlgorithm {
-    LZ4,
+    Lz4,
     #[default]
     None,
 }

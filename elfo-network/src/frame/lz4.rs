@@ -27,6 +27,7 @@ pub(crate) struct LZ4Buffer {
     /// This buffer stores decompressed data after `decompress_frame` method
     /// is called and compressed data after `compress_frame` method is called.
     buffer: Vec<u8>,
+    len: usize,
 }
 
 #[derive(Default)]
@@ -54,11 +55,23 @@ pub(crate) enum DecompressState {
     Done { compressed_size: usize },
 }
 
+// TODO: implement better system for limiting memory usage.
+const MAX_FRAME_SIZE: usize = 200_000_000;
+
 impl LZ4Buffer {
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
-            buffer: Vec::with_capacity(capacity),
+            buffer: vec![0; capacity],
+            len: 0,
         }
+    }
+
+    pub(crate) fn filled_slice(&self) -> &[u8] {
+        &self.buffer[..self.len]
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len
     }
 
     pub(crate) fn decompress_frame(
@@ -66,7 +79,7 @@ impl LZ4Buffer {
         raw: &[u8],
         stats: &mut DecompressStats,
     ) -> Result<DecompressState> {
-        self.buffer.clear();
+        self.len = 0;
 
         if raw.len() < 4 {
             return Ok(DecompressState::NeedMoreData {
@@ -76,7 +89,7 @@ impl LZ4Buffer {
 
         let mut input = Cursor::new(raw);
         let frame_size = input.read_u32::<LittleEndian>()? as usize;
-        if frame_size >= 200_000_000 {
+        if frame_size >= MAX_FRAME_SIZE {
             return Err(eyre!("frame size is too big"));
         }
 
@@ -87,11 +100,13 @@ impl LZ4Buffer {
         }
 
         let decompressed_size = input.read_u32::<LittleEndian>()? as usize;
-        if decompressed_size >= 200_000_000 {
+        if decompressed_size >= MAX_FRAME_SIZE {
             return Err(eyre!("decompressed size is too big"));
         }
 
-        self.buffer.resize(decompressed_size, 0);
+        if decompressed_size > self.buffer.len() {
+            self.buffer.resize(decompressed_size, 0);
+        }
 
         // TODO: replace with `Cursor::remaining_slice` once it becomes stable.
         let remaining_slice = &input.get_ref()[input.position() as usize..frame_size];
@@ -104,16 +119,14 @@ impl LZ4Buffer {
             ));
         }
 
+        self.len = decompressed_size;
+
         stats.total_compressed_bytes += frame_size as u64;
         stats.total_uncompressed_bytes += decompressed_size as u64;
 
         Ok(DecompressState::Done {
             compressed_size: frame_size,
         })
-    }
-
-    pub(crate) fn get_ref(&self) -> &[u8] {
-        &self.buffer
     }
 
     pub(crate) fn compress_frame(
