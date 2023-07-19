@@ -6,8 +6,8 @@ use quanta::Instant;
 use tracing::{debug, error, info, warn};
 
 use elfo_core::{
-    message, msg, node::NodeNo, scope, Addr, Envelope, Message, MoveOwnership, _priv::MessageKind,
-    messages::ConfigUpdated, stream::Stream, GroupNo, Topology,
+    message, msg, node::NodeNo, scope, Addr, Envelope, Message, MoveOwnership, RestartPolicy,
+    _priv::MessageKind, messages::ConfigUpdated, stream::Stream, GroupNo, Topology,
 };
 
 use crate::{
@@ -86,6 +86,9 @@ impl Discovery {
     }
 
     pub(super) async fn main(mut self) -> Result<()> {
+        // The default restart policy of this group is `never`, so override it.
+        self.ctx.set_restart_policy(RestartPolicy::on_failures());
+
         self.listen().await?;
         self.discover();
 
