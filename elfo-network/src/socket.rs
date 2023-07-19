@@ -209,51 +209,30 @@ impl ReadHalf {
 impl ReadHalf {
     pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>> {
         let envelope = loop {
-            let (buffer, min_bytes) = match self.framing.read()? {
-                FramedReadState::NeedMoreData { buffer, min_bytes } => {
-                    debug!(
-                        message = "framed read strategy requested more data",
-                        min_bytes_to_fill = min_bytes,
-                    );
-                    (buffer, min_bytes)
+            let buffer = match self.framing.read()? {
+                FramedReadState::NeedMoreData { buffer } => {
+                    debug!(message = "framed read strategy requested more data");
+                    buffer
                 }
-                FramedReadState::Done { decoded: None } => {
-                    debug!(message = "framed read strategy finished decoding a frame");
-                    // We now need to ask the decoder for the buffer to read into once more.
-                    continue;
-                }
-                FramedReadState::Done {
-                    decoded: Some(envelope),
-                } => {
-                    let (protocol, name) = envelope.payload.protocol_and_name();
+                FramedReadState::Done { decoded } => {
+                    let (protocol, name) = decoded.payload.protocol_and_name();
                     debug!(
                         message = "framed read strategy decoded single envelope",
                         protocol, name,
                     );
                     // One of the envelopes inside the frame was decoded.
-                    break envelope;
+                    break decoded;
                 }
             };
 
-            // We try to fill the whole buffer, but as soon as we have enough for the
-            // decoder to work with, we stop.
-            let mut total_bytes_read = 0;
-            while total_bytes_read < min_bytes {
-                let bytes_read = self.read.read(&mut buffer[total_bytes_read..]).await?;
-                if bytes_read == 0 {
-                    // EOF.
-                    return Ok(None);
-                }
-                total_bytes_read += bytes_read;
+            let bytes_read = self.read.read(buffer).await?;
+            if bytes_read == 0 {
+                // EOF.
+                return Ok(None);
             }
 
-            self.framing.mark_filled(total_bytes_read);
-
-            debug!(
-                message = "read bytes from the socket",
-                total_bytes_read,
-                min_bytes_requested = min_bytes,
-            );
+            self.framing.mark_filled(bytes_read);
+            debug!(message = "read bytes from the socket", bytes_read);
         };
 
         let stats = self.framing.take_stats();
@@ -484,7 +463,8 @@ mod tests {
     }
 
     async fn read_frame(server_socket: &mut Socket, sent_envelope: &NetworkEnvelope) {
-        for _ in 0..100 {
+        for i in 0..100 {
+            debug!("Decoding envelope #{}", i);
             let recv_envelope = server_socket
                 .read
                 .recv()

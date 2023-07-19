@@ -66,6 +66,8 @@ impl LZ4Buffer {
         raw: &[u8],
         stats: &mut DecompressStats,
     ) -> Result<DecompressState> {
+        self.buffer.clear();
+
         if raw.len() < 4 {
             return Ok(DecompressState::NeedMoreData {
                 total_length_estimate: 4,
@@ -89,7 +91,6 @@ impl LZ4Buffer {
             return Err(eyre!("decompressed size is too big"));
         }
 
-        self.buffer.clear();
         self.buffer.resize(decompressed_size, 0);
 
         // TODO: replace with `Cursor::remaining_slice` once it becomes stable.
