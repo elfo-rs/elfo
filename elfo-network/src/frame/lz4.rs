@@ -5,7 +5,7 @@
 //! use standard LZ4 framing.
 //!
 //! Structure of a single frame:
-//!           name           bits
+//!           name               bits
 //! +---------------------------+----+
 //! | size of whole frame       | 32 |
 //! +---------------------------+----+
@@ -24,6 +24,8 @@ use std::io::Cursor;
 use eyre::{eyre, Result};
 
 pub(crate) struct LZ4Buffer {
+    /// This buffer stores decompressed data after `decompress_frame` method
+    /// is called and compressed data after `compress_frame` method is called.
     buffer: Vec<u8>,
 }
 
