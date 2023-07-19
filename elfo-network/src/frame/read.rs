@@ -6,7 +6,7 @@ use crate::{
     },
     frame::{
         buffers::{ReadBuffer, COMPRESSED_DATA_BUFFER_CAPACITY, DECOMPRESSED_DATA_BUFFER_CAPACITY},
-        lz4::{DecompressStats, LZ4Buffer},
+        lz4::{DecompressState, DecompressStats, LZ4Buffer},
     },
 };
 
@@ -113,14 +113,14 @@ impl LZ4FramedRead {
 
 impl FramedReadStrategy for LZ4FramedRead {
     fn read(&mut self) -> Result<FramedReadState<'_>> {
-        let (compressed_size, position) = match self.state {
+        let (compressed_size, mut position) = match self.state {
             LZ4DecodingState::FrameDecompression => {
                 let lz4_state = self.decompressed_buffer.decompress_frame(
                     self.compressed_buffer.as_slice(),
                     &mut self.stats.decompress_stats,
                 )?;
                 match lz4_state {
-                    DecodeState::NeedMoreData {
+                    DecompressState::NeedMoreData {
                         total_length_estimate,
                     } => {
                         self.compressed_buffer
@@ -131,12 +131,14 @@ impl FramedReadStrategy for LZ4FramedRead {
                             min_bytes,
                         });
                     }
-                    DecodeState::Done { bytes_consumed, .. } => {
+                    DecompressState::Done {
+                        compressed_size, ..
+                    } => {
                         self.state = LZ4DecodingState::MessageParsing {
-                            compressed_size: bytes_consumed,
+                            compressed_size,
                             position: 0,
                         };
-                        (bytes_consumed, 0)
+                        (compressed_size, 0)
                     }
                 }
             }
@@ -153,23 +155,29 @@ impl FramedReadStrategy for LZ4FramedRead {
             return Ok(FramedReadState::Done { decoded: None });
         }
 
-        let envelope_buffer = &decompressed_buffer[position..];
-        let codec_state = codec::decode::decode(envelope_buffer, &mut self.stats.decode_stats)?;
-        match codec_state {
-            DecodeState::NeedMoreData { .. } => {
-                Err(eyre!("lz4 decompressed data contains truncated envelopes"))
-            }
-            DecodeState::Done {
-                bytes_consumed,
-                decoded,
-            } => {
-                self.state = LZ4DecodingState::MessageParsing {
-                    compressed_size,
-                    position: position + bytes_consumed,
-                };
-                Ok(FramedReadState::Done {
-                    decoded: Some(decoded),
-                })
+        loop {
+            let envelope_buffer = &decompressed_buffer[position..];
+            let codec_state = codec::decode::decode(envelope_buffer, &mut self.stats.decode_stats)?;
+            match codec_state {
+                DecodeState::NeedMoreData { .. } => {
+                    break Err(eyre!("lz4 decompressed data contains truncated envelopes"));
+                }
+                DecodeState::Skipped { bytes_consumed } => {
+                    position += bytes_consumed;
+                    continue;
+                }
+                DecodeState::Done {
+                    bytes_consumed,
+                    decoded,
+                } => {
+                    self.state = LZ4DecodingState::MessageParsing {
+                        compressed_size,
+                        position: position + bytes_consumed,
+                    };
+                    break Ok(FramedReadState::Done {
+                        decoded: Some(decoded),
+                    });
+                }
             }
         }
     }
@@ -199,28 +207,34 @@ impl NoneFramedRead {
 
 impl FramedReadStrategy for NoneFramedRead {
     fn read(&mut self) -> Result<FramedReadState<'_>> {
-        let codec_state =
-            codec::decode::decode(self.buffer.as_slice(), &mut self.stats.decode_stats)?;
-        match codec_state {
-            DecodeState::NeedMoreData {
-                total_length_estimate,
-            } => {
-                self.buffer.extend_to_contain(total_length_estimate);
-                let min_bytes = total_length_estimate - self.buffer.len();
-                Ok(FramedReadState::NeedMoreData {
-                    buffer: self.buffer.remaining(),
-                    min_bytes,
-                })
-            }
-            DecodeState::Done {
-                bytes_consumed,
-                decoded,
-            } => {
-                self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
-                self.buffer.consume(bytes_consumed);
-                Ok(FramedReadState::Done {
-                    decoded: Some(decoded),
-                })
+        loop {
+            let codec_state =
+                codec::decode::decode(self.buffer.as_slice(), &mut self.stats.decode_stats)?;
+            match codec_state {
+                DecodeState::NeedMoreData {
+                    total_length_estimate,
+                } => {
+                    self.buffer.extend_to_contain(total_length_estimate);
+                    let min_bytes = total_length_estimate - self.buffer.len();
+                    break Ok(FramedReadState::NeedMoreData {
+                        buffer: self.buffer.remaining(),
+                        min_bytes,
+                    });
+                }
+                DecodeState::Skipped { bytes_consumed } => {
+                    self.buffer.consume(bytes_consumed);
+                    continue;
+                }
+                DecodeState::Done {
+                    bytes_consumed,
+                    decoded,
+                } => {
+                    self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
+                    self.buffer.consume(bytes_consumed);
+                    break Ok(FramedReadState::Done {
+                        decoded: Some(decoded),
+                    });
+                }
             }
         }
     }

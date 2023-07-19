@@ -23,8 +23,6 @@ use std::io::Cursor;
 
 use eyre::{eyre, Result};
 
-use crate::codec::decode::DecodeState;
-
 pub(crate) struct LZ4Buffer {
     buffer: Vec<u8>,
 }
@@ -45,6 +43,15 @@ pub(crate) struct CompressStats {
     pub(crate) total_compressed_bytes: u64,
 }
 
+pub(crate) enum DecompressState {
+    /// Buffer needs to contain at least `total_length_estimate` bytes in total
+    /// in order for the decompression algorithm to make progress.
+    NeedMoreData { total_length_estimate: usize },
+    /// A series of bytes was decompressed, which occupied `compressed_size`
+    /// bytes when compressed.
+    Done { compressed_size: usize },
+}
+
 impl LZ4Buffer {
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -56,9 +63,9 @@ impl LZ4Buffer {
         &mut self,
         raw: &[u8],
         stats: &mut DecompressStats,
-    ) -> Result<DecodeState<&[u8]>> {
+    ) -> Result<DecompressState> {
         if raw.len() < 4 {
-            return Ok(DecodeState::NeedMoreData {
+            return Ok(DecompressState::NeedMoreData {
                 total_length_estimate: 4,
             });
         }
@@ -70,7 +77,7 @@ impl LZ4Buffer {
         }
 
         if raw.len() < frame_size {
-            return Ok(DecodeState::NeedMoreData {
+            return Ok(DecompressState::NeedMoreData {
                 total_length_estimate: frame_size,
             });
         }
@@ -97,9 +104,8 @@ impl LZ4Buffer {
         stats.total_compressed_bytes += frame_size as u64;
         stats.total_uncompressed_bytes += decompressed_size as u64;
 
-        Ok(DecodeState::Done {
-            bytes_consumed: frame_size,
-            decoded: &self.buffer,
+        Ok(DecompressState::Done {
+            compressed_size: frame_size,
         })
     }
 

@@ -26,19 +26,22 @@ pub(crate) struct DecodeStats {
     pub(crate) total_bytes: u64,
 }
 
-pub(crate) enum DecodeState<T> {
+pub(crate) enum DecodeState {
     /// Buffer needs to contain at least `total_length_estimate` bytes in total
     /// in order for the decoder to make progress.
     NeedMoreData { total_length_estimate: usize },
+    /// There was a non-fatal error while decoding a message residing in
+    /// `bytes_consumed` bytes, so it was skipped.
+    Skipped { bytes_consumed: usize },
     /// Decoder decoded a value, which occupied `bytes_consumed` bytes in the
     /// buffer.
-    Done { bytes_consumed: usize, decoded: T },
+    Done {
+        bytes_consumed: usize,
+        decoded: NetworkEnvelope,
+    },
 }
 
-pub(crate) fn decode(
-    input: &[u8],
-    stats: &mut DecodeStats,
-) -> eyre::Result<DecodeState<NetworkEnvelope>> {
+pub(crate) fn decode(input: &[u8], stats: &mut DecodeStats) -> eyre::Result<DecodeState> {
     if input.len() < 4 {
         return Ok(DecodeState::NeedMoreData {
             total_length_estimate: 4,
@@ -70,7 +73,9 @@ pub(crate) fn decode(
         message = "cannot decode message, skipping",
         error = format!("{:#}", err)
     );
-    Err(err)
+    Ok(DecodeState::Skipped {
+        bytes_consumed: size,
+    })
 }
 
 fn get_request_id(frame: &mut Cursor<&[u8]>) -> eyre::Result<RequestId> {
