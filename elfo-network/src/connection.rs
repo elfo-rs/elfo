@@ -4,7 +4,7 @@ use eyre::Result;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::Mutex;
 use quanta::Instant;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
     message, Local, Message,
@@ -48,6 +48,9 @@ struct PusherStopped;
 
 #[message]
 struct PingTick;
+
+#[message]
+struct ConnectionClosed;
 
 pub(crate) struct Connection {
     ctx: NetworkContext,
@@ -155,6 +158,10 @@ impl Connection {
                     };
 
                     self.ctx.attach(Stream::once(pusher.exec()));
+                }
+                ConnectionClosed => {
+                    info!("connection closed by peer");
+                    break;
                 }
             });
         }
@@ -320,7 +327,7 @@ struct SocketReader {
 }
 
 impl SocketReader {
-    async fn exec(mut self) -> Impossible {
+    async fn exec(mut self) -> ConnectionClosed {
         // TODO: error handling.
         while let Some(network_envelope) = self.rx.recv().await.unwrap() {
             scope::set_trace_id(network_envelope.trace_id);
@@ -344,7 +351,7 @@ impl SocketReader {
             }
         }
 
-        todo!()
+        ConnectionClosed
     }
 
     fn make_envelope(&self, network_envelope: NetworkEnvelope) -> Option<Envelope> {
