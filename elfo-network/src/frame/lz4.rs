@@ -129,11 +129,7 @@ impl LZ4Buffer {
         })
     }
 
-    pub(crate) fn compress_frame(
-        &mut self,
-        input: &[u8],
-        stats: &mut CompressStats,
-    ) -> Result<&[u8]> {
+    pub(crate) fn compress_frame(&mut self, input: &[u8], stats: &mut CompressStats) -> Result<()> {
         self.buffer
             .resize(8 + lz4_flex::block::get_maximum_output_size(input.len()), 0);
 
@@ -150,11 +146,11 @@ impl LZ4Buffer {
         output.set_position(0);
         output.write_u32::<LittleEndian>(frame_size as u32)?;
 
-        self.buffer.resize(frame_size, 0);
+        self.len = frame_size;
 
         stats.total_uncompressed_bytes += input.len() as u64;
         stats.total_compressed_bytes += frame_size as u64;
 
-        Ok(&self.buffer)
+        Ok(())
     }
 }

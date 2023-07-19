@@ -119,7 +119,8 @@ impl FramedWriteStrategy for LZ4FramedWrite {
             .compressed_buffer
             .compress_frame(&self.decompressed_buffer, &mut self.stats.compress_stats);
         self.decompressed_buffer.clear();
-        result
+        result?;
+        Ok(self.compressed_buffer.filled_slice())
     }
 
     fn take_stats(&mut self) -> FramedWriteStats {
