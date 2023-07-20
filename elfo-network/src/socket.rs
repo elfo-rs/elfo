@@ -213,10 +213,6 @@ impl ReadHalf {
                 + stats.decode_stats.total_messages_decoding_skipped
         );
         counter!(
-            "elfo_network_skipped_messages_total",
-            stats.decode_stats.total_messages_decoding_skipped
-        );
-        counter!(
             "elfo_network_received_uncompressed_bytes_total",
             stats.decompress_stats.total_uncompressed_bytes
         );
@@ -300,11 +296,6 @@ impl WriteHalf {
         }
 
         let stats = self.framing.take_stats();
-        counter!(
-            "elfo_network_skipped_messages_total",
-            stats.encode_stats.total_messages_encoding_skipped
-        );
-
         let mut total_messages_sent = stats.encode_stats.total_messages_encoding_skipped;
         if likely(result.is_ok()) {
             trace!(message = "wrote bytes to socket", count = finalized_len);
