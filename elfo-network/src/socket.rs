@@ -14,7 +14,7 @@ use tokio::{
         TcpListener, TcpStream,
     },
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{
     codec::{encode::EncodeError, format::NetworkEnvelope},
@@ -207,18 +207,35 @@ impl ReadHalf {
 }
 
 impl ReadHalf {
+    fn report_framing_metrics(&mut self) {
+        let stats = self.framing.take_stats();
+        counter!(
+            "elfo_network_received_messages_total",
+            stats.decode_stats.total_messages_decoded
+        );
+        counter!(
+            "elfo_network_skipped_messages_total",
+            stats.decode_stats.total_messages_decoding_skipped
+        );
+        counter!(
+            "elfo_network_received_uncompressed_bytes_total",
+            stats.decompress_stats.total_uncompressed_bytes
+        );
+    }
+
     pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>> {
         let envelope = loop {
             let buffer = match self.framing.read()? {
                 FramedReadState::NeedMoreData { buffer } => {
-                    debug!(message = "framed read strategy requested more data");
+                    trace!(message = "framed read strategy requested more data");
                     buffer
                 }
                 FramedReadState::Done { decoded } => {
                     let (protocol, name) = decoded.payload.protocol_and_name();
-                    debug!(
+                    trace!(
                         message = "framed read strategy decoded single envelope",
-                        protocol, name,
+                        protocol,
+                        name,
                     );
                     // One of the envelopes inside the frame was decoded.
                     break decoded;
@@ -230,24 +247,14 @@ impl ReadHalf {
                 // EOF.
                 return Ok(None);
             }
+            counter!("elfo_network_received_bytes_total", bytes_read as u64);
+            self.report_framing_metrics();
 
             self.framing.mark_filled(bytes_read);
-            debug!(message = "read bytes from the socket", bytes_read);
+            trace!(message = "read bytes from the socket", bytes_read);
         };
 
-        let stats = self.framing.take_stats();
-        counter!(
-            "elfo_network_received_messages_total",
-            stats.decode_stats.total_messages
-        );
-        counter!(
-            "elfo_network_received_compressed_bytes_total",
-            stats.decompress_stats.total_compressed_bytes
-        );
-        counter!(
-            "elfo_network_received_decompressed_bytes_total",
-            stats.decompress_stats.total_uncompressed_bytes
-        );
+        self.report_framing_metrics();
 
         Ok(Some(envelope))
     }
@@ -283,6 +290,7 @@ impl WriteHalf {
     /// Flushed the internal buffer unconditionally.
     pub(crate) async fn flush(&mut self) -> Result<()> {
         let finalized = self.framing.finalize()?;
+        let finalized_len = finalized.len();
         let mut result = self
             .write
             .write_all(finalized)
@@ -296,21 +304,25 @@ impl WriteHalf {
                 .context("failed to flush the frame");
         }
 
-        debug!(message = "wrote bytes to socket", count = finalized.len());
-
         let stats = self.framing.take_stats();
         counter!(
-            "elfo_network_sent_messages_total",
-            stats.encode_stats.total_messages
+            "elfo_network_skipped_messages_total",
+            stats.encode_stats.total_messages_encoding_skipped
         );
-        counter!(
-            "elfo_network_sent_decompressed_bytes_total",
-            stats.compress_stats.total_uncompressed_bytes
-        );
-        counter!(
-            "elfo_network_sent_compressed_bytes_total",
-            stats.compress_stats.total_compressed_bytes
-        );
+
+        if likely(result.is_ok()) {
+            trace!(message = "wrote bytes to socket", count = finalized_len);
+
+            counter!("elfo_network_sent_bytes_total", finalized_len as u64);
+            counter!(
+                "elfo_network_sent_messages_total",
+                stats.encode_stats.total_messages_encoded
+            );
+            counter!(
+                "elfo_network_sent_uncompressed_bytes_total",
+                stats.compress_stats.total_uncompressed_bytes
+            );
+        }
 
         result
     }
@@ -444,6 +456,7 @@ mod tests {
         convert::TryFrom,
         net::{IpAddr, Ipv4Addr},
     };
+    use tracing::debug;
 
     use crate::codec::format::NetworkEnvelopePayload;
 

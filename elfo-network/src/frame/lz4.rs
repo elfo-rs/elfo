@@ -32,18 +32,14 @@ pub(crate) struct LZ4Buffer {
 
 #[derive(Default)]
 pub(crate) struct DecompressStats {
-    /// How many compressed bytes were processed so far.
-    pub(crate) total_compressed_bytes: u64,
     /// How many uncompressed bytes were produced during decompression so far.
     pub(crate) total_uncompressed_bytes: u64,
 }
 
 #[derive(Default)]
 pub(crate) struct CompressStats {
-    /// How many uncompressed bytes were processed so far.
+    /// How many uncompressed bytes were compressed so far.
     pub(crate) total_uncompressed_bytes: u64,
-    /// How many uncompressed bytes were produced during compression so far.
-    pub(crate) total_compressed_bytes: u64,
 }
 
 pub(crate) enum DecompressState {
@@ -121,7 +117,6 @@ impl LZ4Buffer {
 
         self.len = decompressed_size;
 
-        stats.total_compressed_bytes += frame_size as u64;
         stats.total_uncompressed_bytes += decompressed_size as u64;
 
         Ok(DecompressState::Done {
@@ -151,7 +146,6 @@ impl LZ4Buffer {
         self.len = frame_size;
 
         stats.total_uncompressed_bytes += input.len() as u64;
-        stats.total_compressed_bytes += frame_size as u64;
 
         Ok(())
     }

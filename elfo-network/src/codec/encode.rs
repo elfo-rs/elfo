@@ -18,9 +18,9 @@ pub(crate) enum EncodeError {
 #[derive(Default)]
 pub(crate) struct EncodeStats {
     /// How many messages were encoded so far.
-    pub(crate) total_messages: u64,
-    /// How many bytes were produced during encoding so far.
-    pub(crate) total_bytes: u64,
+    pub(crate) total_messages_encoded: u64,
+    /// How many messages were skipped because of non-fatal encoding errors.
+    pub(crate) total_messages_encoding_skipped: u64,
 }
 
 pub(crate) fn encode(
@@ -41,11 +41,12 @@ pub(crate) fn encode(
         let size = dst.len() - start_pos;
         (&mut dst[start_pos..]).write_u32::<LittleEndian>(size as u32)?;
 
-        stats.total_messages += 1;
-        stats.total_bytes += size as u64;
+        stats.total_messages_encoded += 1;
 
         return Ok(());
     }
+
+    stats.total_messages_encoding_skipped += 1;
 
     let err = res.unwrap_err();
 

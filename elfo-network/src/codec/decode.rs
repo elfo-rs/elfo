@@ -21,9 +21,9 @@ use tracing::error;
 #[derive(Default)]
 pub(crate) struct DecodeStats {
     /// How many messages were decoded so far.
-    pub(crate) total_messages: u64,
-    /// How many bytes were consumed during decoding so far.
-    pub(crate) total_bytes: u64,
+    pub(crate) total_messages_decoded: u64,
+    /// How many messages were skipped because of non-fatal decoding errors.
+    pub(crate) total_messages_decoding_skipped: u64,
 }
 
 pub(crate) enum DecodeState {
@@ -59,13 +59,14 @@ pub(crate) fn decode(input: &[u8], stats: &mut DecodeStats) -> eyre::Result<Deco
 
     let decode_result = do_decode(&mut src);
     if likely(decode_result.is_ok()) {
-        stats.total_messages += 1;
-        stats.total_bytes += size as u64;
+        stats.total_messages_decoded += 1;
         return Ok(DecodeState::Done {
             bytes_consumed: size,
             decoded: decode_result.unwrap(),
         });
     }
+
+    stats.total_messages_decoding_skipped += 1;
 
     let err = decode_result.unwrap_err();
     // TODO: cooldown/metrics, more info (protocol and name if available)
