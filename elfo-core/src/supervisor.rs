@@ -193,9 +193,9 @@ where
                     return visitor.done();
                 }
             },
-            messages::SubscribeToActorStatuses => {
+            messages::SubscribeToActorStatuses { forcing } => {
                 let sender = envelope.sender();
-                self.in_scope(|| self.subscribe_to_statuses(sender));
+                self.in_scope(|| self.subscribe_to_statuses(sender, *forcing));
                 return visitor.done();
             }
             messages::Terminate => {
@@ -424,9 +424,12 @@ where
         self.in_scope(|| info!(config = ?control.user_config.as_ref().unwrap(), "router updated"));
     }
 
-    fn subscribe_to_statuses(&self, addr: Addr) {
+    fn subscribe_to_statuses(&self, addr: Addr, forcing: bool) {
         // Firstly, add the subscriber to handle new objects right way.
-        self.status_subscription.add(addr);
+        if !self.status_subscription.add(addr) && !forcing {
+            // Already subscribed.
+            return;
+        }
 
         // Send active statuses to the subscriber.
         for item in self.objects.iter() {

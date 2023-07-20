@@ -61,7 +61,7 @@ pub fn new(topology: &Topology) -> Blueprint {
 
     ActorGroup::new()
         .config::<Config>()
-        // TODO: actually, we want to restart, but only the discrovery actor.
+        // The restart policy is overrided by the discovery actor.
         .restart_policy(RestartPolicy::never())
         .router(MapRouter::new(|envelope| {
             msg!(match envelope {

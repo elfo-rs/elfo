@@ -1,5 +1,3 @@
-use std::{env, sync::Mutex};
-
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
@@ -119,13 +117,11 @@ impl MessageArgs {
 }
 
 fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream) -> TokenStream {
-    let tokens = if blacklist.iter().all(|x| x != name) {
-        quote! { #[derive(#path)] }
-    } else {
-        quote! {}
-    };
-
-    tokens.into_token_stream()
+    blacklist
+        .iter()
+        .all(|x| x != name)
+        .then(|| quote! { #[derive(#path)] })
+        .into_token_stream()
 }
 
 fn gen_impl_debug(input: &DeriveInput) -> TokenStream {
@@ -159,31 +155,6 @@ fn gen_impl_debug(input: &DeriveInput) -> TokenStream {
     }
 }
 
-fn package_name() -> String {
-    env::var("CARGO_PKG_NAME").expect("building without cargo is unsupported for now")
-}
-
-fn ensure_proto_name_uniqueness(protocol: &str, name: &str) {
-    static MESSAGE_TITLES: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
-
-    // Skip checks for tests in the `elfo` crate.
-    // Note: it doesn't affect other `elfo-*` crates.
-    if package_name() == "elfo" {
-        return;
-    }
-
-    let mut set = MESSAGE_TITLES.lock().unwrap();
-    if set.iter().any(|(p, n)| p == protocol && n == name) {
-        emit_error!(
-            name.span(),
-            "duplicate message `{name}` in protocol `{protocol}`\n\
-             consider renaming, moving to another crate or specifying protocol explicitly",
-        );
-    }
-
-    set.push((protocol.to_string(), name.to_string()));
-}
-
 pub fn message_impl(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
@@ -206,21 +177,8 @@ pub fn message_impl(
         .map(LitStr::value)
         .unwrap_or_else(|| input.ident.to_string());
 
-    let protocol_str = args
-        .protocol
-        .as_ref()
-        .map(LitStr::value)
-        .unwrap_or_else(package_name);
-
-    if !args.part {
-        ensure_proto_name_uniqueness(&protocol_str, &name_str);
-    }
-
-    let derive_debug = if !args.transparent {
-        gen_derive_attr(&args.not, "Debug", quote![Debug])
-    } else {
-        Default::default()
-    };
+    let derive_debug =
+        (!args.transparent).then(|| gen_derive_attr(&args.not, "Debug", quote![Debug]));
     let derive_clone = gen_derive_attr(&args.not, "Clone", quote![Clone]);
     let derive_serialize =
         gen_derive_attr(&args.not, "Serialize", quote![#internal::serde::Serialize]);
@@ -230,22 +188,15 @@ pub fn message_impl(
         quote![#internal::serde::Deserialize],
     );
 
-    let serde_crate_attr = if !derive_serialize.is_empty() || !derive_deserialize.is_empty() {
-        quote! { #[serde(crate = #serde_crate)] }
-    } else {
-        quote! {}
-    };
+    let serde_crate_attr = (!derive_serialize.is_empty() || !derive_deserialize.is_empty())
+        .then(|| quote! { #[serde(crate = #serde_crate)] });
 
-    let serde_transparent_attr = if args.transparent {
-        quote! { #[serde(transparent)] }
-    } else {
-        quote! {}
-    };
+    let serde_transparent_attr = args.transparent.then(|| quote! { #[serde(transparent)] });
 
     // TODO: pass to `_elfo_Wrapper`.
     let dumping_allowed = args.dumping_allowed.unwrap_or(true);
 
-    let network_fns = if cfg!(feature = "network") {
+    let network_fns = cfg!(feature = "network").then(|| {
         quote! {
             fn write_msgpack(
                 message: &#internal::AnyMessage,
@@ -261,17 +212,17 @@ pub fn message_impl(
                 #internal::read_msgpack::<#name>(buffer).map(#crate_::Message::upcast)
             }
         }
+    });
+
+    let network_fns_ref = cfg!(feature = "network").then(|| quote! { write_msgpack, read_msgpack });
+
+    let protocol = if let Some(protocol) = &args.protocol {
+        quote! { #protocol }
     } else {
-        quote! {}
+        quote! { #crate_::get_protocol!() }
     };
 
-    let network_fns_ref = if cfg!(feature = "network") {
-        quote! { write_msgpack, read_msgpack }
-    } else {
-        quote! {}
-    };
-
-    let impl_message = if !args.part {
+    let impl_message = (!args.part).then(|| {
         quote! {
             impl #crate_::Message for #name {
                 #[inline(always)]
@@ -307,10 +258,10 @@ pub fn message_impl(
             #[linkme(crate = linkme)]
             static VTABLE: &'static #internal::MessageVTable = &#internal::MessageVTable {
                 name: #name_str,
-                protocol: #protocol_str,
+                protocol: #protocol,
                 labels: &[
                     #internal::metrics::Label::from_static_parts("message", #name_str),
-                    #internal::metrics::Label::from_static_parts("protocol", #protocol_str),
+                    #internal::metrics::Label::from_static_parts("protocol", #protocol),
                 ],
                 dumping_allowed: #dumping_allowed,
                 clone,
@@ -324,12 +275,11 @@ pub fn message_impl(
             #[inline(never)]
             pub fn touch() {}
         }
-    } else {
-        quote! {}
-    };
+    });
 
-    let impl_request = if let Some(ret) = &args.ret {
+    let impl_request = args.ret.as_ref().map(|ret| {
         let wrapper_name_str = format!("{name_str}::Response");
+        let protocol = args.protocol.as_ref().map(|p| quote! { protocol = #p, });
 
         quote! {
             impl #crate_::Request for #name {
@@ -337,7 +287,7 @@ pub fn message_impl(
                 type Wrapper = _elfo_Wrapper;
             }
 
-            #[message(not(Debug), protocol = #protocol_str, name = #wrapper_name_str, elfo = #crate_)]
+            #[message(not(Debug), #protocol name = #wrapper_name_str, elfo = #crate_)]
             pub struct _elfo_Wrapper(#ret);
 
             impl ::std::fmt::Debug for _elfo_Wrapper {
@@ -361,15 +311,10 @@ pub fn message_impl(
                 }
             }
         }
-    } else {
-        quote! {}
-    };
+    });
 
-    let impl_debug = if args.transparent && args.not.iter().all(|x| x != "Debug") {
-        gen_impl_debug(&input)
-    } else {
-        quote! {}
-    };
+    let impl_debug =
+        (args.transparent && args.not.iter().all(|x| x != "Debug")).then(|| gen_impl_debug(&input));
 
     let expanded = quote! {
         #derive_debug

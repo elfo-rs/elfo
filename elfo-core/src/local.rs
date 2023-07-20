@@ -4,7 +4,7 @@ use derive_more::From;
 use parking_lot::Mutex;
 use serde::{
     de::{self, Deserializer},
-    ser::Serializer,
+    ser::{self, Serializer},
     Deserialize, Serialize,
 };
 
@@ -58,8 +58,11 @@ impl<T> Serialize for Local<T> {
     where
         S: Serializer,
     {
-        // TODO: fail to serialize in the network context.
-        serializer.serialize_str("<local>")
+        if crate::scope::serde_mode() == crate::scope::SerdeMode::Network {
+            Err(ser::Error::custom("Local<T> cannot be sent over network"))
+        } else {
+            serializer.serialize_str("<local>")
+        }
     }
 }
 
@@ -123,8 +126,13 @@ impl<T> Serialize for MoveOwnership<T> {
     where
         S: Serializer,
     {
-        // TODO: fail to serialize in the network context.
-        serializer.serialize_str("<local>")
+        if crate::scope::serde_mode() == crate::scope::SerdeMode::Network {
+            Err(ser::Error::custom(
+                "MoveOwnership<T> cannot be sent over network",
+            ))
+        } else {
+            serializer.serialize_str("<local>")
+        }
     }
 }
 

@@ -5,7 +5,7 @@ use futures::StreamExt;
 use tracing::{debug, error, info, warn};
 
 use elfo_core::{
-    message, msg, scope, Addr, Envelope, Message, MoveOwnership, _priv::MessageKind,
+    message, msg, scope, Addr, Envelope, Message, MoveOwnership, RestartPolicy, _priv::MessageKind,
     messages::ConfigUpdated, stream::Stream, GroupNo, Topology,
 };
 
@@ -82,6 +82,9 @@ impl Discovery {
     }
 
     pub(super) async fn main(mut self) -> Result<()> {
+        // The default restart policy of this group is `never`, so override it.
+        self.ctx.set_restart_policy(RestartPolicy::on_failures());
+
         self.listen().await?;
         self.discover();
 

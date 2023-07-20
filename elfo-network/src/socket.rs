@@ -348,7 +348,7 @@ async fn connect_tcp(
     capabilities: Capabilities,
 ) -> Result<Option<Socket>> {
     // TODO: timeout
-    // TODO: settings (Nagle's algorithm etc.)
+    // TODO: settings (keepalive, linger, etc.)
     let stream = TcpStream::connect(peer).await?;
     stream.set_nodelay(true)?;
     let socket = TcpSocket::new(stream, Transport::Tcp(peer));

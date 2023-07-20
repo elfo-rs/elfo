@@ -3,7 +3,7 @@ use std::time::Duration;
 use elfo::{prelude::*, time::Interval, topology::Outcome};
 use tracing::{info, warn};
 
-use crate::common::Hello;
+use crate::common::{AskName, Hello};
 
 fn producer() -> Blueprint {
     #[message]
@@ -20,9 +20,12 @@ fn producer() -> Blueprint {
                 TimerTick => {
                     match ctx.send(Hello(i)).await {
                         Ok(_) => i += 1,
-                        Err(err) => {
-                            warn!("cannot say Hello: {}", err);
-                        }
+                        Err(err) => warn!("cannot say hello: {}", err),
+                    }
+
+                    match ctx.request(AskName).resolve().await {
+                        Ok(name) => info!("received name: {}", name),
+                        Err(err) => warn!("cannot ask name: {}", err),
                     }
                 }
                 Hello(i) => {

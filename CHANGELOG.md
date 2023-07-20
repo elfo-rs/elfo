@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - network: initial implementation of distribution.
 - macros: support `#[message(protocol = "X")]`.
+- macros: add `set_protocol!`.
+- messages: `SubscribeToActorStatuses::forcing()`.
 
 ### Changed
 - **BREAKING** errors: replace `RequestError::Closed(envelope)` with `Failed`.

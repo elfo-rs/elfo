@@ -27,6 +27,8 @@ use crate::{
     Addr,
 };
 
+const INIT_GROUP_NAME: &str = "system.init";
+
 type Result<T, E = StartError> = std::result::Result<T, E>;
 
 async fn start_entrypoints(ctx: &Context, topology: &Topology, is_check_only: bool) -> Result<()> {
@@ -104,6 +106,8 @@ pub async fn start(topology: Topology) {
 
 /// The same as `start()`, but returns an error rather than panics.
 pub async fn try_start(topology: Topology) -> Result<()> {
+    check_messages_uniqueness()?;
+
     let res = do_start(topology, false, termination).await;
 
     if res.is_err() {
@@ -117,9 +121,31 @@ pub async fn try_start(topology: Topology) -> Result<()> {
 /// Starts node in "check only" mode. Entrypoints are started, then the system
 /// is immediately gracefully terminated.
 pub async fn check_only(topology: Topology) -> Result<()> {
+    check_messages_uniqueness()?;
+
     // The logger is not supposed to be initialized in this mode, so we do not wait
     // for it before exiting.
     do_start(topology, true, do_termination).await
+}
+
+/// Checks that all messages are unique by `(protocol, name)` pair.
+/// If there are duplicates, returns an error.
+///
+/// It's called automatically by `(try_)start()` and `check_only()`,
+/// but still provided in order to being called manually in service tests.
+#[stability::unstable]
+pub fn check_messages_uniqueness() -> Result<()> {
+    message::check_uniqueness().map_err(|duplicates| {
+        let errors = duplicates
+            .into_iter()
+            .map(|(protocol, name)| StartGroupError {
+                group: INIT_GROUP_NAME.into(),
+                reason: format!("message `{}/{}` is defined several times", protocol, name),
+            })
+            .collect();
+
+        StartError::multiple(errors)
+    })
 }
 
 #[doc(hidden)]
@@ -128,14 +154,12 @@ pub async fn do_start<F: Future>(
     is_check_only: bool,
     and_then: impl FnOnce(Context, Topology) -> F,
 ) -> Result<F::Output> {
-    message::init();
-
     let entry = topology.book.vacant_entry(0);
     let addr = entry.addr();
     let ctx = Context::new(topology.book.clone(), Demux::default());
 
     let meta = Arc::new(ActorMeta {
-        group: "system.init".into(),
+        group: INIT_GROUP_NAME.into(),
         key: "_".into(), // Just like `Singleton`.
     });
 
