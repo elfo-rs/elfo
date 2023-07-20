@@ -205,6 +205,7 @@ impl FramedReadStrategy for NoneFramedRead {
                     });
                 }
                 DecodeState::Skipped { bytes_consumed } => {
+                    self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
                     self.buffer.consume_filled(bytes_consumed);
                     continue;
                 }
