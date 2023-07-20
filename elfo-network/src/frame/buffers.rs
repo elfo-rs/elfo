@@ -22,14 +22,14 @@ impl ReadBuffer {
 
     /// Mark `count` bytes at the end of the buffer as filled with data.
     pub(crate) fn extend_filled(&mut self, count: usize) {
-        debug_assert!(self.filled_end + count <= self.buffer.len());
+        assert!(self.filled_end + count <= self.buffer.len());
         self.filled_end += count;
     }
 
     /// Mark `count` bytes at the start of the filled data as ready to be
     /// reused for free space.
     pub(crate) fn consume_filled(&mut self, count: usize) {
-        debug_assert!(self.filled_start + count <= self.filled_end);
+        assert!(self.filled_start + count <= self.filled_end);
         self.filled_start += count;
 
         // If there is no more filled data, move indexes to the start to avoid shifting
@@ -53,11 +53,25 @@ impl ReadBuffer {
         let filled_len = self.filled_len();
 
         // Shift the data into the beginning of the buffer to reclaim unused space
-        // before `self.position`.
-        unsafe {
-            let buffer_start = self.buffer.as_mut_ptr();
-            let data_start = buffer_start.add(self.filled_start);
-            std::ptr::copy(data_start, buffer_start, filled_len);
+        // before `self.position`, if there is anything to shift.
+        if filled_len > 0 {
+            assert!(self.filled_start < self.buffer.len());
+            assert!(self.filled_start + filled_len <= self.buffer.len());
+            // SAFETY:
+            // 1. `self.buffer` is initialized, so the `buffer_start` pointer is valid
+            // 2. Due to the assertion above, `self.filled_start` is a valid index into
+            // `self.buffer`. Thus, `data_start` is a valid pointer.
+            // 3. Due to the assertion above, there are at least `filled_len` bytes in the
+            // buffer after `self.filled_start`. Also, since `self.filled_start >= 0`, there
+            // are at least `filled_len` bytes in the buffer total. Thus, `std::ptr::copy`
+            // will only read bytes from `self.buffer`.
+            // 4. Finally, we are explicitly allowed to copy overlapping memory regions
+            // using `std::ptr::copy`.
+            unsafe {
+                let buffer_start = self.buffer.as_mut_ptr();
+                let data_start = buffer_start.add(self.filled_start);
+                std::ptr::copy(data_start, buffer_start, filled_len);
+            }
         }
 
         self.filled_start = 0;
