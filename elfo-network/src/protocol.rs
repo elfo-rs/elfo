@@ -1,6 +1,6 @@
 use elfo_core::{message, node::NodeNo, Addr, GroupNo, MoveOwnership};
 
-use crate::{node_map::LaunchId, socket::Socket};
+use crate::socket::Socket;
 
 // Internal.
 
@@ -17,11 +17,6 @@ pub(crate) struct HandleConnection {
 pub(crate) mod internode {
     use super::*;
 
-    //             any connection
-    //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //      Handshake -->   <-- Handshake
-    //                  ...
-    //
     //           control connection
     //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //      (client)             (server)
@@ -49,12 +44,6 @@ pub(crate) mod internode {
     //                  ...
     //
     // TODO: close, status changes.
-
-    #[message]
-    pub(crate) struct Handshake {
-        pub(crate) node_no: NodeNo,
-        pub(crate) launch_id: LaunchId,
-    }
 
     #[message]
     pub(crate) struct SwitchToControl {

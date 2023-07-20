@@ -26,6 +26,7 @@ mod codec;
 mod config;
 mod connection;
 mod discovery;
+mod frame;
 mod node_map;
 mod protocol;
 mod rtt;

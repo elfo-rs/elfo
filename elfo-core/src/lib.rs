@@ -54,6 +54,7 @@ mod exec;
 mod group;
 mod local;
 mod mailbox;
+#[cfg(target_os = "linux")]
 mod memory_tracker;
 mod message;
 mod object;

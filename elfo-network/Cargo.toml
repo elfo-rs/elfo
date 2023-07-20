@@ -17,7 +17,6 @@ fxhash = "0.2.1"
 futures = "0.3.21"
 tokio = { version = "1.19.2", features = ["net"] }
 tokio-util = { version = "0.7.3", features = ["codec"] }
-bytes = "1.1.0"
 tracing = "0.1.25"
 parking_lot = "0.12"
 derive_more = "0.99.11"
@@ -27,3 +26,9 @@ kanal = "0.1.0-pre8"
 dashmap = "5"
 futures-intrusive = "0.5"
 metrics = "0.17"
+bitflags = "2.3.2"
+lz4_flex = "0.11.1"
+byteorder = "1.4.3"
+
+[dev-dependencies]
+tracing-test = "0.2.4"

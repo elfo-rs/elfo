@@ -2,18 +2,17 @@ use std::sync::Arc;
 
 use eyre::{bail, eyre, Result, WrapErr};
 use futures::StreamExt;
-use quanta::Instant;
 use tracing::{debug, error, info, warn};
 
 use elfo_core::{
-    message, msg, node::NodeNo, scope, Addr, Envelope, Message, MoveOwnership, RestartPolicy,
-    _priv::MessageKind, messages::ConfigUpdated, stream::Stream, GroupNo, Topology,
+    message, msg, scope, Addr, Envelope, Message, MoveOwnership, RestartPolicy, _priv::MessageKind,
+    messages::ConfigUpdated, stream::Stream, GroupNo, Topology,
 };
 
 use crate::{
-    codec::{NetworkEnvelope, NetworkEnvelopePayload},
-    config::Transport,
-    node_map::{LaunchId, NodeInfo, NodeMap},
+    codec::format::{NetworkEnvelope, NetworkEnvelopePayload},
+    config::{CompressionAlgorithm, Transport},
+    node_map::{NodeInfo, NodeMap},
     protocol::{
         internode::{self, GroupInfo},
         HandleConnection,
@@ -54,8 +53,6 @@ impl ConnectionRole {
 struct ConnectionAccepted {
     is_initiator: bool,
     role: ConnectionRole,
-    node_no: NodeNo,
-    launch_id: LaunchId,
     socket: MoveOwnership<Socket>,
 }
 
@@ -63,7 +60,6 @@ struct ConnectionAccepted {
 struct ConnectionRejected {
     error: String,
     peer: Transport,
-    retry: bool,
 }
 
 pub(super) struct Discovery {
@@ -108,9 +104,17 @@ impl Discovery {
         Ok(())
     }
 
+    fn get_capabilities(&self) -> socket::Capabilities {
+        let mut capabilities = socket::Capabilities::empty();
+        if self.ctx.config().compression.algorithm == CompressionAlgorithm::Lz4 {
+            capabilities |= socket::Capabilities::LZ4;
+        }
+        capabilities
+    }
+
     async fn listen(&mut self) -> Result<()> {
         for transport in self.ctx.config().listen.clone() {
-            let stream = socket::listen(&transport)
+            let stream = socket::listen(&transport, &self.node_map.this, self.get_capabilities())
                 .await
                 .wrap_err_with(|| eyre!("cannot listen {}", transport))?
                 .map(|socket| ConnectionEstablished {
@@ -146,18 +150,28 @@ impl Discovery {
     ) -> Stream<ConnectionEstablished> {
         let interval = self.ctx.config().discovery.attempt_interval;
         let peer = peer.clone();
+        let this_node = self.node_map.this.clone();
+        let capabilities = self.get_capabilities();
 
         self.ctx.attach(Stream::once(async move {
             loop {
                 debug!(message = "connecting to peer", peer = %peer, role = ?role);
 
-                match socket::connect(&peer).await {
-                    Ok(socket) => {
-                        break ConnectionEstablished {
-                            role,
-                            socket: socket.into(),
+                match socket::connect(&peer, &this_node, capabilities).await {
+                    Ok(socket) => match socket {
+                        Some(socket) => {
+                            break ConnectionEstablished {
+                                role,
+                                socket: socket.into(),
+                            }
                         }
-                    }
+                        None => {
+                            info!(
+                                message = "connection to self ignored",
+                                peer = %peer,
+                            );
+                        }
+                    },
                     Err(err) => {
                         info!(message = "cannot connect", peer = %peer, error = %err);
                     }
@@ -181,18 +195,13 @@ impl Discovery {
 
         let node_map = self.node_map.clone();
         self.ctx.attach(Stream::once(async move {
-            let peer = socket.peer.clone();
+            let peer = socket.peer.transport.clone();
 
             let result = accept_connection(socket, msg.role, &node_map.this).await;
             match result {
-                Ok(Some(accepted)) => Ok(accepted),
-                Ok(None) => Err(ConnectionRejected {
-                    error: "node attempted to connect to itself".into(),
-                    peer,
-                    retry: false,
-                }),
+                Ok(accepted) => Ok(accepted),
                 Err(err) => {
-                    let error_msg = err.to_string();
+                    let error_msg = format!("{:#}", err);
                     warn!(
                         message = "new connection rejected",
                         peer = %peer,
@@ -201,7 +210,6 @@ impl Discovery {
                     Err(ConnectionRejected {
                         error: error_msg,
                         peer,
-                        retry: true,
                     })
                 }
             }
@@ -210,12 +218,11 @@ impl Discovery {
 
     async fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
         let socket = msg.socket.take().unwrap();
+        let peer = &socket.peer;
 
         info!(
             message = "new connection accepted",
-            peer = %socket.peer,
-            peer_node_no = %msg.node_no,
-            peer_launch_id = %msg.launch_id,
+            peer = %peer,
             role = msg.role.as_str(),
         );
 
@@ -225,10 +232,10 @@ impl Discovery {
                 {
                     let mut nodes = self.node_map.nodes.lock();
                     nodes.insert(
-                        msg.node_no,
+                        peer.node_no,
                         NodeInfo {
-                            node_no: msg.node_no,
-                            launch_id: msg.launch_id,
+                            node_no: peer.node_no,
+                            launch_id: peer.launch_id,
                             groups: remote.groups.clone(),
                         },
                     );
@@ -253,7 +260,7 @@ impl Discovery {
                     .for_each(|(local_group_no, remote_group_no)| {
                         // TODO: save stream to cancel later.
                         self.open_connection(
-                            &socket.peer,
+                            &socket.peer.transport,
                             ConnectionRole::Data(internode::SwitchToData {
                                 my_group_no: local_group_no,
                                 your_group_no: remote_group_no,
@@ -274,7 +281,7 @@ impl Discovery {
                     .map(|g| g.name.clone());
 
                 let remote_group_name =
-                    self.node_map.nodes.lock().get(&msg.node_no).and_then(|n| {
+                    self.node_map.nodes.lock().get(&peer.node_no).and_then(|n| {
                         n.groups
                             .iter()
                             .find(|g| g.group_no == remote.my_group_no)
@@ -291,7 +298,7 @@ impl Discovery {
                     self.ctx.group(),
                     HandleConnection {
                         local: (remote.your_group_no, local_group_name),
-                        remote: (msg.node_no, remote.my_group_no, remote_group_name),
+                        remote: (peer.node_no, remote.my_group_no, remote_group_name),
                         socket: socket.into(),
                         initial_window: remote.initial_window,
                     },
@@ -314,32 +321,7 @@ async fn accept_connection(
     mut socket: Socket,
     role: ConnectionRole,
     this_node: &NodeInfo,
-) -> Result<Option<ConnectionAccepted>> {
-    let start = Instant::now();
-    let (node_no, launch_id) = handshake(&mut socket, this_node).await.map_err(|err| {
-        debug!(
-            message = "handshake failed",
-            peer = %socket.peer,
-            error = %err,
-            elapsed = ?start.elapsed(),
-        );
-        err
-    })?;
-
-    debug!(
-        message = "handshake succeeded",
-        peer = %socket.peer,
-        elapsed = ?start.elapsed(),
-    );
-
-    if node_no == this_node.node_no {
-        info!(
-            message = "connection to self ignored",
-            peer = %socket.peer,
-        );
-        return Ok(None);
-    }
-
+) -> Result<ConnectionAccepted> {
     let (is_initiator, role) = match role {
         ConnectionRole::Unknown => {
             msg!(match recv(&mut socket).await? {
@@ -378,13 +360,11 @@ async fn accept_connection(
         }
     };
 
-    Ok(Some(ConnectionAccepted {
+    Ok(ConnectionAccepted {
         is_initiator,
         role,
-        node_no,
-        launch_id,
         socket: socket.into(),
-    }))
+    })
 }
 
 fn infer_connections<'a>(
@@ -398,18 +378,6 @@ fn infer_connections<'a>(
     })
 }
 
-async fn handshake(socket: &mut Socket, this_node: &NodeInfo) -> Result<(NodeNo, LaunchId)> {
-    let msg = internode::Handshake {
-        node_no: this_node.node_no,
-        launch_id: this_node.launch_id,
-    };
-
-    send_regular(socket, msg).await?;
-    recv_regular::<internode::Handshake>(socket)
-        .await
-        .map(|msg| (msg.node_no, msg.launch_id))
-}
-
 async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
     let name = msg.name();
     let envelope = NetworkEnvelope {
@@ -421,9 +389,8 @@ async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
         },
     };
 
-    socket
-        .write
-        .send(envelope)
+    let send_future = socket.write.send(&envelope);
+    send_future
         .await
         .wrap_err_with(|| eyre!("cannot send {}", name))
 }

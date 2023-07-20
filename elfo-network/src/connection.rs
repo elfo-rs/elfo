@@ -26,7 +26,8 @@ use self::{
     requests::OutgoingRequests,
 };
 use crate::{
-    codec::{NetworkEnvelope, NetworkEnvelopePayload},
+    codec::format::{NetworkEnvelope, NetworkEnvelopePayload},
+    frame::write::FrameState,
     protocol::{internode, HandleConnection},
     rtt::Rtt,
     socket::{ReadHalf, WriteHalf},
@@ -201,20 +202,26 @@ impl SocketWriter {
                 let (network_envelope, response_token) = make_network_envelope(item);
                 scope::set_trace_id(network_envelope.trace_id);
 
-                // This call can actually write to the socket if the buffer is full.
-                if self.tx.feed(network_envelope).await.unwrap() {
-                    // Store the response token only if the message is added.
+                // NOTE: We use `unwrap()` for results from all `self.tx` methods because these
+                // errors are unrecoverable.
+                if let Some(frame_state) = self.tx.feed(&network_envelope).unwrap() {
+                    // Envelope was encoded successfylly, so we can store the response token.
                     // Otherwise, it will be dropped with the `Failed` reason.
                     if let Some(token) = response_token {
                         self.requests.lock().add_token(token);
+                    }
+
+                    if frame_state == FrameState::FlushAdvised {
+                        break;
                     }
                 }
 
                 item = ward!(self.rx.try_recv().unwrap(), break);
             }
 
-            // Forcibly write to the socket remaining data in the buffer, because
-            // we don't know how long we'll wait for the next message.
+            // We have either received a recommendation for a flush or there are no more
+            // messages for the time being. Since we don't know how long we'll
+            // wait for the next message, we flush in both cases.
             self.tx.flush().await.unwrap();
         }
     }

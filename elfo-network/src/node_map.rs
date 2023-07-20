@@ -50,6 +50,7 @@ impl NodeMap {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct NodeInfo {
     pub(crate) node_no: NodeNo,
     pub(crate) launch_id: LaunchId,
@@ -60,7 +61,17 @@ pub(crate) struct NodeInfo {
 #[derive(Copy, PartialEq, Eq, Display)]
 pub(crate) struct LaunchId(u64);
 
+impl From<LaunchId> for u64 {
+    fn from(value: LaunchId) -> Self {
+        value.0
+    }
+}
+
 impl LaunchId {
+    pub(crate) fn from_raw(value: u64) -> Self {
+        LaunchId(value)
+    }
+
     pub(crate) fn generate() -> Self {
         use std::{
             collections::hash_map::RandomState,
