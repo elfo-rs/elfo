@@ -7,7 +7,6 @@ use crate::codec::format::{
 use std::{convert::TryFrom, io::Cursor};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use bytes::Buf;
 use elfo_core::{
     errors::RequestError,
     Addr,
@@ -92,7 +91,7 @@ fn get_message(frame: &mut Cursor<&[u8]>) -> eyre::Result<AnyMessage> {
     let remaining_slice = &frame.get_ref()[position..];
 
     let result = AnyMessage::read_msgpack(remaining_slice, protocol, name)?;
-    frame.advance(frame.get_ref().len() - position);
+    frame.set_position(frame.get_ref().len() as u64);
 
     result.ok_or_else(|| eyre!("unknown message {}::{}", protocol, name))
 }
@@ -106,7 +105,7 @@ fn get_str<'a>(frame: &mut Cursor<&'a [u8]>) -> eyre::Result<&'a str> {
 
     let bytes_slice = &frame.get_ref()[frame.position() as usize..string_end];
     let decoded_string = std::str::from_utf8(bytes_slice)?;
-    frame.advance(len);
+    frame.set_position(frame.position() + len as u64);
     Ok(decoded_string)
 }
 

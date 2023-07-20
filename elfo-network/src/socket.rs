@@ -1,6 +1,6 @@
-use std::net::SocketAddr;
+use std::{io::Cursor, net::SocketAddr};
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use derive_more::Display;
 use elfo_core::node::NodeNo;
 use elfo_utils::likely;
@@ -8,7 +8,7 @@ use eyre::{eyre, Result, WrapErr};
 use futures::Future;
 use metrics::counter;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io,
     net::{
         tcp::{self, OwnedReadHalf, OwnedWriteHalf},
         TcpListener, TcpStream,
@@ -44,13 +44,13 @@ pub(crate) struct Handshake {
     pub(crate) capabilities: Capabilities,
 }
 
+// NOTE: 16 bytes at the end are reserved.
 const HANDSHAKE_LENGTH: usize = 39;
 const HANDSHAKE_MAGIC: u64 = 0xE1F0E1F0E1F0E1F0;
-const HANDSHAKE_RESERVED_LENGTH: usize = 16;
 
 impl Handshake {
-    pub(crate) fn make_containing_buf() -> BytesMut {
-        let mut buffer = BytesMut::new();
+    pub(crate) fn make_containing_buf() -> Vec<u8> {
+        let mut buffer = Vec::new();
         buffer.resize(HANDSHAKE_LENGTH, 0);
         buffer
     }
@@ -64,22 +64,21 @@ impl Handshake {
         }
     }
 
-    pub(crate) fn as_bytes(&self) -> Bytes {
-        let mut buf = BytesMut::with_capacity(HANDSHAKE_LENGTH);
+    pub(crate) fn as_bytes(&self) -> Result<Vec<u8>> {
+        let mut buf = Cursor::new(Self::make_containing_buf());
 
-        buf.put_u64_le(HANDSHAKE_MAGIC);
-        buf.put_u8(self.version);
-        buf.put_u16_le(self.node_no);
-        buf.put_u64_le(self.launch_id.into());
-        buf.put_u32_le(self.capabilities.bits());
-        buf.put_slice(&[0; HANDSHAKE_RESERVED_LENGTH]);
+        buf.write_u64::<LittleEndian>(HANDSHAKE_MAGIC)?;
+        buf.write_u8(self.version)?;
+        buf.write_u16::<LittleEndian>(self.node_no)?;
+        buf.write_u64::<LittleEndian>(self.launch_id.into())?;
+        buf.write_u32::<LittleEndian>(self.capabilities.bits())?;
 
-        let result = buf.freeze();
+        let result = buf.into_inner();
         debug_assert!(result.len() == HANDSHAKE_LENGTH);
-        result
+        Ok(result)
     }
 
-    pub(crate) fn from_bytes(bytes: &mut Bytes) -> Result<Self> {
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < HANDSHAKE_LENGTH {
             return Err(eyre!(
                 "expected handshake of length {}, got {} instead",
@@ -88,17 +87,18 @@ impl Handshake {
             ));
         }
 
-        if bytes.get_u64_le() != HANDSHAKE_MAGIC {
+        let mut input = Cursor::new(bytes);
+
+        if input.read_u64::<LittleEndian>()? != HANDSHAKE_MAGIC {
             return Err(eyre!("handshake magic did not match"));
         }
 
         let result = Self {
-            version: bytes.get_u8(),
-            node_no: bytes.get_u16_le(),
-            launch_id: LaunchId::from_raw(bytes.get_u64_le()),
-            capabilities: Capabilities::from_bits_truncate(bytes.get_u32_le()),
+            version: input.read_u8()?,
+            node_no: input.read_u16::<LittleEndian>()?,
+            launch_id: LaunchId::from_raw(input.read_u64::<LittleEndian>()?),
+            capabilities: Capabilities::from_bits_truncate(input.read_u32::<LittleEndian>()?),
         };
-        bytes.advance(HANDSHAKE_RESERVED_LENGTH);
 
         Ok(result)
     }
@@ -122,13 +122,12 @@ impl TcpSocket {
         capabilities: Capabilities,
     ) -> Result<Option<Socket>> {
         let this_node_handshake = Handshake::new(this_node, capabilities);
-        self.write
-            .write_all_buf(&mut this_node_handshake.as_bytes())
-            .await?;
+
+        io::AsyncWriteExt::write_all(&mut self.write, &this_node_handshake.as_bytes()?).await?;
 
         let mut buffer = Handshake::make_containing_buf();
-        self.read.read_exact(&mut buffer).await?;
-        let other_node_handshake = Handshake::from_bytes(&mut buffer.freeze())?;
+        io::AsyncReadExt::read_exact(&mut self.read, &mut buffer).await?;
+        let other_node_handshake = Handshake::from_bytes(&buffer)?;
 
         if this_node_handshake.node_no == other_node_handshake.node_no {
             return Ok(None);
@@ -242,7 +241,7 @@ impl ReadHalf {
                 }
             };
 
-            let bytes_read = self.read.read(buffer).await?;
+            let bytes_read = io::AsyncReadExt::read(&mut self.read, buffer).await?;
             if bytes_read == 0 {
                 // EOF.
                 return Ok(None);
@@ -291,15 +290,11 @@ impl WriteHalf {
     pub(crate) async fn flush(&mut self) -> Result<()> {
         let finalized = self.framing.finalize()?;
         let finalized_len = finalized.len();
-        let mut result = self
-            .write
-            .write_all(finalized)
+        let mut result = io::AsyncWriteExt::write_all(&mut self.write, finalized)
             .await
             .context("failed to write frame");
         if likely(result.is_ok()) {
-            result = self
-                .write
-                .flush()
+            result = io::AsyncWriteExt::flush(&mut self.write)
                 .await
                 .context("failed to flush the frame");
         }
