@@ -74,7 +74,7 @@ impl Handshake {
         buf.write_u32::<LittleEndian>(self.capabilities.bits())?;
 
         let result = buf.into_inner();
-        debug_assert!(result.len() == HANDSHAKE_LENGTH);
+        debug_assert_eq!(result.len(), HANDSHAKE_LENGTH);
         Ok(result)
     }
 
@@ -211,6 +211,7 @@ impl ReadHalf {
         counter!(
             "elfo_network_received_messages_total",
             stats.decode_stats.total_messages_decoded
+                + stats.decode_stats.total_messages_decoding_skipped
         );
         counter!(
             "elfo_network_skipped_messages_total",
@@ -305,19 +306,20 @@ impl WriteHalf {
             stats.encode_stats.total_messages_encoding_skipped
         );
 
+        let mut total_messages_sent = stats.encode_stats.total_messages_encoding_skipped;
         if likely(result.is_ok()) {
             trace!(message = "wrote bytes to socket", count = finalized_len);
 
             counter!("elfo_network_sent_bytes_total", finalized_len as u64);
             counter!(
-                "elfo_network_sent_messages_total",
-                stats.encode_stats.total_messages_encoded
-            );
-            counter!(
                 "elfo_network_sent_uncompressed_bytes_total",
                 stats.compress_stats.total_uncompressed_bytes
             );
+
+            total_messages_sent += stats.encode_stats.total_messages_encoded;
         }
+
+        counter!("elfo_network_sent_messages_total", total_messages_sent);
 
         result
     }
