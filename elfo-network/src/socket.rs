@@ -122,7 +122,6 @@ impl TcpSocket {
         capabilities: Capabilities,
     ) -> Result<Option<Socket>> {
         let this_node_handshake = Handshake::new(this_node, capabilities);
-
         io::AsyncWriteExt::write_all(&mut self.write, &this_node_handshake.as_bytes()?).await?;
 
         let mut buffer = Handshake::make_containing_buf();
