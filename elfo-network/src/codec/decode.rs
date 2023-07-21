@@ -14,7 +14,7 @@ use elfo_core::{
     tracing::TraceId,
 };
 use elfo_utils::likely;
-use eyre::{bail, ensure, eyre, WrapErr};
+use eyre::{ensure, eyre, WrapErr};
 use tracing::error;
 
 #[derive(Default)]
@@ -67,33 +67,70 @@ pub(crate) fn decode(input: &[u8], stats: &mut DecodeStats) -> eyre::Result<Deco
 
     stats.total_messages_decoding_skipped += 1;
 
-    let err = decode_result.unwrap_err();
-    // TODO: cooldown/metrics, more info (protocol and name if available)
+    let error = decode_result.unwrap_err();
+    // TODO: cooldown/metrics.
     error!(
         message = "cannot decode message, skipping",
-        error = format!("{:#}", err)
+        error = format!("{:#}", error.error),
+        protocol = %error.protocol.as_deref().unwrap_or("<unknown>"),
+        name = %error.name.as_deref().unwrap_or("<unknown>"),
     );
     Ok(DecodeState::Skipped {
         bytes_consumed: size,
     })
 }
 
+#[derive(Debug)]
+struct DecodeError {
+    protocol: Option<String>,
+    name: Option<String>,
+    error: eyre::Report,
+}
+
+impl<T> From<T> for DecodeError
+where
+    T: Into<eyre::Report>,
+{
+    fn from(error: T) -> Self {
+        Self {
+            protocol: None,
+            name: None,
+            error: error.into(),
+        }
+    }
+}
+
 fn get_request_id(frame: &mut Cursor<&[u8]>) -> eyre::Result<RequestId> {
     Ok(RequestId::from_ffi(frame.read_u64::<LittleEndian>()?))
 }
 
-fn get_message(frame: &mut Cursor<&[u8]>) -> eyre::Result<AnyMessage> {
+fn get_message(frame: &mut Cursor<&[u8]>) -> Result<AnyMessage, DecodeError> {
     let protocol = get_str(frame).wrap_err("invalid message protocol")?;
-    let name = get_str(frame).wrap_err("invalid message name")?;
+    let name = get_str(frame)
+        .wrap_err("invalid message name")
+        .map_err(|error| DecodeError {
+            protocol: Some(protocol.to_string()),
+            name: None,
+            error,
+        })?;
 
     // TODO: replace with `Cursor::remaining_slice` once it becomes stable.
     let position = frame.position() as usize;
     let remaining_slice = &frame.get_ref()[position..];
 
-    let result = AnyMessage::read_msgpack(remaining_slice, protocol, name)?;
+    let result =
+        AnyMessage::read_msgpack(remaining_slice, protocol, name).map_err(|error| DecodeError {
+            protocol: Some(protocol.to_string()),
+            name: Some(name.to_string()),
+            error: error.into(),
+        })?;
     frame.set_position(frame.get_ref().len() as u64);
 
-    result.ok_or_else(|| eyre!("unknown message {}::{}", protocol, name))
+    result.ok_or_else(|| DecodeError {
+        protocol: Some(protocol.to_string()),
+        name: Some(name.to_string()),
+        error: eyre!("unknown message"),
+    })
 }
 
 fn get_str<'a>(frame: &mut Cursor<&'a [u8]>) -> eyre::Result<&'a str> {
@@ -109,7 +146,7 @@ fn get_str<'a>(frame: &mut Cursor<&'a [u8]>) -> eyre::Result<&'a str> {
     Ok(decoded_string)
 }
 
-fn do_decode(frame: &mut Cursor<&[u8]>) -> eyre::Result<NetworkEnvelope> {
+fn do_decode(frame: &mut Cursor<&[u8]>) -> Result<NetworkEnvelope, DecodeError> {
     let flags = frame.read_u8()?;
     let kind = flags & KIND_MASK;
 
@@ -146,7 +183,7 @@ fn do_decode(frame: &mut Cursor<&[u8]>) -> eyre::Result<NetworkEnvelope> {
             message: Err(RequestError::Ignored),
             is_last: flags & FLAG_IS_LAST_RESPONSE != 0,
         },
-        n => bail!("invalid message kind: {n}"),
+        n => return Err(eyre!("invalid message kind: {n}").into()),
     };
 
     Ok(NetworkEnvelope {
