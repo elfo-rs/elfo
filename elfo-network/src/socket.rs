@@ -2,8 +2,6 @@ use std::{io::Cursor, net::SocketAddr};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use derive_more::Display;
-use elfo_core::node::NodeNo;
-use elfo_utils::likely;
 use eyre::{eyre, Result, WrapErr};
 use futures::Future;
 use metrics::counter;
@@ -15,6 +13,9 @@ use tokio::{
     },
 };
 use tracing::{error, info, trace, warn};
+
+use elfo_core::node::NodeNo;
+use elfo_utils::likely;
 
 use crate::{
     codec::{encode::EncodeError, format::NetworkEnvelope},
@@ -30,8 +31,8 @@ use crate::{
 
 bitflags::bitflags! {
     #[derive(Clone, Copy)]
-    pub struct Capabilities: u32 {
-        const LZ4 = 0b01;
+    pub(crate) struct Capabilities: u32 {
+        const LZ4 = 1 << 8;
     }
 }
 
