@@ -48,7 +48,7 @@ pub(crate) fn encode(
 
     stats.total_messages_encoding_skipped += 1;
 
-    let err = res.unwrap_err();
+    let error = res.unwrap_err();
 
     // TODO: if the limit is reached, we need also to release memory of the buffer.
 
@@ -59,9 +59,9 @@ pub(crate) fn encode(
     let (protocol, name) = envelope.payload.protocol_and_name();
     error!(
         message = "cannot encode message, skipping",
-        error = %err,
-        protocol = %protocol,
-        name = %name,
+        error = format!("{:#}", error),
+        %protocol,
+        %name,
     );
     Err(EncodeError::Skipped)
 }
