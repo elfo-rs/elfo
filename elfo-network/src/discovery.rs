@@ -17,7 +17,7 @@ use crate::{
         internode::{self, GroupInfo},
         HandleConnection,
     },
-    socket::{self, Socket},
+    socket::{self, ReadError, Socket},
     NetworkContext,
 };
 
@@ -400,6 +400,10 @@ async fn recv(socket: &mut Socket) -> Result<Envelope> {
         .read
         .recv()
         .await
+        .map_err(|e| match e {
+            ReadError::RequestSkipped(..) => eyre!("failed to decode request"),
+            ReadError::Fatal(report) => report,
+        })
         .wrap_err("cannot receive a message")?
         .ok_or_else(|| eyre!("connection closed before receiving any messages"))?;
 

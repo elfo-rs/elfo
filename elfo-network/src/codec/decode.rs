@@ -25,6 +25,13 @@ pub(crate) struct DecodeStats {
     pub(crate) total_messages_decoding_skipped: u64,
 }
 
+#[derive(Debug)]
+pub(crate) struct RequestDetails {
+    pub(crate) sender: Addr,
+    pub(crate) request_id: RequestId,
+    pub(crate) trace_id: TraceId,
+}
+
 pub(crate) enum DecodeState {
     /// Buffer needs to contain at least `total_length_estimate` bytes in total
     /// in order for the decoder to make progress.
@@ -32,6 +39,11 @@ pub(crate) enum DecodeState {
     /// There was a non-fatal error while decoding a message residing in
     /// `bytes_consumed` bytes, so it was skipped.
     Skipped { bytes_consumed: usize },
+    /// Same as `Skipped`, but with extra details for requests.
+    RequestSkipped {
+        bytes_consumed: usize,
+        details: RequestDetails,
+    },
     /// Decoder decoded a value, which occupied `bytes_consumed` bytes in the
     /// buffer.
     Done {
@@ -75,15 +87,24 @@ pub(crate) fn decode(input: &[u8], stats: &mut DecodeStats) -> eyre::Result<Deco
         protocol = %error.protocol.as_deref().unwrap_or("<unknown>"),
         name = %error.name.as_deref().unwrap_or("<unknown>"),
     );
-    Ok(DecodeState::Skipped {
-        bytes_consumed: size,
-    })
+
+    if let Some(details) = error.request {
+        Ok(DecodeState::RequestSkipped {
+            bytes_consumed: size,
+            details,
+        })
+    } else {
+        Ok(DecodeState::Skipped {
+            bytes_consumed: size,
+        })
+    }
 }
 
 #[derive(Debug)]
 struct DecodeError {
     protocol: Option<String>,
     name: Option<String>,
+    request: Option<RequestDetails>,
     error: eyre::Report,
 }
 
@@ -95,6 +116,7 @@ where
         Self {
             protocol: None,
             name: None,
+            request: None,
             error: error.into(),
         }
     }
@@ -111,6 +133,7 @@ fn get_message(frame: &mut Cursor<&[u8]>) -> Result<AnyMessage, DecodeError> {
         .map_err(|error| DecodeError {
             protocol: Some(protocol.to_string()),
             name: None,
+            request: None,
             error,
         })?;
 
@@ -122,6 +145,7 @@ fn get_message(frame: &mut Cursor<&[u8]>) -> Result<AnyMessage, DecodeError> {
         AnyMessage::read_msgpack(remaining_slice, protocol, name).map_err(|error| DecodeError {
             protocol: Some(protocol.to_string()),
             name: Some(name.to_string()),
+            request: None,
             error: error.into(),
         })?;
     frame.set_position(frame.get_ref().len() as u64);
@@ -129,6 +153,7 @@ fn get_message(frame: &mut Cursor<&[u8]>) -> Result<AnyMessage, DecodeError> {
     result.ok_or_else(|| DecodeError {
         protocol: Some(protocol.to_string()),
         name: Some(name.to_string()),
+        request: None,
         error: eyre!("unknown message"),
     })
 }
@@ -160,14 +185,40 @@ fn do_decode(frame: &mut Cursor<&[u8]>) -> Result<NetworkEnvelope, DecodeError> 
         KIND_REGULAR => Regular {
             message: get_message(frame)?,
         },
-        KIND_REQUEST_ANY => RequestAny {
-            request_id: get_request_id(frame)?,
-            message: get_message(frame)?,
-        },
-        KIND_REQUEST_ALL => RequestAll {
-            request_id: get_request_id(frame)?,
-            message: get_message(frame)?,
-        },
+        KIND_REQUEST_ANY => {
+            let request_id = get_request_id(frame)?;
+            match get_message(frame) {
+                Ok(message) => RequestAny {
+                    request_id,
+                    message,
+                },
+                Err(mut e) => {
+                    e.request = Some(RequestDetails {
+                        sender,
+                        request_id,
+                        trace_id,
+                    });
+                    return Err(e);
+                }
+            }
+        }
+        KIND_REQUEST_ALL => {
+            let request_id = get_request_id(frame)?;
+            match get_message(frame) {
+                Ok(message) => RequestAll {
+                    request_id,
+                    message,
+                },
+                Err(mut e) => {
+                    e.request = Some(RequestDetails {
+                        sender,
+                        request_id,
+                        trace_id,
+                    });
+                    return Err(e);
+                }
+            }
+        }
         KIND_RESPONSE_OK => Response {
             request_id: get_request_id(frame)?,
             message: Ok(get_message(frame)?),

@@ -449,6 +449,12 @@ cfg_network!({
         nodes: Option<Nodes>,
     }
 
+    impl<'a> RegisterRemoteGroupGuard<'a> {
+        pub fn handle_addr(&self) -> Addr {
+            self.handle_addr
+        }
+    }
+
     impl Drop for RegisterRemoteGroupGuard<'_> {
         fn drop(&mut self) {
             // Disable direct messaging.

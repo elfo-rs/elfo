@@ -30,7 +30,7 @@ use crate::{
     frame::write::FrameState,
     protocol::{internode, HandleConnection},
     rtt::Rtt,
-    socket::{ReadHalf, WriteHalf},
+    socket::{ReadError, ReadHalf, WriteHalf},
     NetworkContext,
 };
 
@@ -94,7 +94,7 @@ impl Connection {
             tx: local_tx.clone(),
             tx_flows: tx_flows.clone(),
         };
-        let _guard = self.topology.register_remote(
+        let remote_group_guard = self.topology.register_remote(
             self.local.0,
             (self.remote.0, self.remote.1),
             &self.remote.2,
@@ -127,6 +127,7 @@ impl Connection {
             tx_flows: tx_flows.clone(),
             rx_flows: rx_flows.clone(),
             requests,
+            handle_addr: remote_group_guard.handle_addr(),
         };
         self.ctx.attach(Stream::once(sr.exec()));
 
@@ -331,12 +332,44 @@ struct SocketReader {
     tx_flows: Arc<TxFlows>,
     rx_flows: Arc<Mutex<RxFlows>>,
     requests: Arc<Mutex<OutgoingRequests>>,
+    handle_addr: Addr,
 }
 
 impl SocketReader {
     async fn exec(mut self) -> ConnectionClosed {
-        // TODO: error handling.
-        while let Some(network_envelope) = self.rx.recv().await.unwrap() {
+        loop {
+            let network_envelope = match self.rx.recv().await {
+                Ok(Some(envelope)) => envelope,
+                Ok(None) => break,
+                Err(ReadError::RequestSkipped(details)) => {
+                    scope::set_trace_id(details.trace_id);
+                    // If there was an error while decoding a request, we need to notify the remote
+                    // actor in order to avoid waiting for a response indefinitely.
+                    let sender = self
+                        .ctx
+                        .book()
+                        .get(self.handle_addr)
+                        .expect("bug: remote group is missing in the address book");
+                    let token = ResponseToken::new(
+                        details.sender,
+                        details.request_id,
+                        details.trace_id,
+                        self.ctx.book().clone(),
+                    );
+                    sender.respond(token, Err(RequestError::Failed));
+                    error!(
+                        message = "received an invalid request, sender is notified",
+                        sender = %details.sender,
+                        request_id = ?details.request_id,
+                    );
+                    continue;
+                }
+                Err(ReadError::Fatal(e)) => {
+                    // TODO: error handling.
+                    panic!("fatal error while reading from socket: {:#}", e);
+                }
+            };
+
             scope::set_trace_id(network_envelope.trace_id);
 
             let (sender, recipient) = (network_envelope.sender, network_envelope.recipient);

@@ -1,7 +1,7 @@
 use crate::{
     codec::{
         self,
-        decode::{DecodeState, DecodeStats},
+        decode::{DecodeState, DecodeStats, RequestDetails},
         format::NetworkEnvelope,
     },
     frame::{
@@ -31,6 +31,10 @@ pub(crate) enum FramedReadState<'a> {
     /// The stategy needs more data written at the beginning of the specified
     /// `buffer`.
     NeedMoreData { buffer: &'a mut [u8] },
+    /// The strategy failed to read a request message. This requires special
+    /// handling by the caller to ensure that the remote actor does not wait
+    /// indefinitely for a response that is not coming.
+    RequestSkipped(RequestDetails),
     /// The strategy successfully decoded an envelope from the frame.
     Done { decoded: NetworkEnvelope },
 }
@@ -153,6 +157,13 @@ impl FramedReadStrategy for LZ4FramedRead {
                         self.position += bytes_consumed;
                         continue 'decoding;
                     }
+                    DecodeState::RequestSkipped {
+                        bytes_consumed,
+                        details,
+                    } => {
+                        self.position += bytes_consumed;
+                        return Ok(FramedReadState::RequestSkipped(details));
+                    }
                     DecodeState::Done {
                         bytes_consumed,
                         decoded,
@@ -208,6 +219,14 @@ impl FramedReadStrategy for NoneFramedRead {
                     self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
                     self.buffer.consume_filled(bytes_consumed);
                     continue;
+                }
+                DecodeState::RequestSkipped {
+                    bytes_consumed,
+                    details,
+                } => {
+                    self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
+                    self.buffer.consume_filled(bytes_consumed);
+                    return Ok(FramedReadState::RequestSkipped(details));
                 }
                 DecodeState::Done {
                     bytes_consumed,

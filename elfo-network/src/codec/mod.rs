@@ -75,6 +75,9 @@ mod tests {
                 DecodeState::Skipped { .. } => {
                     panic!("there was a non-fatal error when decoding a message");
                 }
+                DecodeState::RequestSkipped { .. } => {
+                    panic!("message was decoded as a request");
+                }
                 DecodeState::NeedMoreData { .. } => {
                     panic!("decoder requested more data that there was available")
                 }
