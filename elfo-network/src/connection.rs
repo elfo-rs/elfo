@@ -27,8 +27,8 @@ use self::{
 };
 use crate::{
     codec::{
-        decode::RequestDetails,
-        format::{NetworkEnvelope, NetworkEnvelopePayload},
+        decode::EnvelopeDetails,
+        format::{NetworkEnvelope, NetworkEnvelopePayload, KIND_REQUEST_ALL, KIND_REQUEST_ANY},
     },
     frame::write::FrameState,
     protocol::{internode, HandleConnection},
@@ -344,8 +344,8 @@ impl SocketReader {
             let network_envelope = match self.rx.recv().await {
                 Ok(Some(envelope)) => envelope,
                 Ok(None) => break,
-                Err(ReadError::RequestSkipped(details)) => {
-                    self.notify_failed_request(details);
+                Err(ReadError::EnvelopeSkipped(details)) => {
+                    self.handle_skipped_envelope(details);
                     continue;
                 }
                 Err(ReadError::Fatal(e)) => {
@@ -378,32 +378,47 @@ impl SocketReader {
         ConnectionClosed
     }
 
-    /// Notifies remote actor that the request failed because of a decoding
-    /// error. This is done in order to avoid waiting for a response
-    /// indefinitely from the remote actor side.
-    fn notify_failed_request(&self, details: RequestDetails) {
-        scope::set_trace_id(details.trace_id);
-        let sender = self
-            .ctx
-            .book()
-            .get(self.handle_addr)
-            .expect("bug: remote group is missing in the address book");
-        let token = ResponseToken::new(
-            details.sender,
-            details.request_id,
-            details.trace_id,
-            self.ctx.book().clone(),
-        );
-        // This can be the first time we have received a message from this sender,
-        // so we need to introduce the flow which will be used in `sender.respond()`
-        // below.
-        self.tx_flows.add_flow_if_needed(details.sender);
-        sender.respond(token, Err(RequestError::Failed));
-        debug!(
-            message = "received an invalid request, sender is notified",
-            sender = %details.sender,
-            request_id = ?details.request_id,
-        );
+    /// Ensures that messages that were skipped due to errors during decoding
+    /// are properly accounted for in flow control. Also notifies the remote
+    /// actor if the message was a request in order to avoid indefinite
+    /// waiting from the remote actor's side.
+    fn handle_skipped_envelope(&self, details: EnvelopeDetails) {
+        let update_flow = {
+            let mut rx_flows = self.rx_flows.lock();
+            if details.recipient == Addr::NULL {
+                rx_flows.acquire_routed(true);
+                rx_flows.release_routed()
+            } else {
+                let mut rx_flow = rx_flows.get_or_create_flow(details.recipient);
+                rx_flow.acquire_direct(true);
+                rx_flow.release_direct()
+            }
+        };
+
+        if let Some(envelope) = update_flow.map(make_system_envelope) {
+            let item = KanalItem::simple(Addr::NULL, envelope);
+            self.tx.try_send(item).unwrap();
+        }
+
+        if details.kind == KIND_REQUEST_ALL || details.kind == KIND_REQUEST_ANY {
+            scope::set_trace_id(details.trace_id);
+            let sender = self
+                .ctx
+                .book()
+                .get(self.handle_addr)
+                .expect("bug: remote group is missing in the address book");
+            let token = ResponseToken::new(
+                details.sender,
+                details.request_id.expect("bug: request_id is missing"),
+                details.trace_id,
+                self.ctx.book().clone(),
+            );
+            // This can be the first time we have received a message from this sender,
+            // so we need to introduce the flow which will be used in `sender.respond()`
+            // below.
+            self.tx_flows.add_flow_if_needed(details.sender);
+            sender.respond(token, Err(RequestError::Failed));
+        }
     }
 
     fn make_envelope(&self, network_envelope: NetworkEnvelope) -> Option<Envelope> {

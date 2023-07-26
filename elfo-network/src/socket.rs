@@ -18,7 +18,7 @@ use elfo_core::node::NodeNo;
 use elfo_utils::likely;
 
 use crate::{
-    codec::{decode::RequestDetails, encode::EncodeError, format::NetworkEnvelope},
+    codec::{decode::EnvelopeDetails, encode::EncodeError, format::NetworkEnvelope},
     config::Transport,
     frame::{
         read::{FramedRead, FramedReadState, FramedReadStrategy},
@@ -207,7 +207,7 @@ impl ReadHalf {
 
 #[derive(Debug)]
 pub(crate) enum ReadError {
-    RequestSkipped(RequestDetails),
+    EnvelopeSkipped(EnvelopeDetails),
     Fatal(eyre::Report),
 }
 
@@ -241,8 +241,8 @@ impl ReadHalf {
                     trace!(message = "framed read strategy requested more data");
                     buffer
                 }
-                FramedReadState::RequestSkipped(details) => {
-                    return Err(ReadError::RequestSkipped(details))
+                FramedReadState::EnvelopeSkipped(details) => {
+                    return Err(ReadError::EnvelopeSkipped(details));
                 }
                 FramedReadState::Done { decoded } => {
                     let (protocol, name) = decoded.payload.protocol_and_name();

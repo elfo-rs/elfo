@@ -75,9 +75,6 @@ mod tests {
                 DecodeState::Skipped { .. } => {
                     panic!("there was a non-fatal error when decoding a message");
                 }
-                DecodeState::RequestSkipped { .. } => {
-                    panic!("message was decoded as a request");
-                }
                 DecodeState::NeedMoreData { .. } => {
                     panic!("decoder requested more data that there was available")
                 }
@@ -133,7 +130,7 @@ mod tests {
         }
 
         let state = decode(&bytes[message_size..], &mut Default::default()).unwrap();
-        if let DecodeState::Skipped { bytes_consumed } = state {
+        if let DecodeState::Skipped { bytes_consumed, .. } = state {
             assert_eq!(bytes_consumed, message_size);
         } else {
             panic!("expected the second message to be skipped");

@@ -23,7 +23,7 @@ fn producer() -> Blueprint {
                         Err(err) => warn!("cannot say hello: {}", err),
                     }
 
-                    match ctx.request(AskName).resolve().await {
+                    match ctx.request(AskName(0)).resolve().await {
                         Ok(name) => info!("received name: {}", name),
                         Err(err) => warn!("cannot ask name: {}", err),
                     }

@@ -401,7 +401,7 @@ async fn recv(socket: &mut Socket) -> Result<Envelope> {
         .recv()
         .await
         .map_err(|e| match e {
-            ReadError::RequestSkipped(..) => eyre!("failed to decode request"),
+            ReadError::EnvelopeSkipped(..) => eyre!("failed to decode message"),
             ReadError::Fatal(report) => report,
         })
         .wrap_err("cannot receive a message")?

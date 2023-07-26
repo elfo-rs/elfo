@@ -1,7 +1,7 @@
 use crate::{
     codec::{
         self,
-        decode::{DecodeState, DecodeStats, RequestDetails},
+        decode::{DecodeState, DecodeStats, EnvelopeDetails},
         format::NetworkEnvelope,
     },
     frame::{
@@ -34,7 +34,7 @@ pub(crate) enum FramedReadState<'a> {
     /// The strategy failed to read a request message. This requires special
     /// handling by the caller to ensure that the remote actor does not wait
     /// indefinitely for a response that is not coming.
-    RequestSkipped(RequestDetails),
+    EnvelopeSkipped(EnvelopeDetails),
     /// The strategy successfully decoded an envelope from the frame.
     Done { decoded: NetworkEnvelope },
 }
@@ -153,16 +153,16 @@ impl FramedReadStrategy for LZ4FramedRead {
                             ));
                         }
                     }
-                    DecodeState::Skipped { bytes_consumed } => {
-                        self.position += bytes_consumed;
-                        continue 'decoding;
-                    }
-                    DecodeState::RequestSkipped {
+                    DecodeState::Skipped {
                         bytes_consumed,
                         details,
                     } => {
                         self.position += bytes_consumed;
-                        return Ok(FramedReadState::RequestSkipped(details));
+                        if let Some(details) = details {
+                            return Ok(FramedReadState::EnvelopeSkipped(details));
+                        } else {
+                            continue 'decoding;
+                        }
                     }
                     DecodeState::Done {
                         bytes_consumed,
@@ -215,18 +215,17 @@ impl FramedReadStrategy for NoneFramedRead {
                         buffer: self.buffer.extend_to_contain(total_length_estimate),
                     });
                 }
-                DecodeState::Skipped { bytes_consumed } => {
-                    self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
-                    self.buffer.consume_filled(bytes_consumed);
-                    continue;
-                }
-                DecodeState::RequestSkipped {
+                DecodeState::Skipped {
                     bytes_consumed,
                     details,
                 } => {
                     self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
                     self.buffer.consume_filled(bytes_consumed);
-                    return Ok(FramedReadState::RequestSkipped(details));
+                    if let Some(details) = details {
+                        return Ok(FramedReadState::EnvelopeSkipped(details));
+                    } else {
+                        continue;
+                    }
                 }
                 DecodeState::Done {
                     bytes_consumed,
