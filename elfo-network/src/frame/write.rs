@@ -170,6 +170,7 @@ impl FramedWriteStrategy for NoneFramedWrite {
 
     fn finalize(&mut self) -> Result<&[u8]> {
         self.after_finalize = true;
+        self.stats.compress_stats.total_uncompressed_bytes += self.buffer.len() as u64;
         Ok(&self.buffer)
     }
 

@@ -18,7 +18,7 @@ use elfo_core::node::NodeNo;
 use elfo_utils::likely;
 
 use crate::{
-    codec::{encode::EncodeError, format::NetworkEnvelope},
+    codec::{decode::EnvelopeDetails, encode::EncodeError, format::NetworkEnvelope},
     config::Transport,
     frame::{
         read::{FramedRead, FramedReadState, FramedReadStrategy},
@@ -205,6 +205,21 @@ impl ReadHalf {
     }
 }
 
+#[derive(Debug)]
+pub(crate) enum ReadError {
+    EnvelopeSkipped(EnvelopeDetails),
+    Fatal(eyre::Report),
+}
+
+impl<T> From<T> for ReadError
+where
+    T: Into<eyre::Report>,
+{
+    fn from(error: T) -> Self {
+        Self::Fatal(error.into())
+    }
+}
+
 impl ReadHalf {
     fn report_framing_metrics(&mut self) {
         let stats = self.framing.take_stats();
@@ -219,12 +234,15 @@ impl ReadHalf {
         );
     }
 
-    pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>> {
+    pub(crate) async fn recv(&mut self) -> Result<Option<NetworkEnvelope>, ReadError> {
         let envelope = loop {
             let buffer = match self.framing.read()? {
                 FramedReadState::NeedMoreData { buffer } => {
                     trace!(message = "framed read strategy requested more data");
                     buffer
+                }
+                FramedReadState::EnvelopeSkipped(details) => {
+                    return Err(ReadError::EnvelopeSkipped(details));
                 }
                 FramedReadState::Done { decoded } => {
                     let (protocol, name) = decoded.payload.protocol_and_name();

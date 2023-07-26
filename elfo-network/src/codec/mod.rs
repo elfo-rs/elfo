@@ -130,7 +130,7 @@ mod tests {
         }
 
         let state = decode(&bytes[message_size..], &mut Default::default()).unwrap();
-        if let DecodeState::Skipped { bytes_consumed } = state {
+        if let DecodeState::Skipped { bytes_consumed, .. } = state {
             assert_eq!(bytes_consumed, message_size);
         } else {
             panic!("expected the second message to be skipped");

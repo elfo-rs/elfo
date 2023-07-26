@@ -1,7 +1,7 @@
 use crate::{
     codec::{
         self,
-        decode::{DecodeState, DecodeStats},
+        decode::{DecodeState, DecodeStats, EnvelopeDetails},
         format::NetworkEnvelope,
     },
     frame::{
@@ -31,6 +31,8 @@ pub(crate) enum FramedReadState<'a> {
     /// The stategy needs more data written at the beginning of the specified
     /// `buffer`.
     NeedMoreData { buffer: &'a mut [u8] },
+    /// The strategy failed to decode an envelope.
+    EnvelopeSkipped(EnvelopeDetails),
     /// The strategy successfully decoded an envelope from the frame.
     Done { decoded: NetworkEnvelope },
 }
@@ -149,9 +151,16 @@ impl FramedReadStrategy for LZ4FramedRead {
                             ));
                         }
                     }
-                    DecodeState::Skipped { bytes_consumed } => {
+                    DecodeState::Skipped {
+                        bytes_consumed,
+                        details,
+                    } => {
                         self.position += bytes_consumed;
-                        continue 'decoding;
+                        if let Some(details) = details {
+                            return Ok(FramedReadState::EnvelopeSkipped(details));
+                        } else {
+                            continue 'decoding;
+                        }
                     }
                     DecodeState::Done {
                         bytes_consumed,
@@ -204,10 +213,17 @@ impl FramedReadStrategy for NoneFramedRead {
                         buffer: self.buffer.extend_to_contain(total_length_estimate),
                     });
                 }
-                DecodeState::Skipped { bytes_consumed } => {
+                DecodeState::Skipped {
+                    bytes_consumed,
+                    details,
+                } => {
                     self.stats.decompress_stats.total_uncompressed_bytes += bytes_consumed as u64;
                     self.buffer.consume_filled(bytes_consumed);
-                    continue;
+                    if let Some(details) = details {
+                        return Ok(FramedReadState::EnvelopeSkipped(details));
+                    } else {
+                        continue;
+                    }
                 }
                 DecodeState::Done {
                     bytes_consumed,
