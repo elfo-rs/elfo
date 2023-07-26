@@ -394,6 +394,10 @@ impl SocketReader {
             details.trace_id,
             self.ctx.book().clone(),
         );
+        // This can be the first time we have received a message from this sender,
+        // so we need to introduce the flow which will be used in `sender.respond()`
+        // below.
+        self.tx_flows.add_flow_if_needed(details.sender);
         sender.respond(token, Err(RequestError::Failed));
         debug!(
             message = "received an invalid request, sender is notified",
@@ -475,6 +479,8 @@ impl SocketReader {
                     )
                 });
 
+                // Since this is a response to a request which originated from this node,
+                // all the neccessary flows have been already added.
                 object.respond(token, envelope);
                 return None;
             }

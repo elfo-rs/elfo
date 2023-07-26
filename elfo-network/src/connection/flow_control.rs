@@ -1,3 +1,31 @@
+//! Implements data flow control for connections to remote actor groups.
+//!
+//! The basic idea is that we want to adjust the amount of traffic local actor
+//! sends to another node according to the processing rate of the remote actor.
+//! This is important for two reasons:
+//!  1. Avoid overwhelming slow remote actor with lots of messages from a fast
+//!     local actor
+//!  2. Avoid network congestion
+//!
+//! This is implemented by maintaining two "windows": one for sender and one for
+//! the receiver. Window is an estimate of how much messages the receiver can
+//! handle during some period of time, implemented as a semaphore. Before
+//! sending a message, sender needs to acquire budget from the window. When the
+//! receiver acknowledges that a message was processed, budget gets released
+//! into the window.
+//!
+//! Lastly, there are two ways sender can send a message: bounded and unbounded.
+//! Bounded send waits until there is enough budget in the sender's window
+//! before sending the message. Unbounded send always gets the budget
+//! immediately, even if there is zero available. This can lead to window size
+//! being a negative number.
+//!
+//! See `TxFlowControl` and `RxFlowControl` for implementations of sender's and
+//! receiver's windows respectively.
+//!
+//! If none of this makes sense, see https://en.wikipedia.org/wiki/Flow_control_(data) and
+//! https://en.wikipedia.org/wiki/Sliding_window_protocol for a more elaborate explanation.
+
 use std::sync::atomic::{AtomicI32, Ordering};
 
 // We don't want to send window updates for tiny changes, but instead
