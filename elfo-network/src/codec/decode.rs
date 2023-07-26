@@ -81,19 +81,27 @@ pub(crate) fn decode(input: &[u8], stats: &mut DecodeStats) -> eyre::Result<Deco
 
     let error = decode_result.unwrap_err();
     // TODO: cooldown/metrics.
-    error!(
-        message = "cannot decode message, skipping",
-        error = format!("{:#}", error.error),
-        protocol = %error.protocol.as_deref().unwrap_or("<unknown>"),
-        name = %error.name.as_deref().unwrap_or("<unknown>"),
-    );
-
     if let Some(details) = error.request {
+        error!(
+            message = "cannot decode request, skipping",
+            error = format!("{:#}", error.error),
+            protocol = %error.protocol.as_deref().unwrap_or("<unknown>"),
+            name = %error.name.as_deref().unwrap_or("<unknown>"),
+            request_id = ?details.request_id,
+            sender = %details.sender,
+            trace_id = %details.trace_id,
+        );
         Ok(DecodeState::RequestSkipped {
             bytes_consumed: size,
             details,
         })
     } else {
+        error!(
+            message = "cannot decode message, skipping",
+            error = format!("{:#}", error.error),
+            protocol = %error.protocol.as_deref().unwrap_or("<unknown>"),
+            name = %error.name.as_deref().unwrap_or("<unknown>"),
+        );
         Ok(DecodeState::Skipped {
             bytes_consumed: size,
         })

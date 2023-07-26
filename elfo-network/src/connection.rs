@@ -26,7 +26,10 @@ use self::{
     requests::OutgoingRequests,
 };
 use crate::{
-    codec::format::{NetworkEnvelope, NetworkEnvelopePayload},
+    codec::{
+        decode::RequestDetails,
+        format::{NetworkEnvelope, NetworkEnvelopePayload},
+    },
     frame::write::FrameState,
     protocol::{internode, HandleConnection},
     rtt::Rtt,
@@ -118,6 +121,7 @@ impl Connection {
                 .map(|g| g.addr)
                 .find(|a| a.group_no() == self.local.0)
                 .expect("invalid local group"),
+            handle_addr: remote_group_guard.handle_addr(),
             time_origin,
             // TODO: the number of samples should be calculated based on telemetry scrape
             //       interval, but it's not povideded for now by the elfo core.
@@ -127,7 +131,6 @@ impl Connection {
             tx_flows: tx_flows.clone(),
             rx_flows: rx_flows.clone(),
             requests,
-            handle_addr: remote_group_guard.handle_addr(),
         };
         self.ctx.attach(Stream::once(sr.exec()));
 
@@ -325,6 +328,7 @@ fn make_network_envelope(item: KanalItem) -> (NetworkEnvelope, Option<ResponseTo
 struct SocketReader {
     ctx: Context,
     group_addr: Addr,
+    handle_addr: Addr,
     time_origin: Instant,
     rtt: Rtt,
     rx: ReadHalf,
@@ -332,7 +336,6 @@ struct SocketReader {
     tx_flows: Arc<TxFlows>,
     rx_flows: Arc<Mutex<RxFlows>>,
     requests: Arc<Mutex<OutgoingRequests>>,
-    handle_addr: Addr,
 }
 
 impl SocketReader {
@@ -342,26 +345,7 @@ impl SocketReader {
                 Ok(Some(envelope)) => envelope,
                 Ok(None) => break,
                 Err(ReadError::RequestSkipped(details)) => {
-                    scope::set_trace_id(details.trace_id);
-                    // If there was an error while decoding a request, we need to notify the remote
-                    // actor in order to avoid waiting for a response indefinitely.
-                    let sender = self
-                        .ctx
-                        .book()
-                        .get(self.handle_addr)
-                        .expect("bug: remote group is missing in the address book");
-                    let token = ResponseToken::new(
-                        details.sender,
-                        details.request_id,
-                        details.trace_id,
-                        self.ctx.book().clone(),
-                    );
-                    sender.respond(token, Err(RequestError::Failed));
-                    error!(
-                        message = "received an invalid request, sender is notified",
-                        sender = %details.sender,
-                        request_id = ?details.request_id,
-                    );
+                    self.notify_failed_request(details);
                     continue;
                 }
                 Err(ReadError::Fatal(e)) => {
@@ -392,6 +376,30 @@ impl SocketReader {
         }
 
         ConnectionClosed
+    }
+
+    /// Notifies remote actor that the request failed because of a decoding
+    /// error. This is done in order to avoid waiting for a response
+    /// indefinitely from the remote actor side.
+    fn notify_failed_request(&self, details: RequestDetails) {
+        scope::set_trace_id(details.trace_id);
+        let sender = self
+            .ctx
+            .book()
+            .get(self.handle_addr)
+            .expect("bug: remote group is missing in the address book");
+        let token = ResponseToken::new(
+            details.sender,
+            details.request_id,
+            details.trace_id,
+            self.ctx.book().clone(),
+        );
+        sender.respond(token, Err(RequestError::Failed));
+        debug!(
+            message = "received an invalid request, sender is notified",
+            sender = %details.sender,
+            request_id = ?details.request_id,
+        );
     }
 
     fn make_envelope(&self, network_envelope: NetworkEnvelope) -> Option<Envelope> {
