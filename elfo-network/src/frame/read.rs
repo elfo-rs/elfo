@@ -31,9 +31,7 @@ pub(crate) enum FramedReadState<'a> {
     /// The stategy needs more data written at the beginning of the specified
     /// `buffer`.
     NeedMoreData { buffer: &'a mut [u8] },
-    /// The strategy failed to read a request message. This requires special
-    /// handling by the caller to ensure that the remote actor does not wait
-    /// indefinitely for a response that is not coming.
+    /// The strategy failed to decode an envelope.
     EnvelopeSkipped(EnvelopeDetails),
     /// The strategy successfully decoded an envelope from the frame.
     Done { decoded: NetworkEnvelope },

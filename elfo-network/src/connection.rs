@@ -345,7 +345,8 @@ impl SocketReader {
                 Ok(Some(envelope)) => envelope,
                 Ok(None) => break,
                 Err(ReadError::EnvelopeSkipped(details)) => {
-                    self.handle_skipped_envelope(details);
+                    scope::set_trace_id(details.trace_id);
+                    self.handle_skipped_message(details);
                     continue;
                 }
                 Err(ReadError::Fatal(e)) => {
@@ -382,7 +383,7 @@ impl SocketReader {
     /// are properly accounted for in flow control. Also notifies the remote
     /// actor if the message was a request in order to avoid indefinite
     /// waiting from the remote actor's side.
-    fn handle_skipped_envelope(&self, details: EnvelopeDetails) {
+    fn handle_skipped_message(&self, details: EnvelopeDetails) {
         let update_flow = {
             let mut rx_flows = self.rx_flows.lock();
             if details.recipient == Addr::NULL {
@@ -401,7 +402,6 @@ impl SocketReader {
         }
 
         if details.kind == KIND_REQUEST_ALL || details.kind == KIND_REQUEST_ANY {
-            scope::set_trace_id(details.trace_id);
             let sender = self
                 .ctx
                 .book()
