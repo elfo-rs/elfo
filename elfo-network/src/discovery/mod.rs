@@ -96,7 +96,7 @@ impl Discovery {
                     // TODO: self.discover();
                 }
                 msg @ ConnectionEstablished => self.on_connection_established(msg),
-                msg @ ConnectionAccepted => self.on_connection_accepted(msg).await,
+                msg @ ConnectionAccepted => self.on_connection_accepted(msg),
                 msg @ ConnectionRejected => self.on_connection_rejected(msg),
             });
         }
@@ -216,7 +216,7 @@ impl Discovery {
         }));
     }
 
-    async fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
+    fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
         let socket = msg.socket.take().unwrap();
         let peer = &socket.peer;
 

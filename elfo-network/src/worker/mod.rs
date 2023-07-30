@@ -56,14 +56,14 @@ struct PingTick;
 #[message]
 struct ConnectionClosed;
 
-pub(crate) struct Connection {
+pub(crate) struct Worker {
     ctx: NetworkContext,
     topology: Topology,
     local: (GroupNo, String),
     remote: (NodeNo, GroupNo, String),
 }
 
-impl Connection {
+impl Worker {
     pub(super) fn new(
         ctx: NetworkContext,
         local: (GroupNo, String),

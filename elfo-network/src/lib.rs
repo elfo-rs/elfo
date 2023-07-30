@@ -24,18 +24,18 @@ use crate::{config::Config, protocol::HandleConnection};
 
 mod codec;
 mod config;
-mod connection;
 mod discovery;
 mod frame;
 mod node_map;
 mod protocol;
 mod rtt;
 mod socket;
+mod worker;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 enum ActorKey {
     Discovery,
-    Connection {
+    Worker {
         local: (GroupNo, String),
         remote: (NodeNo, GroupNo, String),
     },
@@ -46,7 +46,7 @@ impl Display for ActorKey {
         // TODO: resolve `group_no` to name.
         match self {
             ActorKey::Discovery => f.write_str("discovery"),
-            ActorKey::Connection { local, remote } => {
+            ActorKey::Worker { local, remote } => {
                 write!(f, "{}:{}:{}", local.1, remote.0, remote.2)
             }
         }
@@ -67,7 +67,7 @@ pub fn new(topology: &Topology) -> Blueprint {
             msg!(match envelope {
                 // TODO: send to all connections.
                 UpdateConfig => Outcome::Unicast(ActorKey::Discovery),
-                msg @ HandleConnection => Outcome::Unicast(ActorKey::Connection {
+                msg @ HandleConnection => Outcome::Unicast(ActorKey::Worker {
                     local: msg.local.clone(),
                     remote: msg.remote.clone(),
                 }),
@@ -79,8 +79,8 @@ pub fn new(topology: &Topology) -> Blueprint {
             async move {
                 match ctx.key().clone() {
                     ActorKey::Discovery => discovery::Discovery::new(ctx, topology).main().await,
-                    ActorKey::Connection { local, remote } => {
-                        connection::Connection::new(ctx, local, remote, topology)
+                    ActorKey::Worker { local, remote } => {
+                        worker::Worker::new(ctx, local, remote, topology)
                             .main()
                             .await
                     }
