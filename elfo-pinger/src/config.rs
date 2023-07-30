@@ -11,7 +11,7 @@ pub(crate) struct Config {
 }
 
 fn default_ping_interval() -> Duration {
-    Duration::from_secs(1)
+    Duration::from_secs(10)
 }
 
 fn default_warn_threshold() -> Duration {

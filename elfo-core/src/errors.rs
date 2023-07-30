@@ -129,44 +129,26 @@ impl<T> TrySendError<T> {
 }
 
 #[derive(Debug, Display, Error)]
-pub enum RequestError<T> {
-    // Nobody has responded to the request.
+pub enum RequestError {
+    /// Receiver hasn't got the request.
+    #[display(fmt = "request failed")]
+    Failed,
+    /// Receiver has got the request, but ignored it.
     #[display(fmt = "request ignored")]
-    Ignored, // TODO: can we provide `T` here?
-    /// The mailbox has been closed.
-    #[display(fmt = "mailbox closed")]
-    Closed(#[error(not(source))] T),
+    Ignored,
 }
 
-impl<T> RequestError<T> {
-    /// Converts the error into its inner value.
+impl RequestError {
+    /// Returns whether the error is the `Failed` variant.
     #[inline]
-    pub fn into_inner(self) -> Option<T> {
-        match self {
-            Self::Ignored => None,
-            Self::Closed(inner) => Some(inner),
-        }
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed)
     }
 
-    /// Transforms the inner message.
-    #[inline]
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> RequestError<U> {
-        match self {
-            Self::Ignored => RequestError::Ignored,
-            Self::Closed(inner) => RequestError::Closed(f(inner)),
-        }
-    }
-
-    /// Returns whether the error is the `Full` variant.
+    /// Returns whether the error is the `Ignored` variant.
     #[inline]
     pub fn is_ignored(&self) -> bool {
         matches!(self, Self::Ignored)
-    }
-
-    /// Returns whether the error is the `Closed` variant.
-    #[inline]
-    pub fn is_closed(&self) -> bool {
-        matches!(self, Self::Closed(_))
     }
 }
 

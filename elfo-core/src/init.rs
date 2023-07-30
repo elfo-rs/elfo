@@ -7,31 +7,33 @@ use tokio::{
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
+#[cfg(target_os = "linux")]
+use crate::{memory_tracker::MemoryTracker, time::Interval};
+
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
-    addr::Addr,
     config::SystemConfig,
     context::Context,
     demux::Demux,
     errors::{RequestError, StartError, StartGroupError},
-    memory_tracker::MemoryTracker,
     message,
     messages::{StartEntrypoint, Terminate, UpdateConfig},
-    msg,
     object::Object,
     scope::{Scope, ScopeGroupShared},
     signal::{Signal, SignalKind},
     subscription::SubscriptionManager,
-    time::Interval,
     topology::Topology,
     tracing::TraceId,
+    Addr,
 };
+
+const INIT_GROUP_NAME: &str = "system.init";
 
 type Result<T, E = StartError> = std::result::Result<T, E>;
 
 async fn start_entrypoints(ctx: &Context, topology: &Topology, is_check_only: bool) -> Result<()> {
     let futures = topology
-        .actor_groups()
+        .locals()
         .filter(|group| group.is_entrypoint)
         .map(|group| async move {
             let response = ctx
@@ -47,7 +49,7 @@ async fn start_entrypoints(ctx: &Context, topology: &Topology, is_check_only: bo
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(e)) => Err(StartError::single(group.name.clone(), e.reason)),
                 Err(RequestError::Ignored) => Ok(()),
-                Err(RequestError::Closed(..)) => Err(StartError::single(
+                Err(RequestError::Failed) => Err(StartError::single(
                     group.name.clone(),
                     "config cannot be delivered to the entrypoint".into(),
                 )),
@@ -71,7 +73,7 @@ async fn start_entrypoints(ctx: &Context, topology: &Topology, is_check_only: bo
                     Err(StartError::multiple(group_errors))
                 }
                 Err(RequestError::Ignored) => Ok(()),
-                Err(RequestError::Closed(..)) => Err(StartError::single(
+                Err(RequestError::Failed) => Err(StartError::single(
                     group.name,
                     "starting message cannot be delivered to the entrypoint".into(),
                 )),
@@ -104,6 +106,8 @@ pub async fn start(topology: Topology) {
 
 /// The same as `start()`, but returns an error rather than panics.
 pub async fn try_start(topology: Topology) -> Result<()> {
+    check_messages_uniqueness()?;
+
     let res = do_start(topology, false, termination).await;
 
     if res.is_err() {
@@ -117,9 +121,31 @@ pub async fn try_start(topology: Topology) -> Result<()> {
 /// Starts node in "check only" mode. Entrypoints are started, then the system
 /// is immediately gracefully terminated.
 pub async fn check_only(topology: Topology) -> Result<()> {
+    check_messages_uniqueness()?;
+
     // The logger is not supposed to be initialized in this mode, so we do not wait
     // for it before exiting.
     do_start(topology, true, do_termination).await
+}
+
+/// Checks that all messages are unique by `(protocol, name)` pair.
+/// If there are duplicates, returns an error.
+///
+/// It's called automatically by `(try_)start()` and `check_only()`,
+/// but still provided in order to being called manually in service tests.
+#[stability::unstable]
+pub fn check_messages_uniqueness() -> Result<()> {
+    message::check_uniqueness().map_err(|duplicates| {
+        let errors = duplicates
+            .into_iter()
+            .map(|(protocol, name)| StartGroupError {
+                group: INIT_GROUP_NAME.into(),
+                reason: format!("message `{}/{}` is defined several times", protocol, name),
+            })
+            .collect();
+
+        StartError::multiple(errors)
+    })
 }
 
 #[doc(hidden)]
@@ -128,14 +154,12 @@ pub async fn do_start<F: Future>(
     is_check_only: bool,
     and_then: impl FnOnce(Context, Topology) -> F,
 ) -> Result<F::Output> {
-    message::init();
-
-    let entry = topology.book.vacant_entry();
+    let entry = topology.book.vacant_entry(0);
     let addr = entry.addr();
     let ctx = Context::new(topology.book.clone(), Demux::default());
 
     let meta = Arc::new(ActorMeta {
-        group: "system.init".into(),
+        group: INIT_GROUP_NAME.into(),
         key: "_".into(), // Just like `Singleton`.
     });
 
@@ -175,45 +199,51 @@ struct CheckMemoryUsageTick;
 // TODO: make these values configurable.
 const SEND_CLOSING_TERMINATE_AFTER: Duration = Duration::from_secs(30);
 const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(45);
-const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
-const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(3);
 
 async fn termination(mut ctx: Context, topology: Topology) {
     ctx.attach(Signal::new(SignalKind::UnixTerminate, TerminateSystem));
     ctx.attach(Signal::new(SignalKind::UnixInterrupt, TerminateSystem));
     ctx.attach(Signal::new(SignalKind::WindowsCtrlC, TerminateSystem));
 
-    let memory_tracker = match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
-        Ok(tracker) => {
-            ctx.attach(Interval::new(CheckMemoryUsageTick))
-                .start(CHECK_MEMORY_USAGE_INTERVAL);
-            Some(tracker)
-        }
-        Err(err) => {
-            warn!(error = %err, "memory tracker is unavailable, disabled");
-            None
+    #[cfg(target_os = "linux")]
+    let memory_tracker = {
+        const MAX_MEMORY_USAGE_RATIO: f64 = 0.9;
+        const CHECK_MEMORY_USAGE_INTERVAL: Duration = Duration::from_secs(3);
+
+        match MemoryTracker::new(MAX_MEMORY_USAGE_RATIO) {
+            Ok(tracker) => {
+                ctx.attach(Interval::new(CheckMemoryUsageTick))
+                    .start(CHECK_MEMORY_USAGE_INTERVAL);
+                Some(tracker)
+            }
+            Err(err) => {
+                warn!(error = %err, "memory tracker is unavailable, disabled");
+                None
+            }
         }
     };
 
     let mut oom_prevented = false;
 
     while let Some(envelope) = ctx.recv().await {
-        msg!(match envelope {
-            TerminateSystem => break, // TODO: use `Terminate`?
-            CheckMemoryUsageTick => {
-                match memory_tracker.as_ref().map(|mt| mt.check()) {
-                    Some(Ok(true)) | None => {}
-                    Some(Ok(false)) => {
-                        error!("maximum memory usage is reached, forcibly terminating");
-                        let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
-                        oom_prevented = true;
-                    }
-                    Some(Err(err)) => {
-                        warn!(error = %err, "memory tracker cannot check memory usage");
-                    }
+        if envelope.is::<TerminateSystem>() {
+            break;
+        }
+
+        #[cfg(target_os = "linux")]
+        if envelope.is::<CheckMemoryUsageTick>() {
+            match memory_tracker.as_ref().map(|mt| mt.check()) {
+                Some(Ok(true)) | None => {}
+                Some(Ok(false)) => {
+                    error!("maximum memory usage is reached, forcibly terminating");
+                    let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
+                    oom_prevented = true;
+                }
+                Some(Err(err)) => {
+                    warn!(error = %err, "memory tracker cannot check memory usage");
                 }
             }
-        });
+        }
     }
 
     ctx.set_status(ActorStatus::TERMINATING);
@@ -253,7 +283,7 @@ async fn do_termination(ctx: Context, topology: Topology) {
 async fn terminate_groups(ctx: &Context, topology: &Topology, user: bool) {
     // TODO: specify order of system groups.
     let futures = topology
-        .actor_groups()
+        .locals()
         .filter(|group| user ^ group.name.starts_with("system."))
         .map(|group| async move {
             select! {

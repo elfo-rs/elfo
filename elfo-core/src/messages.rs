@@ -100,7 +100,16 @@ impl Terminate {
 #[message]
 #[derive(Default)]
 #[non_exhaustive]
-pub struct SubscribeToActorStatuses;
+pub struct SubscribeToActorStatuses {
+    pub(crate) forcing: bool,
+}
+
+impl SubscribeToActorStatuses {
+    /// Statuses will be sent even if a subscriber is already registered.
+    pub fn forcing() -> Self {
+        Self { forcing: true }
+    }
+}
 
 #[message]
 #[non_exhaustive]

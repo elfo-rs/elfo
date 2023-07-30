@@ -9,10 +9,10 @@ extern crate elfo_utils;
 // To make `#[message]` and `msg!` work inside `elfo-core`.
 extern crate self as elfo_core;
 
-// TODO: revise this list.
+// TODO: revise this list, what about `NodeNo`?
 pub use crate::{
     actor::{ActorMeta, ActorStatus, ActorStatusKind},
-    addr::Addr,
+    address_book::{Addr, GroupNo},
     config::Config,
     context::{Context, RequestBuilder},
     envelope::Envelope,
@@ -24,6 +24,9 @@ pub use crate::{
     topology::Topology,
 };
 pub use elfo_macros::{message_core as message, msg_core as msg};
+
+#[macro_use]
+mod macros;
 
 pub mod config;
 pub mod dumping;
@@ -43,7 +46,6 @@ pub mod topology;
 pub mod tracing;
 
 mod actor;
-mod addr;
 mod address_book;
 mod context;
 mod demux;
@@ -51,12 +53,16 @@ mod envelope;
 mod exec;
 mod group;
 mod local;
-mod macros;
 mod mailbox;
+#[cfg(target_os = "linux")]
 mod memory_tracker;
 mod message;
 mod object;
 mod permissions;
+#[cfg(all(feature = "network", feature = "unstable"))]
+pub mod remote;
+#[cfg(all(feature = "network", not(feature = "unstable")))]
+mod remote;
 mod request_table;
 mod runtime;
 mod source;
@@ -74,14 +80,20 @@ pub mod _priv {
     }
 
     pub use crate::{
-        envelope::{AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned},
+        address_book::AddressBook,
+        envelope::{
+            AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned, MessageKind,
+        },
         init::do_start,
-        message::{AnyMessage, MessageVTable, MESSAGE_LIST},
+        message::*,
+        object::{GroupVisitor, Object, ObjectArc},
         permissions::{AtomicPermissions, Permissions},
+        request_table::RequestId,
     };
     pub use linkme;
     pub use metrics;
+    #[cfg(feature = "network")]
+    pub use rmp_serde as rmps;
     pub use serde;
     pub use smallbox;
-    pub use static_assertions::assert_impl_all;
 }

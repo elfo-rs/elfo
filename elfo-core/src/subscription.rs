@@ -1,7 +1,7 @@
 use parking_lot::RwLock;
 use tracing::warn;
 
-use crate::{addr::Addr, context::Context, message::Message};
+use crate::{context::Context, message::Message, Addr};
 
 pub(crate) struct SubscriptionManager {
     ctx: Context,
@@ -16,8 +16,15 @@ impl SubscriptionManager {
         }
     }
 
-    pub(crate) fn add(&self, addr: Addr) {
-        self.subscribers.write().push(addr);
+    pub(crate) fn add(&self, addr: Addr) -> bool {
+        let mut subscribers = self.subscribers.write();
+
+        if subscribers.contains(&addr) {
+            return false;
+        }
+
+        subscribers.push(addr);
+        true
     }
 
     pub(crate) fn remove(&self, addr: Addr) {

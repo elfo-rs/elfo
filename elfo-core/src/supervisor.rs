@@ -14,20 +14,20 @@ use elfo_utils::CachePadded;
 use self::{backoff::Backoff, error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
-    addr::Addr,
     config::{AnyConfig, Config, SystemConfig},
     context::Context,
     envelope::Envelope,
-    errors::TrySendError,
     exec::{Exec, ExecResult},
     group::{RestartMode, RestartPolicy, TerminationPolicy},
+    message::Request,
     messages, msg,
-    object::{Object, ObjectArc},
+    object::{GroupVisitor, Object, ObjectArc},
     routers::{Outcome, Router},
     runtime::RuntimeManager,
     scope::{self, Scope, ScopeGroupShared},
     subscription::SubscriptionManager,
     tracing::TraceId,
+    Addr, ResponseToken,
 };
 
 mod backoff;
@@ -66,7 +66,7 @@ macro_rules! get_or_spawn {
                 .objects
                 .entry(key.clone())
                 .or_try_insert_with(|| $this.spawn(key, Default::default()).ok_or(()))
-                .map(|o| o.downgrade())
+                .map(|o| o.downgrade()) // FIXME: take an exclusive lock here.
                 .ok(),
         }
     }};
@@ -128,10 +128,8 @@ where
         .sync_within(|| self.span.in_scope(f));
     }
 
-    pub(crate) fn handle(self: &Arc<Self>, envelope: Envelope) -> RouteReport {
-        let sender = envelope.sender();
-
-        msg!(match &envelope {
+    pub(crate) fn handle(self: &Arc<Self>, mut envelope: Envelope, visitor: &mut dyn GroupVisitor) {
+        let outcome = msg!(match &envelope {
             messages::ValidateConfig { config } => match config.decode::<C>() {
                 Ok(config) => {
                     // Make all updates under lock, including telemetry/dumper ones.
@@ -142,24 +140,20 @@ where
                         // to avoid a race condition at startup.
                         // So, we update the config on `ValidateConfig` at the first time.
                         self.update_config(&mut control, &config);
-                        RouteReport::Done
+                        let token = extract_response_token::<messages::ValidateConfig>(envelope);
+                        self.context.respond(token, Ok(()));
+                        return visitor.done();
                     } else {
                         drop(control);
-                        let outcome = self.router.route(&envelope);
-                        let mut envelope = envelope;
                         envelope.set_message(messages::ValidateConfig { config });
-                        self.do_handle(envelope, outcome.or(Outcome::Discard))
+                        self.router.route(&envelope).or(Outcome::Discard)
                     }
                 }
                 Err(reason) => {
-                    msg!(match envelope {
-                        (messages::ValidateConfig { .. }, token) => {
-                            let reject = messages::ConfigRejected { reason };
-                            self.context.respond(token, Err(reject));
-                        }
-                        _ => unreachable!(),
-                    });
-                    RouteReport::Done
+                    let reject = messages::ConfigRejected { reason };
+                    let token = extract_response_token::<messages::ValidateConfig>(envelope);
+                    self.context.respond(token, Err(reject));
+                    return visitor.done();
                 }
             },
             messages::UpdateConfig { config } => match config.decode::<C>() {
@@ -180,29 +174,29 @@ where
 
                     if only_spawn {
                         self.spawn_by_outcome(outcome);
-                        RouteReport::Done
+                        let token = extract_response_token::<messages::UpdateConfig>(envelope);
+                        self.context.respond(token, Ok(()));
+                        return visitor.done();
                     } else {
                         // Send `UpdateConfig` across actors.
-                        let mut envelope = envelope;
                         envelope.set_message(messages::UpdateConfig { config });
-                        self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+                        outcome.or(Outcome::Broadcast)
                     }
                 }
                 Err(reason) => {
-                    msg!(match envelope {
-                        (messages::UpdateConfig { .. }, token) => {
-                            self.in_scope(|| error!(group = %self.meta.group, %reason, "invalid config is ignored"));
-                            let reject = messages::ConfigRejected { reason };
-                            self.context.respond(token, Err(reject));
-                        }
-                        _ => unreachable!(),
-                    });
-                    RouteReport::Done
+                    self.in_scope(
+                        || error!(group = %self.meta.group, %reason, "invalid config is ignored"),
+                    );
+                    let reject = messages::ConfigRejected { reason };
+                    let token = extract_response_token::<messages::UpdateConfig>(envelope);
+                    self.context.respond(token, Err(reject));
+                    return visitor.done();
                 }
             },
-            messages::SubscribeToActorStatuses => {
-                self.in_scope(|| self.subscribe_to_statuses(sender));
-                RouteReport::Done
+            messages::SubscribeToActorStatuses { forcing } => {
+                let sender = envelope.sender();
+                self.in_scope(|| self.subscribe_to_statuses(sender, *forcing));
+                return visitor.done();
             }
             messages::Terminate => {
                 if self.termination_policy.stop_spawning {
@@ -212,86 +206,58 @@ where
                     }
                 }
 
-                let outcome = self.router.route(&envelope);
-                self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+                self.router.route(&envelope).or(Outcome::Broadcast)
             }
             messages::Ping => {
-                let outcome = self.router.route(&envelope);
-                self.do_handle(envelope, outcome.or(Outcome::Broadcast))
+                self.router.route(&envelope).or(Outcome::Broadcast)
             }
             _ => {
-                let outcome = self.router.route(&envelope);
-                self.do_handle(envelope, outcome.or(Outcome::Discard))
+                self.router.route(&envelope).or(Outcome::Discard)
             }
-        })
-    }
+        });
 
-    fn do_handle(self: &Arc<Self>, envelope: Envelope, outcome: Outcome<R::Key>) -> RouteReport {
         match outcome {
-            Outcome::Unicast(key) => {
-                let object = ward!(
-                    get_or_spawn!(self, key),
-                    return RouteReport::Closed(envelope)
-                );
-                let actor = object.as_actor().expect("supervisor stores only actors");
-                match actor.try_send(envelope) {
-                    Ok(()) => RouteReport::Done,
-                    Err(TrySendError::Full(envelope)) => RouteReport::Wait(object.addr(), envelope),
-                    Err(TrySendError::Closed(envelope)) => RouteReport::Closed(envelope),
-                }
+            Outcome::Unicast(key) => match get_or_spawn!(self, key) {
+                Some(object) => visitor.visit_last(&object, envelope),
+                None => visitor.empty(envelope),
+            },
+            Outcome::GentleUnicast(key) => match self.objects.get(&key) {
+                Some(object) => visitor.visit_last(&object, envelope),
+                None => visitor.empty(envelope),
+            },
+            Outcome::Multicast(list) => {
+                let iter = list.into_iter().filter_map(|key| get_or_spawn!(self, key));
+                self.visit_multiple(envelope, visitor, iter);
             }
-            Outcome::GentleUnicast(key) => {
-                let object = ward!(self.objects.get(&key), return RouteReport::Closed(envelope));
-                let actor = object.as_actor().expect("supervisor stores only actors");
-                match actor.try_send(envelope) {
-                    Ok(()) => RouteReport::Done,
-                    Err(TrySendError::Full(envelope)) => RouteReport::Wait(object.addr(), envelope),
-                    Err(TrySendError::Closed(envelope)) => RouteReport::Closed(envelope),
-                }
+            Outcome::GentleMulticast(list) => {
+                let iter = list.into_iter().filter_map(|key| self.objects.get(&key));
+                self.visit_multiple(envelope, visitor, iter);
             }
-            Outcome::Multicast(list) => self.do_handle_multiple(
-                envelope,
-                list.into_iter().filter_map(|key| get_or_spawn!(self, key)),
-            ),
-            Outcome::GentleMulticast(list) => self.do_handle_multiple(
-                envelope,
-                list.into_iter().filter_map(|key| self.objects.get(&key)),
-            ),
-            Outcome::Broadcast => self.do_handle_multiple(envelope, self.objects.iter()),
-            Outcome::Discard => RouteReport::Closed(envelope),
+            Outcome::Broadcast => self.visit_multiple(envelope, visitor, self.objects.iter()),
+            Outcome::Discard => visitor.empty(envelope),
             Outcome::Default => unreachable!("must be altered earlier"),
         }
     }
 
-    fn do_handle_multiple(
+    fn visit_multiple(
         &self,
         envelope: Envelope,
-        mut iter: impl Iterator<Item = impl Deref<Target = ObjectArc>>,
-    ) -> RouteReport {
-        let mut waiters = Vec::new();
-        let mut someone = false;
+        visitor: &mut dyn GroupVisitor,
+        iter: impl Iterator<Item = impl Deref<Target = ObjectArc>>,
+    ) {
+        let mut iter = iter.peekable();
 
-        for object in &mut iter {
-            // TODO: we shouldn't clone `envelope` for the last object in a sequence.
-            // If a requester has died, go out.
-            let envelope = ward!(envelope.duplicate(self.context.book()), break);
-
-            let actor = object.as_actor().expect("supervisor stores only actors");
-            match actor.try_send(envelope) {
-                Ok(_) => someone = true,
-                Err(TrySendError::Full(envelope)) => waiters.push((object.addr(), envelope)),
-                Err(TrySendError::Closed(_)) => {}
-            }
+        if iter.peek().is_none() {
+            return visitor.empty(envelope);
         }
 
-        if waiters.is_empty() {
-            if someone {
-                RouteReport::Done
+        loop {
+            let object = iter.next().unwrap();
+            if iter.peek().is_none() {
+                return visitor.visit_last(&object, envelope);
             } else {
-                RouteReport::Closed(envelope)
+                visitor.visit(&object, &envelope);
             }
-        } else {
-            RouteReport::WaitAll(someone, waiters)
         }
     }
 
@@ -301,7 +267,8 @@ where
             return None;
         }
 
-        let entry = self.context.book().vacant_entry();
+        let group_no = self.context.group().group_no();
+        let entry = self.context.book().vacant_entry(group_no);
         let addr = entry.addr();
 
         let key_str = key.to_string();
@@ -457,9 +424,12 @@ where
         self.in_scope(|| info!(config = ?control.user_config.as_ref().unwrap(), "router updated"));
     }
 
-    fn subscribe_to_statuses(&self, addr: Addr) {
+    fn subscribe_to_statuses(&self, addr: Addr, forcing: bool) {
         // Firstly, add the subscriber to handle new objects right way.
-        self.status_subscription.add(addr);
+        if !self.status_subscription.add(addr) && !forcing {
+            // Already subscribed.
+            return;
+        }
 
         // Send active statuses to the subscriber.
         for item in self.objects.iter() {
@@ -499,6 +469,13 @@ where
     }
 }
 
+fn extract_response_token<R: Request>(envelope: Envelope) -> ResponseToken<R> {
+    msg!(match envelope {
+        (R, token) => token,
+        _ => unreachable!(),
+    })
+}
+
 fn panic_to_string(payload: Box<dyn Any>) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         format!("panic: {message}")
@@ -507,11 +484,4 @@ fn panic_to_string(payload: Box<dyn Any>) -> String {
     } else {
         "panic: <unsupported payload>".to_string()
     }
-}
-
-pub(crate) enum RouteReport {
-    Done,
-    Closed(Envelope),
-    Wait(Addr, Envelope),
-    WaitAll(bool, Vec<(Addr, Envelope)>),
 }

@@ -5,7 +5,9 @@ use serde::Serialize;
 use smallbox::{smallbox, SmallBox};
 
 use super::{extract_name::extract_name, sequence_no::SequenceNo};
-use crate::{actor::ActorMeta, envelope, message, scope, thread::ThreadId, tracing::TraceId};
+use crate::{
+    actor::ActorMeta, envelope, message, scope, thread::ThreadId, tracing::TraceId, Message,
+};
 
 // === Dump ===
 
@@ -43,17 +45,17 @@ impl Dump {
         }
     }
 
-    pub(crate) fn message<M: crate::Message>(
-        message: M,
+    pub(crate) fn message(
+        message: &impl Message,
         kind: &envelope::MessageKind,
         direction: Direction,
     ) -> Self {
         Self::builder()
             .direction(direction)
-            .message_name(M::VTABLE.name)
-            .message_protocol(M::VTABLE.protocol)
+            .message_name(message.name())
+            .message_protocol(message.protocol())
             .message_kind(MessageKind::from_message_kind(kind))
-            .finish(message)
+            .do_finish(message._erase())
     }
 }
 
@@ -112,7 +114,7 @@ impl DumpBuilder {
         self.do_finish(smallbox!(message))
     }
 
-    pub(crate) fn do_finish(&mut self, message: ErasedMessage) -> Dump {
+    fn do_finish(&mut self, message: ErasedMessage) -> Dump {
         let (meta, trace_id, sequence_no) = scope::with(|scope| {
             (
                 scope.meta().clone(),
@@ -293,7 +295,7 @@ impl MessageKind {
         match kind {
             MK::Regular { .. } => Self::Regular,
             MK::RequestAny(token) | MK::RequestAll(token) => {
-                Self::Request(token.request_id.data().as_ffi())
+                Self::Request(token.request_id().to_ffi())
             }
             MK::Response { request_id, .. } => Self::Response(request_id.data().as_ffi()),
         }

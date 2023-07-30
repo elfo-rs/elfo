@@ -51,21 +51,28 @@ async fn check_seq(proxy: &mut Proxy, expected: &[(u32, ActorStatusKind, Option<
     let mut actual = Vec::new();
     while let Some(envelope) = proxy.try_recv().await {
         msg!(match envelope {
-            ActorStatusReport { meta, status, .. } => actual.push((meta, status)),
+            ActorStatusReport { meta, status, .. } => {
+                assert_eq!(meta.group, "subject");
+                actual.push((meta, status));
+            }
             _ => unreachable!(),
         })
     }
 
     // Sort messages to make tests deterministic.
     actual.sort_by_key(|(meta, _)| meta.key.clone());
-    assert_eq!(actual.len(), expected.len());
 
-    for (a, e) in actual.iter().zip(expected) {
-        assert_eq!(a.0.group, "subject");
-        assert_eq!(a.0.key, e.0.to_string());
-        assert_eq!(a.1.kind(), e.1);
-        assert_eq!(a.1.details(), e.2);
-    }
+    let actual = actual
+        .into_iter()
+        .map(|(meta, status)| format!("{} {:?} {:?}", meta.key, status.kind(), status.details()))
+        .collect::<Vec<_>>();
+
+    let expected = expected
+        .iter()
+        .map(|(key, status, details)| format!("{} {:?} {:?}", key, status, details))
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual, expected);
 }
 
 #[tokio::test(start_paused = true)]
@@ -111,6 +118,26 @@ async fn it_works() {
         &[
             (5, Initializing, None),
             (5, Normal, None),
+            (5, Normal, Some("on Start")),
+        ],
+    )
+    .await;
+
+    // Repeating subscription should not produce any messages.
+    proxy.send(SubscribeToActorStatuses::default()).await;
+    proxy.sync().await;
+    assert!(proxy.try_recv().await.is_none());
+
+    // But the forcing one should.
+    proxy.send(SubscribeToActorStatuses::forcing()).await;
+    proxy.sync().await;
+
+    check_seq(
+        &mut proxy,
+        &[
+            (1, Normal, Some("on Start")),
+            (3, Failed, Some("panic: oops")),
+            (4, Normal, Some("on Start")),
             (5, Normal, Some("on Start")),
         ],
     )

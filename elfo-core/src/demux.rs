@@ -2,34 +2,36 @@ use std::sync::Arc;
 
 use smallvec::SmallVec;
 
-use crate::{addr::Addr, envelope::Envelope};
+use crate::{envelope::Envelope, Addr};
 
 const OPTIMAL_COUNT: usize = 5;
+type Addrs = SmallVec<[Addr; OPTIMAL_COUNT]>;
 
+// Actually, it's a private type, `pub` is for `Destination` only.
 #[derive(Default, Clone)]
-pub(crate) struct Demux {
-    list: SmallVec<[(Addr, Filter); OPTIMAL_COUNT]>,
+pub struct Demux {
+    #[allow(clippy::type_complexity)]
+    filter: Option<Arc<dyn Fn(&Envelope, &mut Addrs) + Send + Sync>>,
 }
 
 impl Demux {
-    pub(crate) fn append(&mut self, addr: Addr, f: Filter) {
-        self.list.push((addr, f));
-    }
-
-    pub(crate) fn filter(&self, envelope: &Envelope) -> SmallVec<[Addr; OPTIMAL_COUNT]> {
-        // TODO: use a bitset as iterator's state.
-        self.list
-            .iter()
-            .filter(|(_, filter)| match filter {
-                Filter::Dynamic(filter) => filter(envelope),
+    pub(crate) fn append(&mut self, f: impl Fn(&Envelope, &mut Addrs) + Send + Sync + 'static) {
+        self.filter = Some(if let Some(prev) = self.filter.take() {
+            Arc::new(move |envelope, addrs| {
+                prev(envelope, addrs);
+                f(envelope, addrs);
             })
-            .map(|(addr, _)| *addr)
-            .collect()
+        } else {
+            Arc::new(f)
+        })
     }
-}
 
-#[derive(Clone)]
-pub(crate) enum Filter {
-    // TODO: what about `smallbox`?
-    Dynamic(Arc<dyn Fn(&Envelope) -> bool + Send + Sync>),
+    // TODO: return an iterator?
+    pub(crate) fn filter(&self, envelope: &Envelope) -> Addrs {
+        let mut addrs = Addrs::new();
+        if let Some(filter) = &self.filter {
+            (filter)(envelope, &mut addrs);
+        }
+        addrs
+    }
 }

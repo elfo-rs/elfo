@@ -1,11 +1,10 @@
 use quanta::Instant;
 
 use crate::{
-    addr::Addr,
-    address_book::AddressBook,
     message::{AnyMessage, Message},
     request_table::{RequestId, ResponseToken},
     tracing::TraceId,
+    Addr,
 };
 
 // TODO: use granular messages instead of `SmallBox`.
@@ -20,20 +19,27 @@ pub struct Envelope<M = AnyMessage> {
 assert_impl_all!(Envelope: Send);
 assert_eq_size!(Envelope, [u8; 256]);
 
+// Reexported in `elfo::_priv`.
 #[derive(Debug)]
-pub(crate) enum MessageKind {
+pub enum MessageKind {
     Regular { sender: Addr },
-    RequestAny(ResponseToken<()>),
-    RequestAll(ResponseToken<()>),
+    RequestAny(ResponseToken),
+    RequestAll(ResponseToken),
     Response { sender: Addr, request_id: RequestId },
 }
 
 impl<M> Envelope<M> {
-    pub(crate) fn new(message: M, kind: MessageKind) -> Self {
+    // This is private API. Do not use it.
+    #[doc(hidden)]
+    #[inline]
+    pub fn new(message: M, kind: MessageKind) -> Self {
         Self::with_trace_id(message, kind, crate::scope::trace_id())
     }
 
-    pub(crate) fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
+    // This is private API. Do not use it.
+    #[doc(hidden)]
+    #[inline]
+    pub fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
         Self {
             created_time: Instant::now(),
             trace_id,
@@ -52,7 +58,9 @@ impl<M> Envelope<M> {
         &self.message
     }
 
-    pub(crate) fn message_kind(&self) -> &MessageKind {
+    /// Part of private API. Do not use it.
+    #[doc(hidden)]
+    pub fn message_kind(&self) -> &MessageKind {
         &self.kind
     }
 
@@ -64,26 +72,23 @@ impl<M> Envelope<M> {
     pub fn sender(&self) -> Addr {
         match &self.kind {
             MessageKind::Regular { sender } => *sender,
-            MessageKind::RequestAny(token) => token.sender,
-            MessageKind::RequestAll(token) => token.sender,
+            MessageKind::RequestAny(token) => token.sender(),
+            MessageKind::RequestAll(token) => token.sender(),
             MessageKind::Response { sender, .. } => *sender,
         }
     }
 }
 
 impl<M: Message> Envelope<M> {
-    pub(crate) fn upcast(self) -> Envelope {
+    // This is private API. Do not use it.
+    #[doc(hidden)]
+    pub fn upcast(self) -> Envelope {
         Envelope {
             created_time: self.created_time,
             trace_id: self.trace_id,
             kind: self.kind,
-            message: AnyMessage::new(self.message),
+            message: self.message.upcast(),
         }
-    }
-
-    // TODO: make `pub` for regular messages.
-    pub(crate) fn into_message(self) -> M {
-        self.message
     }
 }
 
@@ -93,45 +98,28 @@ impl Envelope {
         self.message.is::<M>()
     }
 
-    pub(crate) fn do_downcast<M: Message>(self) -> Envelope<M> {
-        let message = self.message.downcast::<M>().expect("cannot downcast");
-        Envelope {
-            created_time: self.created_time,
-            trace_id: self.trace_id,
-            kind: self.kind,
-            message,
-        }
-    }
-
-    // XXX: why does `Envelope` know about `AddressBook`?
-    // TODO: avoid `None` here?
-    pub(crate) fn duplicate(&self, book: &AddressBook) -> Option<Self> {
-        Some(Self {
+    #[doc(hidden)]
+    #[stability::unstable]
+    pub fn duplicate(&self) -> Self {
+        Self {
             created_time: self.created_time,
             trace_id: self.trace_id,
             kind: match &self.kind {
                 MessageKind::Regular { sender } => MessageKind::Regular { sender: *sender },
-                MessageKind::RequestAny(token) => {
-                    let object = book.get(token.sender)?;
-                    let token = object.as_actor()?.request_table().clone_token(token)?;
-                    MessageKind::RequestAny(token)
-                }
-                MessageKind::RequestAll(token) => {
-                    let object = book.get(token.sender)?;
-                    let token = object.as_actor()?.request_table().clone_token(token)?;
-                    MessageKind::RequestAll(token)
-                }
+                MessageKind::RequestAny(token) => MessageKind::RequestAny(token.duplicate()),
+                MessageKind::RequestAll(token) => MessageKind::RequestAll(token.duplicate()),
                 MessageKind::Response { sender, request_id } => MessageKind::Response {
                     sender: *sender,
                     request_id: *request_id,
                 },
             },
             message: self.message.clone(),
-        })
+        }
     }
 
+    // TODO: remove the method?
     pub(crate) fn set_message<M: Message>(&mut self, message: M) {
-        self.message = AnyMessage::new(message);
+        self.message = message.upcast();
     }
 }
 
@@ -139,7 +127,7 @@ impl Envelope {
 
 pub trait EnvelopeOwned {
     fn unpack_regular(self) -> AnyMessage;
-    fn unpack_request<T>(self) -> (AnyMessage, ResponseToken<T>);
+    fn unpack_request(self) -> (AnyMessage, ResponseToken);
 }
 
 pub trait EnvelopeBorrowed {
@@ -149,18 +137,31 @@ pub trait EnvelopeBorrowed {
 impl EnvelopeOwned for Envelope {
     #[inline]
     fn unpack_regular(self) -> AnyMessage {
+        #[cfg(feature = "network")]
+        if let MessageKind::RequestAny(token) | MessageKind::RequestAll(token) = self.kind {
+            // The sender thought this is a request, but for the current node it isn't.
+            // Mark the token as received to return `RequestError::Ignored` to the sender.
+            let _ = token.into_received::<()>();
+        }
+
+        #[cfg(not(feature = "network"))]
+        debug_assert!(!matches!(
+            self.kind,
+            MessageKind::RequestAny(_) | MessageKind::RequestAll(_)
+        ));
+
         self.message
     }
 
     #[inline]
-    fn unpack_request<T>(self) -> (AnyMessage, ResponseToken<T>) {
+    fn unpack_request(self) -> (AnyMessage, ResponseToken) {
         match self.kind {
+            MessageKind::RequestAny(token) | MessageKind::RequestAll(token) => {
+                (self.message, token)
+            }
             // A request sent by using `ctx.send()` ("fire and forget").
-            // Also it's useful for the protocol evolution.
-            MessageKind::Regular { .. } => (self.message, ResponseToken::forgotten()),
-            MessageKind::RequestAny(token) => (self.message, token.into_typed()),
-            MessageKind::RequestAll(token) => (self.message, token.into_typed()),
-            MessageKind::Response { .. } => unreachable!(),
+            // Also it's useful for the protocol evolution between remote nodes.
+            _ => (self.message, ResponseToken::forgotten()),
         }
     }
 }
@@ -182,7 +183,6 @@ pub trait AnyMessageBorrowed {
 
 impl AnyMessageOwned for AnyMessage {
     #[inline]
-    #[track_caller]
     fn downcast2<M: Message>(self) -> M {
         match self.downcast::<M>() {
             Ok(message) => message,
@@ -193,7 +193,6 @@ impl AnyMessageOwned for AnyMessage {
 
 impl AnyMessageBorrowed for AnyMessage {
     #[inline]
-    #[track_caller]
     fn downcast2<M: Message>(&self) -> &M {
         ward!(
             self.downcast_ref::<M>(),

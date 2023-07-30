@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- network: initial implementation of distribution.
+- macros: support `#[message(protocol = "X")]`.
+- macros: add `set_protocol!`.
+- messages: `SubscribeToActorStatuses::forcing()`.
+
+### Changed
+- **BREAKING** errors: replace `RequestError::Closed(envelope)` with `Failed`.
+- **BREAKING** message: check uniqueness of (protocol, name) pair.
+- message: now `AnyMessage` implements `Message`, but it's still hidden.
+- message: add `Message::{name,protocol,labels,upcast}`.
+- macros: improve error reporting.
+
+### Fixed
+- request: now `RequestError::Ignored` can be returned only if the envelope is received.
+- macros: allow generic requests in `msg!`: `msg!(match e { (R, token) => .. })`.
 
 ## [0.2.0-alpha.4] - 2023-07-06
 

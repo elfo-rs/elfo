@@ -377,7 +377,7 @@ async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
         .flatten()
         .filter_map(|result| match result {
             Ok(()) | Err(RequestError::Ignored) => None,
-            Err(RequestError::Closed(_)) => Some(String::from("some group is closed")),
+            Err(RequestError::Failed) => Some(String::from("some group is closed")),
         })
         // TODO: include actor keys in the error message.
         .inspect(|reason| error!(%reason, "ping failed"));
@@ -404,7 +404,7 @@ fn match_configs(
     filter: TopologyFilter,
 ) -> Vec<ConfigWithMeta> {
     topology
-        .actor_groups()
+        .locals()
         // Entrypoints' configs are updated only at startup.
         .filter(|group| !group.is_entrypoint)
         .filter(|group| match filter {
