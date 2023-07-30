@@ -3,7 +3,7 @@ use std::time::Duration;
 use elfo::{prelude::*, time::Interval, topology::Outcome};
 use tracing::{info, warn};
 
-use crate::common::{AskName, Hello};
+use crate::protocol::{AskName, Hello};
 
 fn producer() -> Blueprint {
     #[message]

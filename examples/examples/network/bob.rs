@@ -1,7 +1,7 @@
 use elfo::prelude::*;
 use tracing::{info, warn};
 
-use crate::common::{AskName, Hello};
+use crate::protocol::{AskName, Hello};
 
 fn consumer() -> Blueprint {
     ActorGroup::new().exec(|mut ctx| async move {

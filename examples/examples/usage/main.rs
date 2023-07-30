@@ -103,7 +103,7 @@ mod producer {
 //              aggregator
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-// A more actor group that has sharding.
+// Another actor group with sharding.
 mod aggregator {
     use elfo::{
         prelude::*,

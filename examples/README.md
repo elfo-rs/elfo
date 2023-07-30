@@ -1,4 +1,4 @@
-# Elfo Examples
+# elfo examples
 
 This directory contains a collection of examples that demonstrate the use of the `elfo` ecosystem.
 
@@ -7,6 +7,16 @@ Run `cargo run --example <name>` to run specific example if not specified someth
 ## usage
 
 Describes common concepts of `elfo`, also how to work with configuration, combine actors together, enable metrics, logs and dumps.
+
+## network
+
+Shows how to connect distributed actor groups.
+
+For simplicity, it uses one common binary that runs a specific service based on the CLI argument:
+```sh
+cargo run --example network -- alice &
+cargo run --example network -- bob
+```
 
 ## stream
 

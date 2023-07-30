@@ -1,6 +1,6 @@
 mod alice;
 mod bob;
-mod common;
+mod protocol;
 
 #[tokio::main]
 async fn main() {
