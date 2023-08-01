@@ -28,7 +28,10 @@ use self::{
 use crate::{
     codec::{
         decode::EnvelopeDetails,
-        format::{NetworkEnvelope, NetworkEnvelopePayload, KIND_REQUEST_ALL, KIND_REQUEST_ANY},
+        format::{
+            NetworkEnvelope, NetworkEnvelopePayload, KIND_REQUEST_ALL, KIND_REQUEST_ANY,
+            KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
+        },
     },
     frame::write::FrameState,
     protocol::{internode, HandleConnection},
@@ -418,6 +421,27 @@ impl SocketReader {
             // below.
             self.tx_flows.add_flow_if_needed(details.sender);
             sender.respond(token, Err(RequestError::Failed));
+        } else if details.kind == KIND_RESPONSE_OK
+            || details.kind == KIND_RESPONSE_FAILED
+            || details.kind == KIND_RESPONSE_IGNORED
+        {
+            let Some(token) = self
+                .requests
+                .lock()
+                .get_token(details.recipient, details.request_id.expect("bug: request_id is missing"), true)
+            else {
+                warn!(
+                    message = "received response to unknown request",
+                    kind = %details.kind,
+                    sender = %details.sender,
+                    recipient = %details.recipient,
+                    request_id = ?details.request_id,
+                );
+                return;
+            };
+
+            // Dropped token will notify the request sender that the request failed.
+            drop(token);
         }
     }
 
