@@ -243,7 +243,7 @@ fn do_decode(frame: &mut Cursor<&[u8]>) -> Result<NetworkEnvelope, DecodeError> 
         KIND_RESPONSE_OK => {
             let request_id = get_request_id(frame)?;
             Response {
-                request_id: get_request_id(frame)?,
+                request_id,
                 message: Ok(map_decode_error(get_message(frame), Some(request_id))?),
                 is_last: flags & FLAG_IS_LAST_RESPONSE != 0,
             }
