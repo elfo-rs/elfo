@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - request: now `RequestError::Ignored` can be returned only if the envelope is received.
 - macros: allow generic requests in `msg!`: `msg!(match e { (R, token) => .. })`.
+- network: notify the request sender on response decoding error ([#102]).
+
+[#102]: https://github.com/elfo-rs/elfo/pull/102
 
 ## [0.2.0-alpha.4] - 2023-07-06
 
