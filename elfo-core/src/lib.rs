@@ -10,9 +10,11 @@ extern crate elfo_utils;
 extern crate self as elfo_core;
 
 // TODO: revise this list, what about `NodeNo`?
+#[cfg(feature = "unstable")]
+pub use crate::address_book::GroupNo;
 pub use crate::{
     actor::{ActorMeta, ActorStatus, ActorStatusKind},
-    address_book::{Addr, GroupNo},
+    address_book::Addr,
     config::Config,
     context::{Context, RequestBuilder},
     envelope::Envelope,

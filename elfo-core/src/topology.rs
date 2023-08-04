@@ -7,14 +7,14 @@ use tokio::runtime::Handle;
 #[cfg(feature = "unstable-stuck-detection")]
 use crate::stuck_detection::StuckDetector;
 use crate::{
-    address_book::{AddressBook, VacantEntry},
+    address_book::{AddressBook, GroupNo, VacantEntry},
     context::Context,
     demux::Demux,
     envelope::Envelope,
     group::Blueprint,
     object::Object,
     runtime::RuntimeManager,
-    Addr, GroupNo,
+    Addr,
 };
 
 /// The topology defines local and remote groups, and routes between them.
@@ -51,7 +51,7 @@ pub struct Connection {
     pub to: ConnectionTo,
 }
 
-#[stability::unstable]
+// TODO: #[stability::unstable]
 #[derive(Debug, Clone)]
 pub enum ConnectionTo {
     Local(Addr),

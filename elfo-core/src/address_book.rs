@@ -192,7 +192,7 @@ impl AddressBook {
         };
 
         #[cfg(not(feature = "network"))]
-        Self { local };
+        Self { local }
     }
 
     #[cfg(feature = "network")]
