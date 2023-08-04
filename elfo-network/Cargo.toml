@@ -1,6 +1,6 @@
 [package]
 name = "elfo-network"
-version = "0.2.0-alpha.4"
+version = "0.2.0-alpha.6"
 description = "Distributed actors for elfo"
 keywords = ["elfo", "actor", "distributed", "tokio", "network"]
 
@@ -11,7 +11,7 @@ edition.workspace = true
 readme.workspace = true
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.4", path = "../elfo-core", features = ["unstable", "network"] }
+elfo-core = { version = "0.2.0-alpha.6", path = "../elfo-core", features = ["unstable", "network"] }
 elfo-utils = { version = "0.2.2", path = "../elfo-utils" }
 
 serde = { version = "1.0.120", features = ["derive"] }
@@ -19,8 +19,7 @@ static_assertions = "1.1.0"
 eyre = "0.6.8"
 fxhash = "0.2.1"
 futures = "0.3.21"
-tokio = { version = "1.19.2", features = ["net"] }
-tokio-util = { version = "0.7.3", features = ["codec"] }
+tokio = { version = "1.19.2", features = ["net", "io-util"] }
 tracing = "0.1.25"
 parking_lot = "0.12"
 derive_more = "0.99.11"

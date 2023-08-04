@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.6] - 2023-08-04
 ### Added
 - network: initial implementation of distribution.
 - macros: support `#[message(protocol = "X")]`.
@@ -493,7 +495,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.4...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.6...HEAD
+[0.2.0-alpha.6]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.4...elfo-v0.2.0-alpha.6
 [0.2.0-alpha.4]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.3...elfo-v0.2.0-alpha.4
 [0.2.0-alpha.3]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.2...elfo-v0.2.0-alpha.3
 [0.2.0-alpha.2]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.1...elfo-v0.2.0-alpha.2
