@@ -36,7 +36,7 @@ elfo-logger = { version = "0.2.0-alpha.4", path = "../elfo-logger", optional = t
 elfo-telemeter = { version = "0.2.0-alpha.4", path = "../elfo-telemeter", optional = true }
 elfo-dumper = { version = "0.2.0-alpha.4", path = "../elfo-dumper", optional = true }
 elfo-pinger = { version = "0.2.0-alpha.4", path = "../elfo-pinger", optional = true }
-elfo-network = { version = "0.1", path = "../elfo-network", optional = true }
+elfo-network = { version = "0.2.0-alpha.4", path = "../elfo-network", optional = true }
 
 [dev-dependencies]
 elfo-test = { version = "0.2.0-alpha.4", path = "../elfo-test" }

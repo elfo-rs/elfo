@@ -1,13 +1,17 @@
 [package]
 name = "elfo-network"
-version = "0.1.0"
+version = "0.2.0-alpha.4"
 description = "Distributed actors for elfo"
-authors = ["Paul Loyd <pavelko95@gmail.com>"]
-edition = "2018"
-license = "MIT"
+keywords = ["elfo", "actor", "distributed", "tokio", "network"]
+
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+readme.workspace = true
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.0", path = "../elfo-core", features = ["unstable", "network"] }
+elfo-core = { version = "0.2.0-alpha.4", path = "../elfo-core", features = ["unstable", "network"] }
 elfo-utils = { version = "0.2.2", path = "../elfo-utils" }
 
 serde = { version = "1.0.120", features = ["derive"] }
