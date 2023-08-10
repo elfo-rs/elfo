@@ -251,13 +251,8 @@ where
             return visitor.empty(envelope);
         }
 
-        loop {
-            let object = iter.next().unwrap();
-            if iter.peek().is_none() {
-                return visitor.visit_last(&object, envelope);
-            } else {
-                visitor.visit(&object, &envelope);
-            }
+        while let Some(object) = iter.next() {
+            visitor.visit(&object, &envelope);
         }
     }
 
