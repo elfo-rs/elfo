@@ -226,14 +226,24 @@ where
                 None => visitor.empty(envelope),
             },
             Outcome::Multicast(list) => {
-                let iter = list.into_iter().filter_map(|key| get_or_spawn!(self, key));
-                self.visit_multiple(envelope, visitor, iter);
+                let keys = list
+                    .into_iter()
+                    .filter(|key| get_or_spawn!(self, key.clone()).is_some())
+                    .collect();
+                self.visit_multiple(envelope, visitor, keys);
             }
             Outcome::GentleMulticast(list) => {
-                let iter = list.into_iter().filter_map(|key| self.objects.get(&key));
-                self.visit_multiple(envelope, visitor, iter);
+                let keys = list
+                    .into_iter()
+                    .filter(|key| self.objects.get(key).is_some())
+                    .collect();
+                self.visit_multiple(envelope, visitor, keys);
             }
-            Outcome::Broadcast => self.visit_multiple(envelope, visitor, self.objects.iter()),
+            Outcome::Broadcast => self.visit_multiple(
+                envelope,
+                visitor,
+                self.objects.iter().map(|o| o.key().clone()).collect(),
+            ),
             Outcome::Discard => visitor.empty(envelope),
             Outcome::Default => unreachable!("must be altered earlier"),
         }
@@ -243,20 +253,18 @@ where
         &self,
         envelope: Envelope,
         visitor: &mut dyn GroupVisitor,
-        iter: impl Iterator<Item = impl Deref<Target = ObjectArc>>,
+        keys: Vec<R::Key>,
     ) {
-        let mut iter = iter.peekable();
-
-        if iter.peek().is_none() {
-            return visitor.empty(envelope);
+        let len = keys.len();
+        for (index, key) in keys.into_iter().enumerate() {
+            let item = self.objects.get(&key).unwrap();
+            if index + 1 == len {
+                visitor.visit(&item, envelope);
+                break;
+            } else {
+                visitor.visit(&item, envelope.duplicate());
+            }
         }
-
-        for item in iter {
-            visitor.visit(&item, envelope.duplicate());
-        }
-
-        let (_, token) = envelope.unpack_request();
-        token.forget();
     }
 
     fn spawn(self: &Arc<Self>, key: R::Key, mut backoff: Backoff) -> Option<ObjectArc> {
