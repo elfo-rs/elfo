@@ -16,7 +16,7 @@ use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
     config::{AnyConfig, Config, SystemConfig},
     context::Context,
-    envelope::Envelope,
+    envelope::{Envelope, EnvelopeOwned},
     exec::{Exec, ExecResult},
     group::{RestartMode, RestartPolicy, TerminationPolicy},
     message::Request,
@@ -218,11 +218,11 @@ where
 
         match outcome {
             Outcome::Unicast(key) => match get_or_spawn!(self, key) {
-                Some(object) => visitor.visit_last(&object, envelope),
+                Some(object) => visitor.visit(&object, envelope),
                 None => visitor.empty(envelope),
             },
             Outcome::GentleUnicast(key) => match self.objects.get(&key) {
-                Some(object) => visitor.visit_last(&object, envelope),
+                Some(object) => visitor.visit(&object, envelope),
                 None => visitor.empty(envelope),
             },
             Outcome::Multicast(list) => {
@@ -251,9 +251,12 @@ where
             return visitor.empty(envelope);
         }
 
-        while let Some(object) = iter.next() {
-            visitor.visit(&object, &envelope);
+        for item in iter {
+            visitor.visit(&item, envelope.duplicate());
         }
+
+        let (_, token) = envelope.unpack_request();
+        token.forget();
     }
 
     fn spawn(self: &Arc<Self>, key: R::Key, mut backoff: Backoff) -> Option<ObjectArc> {

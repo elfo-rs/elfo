@@ -147,13 +147,11 @@ pub(crate) trait GroupHandle: Send + Sync + 'static {
 /// Possible sequences of calls:
 /// * `done()`, if handled by a supervisor
 /// * `empty()`, if no relevant actors in a group
-/// * `visit_last()`, if only one relevant actor in a group
-/// * `visit()`, `visit()`, .., `visit_last()`
+/// * `visit()`, otherwise
 pub trait GroupVisitor {
     fn done(&mut self);
     fn empty(&mut self, envelope: Envelope);
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope);
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope);
+    fn visit(&mut self, object: &ObjectArc, envelope: Envelope);
 }
 
 // === SendGroupVisitor ===
@@ -266,12 +264,7 @@ impl GroupVisitor for SendGroupVisitor<'_> {
         self.extra = Some(envelope);
     }
 
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
-        let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
-        self.try_send(object, envelope);
-    }
-
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn visit(&mut self, object: &ObjectArc, envelope: Envelope) {
         self.try_send(object, envelope);
     }
 }
@@ -328,12 +321,7 @@ impl GroupVisitor for TrySendGroupVisitor {
         self.extra = Some(envelope);
     }
 
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
-        let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
-        self.try_send(object, envelope);
-    }
-
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn visit(&mut self, object: &ObjectArc, envelope: Envelope) {
         self.try_send(object, envelope);
     }
 }

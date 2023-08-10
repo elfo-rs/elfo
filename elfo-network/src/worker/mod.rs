@@ -585,13 +585,7 @@ impl SocketReader {
                 // TODO: maybe emit some metric?
             }
 
-            fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
-                let envelope = envelope.duplicate();
-                self.this
-                    .do_handle_message(self.flows, object, envelope, true);
-            }
-
-            fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+            fn visit(&mut self, object: &ObjectArc, envelope: Envelope) {
                 self.this
                     .do_handle_message(self.flows, object, envelope, true);
             }
