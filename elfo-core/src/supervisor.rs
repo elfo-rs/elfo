@@ -226,7 +226,12 @@ where
                 None => visitor.empty(envelope),
             },
             Outcome::Multicast(list) => {
-                let iter = list.into_iter().filter_map(|key| get_or_spawn!(self, key));
+                for key in list.iter() {
+                    if !self.objects.contains_key(key) {
+                        get_or_spawn!(self, key.clone());
+                    }
+                }
+                let iter = list.into_iter().filter_map(|key| self.objects.get(&key));
                 self.visit_multiple(envelope, visitor, iter);
             }
             Outcome::GentleMulticast(list) => {
