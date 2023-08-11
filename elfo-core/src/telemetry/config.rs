@@ -1,10 +1,12 @@
+use std::fmt;
+
 use regex::Regex;
 use serde::{
     de::{Deserializer, Error},
     Deserialize,
 };
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(default)]
 pub(crate) struct TelemetryConfig {
     pub(crate) per_actor_group: bool,
@@ -14,6 +16,19 @@ pub(crate) struct TelemetryConfig {
 pub(crate) enum PerActorKey {
     Bool(bool),
     Replacement(Regex, String),
+}
+
+impl fmt::Debug for PerActorKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Bool(flag) => write!(f, "{:?}", flag),
+            Self::Replacement(pattern, template) => f
+                .debug_tuple("")
+                .field(&pattern.as_str())
+                .field(&template)
+                .finish(),
+        }
+    }
 }
 
 impl PerActorKey {

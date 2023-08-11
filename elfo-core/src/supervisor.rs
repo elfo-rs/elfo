@@ -426,7 +426,14 @@ where
         control.user_config = Some(config.get_user::<C>().clone());
         self.router
             .update(control.user_config.as_ref().expect("just saved"));
-        self.in_scope(|| info!(config = ?control.user_config.as_ref().unwrap(), "router updated"));
+
+        self.in_scope(|| {
+            debug!(
+                message = "config updated",
+                system = ?control.system_config,
+                custom = ?control.user_config.as_ref().unwrap(),
+            )
+        });
     }
 
     fn subscribe_to_statuses(&self, addr: Addr, forcing: bool) {

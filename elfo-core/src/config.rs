@@ -156,7 +156,7 @@ impl<'de> Deserializer<'de> for AnyConfig {
 
 // === SystemConfig ===
 
-#[derive(Default, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct SystemConfig {
     pub(crate) logging: crate::logging::LoggingConfig,

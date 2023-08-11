@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - ReleaseDate
 ### Fixed
 - supervisor: deadlock if a router returns `Outcome::Multicast` ([#105]).
+- supervisor: print the system config, not only the custom one.
 
 [#105]: https://github.com/elfo-rs/elfo/pull/105
 

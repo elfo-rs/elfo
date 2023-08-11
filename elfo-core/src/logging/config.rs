@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer};
 use tracing::level_filters::LevelFilter;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(default)]
 pub(crate) struct LoggingConfig {
     #[serde(deserialize_with = "deserialize_level_filter")]
