@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Fixed
+- supervisor: deadlock if a router returns `Outcome::Multicast` ([#105]).
+
+[#105]: https://github.com/elfo-rs/elfo/pull/105
 
 ## [0.2.0-alpha.6] - 2023-08-04
 ### Added
