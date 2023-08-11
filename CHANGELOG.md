@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.7] - 2023-08-11
 ### Fixed
 - supervisor: deadlock if a router returns `Outcome::Multicast` ([#105]).
 - supervisor: print the system config, not only the custom one.
@@ -500,7 +502,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.6...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.7...HEAD
+[0.2.0-alpha.7]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.6...elfo-v0.2.0-alpha.7
 [0.2.0-alpha.6]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.4...elfo-v0.2.0-alpha.6
 [0.2.0-alpha.4]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.3...elfo-v0.2.0-alpha.4
 [0.2.0-alpha.3]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.2...elfo-v0.2.0-alpha.3

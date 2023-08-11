@@ -1,6 +1,6 @@
 [package]
 name = "elfo-network"
-version = "0.2.0-alpha.6"
+version = "0.2.0-alpha.7"
 description = "Distributed actors for elfo"
 keywords = ["elfo", "actor", "distributed", "tokio", "network"]
 
@@ -11,7 +11,7 @@ edition.workspace = true
 readme.workspace = true
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.6", path = "../elfo-core", features = ["unstable", "network"] }
+elfo-core = { version = "0.2.0-alpha.7", path = "../elfo-core", features = ["unstable", "network"] }
 elfo-utils = { version = "0.2.2", path = "../elfo-utils" }
 
 serde = { version = "1.0.120", features = ["derive"] }
