@@ -11,7 +11,7 @@ use fxhash::FxHashMap;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tokio::{fs, select, time};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use elfo_core::{
     config::AnyConfig,
@@ -60,7 +60,7 @@ enum ConfigSource {
     Fixture(Result<Value, String>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ConfigWithMeta {
     group_name: String,
     addr: Addr,
@@ -79,6 +79,8 @@ impl Configurer {
     }
 
     async fn main(mut self) {
+        info!("configurer started");
+
         let mut validated_configs = false;
         let mut first_envelope = match self.ctx.recv().await {
             Some(e) => {
@@ -105,6 +107,7 @@ impl Configurer {
                             }
                             return;
                         } else {
+                            info!("force-updating configs at startup");
                             match self.load_and_update_configs(true).await {
                                 Ok(_) => self.ctx.respond(token, Ok(())),
                                 Err(errors) => {
@@ -132,6 +135,9 @@ impl Configurer {
 
         // Reload and validate configs in case the actor was restarted by the
         // supervisor.
+        if !validated_configs {
+            info!("force-updating configs after actor restart");
+        }
         if !validated_configs && self.load_and_update_configs(true).await.is_ok() {
             panic!("configs are invalid at startup");
         }
@@ -140,6 +146,7 @@ impl Configurer {
         self.ctx.attach(signal);
         let signal = Signal::new(SignalKind::UnixUser2, ReloadConfigs::forcing());
         self.ctx.attach(signal);
+        info!("signals are attached");
 
         while let Some(envelope) = match first_envelope.take() {
             e @ Some(..) => e,
@@ -147,6 +154,7 @@ impl Configurer {
         } {
             msg!(match envelope {
                 (ReloadConfigs { force }, token) => {
+                    info!(%force, "reloading configs because of request");
                     let response = self
                         .load_and_update_configs(force)
                         .await
@@ -191,6 +199,7 @@ impl Configurer {
     }
 
     async fn load_and_check_configs(&self) -> Result<(), Vec<ReloadConfigsError>> {
+        info!("loading and check configs");
         let configs = self.load_configs().await?;
 
         // Here we rely on the fact that the first `ValidateConfig` message is consumed
@@ -203,16 +212,17 @@ impl Configurer {
         &mut self,
         force: bool,
     ) -> Result<(), Vec<ReloadConfigsError>> {
+        info!("loading and update configs");
         let configs = self.load_configs().await?;
 
         let mut updated_groups = Vec::new();
 
-        debug!("updating configs of system groups");
+        info!("updating configs of system groups");
         updated_groups.extend(
             self.update_configs(&configs, TopologyFilter::System, force)
                 .await?,
         );
-        debug!("updating configs of user groups");
+        info!("updating configs of user groups");
         updated_groups.extend(
             self.update_configs(&configs, TopologyFilter::User, force)
                 .await?,
@@ -237,6 +247,7 @@ impl Configurer {
         force: bool,
     ) -> Result<Vec<String>, Vec<ReloadConfigsError>> {
         let mut config_list = match_configs(&self.topology, config, filter);
+        info!(?config_list, "update configs");
 
         // Filter up-to-date configs if needed.
         if !force {
@@ -245,6 +256,7 @@ impl Configurer {
                     .get(&c.group_name)
                     .map_or(true, |v| c.hash != *v)
             });
+            info!(?config_list, "filtered the list on non-forcing update");
         }
 
         if config_list.is_empty() {
@@ -252,6 +264,7 @@ impl Configurer {
         }
 
         // Validation.
+        info!("update configs: validate");
         let status = ActorStatus::NORMAL.with_details("config validation");
         self.ctx.set_status(status);
 
@@ -262,6 +275,7 @@ impl Configurer {
         }
 
         // Updating.
+        info!("update configs: update");
         let status = ActorStatus::NORMAL.with_details("config updating");
         self.ctx.set_status(status);
 
@@ -280,6 +294,7 @@ impl Configurer {
         &self,
         config_list: &[ConfigWithMeta],
     ) -> Result<(), Vec<ReloadConfigsError>> {
+        info!(?config_list, "validate all");
         let futures = config_list
             .iter()
             .cloned()
@@ -322,6 +337,7 @@ impl Configurer {
     }
 
     async fn update_all(&self, config_list: &[ConfigWithMeta]) {
+        info!(?config_list, "update all");
         let futures = config_list
             .iter()
             .cloned()
@@ -403,7 +419,7 @@ fn match_configs(
     config: &Value,
     filter: TopologyFilter,
 ) -> Vec<ConfigWithMeta> {
-    topology
+    let result = topology
         .locals()
         // Entrypoints' configs are updated only at startup.
         .filter(|group| !group.is_entrypoint)
@@ -425,5 +441,7 @@ fn match_configs(
                 config: AnyConfig::from_value(group_config),
             }
         })
-        .collect()
+        .collect();
+    info!(?result, "matched configs");
+    result
 }
