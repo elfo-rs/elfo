@@ -251,6 +251,7 @@ impl Configurer {
 
         // Filter up-to-date configs if needed.
         if !force {
+            info!(?self.versions, "filtering configs according to versions");
             config_list.retain(|c| {
                 self.versions
                     .get(&c.group_name)
@@ -286,6 +287,7 @@ impl Configurer {
         // Update versions.
         self.versions
             .extend(config_list.iter().map(|c| (c.group_name.clone(), c.hash)));
+        info!(?self.versions, "updated config versions");
 
         Ok(config_list.into_iter().map(|c| c.group_name).collect())
     }
@@ -434,10 +436,13 @@ fn match_configs(
             let group_config = helpers::lookup_value(config, &group.name).cloned();
             let group_config = helpers::add_defaults(group_config, common);
 
+            let hash = fxhash::hash64(&group_config);
+            info!(?group_config, ?hash, "matched group config");
+
             ConfigWithMeta {
                 group_name: group.name.clone(),
                 addr: group.addr,
-                hash: fxhash::hash64(&group_config),
+                hash,
                 config: AnyConfig::from_value(group_config),
             }
         })
