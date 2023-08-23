@@ -26,6 +26,7 @@ test-util = ["elfo-test", "elfo-core/test-util"]
 network = ["elfo-network"]
 unstable = ["elfo-core/unstable", "elfo-telemeter/unstable" ]
 unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
+tracing-log = ["elfo-logger/tracing-log"]
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.7", path = "../elfo-core" }
