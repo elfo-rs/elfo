@@ -6,7 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- next-header -->
 
-## [Unreleased] - ReleaseDate
+## [Backports] - no release date
+
+### Fixed
+- logger: `tracing-log` events are now properly filtered by target when `tracing-log` feature is enabled ([#106]).
 
 ## [0.2.0-alpha.4] - 2023-07-06
 

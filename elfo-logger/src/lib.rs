@@ -82,6 +82,19 @@ pub fn init() -> Blueprint {
         install_subscriber(subscriber);
     };
 
+    #[cfg(feature = "tracing-log")]
+    {
+        if let Err(e) = tracing_log::LogTracer::init() {
+            tracing::error!(
+                error = &*e.to_string(),
+                "can't integrate with log adapter, logs produced via `log` crate might be not available",
+            );
+        } else {
+            // Required to initialize `tracing-log` logs detection in `filtering_layer`.
+            log::error!("initialized tracing_log adapter");
+        }
+    }
+
     blueprint
 }
 

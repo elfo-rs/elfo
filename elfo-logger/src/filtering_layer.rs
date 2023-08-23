@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use fxhash::FxHashMap;
+#[cfg(feature = "tracing-log")]
+use once_cell::sync::OnceCell;
 use tracing::{metadata::LevelFilter, subscriber::Interest, Metadata, Subscriber};
 use tracing_subscriber::{
     filter::Targets,
@@ -27,6 +29,8 @@ impl Default for FilteringConfig {
 
 struct Inner {
     config: ArcSwap<FilteringConfig>,
+    #[cfg(feature = "tracing-log")]
+    log_metadata_name: OnceCell<&'static str>,
 }
 
 #[derive(Clone)]
@@ -39,6 +43,8 @@ impl FilteringLayer {
         Self {
             inner: Arc::new(Inner {
                 config: ArcSwap::new(Arc::new(FilteringConfig::default())),
+                #[cfg(feature = "tracing-log")]
+                log_metadata_name: OnceCell::new(),
             }),
         }
     }
@@ -76,6 +82,35 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
         // We don't need to recheck `.targets` here, because `.register_callsite()`
         // would already eliminate logs that would be filtered by it.
         let level = *meta.level();
+
+        #[cfg(feature = "tracing-log")]
+        {
+            // `tracing-log` doesn't call `.register_callsite()`, so we have to recheck
+            // `.targets` in this one case.
+            let name = meta.name();
+            if let Some(&log_name) = self.inner.log_metadata_name.get() {
+                // We've already got logs from `tracing-log`, just compare str
+                // pointers for performance.
+                if std::ptr::eq(log_name, name) {
+                    let config = self.inner.config.load();
+                    if !config.targets.would_enable(meta.target(), meta.level()) {
+                        return false;
+                    }
+                }
+            } else if name == "log record" {
+                let config = self.inner.config.load();
+                if !config.targets.would_enable(meta.target(), meta.level()) {
+                    return false;
+                }
+                // That's "initialized tracing_log adapter" to set `log_metadata_name`, just
+                // ignore it. Any actual logs from `elfo_logger` would use `tracing`.
+                if meta.target() == "elfo_logger" {
+                    self.inner.log_metadata_name.set(name).ok();
+                    return false;
+                }
+            }
+        }
+
         scope::try_with(|scope| {
             if !scope.permissions().is_logging_enabled(level) {
                 return false;
