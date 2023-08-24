@@ -4,7 +4,7 @@ use std::{
     cell::Cell,
     future::Future,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicIsize, AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -110,26 +110,28 @@ impl Scope {
 
     /// Private API for now.
     #[inline]
-    #[stability::unstable]
     #[doc(hidden)]
+    #[stability::unstable]
     pub fn logging(&self) -> &LoggingControl {
         &self.group.logging
     }
 
     /// Private API for now.
     #[inline]
-    #[stability::unstable]
     #[doc(hidden)]
+    #[stability::unstable]
     pub fn dumping(&self) -> &DumpingControl {
         &self.group.dumping
     }
 
+    #[inline]
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_allocated_bytes(&self, by: usize) {
         self.actor.allocated_bytes.fetch_add(by, Ordering::Relaxed);
     }
 
+    #[inline]
     #[doc(hidden)]
     #[stability::unstable]
     pub fn increment_deallocated_bytes(&self, by: usize) {
@@ -138,12 +140,26 @@ impl Scope {
             .fetch_add(by, Ordering::Relaxed);
     }
 
+    #[inline]
+    #[doc(hidden)]
+    #[stability::unstable]
+    pub fn linked_bytes_track(&self, size: usize) -> LinkedBytesTrack {
+        self.actor
+            .linked_bytes
+            .fetch_add(size as isize, Ordering::Relaxed);
+        LinkedBytesTrack(self.actor.clone())
+    }
+
     pub(crate) fn take_allocated_bytes(&self) -> usize {
         self.actor.allocated_bytes.swap(0, Ordering::Relaxed)
     }
 
     pub(crate) fn take_deallocated_bytes(&self) -> usize {
         self.actor.deallocated_bytes.swap(0, Ordering::Relaxed)
+    }
+
+    pub(crate) fn take_linked_bytes_delta(&self) -> isize {
+        self.actor.linked_bytes.swap(0, Ordering::Relaxed)
     }
 
     /// Wraps the provided future with the current scope.
@@ -157,12 +173,37 @@ impl Scope {
     }
 }
 
+#[stability::unstable]
+pub struct LinkedBytesTrack(Arc<ScopeActorShared>);
+
+impl LinkedBytesTrack {
+    #[inline]
+    pub fn into_raw(self) -> usize {
+        Arc::into_raw(self.0) as usize
+    }
+
+    /// # Safety
+    /// TODO
+    #[inline]
+    pub unsafe fn from_raw(ptr: usize) -> Self {
+        Self(Arc::from_raw(ptr as *const ScopeActorShared))
+    }
+
+    #[inline]
+    pub fn destroy(self, size: usize) {
+        self.0
+            .linked_bytes
+            .fetch_sub(size as isize, Ordering::Relaxed);
+    }
+}
+
 struct ScopeActorShared {
     addr: Addr,
     meta: Arc<ActorMeta>,
     telemetry_meta: Arc<ActorMeta>,
     allocated_bytes: AtomicUsize,
     deallocated_bytes: AtomicUsize,
+    linked_bytes: AtomicIsize,
 }
 
 impl ScopeActorShared {
@@ -173,6 +214,7 @@ impl ScopeActorShared {
             telemetry_meta: meta,
             allocated_bytes: AtomicUsize::new(0),
             deallocated_bytes: AtomicUsize::new(0),
+            linked_bytes: AtomicIsize::new(0),
         }
     }
 
@@ -192,6 +234,7 @@ impl ScopeActorShared {
                 .unwrap_or_else(|| self.meta.clone()),
             allocated_bytes: AtomicUsize::new(0),
             deallocated_bytes: AtomicUsize::new(0),
+            linked_bytes: AtomicIsize::new(0),
         }
     }
 }
