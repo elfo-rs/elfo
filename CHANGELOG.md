@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- message: support deserialization of AnyMessage ([#107]).
+
+[#107]: https://github.com/elfo-rs/elfo/pull/107
 
 ## [0.2.0-alpha.7] - 2023-08-11
 ### Fixed
