@@ -31,11 +31,9 @@ mod render;
 mod stats;
 mod storage;
 
-#[cfg(feature = "unstable")]
 mod allocator;
 
-#[cfg(feature = "unstable")]
-pub use allocator::AllocatorStats;
+pub use allocator::*;
 
 /// Installs a global metric recorder and returns a group to handle metrics.
 ///
