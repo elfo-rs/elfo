@@ -252,7 +252,7 @@ pub fn message_impl(
                 smallbox!(Clone::clone(cast_ref(message)))
             }
 
-            fn deserialize(deserializer: &mut dyn #internal::erased_serde::Deserializer<'_>) -> Result<#internal::AnyMessage, #internal::erased_serde::Error> {
+            fn deserialize_any(deserializer: &mut dyn #internal::erased_serde::Deserializer<'_>) -> Result<#internal::AnyMessage, #internal::erased_serde::Error> {
                 #internal::erased_serde::deserialize::<#name>(deserializer).map(#crate_::Message::upcast)
             }
 
@@ -271,7 +271,7 @@ pub fn message_impl(
                 clone,
                 debug,
                 erase,
-                deserialize,
+                deserialize_any,
                 #network_fns_ref
             };
 

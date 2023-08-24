@@ -211,14 +211,14 @@ impl<'de, 'tag> DeserializeSeed<'de> for MessageTag<'tag> {
     where
         D: Deserializer<'de>,
     {
-        let deserialize = lookup_vtable(self.protocol, self.name)
+        let deserialize_any = lookup_vtable(self.protocol, self.name)
             .ok_or(serde::de::Error::custom(
                 "unknown protocol/name combination",
             ))?
-            .deserialize;
+            .deserialize_any;
 
         let mut deserializer = <dyn erased_serde::Deserializer<'_>>::erase(deserializer);
-        deserialize(&mut deserializer).map_err(serde::de::Error::custom)
+        deserialize_any(&mut deserializer).map_err(serde::de::Error::custom)
     }
 }
 
@@ -335,7 +335,7 @@ pub struct MessageVTable {
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
-    pub deserialize:
+    pub deserialize_any:
         fn(&mut dyn erased_serde::Deserializer<'_>) -> Result<AnyMessage, erased_serde::Error>,
     #[cfg(feature = "network")]
     pub write_msgpack: fn(&AnyMessage, &mut Vec<u8>, usize) -> Result<(), rmps::encode::Error>,
