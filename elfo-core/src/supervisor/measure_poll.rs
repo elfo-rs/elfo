@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use metrics::Key;
+use metrics::{GaugeValue, Key};
 use pin_project::pin_project;
 use quanta::Instant;
 
@@ -14,6 +14,7 @@ use crate::stuck_detection::StuckDetector;
 static BUSY_TIME_SECONDS: Key = Key::from_static_name("elfo_busy_time_seconds");
 static ALLOCATED_BYTES: Key = Key::from_static_name("elfo_allocated_bytes_total");
 static DEALLOCATED_BYTES: Key = Key::from_static_name("elfo_deallocated_bytes_total");
+static LINKED_BYTES: Key = Key::from_static_name("elfo_linked_bytes_total");
 
 #[pin_project]
 pub(crate) struct MeasurePoll<F> {
@@ -56,6 +57,10 @@ impl<F: Future> Future for MeasurePoll<F> {
                 recorder.increment_counter(&ALLOCATED_BYTES, scope.take_allocated_bytes() as u64);
                 recorder
                     .increment_counter(&DEALLOCATED_BYTES, scope.take_deallocated_bytes() as u64);
+                recorder.update_gauge(
+                    &LINKED_BYTES,
+                    GaugeValue::Increment(scope.take_linked_bytes_delta() as f64),
+                );
             });
             res
         } else {

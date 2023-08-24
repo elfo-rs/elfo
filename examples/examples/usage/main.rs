@@ -315,3 +315,7 @@ fn topology() -> elfo::Topology {
 async fn main() {
     elfo::init::start(topology()).await;
 }
+
+use elfo::batteries::telemeter::AllocatorStats;
+#[global_allocator]
+static ALLOCATOR: AllocatorStats<std::alloc::System> = AllocatorStats::new(std::alloc::System);
