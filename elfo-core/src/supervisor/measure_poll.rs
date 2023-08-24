@@ -5,7 +5,7 @@ use std::{
 };
 
 use idr_ebr::EbrGuard;
-use metrics::Key;
+use metrics::{GaugeValue, Key};
 use pin_project::pin_project;
 
 use elfo_utils::time::Instant;
@@ -16,6 +16,7 @@ use crate::stuck_detection::StuckDetector;
 static BUSY_TIME_SECONDS: Key = Key::from_static_name("elfo_busy_time_seconds");
 static ALLOCATED_BYTES: Key = Key::from_static_name("elfo_allocated_bytes_total");
 static DEALLOCATED_BYTES: Key = Key::from_static_name("elfo_deallocated_bytes_total");
+static LINKED_BYTES: Key = Key::from_static_name("elfo_linked_bytes_total");
 
 #[pin_project]
 pub(crate) struct MeasurePoll<F> {
@@ -82,12 +83,16 @@ fn publish_alloc_metrics(recorder: &dyn metrics::Recorder) {
     crate::scope::with(|scope| {
         let allocated = scope.take_allocated_bytes();
         let deallocated = scope.take_deallocated_bytes();
+        let linked = scope.take_linked_bytes_delta();
 
         if allocated > 0 {
             recorder.increment_counter(&ALLOCATED_BYTES, allocated as u64);
         }
         if deallocated > 0 {
             recorder.increment_counter(&DEALLOCATED_BYTES, deallocated as u64);
+        }
+        if linked != 0 {
+            recorder.update_gauge(&LINKED_BYTES, GaugeValue::Increment(linked as f64));
         }
     });
 }
