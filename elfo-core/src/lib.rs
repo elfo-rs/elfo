@@ -92,6 +92,7 @@ pub mod _priv {
         permissions::{AtomicPermissions, Permissions},
         request_table::RequestId,
     };
+    pub use erased_serde;
     pub use linkme;
     pub use metrics;
     #[cfg(feature = "network")]

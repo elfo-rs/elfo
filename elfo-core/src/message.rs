@@ -4,7 +4,11 @@ use fxhash::{FxHashMap, FxHashSet};
 use linkme::distributed_slice;
 use metrics::Label;
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{DeserializeSeed, SeqAccess, Visitor},
+    ser::SerializeTuple,
+    Deserialize, Deserializer, Serialize,
+};
 use smallbox::{smallbox, SmallBox};
 
 use elfo_utils::unlikely;
@@ -146,19 +150,75 @@ impl Serialize for AnyMessage {
     where
         S: serde::ser::Serializer,
     {
+        let mut tuple = serializer.serialize_tuple(3)?;
+        tuple.serialize_element(self.protocol())?;
+        tuple.serialize_element(self.name())?;
+
         // TODO: avoid allocation here
-        self._erase().serialize(serializer)
+        let erased_msg = self._erase();
+        tuple.serialize_element(&*erased_msg)?;
+
+        tuple.end()
     }
 }
 
 impl<'de> Deserialize<'de> for AnyMessage {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::de::Deserializer<'de>,
     {
-        Err(serde::de::Error::custom(
-            "AnyMessage cannot be deserialized",
-        ))
+        deserializer.deserialize_tuple(3, AnyMessageDeserializeVisitor)
+    }
+}
+
+struct AnyMessageDeserializeVisitor;
+
+impl<'de> Visitor<'de> for AnyMessageDeserializeVisitor {
+    type Value = AnyMessage;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "tuple of 3 elements")
+    }
+
+    #[inline]
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let protocol = serde::de::SeqAccess::next_element::<&str>(&mut seq)?.ok_or(
+            serde::de::Error::invalid_length(0usize, &"tuple of 3 elements"),
+        )?;
+
+        let name = serde::de::SeqAccess::next_element::<&str>(&mut seq)?.ok_or(
+            serde::de::Error::invalid_length(1usize, &"tuple of 3 elements"),
+        )?;
+
+        serde::de::SeqAccess::next_element_seed(&mut seq, MessageTag { protocol, name })?.ok_or(
+            serde::de::Error::invalid_length(2usize, &"tuple of 3 elements"),
+        )
+    }
+}
+
+struct MessageTag<'a> {
+    protocol: &'a str,
+    name: &'a str,
+}
+
+impl<'de, 'tag> DeserializeSeed<'de> for MessageTag<'tag> {
+    type Value = AnyMessage;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let deserialize = lookup_vtable(self.protocol, self.name)
+            .ok_or(serde::de::Error::custom(
+                "unknown protocol/name combination",
+            ))?
+            .deserialize;
+
+        let mut deserializer = <dyn erased_serde::Deserializer<'_>>::erase(deserializer);
+        deserialize(&mut deserializer).map_err(serde::de::Error::custom)
     }
 }
 
@@ -275,6 +335,8 @@ pub struct MessageVTable {
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
+    pub deserialize:
+        fn(&mut dyn erased_serde::Deserializer<'_>) -> Result<AnyMessage, erased_serde::Error>,
     #[cfg(feature = "network")]
     pub write_msgpack: fn(&AnyMessage, &mut Vec<u8>, usize) -> Result<(), rmps::encode::Error>,
     #[cfg(feature = "network")]
@@ -326,4 +388,33 @@ pub(crate) fn check_uniqueness() -> Result<(), Vec<(String, String)>> {
         .collect::<FxHashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{message, message::AnyMessage, Message};
+
+    #[test]
+    fn any_message_deserialize() {
+        #[message]
+        #[derive(PartialEq)]
+        struct MyCoolMessage {
+            field_a: u32,
+            field_b: String,
+            field_c: f64,
+        }
+
+        let msg = MyCoolMessage {
+            field_a: 123,
+            field_b: String::from("Hello world"),
+            field_c: 0.5,
+        };
+        let any_msg = msg.clone().upcast();
+        let serialized = serde_json::to_string(&any_msg).unwrap();
+
+        let deserialized_any_msg: AnyMessage = serde_json::from_str(&serialized).unwrap();
+        let deserialized_msg: MyCoolMessage = deserialized_any_msg.downcast().unwrap();
+
+        assert_eq!(msg, deserialized_msg);
+    }
 }

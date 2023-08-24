@@ -252,6 +252,10 @@ pub fn message_impl(
                 smallbox!(Clone::clone(cast_ref(message)))
             }
 
+            fn deserialize(deserializer: &mut dyn #internal::erased_serde::Deserializer<'_>) -> Result<#internal::AnyMessage, #internal::erased_serde::Error> {
+                #internal::erased_serde::deserialize::<#name>(deserializer).map(#crate_::Message::upcast)
+            }
+
             #network_fns
 
             #[linkme::distributed_slice(MESSAGE_LIST)]
@@ -267,6 +271,7 @@ pub fn message_impl(
                 clone,
                 debug,
                 erase,
+                deserialize,
                 #network_fns_ref
             };
 
