@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [#107]: https://github.com/elfo-rs/elfo/pull/107
 
+### Fixed
+- logger: `tracing-log` events are now properly filtered by target when `tracing-log` feature is enabled ([#106]).
+
+[#106]: https://github.com/elfo-rs/elfo/pull/106
+
 ## [0.2.0-alpha.7] - 2023-08-11
 ### Fixed
 - supervisor: deadlock if a router returns `Outcome::Multicast` ([#105]).
