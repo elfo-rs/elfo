@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.8] - 2023-08-25
 ### Added
 - message: support deserialization of AnyMessage ([#107]).
 
@@ -511,7 +513,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.7...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.8...HEAD
+[0.2.0-alpha.8]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.7...elfo-v0.2.0-alpha.8
 [0.2.0-alpha.7]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.6...elfo-v0.2.0-alpha.7
 [0.2.0-alpha.6]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.4...elfo-v0.2.0-alpha.6
 [0.2.0-alpha.4]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.3...elfo-v0.2.0-alpha.4
