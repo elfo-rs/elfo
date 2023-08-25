@@ -355,7 +355,6 @@ static MESSAGES: Lazy<FxHashMap<(&'static str, &'static str), &'static MessageVT
             .collect()
     });
 
-#[cfg(feature = "network")]
 fn lookup_vtable(protocol: &str, name: &str) -> Option<&'static MessageVTable> {
     // Extend lifetimes to static in order to get `(&'static str, &'static str)`.
     // SAFETY: this pair doesn't overlive the function.
