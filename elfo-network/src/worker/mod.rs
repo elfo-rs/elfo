@@ -46,6 +46,7 @@ mod flows_tx;
 mod requests;
 
 // TODO: send `CloseFlow` once an actor is closed, not only on incoming message.
+// TODO: don't send control messages if the peer knows nothing about the flow.
 
 #[message]
 struct StartPusher(Local<Addr>);
@@ -387,22 +388,20 @@ impl SocketReader {
     /// actor if the message was a request in order to avoid indefinite
     /// waiting from the remote actor's side.
     fn handle_skipped_message(&self, details: EnvelopeDetails) {
-        let update_flow = {
+        let update = {
             let mut rx_flows = self.rx_flows.lock();
             if details.recipient == Addr::NULL {
                 rx_flows.acquire_routed(true);
                 rx_flows.release_routed()
             } else {
+                // TODO: it's debatable that we should create a flow here.
                 let mut rx_flow = rx_flows.get_or_create_flow(details.recipient);
                 rx_flow.acquire_direct(true);
                 rx_flow.release_direct()
             }
         };
 
-        if let Some(envelope) = update_flow.map(make_system_envelope) {
-            let item = KanalItem::simple(Addr::NULL, envelope);
-            self.tx.try_send(item).unwrap();
-        }
+        self.send_back(update);
 
         if details.kind == KIND_REQUEST_ALL || details.kind == KIND_REQUEST_ANY {
             let sender = self
@@ -410,12 +409,14 @@ impl SocketReader {
                 .book()
                 .get(self.handle_addr)
                 .expect("bug: remote group is missing in the address book");
+
             let token = ResponseToken::new(
                 details.sender,
                 details.request_id.expect("bug: request_id is missing"),
                 details.trace_id,
                 self.ctx.book().clone(),
             );
+
             // This can be the first time we have received a message from this sender,
             // so we need to introduce the flow which will be used in `sender.respond()`
             // below.
@@ -425,11 +426,11 @@ impl SocketReader {
             || details.kind == KIND_RESPONSE_FAILED
             || details.kind == KIND_RESPONSE_IGNORED
         {
-            let Some(token) = self
-                .requests
-                .lock()
-                .get_token(details.recipient, details.request_id.expect("bug: request_id is missing"), true)
-            else {
+            let Some(token) = self.requests.lock().get_token(
+                details.recipient,
+                details.request_id.expect("bug: request_id is missing"),
+                true,
+            ) else {
                 warn!(
                     message = "received response to unknown request",
                     kind = %details.kind,
@@ -541,10 +542,9 @@ impl SocketReader {
                 self.tx_flows.close_flow(msg);
             }
             msg @ internode::Ping => {
-                let envelope = make_system_envelope(internode::Pong {
+                self.send_back(Some(internode::Pong {
                     payload: msg.payload,
-                });
-                let _ = self.tx.try_send(KanalItem::simple(Addr::NULL, envelope));
+                }));
             }
             msg @ internode::Pong => {
                 let time_ns = self.time_origin.elapsed().as_nanos() as u64 - msg.payload;
@@ -561,11 +561,9 @@ impl SocketReader {
         let mut flows = self.rx_flows.lock();
 
         let Some(object) = book.get(recipient) else {
-            if let Some(envelope) = flows.close(recipient).map(make_system_envelope) {
-                self.tx
-                    .try_send(KanalItem::simple(Addr::NULL, envelope))
-                    .unwrap();
-            }
+            let (close, update) = flows.close(recipient);
+            self.send_back(close);
+            self.send_back(update);
             return;
         };
 
@@ -612,11 +610,7 @@ impl SocketReader {
             .expect("invalid local group addr");
         group.visit_group(envelope, &mut visitor);
 
-        if let Some(envelope) = flows.release_routed().map(make_system_envelope) {
-            self.tx
-                .try_send(KanalItem::simple(Addr::NULL, envelope))
-                .unwrap();
-        }
+        self.send_back(flows.release_routed());
     }
 
     fn do_handle_message(
@@ -630,31 +624,45 @@ impl SocketReader {
             flows.acquire_routed(false);
         }
 
-        let mut flow = flows.get_or_create_flow(object.addr());
-        flow.acquire_direct(!routed);
+        let flow = flows.get_flow(object.addr());
 
-        // If the recipient already has pending messages, enqueue and return.
-        if !flow.is_stable() {
-            flow.enqueue(envelope, false);
+        // Check whether the flow is unstable or not.
+        // If the recipient is unstable (i.e. already has pending messages), enqueue and
+        // return. The envelope will be handled by the corresponding pusher.
+        // Unexisted flows (new ones or already closed) are considered stable.
+        if flow.as_ref().map_or(false, |f| !f.is_stable()) {
+            flow.unwrap().enqueue(envelope, routed);
             return;
         }
 
-        // Otherwise, try to send the message right now.
-        match object.try_send(Addr::NULL, envelope) {
+        let result = object.try_send(Addr::NULL, envelope);
+
+        // If the recipient has gone, close the flow and return.
+        if matches!(result, Err(TrySendError::Closed(_))) {
+            let (close, update) = flows.close(object.addr());
+            self.send_back(close);
+            self.send_back(update);
+
+            if routed {
+                self.send_back(flows.release_routed());
+            }
+            return;
+        }
+
+        // The recipient is alive, so we should add a new flow if it doesn't exist yet.
+        let mut flow = ward!(flow, flows.get_or_create_flow(object.addr()));
+        flow.acquire_direct(!routed);
+
+        match result {
             Ok(()) => {
-                if let Some(envelope) = flow.release_direct().map(make_system_envelope) {
-                    let item = KanalItem::simple(Addr::NULL, envelope);
-                    self.tx.try_send(item).unwrap();
-                }
+                self.send_back(flow.release_direct());
+
                 if routed {
-                    if let Some(envelope) = flows.release_routed().map(make_system_envelope) {
-                        let item = KanalItem::simple(Addr::NULL, envelope);
-                        self.tx.try_send(item).unwrap();
-                    }
+                    self.send_back(flows.release_routed());
                 }
             }
             Err(TrySendError::Full(envelope)) => {
-                flow.enqueue(envelope, false);
+                flow.enqueue(envelope, routed);
 
                 // Start a pusher for this actor.
                 let msg = StartPusher(object.addr().into());
@@ -662,12 +670,15 @@ impl SocketReader {
                     error!(error = %err, "failed to start a pusher");
                 }
             }
-            Err(TrySendError::Closed(_)) => {
-                if let Some(envelope) = flows.close(object.addr()).map(make_system_envelope) {
-                    let item = KanalItem::simple(Addr::NULL, envelope);
-                    self.tx.try_send(item).unwrap();
-                }
-            }
+            Err(TrySendError::Closed(_)) => unreachable!(),
+        }
+    }
+
+    fn send_back(&self, message: Option<impl Message>) {
+        if let Some(envelope) = message.map(make_system_envelope) {
+            self.tx
+                .try_send(KanalItem::simple(Addr::NULL, envelope))
+                .unwrap();
         }
     }
 }
@@ -701,10 +712,12 @@ impl Pusher {
 
             if !self.push(envelope, routed).await {
                 let mut flows = self.rx_flows.lock();
-                if let Some(envelope) = flows.close(self.actor_addr).map(make_system_envelope) {
-                    self.tx
-                        .try_send(KanalItem::simple(Addr::NULL, envelope))
-                        .unwrap();
+                let (close, update) = flows.close(self.actor_addr);
+                self.send_back(close);
+                self.send_back(update);
+
+                if routed {
+                    self.send_back(flows.release_routed());
                 }
                 break;
             }
@@ -726,21 +739,22 @@ impl Pusher {
                 return false;
             };
 
-            if let Some(envelope) = flow.release_direct().map(make_system_envelope) {
-                self.tx
-                    .try_send(KanalItem::simple(Addr::NULL, envelope))
-                    .unwrap();
-            }
+            self.send_back(flow.release_direct());
+
             if routed {
-                if let Some(envelope) = flows.release_routed().map(make_system_envelope) {
-                    self.tx
-                        .try_send(KanalItem::simple(Addr::NULL, envelope))
-                        .unwrap();
-                }
+                self.send_back(flows.release_routed());
             }
             true
         } else {
             false
+        }
+    }
+
+    fn send_back(&self, message: Option<impl Message>) {
+        if let Some(envelope) = message.map(make_system_envelope) {
+            self.tx
+                .try_send(KanalItem::simple(Addr::NULL, envelope))
+                .unwrap();
         }
     }
 }

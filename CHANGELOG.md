@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Fixed
+- network: avoid sending repetitive `CloseFlow`.
+- network: increase the window of routed flow if messages are lost.
 
 ## [0.2.0-alpha.8] - 2023-08-25
 ### Added

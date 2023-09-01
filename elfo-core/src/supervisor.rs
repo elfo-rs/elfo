@@ -368,6 +368,7 @@ where
             }
             .expect("where is the current actor?");
 
+            // TODO: should we unregister the address right after failure?
             sv.context.book().remove(addr);
         };
 

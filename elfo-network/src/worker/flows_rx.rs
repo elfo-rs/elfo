@@ -9,7 +9,6 @@ use elfo_core::{Addr, Envelope};
 use super::flow_control::RxFlowControl;
 use crate::protocol::internode;
 
-// TODO: `CloseFlow` ratelimiting.
 // TODO: add `kind="Routed|Direct"` to the `elfo_network_rx_flows`.
 // TODO: add `stability="Stable|Unstable"` to the `elfo_network_rx_flows`.
 
@@ -46,6 +45,8 @@ struct RxFlowData {
     /// If actor's mailbox is full, the message is queued here.
     /// The second element of the tuple is `true` if message was routed.
     queue: Option<VecDeque<(Envelope, bool)>>,
+    /// The number of routed envelopes in `queue`.
+    routed: i32,
 }
 
 impl Drop for RxFlowData {
@@ -79,6 +80,7 @@ impl RxFlows {
             RxFlowData {
                 control: RxFlowControl::new(initial_window),
                 queue: None,
+                routed: 0,
             }
         });
 
@@ -110,7 +112,9 @@ impl RxFlows {
         let queue = flow.queue.as_mut()?;
         let pair = queue.pop_front();
 
-        if pair.is_none() {
+        if let Some((_, routed)) = &pair {
+            flow.routed -= *routed as i32;
+        } else {
             info!(
                 message = "destination actor is stable now, moving to real-time processing",
                 addr = %addr,
@@ -121,18 +125,30 @@ impl RxFlows {
         pair
     }
 
-    pub(super) fn close(&mut self, addr: Addr) -> Option<internode::CloseFlow> {
+    pub(super) fn close(
+        &mut self,
+        addr: Addr,
+    ) -> (Option<internode::CloseFlow>, Option<internode::UpdateFlow>) {
         debug_assert!(addr.is_local());
 
-        let flow = self.map.remove(&addr)?;
+        let flow = ward!(self.map.remove(&addr), return (None, None));
         debug!(
             message = "flow closed",
             addr = %addr,
             dropped = flow.queue.as_ref().map_or(0, |q| q.len()),
+            routed = flow.routed,
         );
-        Some(internode::CloseFlow {
+
+        let close = Some(internode::CloseFlow {
             addr: addr.into_remote(),
-        })
+        });
+
+        let update = (flow.routed != 0).then_some(internode::UpdateFlow {
+            addr: Addr::NULL,
+            window_delta: flow.routed,
+        });
+
+        (close, update)
     }
 }
 
@@ -163,6 +179,7 @@ impl RxFlow<'_> {
 
     pub(super) fn enqueue(self, envelope: Envelope, routed: bool) {
         let addr = self.addr;
+
         self.flow
             .queue
             .get_or_insert_with(|| {
@@ -170,5 +187,9 @@ impl RxFlow<'_> {
                 VecDeque::new()
             })
             .push_back((envelope, routed));
+
+        if routed {
+            self.flow.routed += 1;
+        }
     }
 }
