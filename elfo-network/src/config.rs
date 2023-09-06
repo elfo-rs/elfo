@@ -42,7 +42,7 @@ pub(crate) struct DiscoveryConfig {
 }
 
 fn default_attempt_interval() -> Duration {
-    Duration::from_secs(60)
+    Duration::from_secs(10)
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Serialize)]
