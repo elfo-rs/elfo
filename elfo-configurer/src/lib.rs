@@ -195,9 +195,8 @@ impl Configurer {
 
         // Here we rely on the fact that the first `ValidateConfig` message is consumed
         // by the supervisor and no actors are actually started.
-        let (system_configs, user_configs) = match_configs(&self.topology, &configs, None);
-        self.validate_all(system_configs.into_iter().chain(user_configs.into_iter()))
-            .await
+        let configs = match_configs(&self.topology, &configs);
+        self.validate_all(&configs).await
     }
 
     async fn load_and_update_configs(
@@ -206,48 +205,41 @@ impl Configurer {
     ) -> Result<(), Vec<ReloadConfigsError>> {
         let configs = self.load_configs().await?;
 
-        let (system_configs, user_configs) =
-            match_configs(&self.topology, &configs, (!force).then_some(&self.versions));
+        let mut configs = match_configs(&self.topology, &configs);
 
-        // The order in which we validate and update configs is important.
-        // First, we perform validation of all groups. This ensures that all actors have
-        // their configs, but no actors start yet. This is guaranteed by the supervisor,
-        // which always consumes the first `ValidateConfig` it receives.
-        // Only after that we update the system groups, followed by the user groups.
+        // Filter out up-to-date configs if needed.
+        if !force {
+            configs.retain(|c| {
+                self.versions
+                    .get(&c.group_name)
+                    .map_or(true, |v| c.hash != *v)
+            });
+        }
 
         // Validation.
-        let status = ActorStatus::NORMAL.with_details("config validation of all groups");
+        // It is important that we perform config validation of *all* groups before
+        // starting any actors. This ensures that each actor has a config to work with.
+        // The fact that no actors are started here is guaranteed by the supervisor,
+        // which consumes the first `ValidateConfig` it receives.
+        let status = ActorStatus::NORMAL.with_details("validating");
         self.ctx.set_status(status);
 
-        if let Err(errors) = self
-            .validate_all(
-                system_configs
-                    .iter()
-                    .cloned()
-                    .chain(user_configs.iter().cloned()),
-            )
-            .await
-        {
+        if let Err(errors) = self.validate_all(&configs).await {
             error!("config validation failed");
             self.ctx.set_status(ActorStatus::NORMAL);
             return Err(errors);
         }
 
         // Updating.
-        let status = ActorStatus::NORMAL.with_details("updating config of system groups");
+        let status = ActorStatus::NORMAL.with_details("updating");
         self.ctx.set_status(status);
-        self.update_all(system_configs.iter().cloned()).await;
-
-        let status = ActorStatus::NORMAL.with_details("updating config of user groups");
-        self.ctx.set_status(status);
-        self.update_all(user_configs.iter().cloned()).await;
+        self.update_all(&configs).await;
 
         self.ctx.set_status(ActorStatus::NORMAL);
 
         // Update versions.
-        let updated_groups: Vec<String> = system_configs
+        let updated_groups: Vec<String> = configs
             .into_iter()
-            .chain(user_configs.into_iter())
             .inspect(|config| {
                 self.versions.insert(config.group_name.clone(), config.hash);
             })
@@ -268,9 +260,11 @@ impl Configurer {
 
     async fn validate_all(
         &self,
-        configs: impl Iterator<Item = ConfigWithMeta>,
+        configs: &[ConfigWithMeta],
     ) -> Result<(), Vec<ReloadConfigsError>> {
         let futures = configs
+            .iter()
+            .cloned()
             .map(|item| {
                 let group = item.group_name;
                 let fut = self
@@ -309,8 +303,10 @@ impl Configurer {
         }
     }
 
-    async fn update_all(&self, configs: impl Iterator<Item = ConfigWithMeta>) {
+    async fn update_all(&self, configs: &[ConfigWithMeta]) {
         let futures = configs
+            .iter()
+            .cloned()
             .map(|item| {
                 let group = item.group_name;
                 // While `UpdateConfig` is defined as a request to cover more use cases, default
@@ -378,46 +374,30 @@ async fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
     toml::from_str(&content).map_err(|err| err.to_string())
 }
 
-fn match_configs(
-    topology: &Topology,
-    config: &Value,
-    versions: Option<&FxHashMap<String, u64>>,
-) -> (Vec<ConfigWithMeta>, Vec<ConfigWithMeta>) {
-    let mut system_configs = vec![];
-    let mut user_configs = vec![];
-    for group in topology.locals() {
-        if group.is_entrypoint {
-            continue;
-        }
+fn match_configs(topology: &Topology, config: &Value) -> Vec<ConfigWithMeta> {
+    let mut configs: Vec<ConfigWithMeta> = topology
+        .locals()
+        // Entrypoints' configs are updated only at startup.
+        .filter(|group| !group.is_entrypoint)
+        .map(|group| {
+            let empty = Value::Map(Default::default());
+            let common = helpers::lookup_value(config, "common").unwrap_or(&empty);
+            let group_config = helpers::lookup_value(config, &group.name).cloned();
+            let group_config = helpers::add_defaults(group_config, common);
 
-        let empty = Value::Map(Default::default());
-        let common = helpers::lookup_value(config, "common").unwrap_or(&empty);
-        let group_config = helpers::lookup_value(config, &group.name).cloned();
-        let group_config = helpers::add_defaults(group_config, common);
-        let group_config = ConfigWithMeta {
-            group_name: group.name.clone(),
-            addr: group.addr,
-            hash: fxhash::hash64(&group_config),
-            config: AnyConfig::from_value(group_config),
-        };
-
-        if !versions
-            .map(|versions| {
-                versions
-                    .get(&group_config.group_name)
-                    .map_or(true, |v| group_config.hash != *v)
-            })
-            .unwrap_or(true)
-        {
-            continue;
-        }
-
-        if group_config.group_name.starts_with("system.") {
-            system_configs.push(group_config);
-        } else {
-            user_configs.push(group_config);
-        }
-    }
-
-    (system_configs, user_configs)
+            ConfigWithMeta {
+                group_name: group.name.clone(),
+                addr: group.addr,
+                hash: fxhash::hash64(&group_config),
+                config: AnyConfig::from_value(group_config),
+            }
+        })
+        .collect();
+    // Config parsing happens in the supervisor, which is executed in this actor
+    // when it performs `send_to(addr, UpdateConfig)`. User actor groups can
+    // have arbitrary large configs, taking a considerable time to deserialize.
+    // System actors, on the other hand, have tiny configs, so we give them a
+    // priority to apply system-wide settings (such as logging level) faster.
+    configs.sort_by_key(|config| !config.group_name.starts_with("system."));
+    configs
 }
