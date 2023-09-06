@@ -3,7 +3,7 @@ use elfo_core::{
     message, MoveOwnership,
 };
 
-use crate::{codec::format::NetworkAddr, socket::Socket};
+use crate::{codec::format::NetworkAddr, config::Transport, socket::Socket};
 
 // Internal.
 
@@ -15,6 +15,14 @@ pub(crate) struct HandleConnection {
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
     // TODO: different windows for rx/tx and routed flows.
+    pub(crate) transport: Option<Transport>,
+}
+
+#[message]
+pub(crate) struct DataConnectionFailed {
+    pub(crate) transport: Transport,
+    pub(crate) local: GroupNo,
+    pub(crate) remote: (NodeNo, GroupNo),
 }
 
 #[message(part)]
