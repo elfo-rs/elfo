@@ -72,6 +72,10 @@ impl LaunchId {
         LaunchId(value)
     }
 
+    pub(crate) fn raw(self) -> u64 {
+        self.0
+    }
+
     pub(crate) fn generate() -> Self {
         use std::{
             collections::hash_map::RandomState,

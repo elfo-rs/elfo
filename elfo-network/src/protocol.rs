@@ -1,6 +1,6 @@
 use elfo_core::{message, node::NodeNo, Addr, GroupNo, MoveOwnership};
 
-use crate::socket::Socket;
+use crate::{config::Transport, socket::Socket};
 
 // Internal.
 
@@ -12,6 +12,14 @@ pub(crate) struct HandleConnection {
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
     // TODO: different windows for rx/tx and routed flows.
+    pub(crate) transport: Option<Transport>,
+}
+
+#[message]
+pub(crate) struct DataConnectionFailed {
+    pub(crate) transport: Transport,
+    pub(crate) local: GroupNo,
+    pub(crate) remote: (NodeNo, GroupNo),
 }
 
 pub(crate) mod internode {
@@ -44,6 +52,9 @@ pub(crate) mod internode {
     //                  ...
     //
     // TODO: close, status changes.
+
+    #[message]
+    pub(crate) struct CloseConnection;
 
     #[message]
     pub(crate) struct SwitchToControl {
