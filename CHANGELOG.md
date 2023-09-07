@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - network: avoid sending repetitive `CloseFlow`.
 - network: increase the window of routed flow if messages are lost.
+- configurer: avoid race condition with configs on startup ([#109]).
+
+[#109]: https://github.com/elfo-rs/elfo/pull/109
 
 ## [0.2.0-alpha.8] - 2023-08-25
 ### Added

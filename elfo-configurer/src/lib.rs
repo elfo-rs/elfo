@@ -11,7 +11,7 @@ use fxhash::FxHashMap;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tokio::{fs, select, time};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use elfo_core::{
     config::AnyConfig,
@@ -195,8 +195,8 @@ impl Configurer {
 
         // Here we rely on the fact that the first `ValidateConfig` message is consumed
         // by the supervisor and no actors are actually started.
-        let configs_with_meta = match_configs(&self.topology, &configs, TopologyFilter::All);
-        self.validate_all(&configs_with_meta).await
+        let configs = match_configs(&self.topology, &configs);
+        self.validate_all(&configs).await
     }
 
     async fn load_and_update_configs(
@@ -205,82 +205,65 @@ impl Configurer {
     ) -> Result<(), Vec<ReloadConfigsError>> {
         let configs = self.load_configs().await?;
 
-        let mut updated_groups = Vec::new();
+        let mut configs = match_configs(&self.topology, &configs);
 
-        debug!("updating configs of system groups");
-        updated_groups.extend(
-            self.update_configs(&configs, TopologyFilter::System, force)
-                .await?,
-        );
-        debug!("updating configs of user groups");
-        updated_groups.extend(
-            self.update_configs(&configs, TopologyFilter::User, force)
-                .await?,
-        );
-
-        if updated_groups.is_empty() {
-            info!("all groups' configs are up-to-date, nothing to update");
-        } else {
-            info!(
-                message = "groups' configs are updated",
-                groups = ?updated_groups,
-            );
-        }
-
-        Ok(())
-    }
-
-    async fn update_configs(
-        &mut self,
-        config: &Value,
-        filter: TopologyFilter,
-        force: bool,
-    ) -> Result<Vec<String>, Vec<ReloadConfigsError>> {
-        let mut config_list = match_configs(&self.topology, config, filter);
-
-        // Filter up-to-date configs if needed.
+        // Filter out up-to-date configs if needed.
         if !force {
-            config_list.retain(|c| {
+            configs.retain(|c| {
                 self.versions
                     .get(&c.group_name)
                     .map_or(true, |v| c.hash != *v)
             });
         }
 
-        if config_list.is_empty() {
-            return Ok(Vec::new());
+        if configs.is_empty() {
+            info!("all groups' configs are up-to-date, nothing to update");
+            return Ok(());
         }
 
         // Validation.
-        let status = ActorStatus::NORMAL.with_details("config validation");
+        // It is important that we perform config validation of *all* groups before
+        // starting any actors. This ensures that each actor has a config to work with.
+        // The fact that no actors are started here is guaranteed by the supervisor,
+        // which consumes the first `ValidateConfig` it receives.
+        let status = ActorStatus::NORMAL.with_details("validating");
         self.ctx.set_status(status);
 
-        if let Err(errors) = self.validate_all(&config_list).await {
+        if let Err(errors) = self.validate_all(&configs).await {
             error!("config validation failed");
             self.ctx.set_status(ActorStatus::NORMAL);
             return Err(errors);
         }
 
         // Updating.
-        let status = ActorStatus::NORMAL.with_details("config updating");
+        let status = ActorStatus::NORMAL.with_details("updating");
         self.ctx.set_status(status);
-
-        self.update_all(&config_list).await;
+        self.update_all(&configs).await;
 
         self.ctx.set_status(ActorStatus::NORMAL);
 
         // Update versions.
-        self.versions
-            .extend(config_list.iter().map(|c| (c.group_name.clone(), c.hash)));
+        let updated_groups: Vec<String> = configs
+            .into_iter()
+            .inspect(|config| {
+                self.versions.insert(config.group_name.clone(), config.hash);
+            })
+            .map(|config| config.group_name)
+            .collect();
 
-        Ok(config_list.into_iter().map(|c| c.group_name).collect())
+        info!(
+            message = "groups' configs are updated",
+            groups = ?updated_groups,
+        );
+
+        Ok(())
     }
 
     async fn validate_all(
         &self,
-        config_list: &[ConfigWithMeta],
+        configs: &[ConfigWithMeta],
     ) -> Result<(), Vec<ReloadConfigsError>> {
-        let futures = config_list
+        let futures = configs
             .iter()
             .cloned()
             .map(|item| {
@@ -321,8 +304,8 @@ impl Configurer {
         }
     }
 
-    async fn update_all(&self, config_list: &[ConfigWithMeta]) {
-        let futures = config_list
+    async fn update_all(&self, configs: &[ConfigWithMeta]) {
+        let futures = configs
             .iter()
             .cloned()
             .map(|item| {
@@ -392,26 +375,11 @@ async fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
     toml::from_str(&content).map_err(|err| err.to_string())
 }
 
-enum TopologyFilter {
-    System,
-    User,
-    All,
-}
-
-fn match_configs(
-    topology: &Topology,
-    config: &Value,
-    filter: TopologyFilter,
-) -> Vec<ConfigWithMeta> {
-    topology
+fn match_configs(topology: &Topology, config: &Value) -> Vec<ConfigWithMeta> {
+    let mut configs: Vec<ConfigWithMeta> = topology
         .locals()
         // Entrypoints' configs are updated only at startup.
         .filter(|group| !group.is_entrypoint)
-        .filter(|group| match filter {
-            TopologyFilter::System => group.name.starts_with("system."),
-            TopologyFilter::User => !group.name.starts_with("system."),
-            TopologyFilter::All => true,
-        })
         .map(|group| {
             let empty = Value::Map(Default::default());
             let common = helpers::lookup_value(config, "common").unwrap_or(&empty);
@@ -425,5 +393,12 @@ fn match_configs(
                 config: AnyConfig::from_value(group_config),
             }
         })
-        .collect()
+        .collect();
+    // Config parsing happens in the supervisor, which is executed in this actor
+    // when it performs `send_to(addr, UpdateConfig)`. User actor groups can
+    // have arbitrary large configs, taking a considerable time to deserialize.
+    // System actors, on the other hand, have tiny configs, so we give them a
+    // priority to apply system-wide settings (such as logging level) faster.
+    configs.sort_by_key(|config| !config.group_name.starts_with("system."));
+    configs
 }

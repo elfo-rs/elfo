@@ -57,10 +57,7 @@ async fn singleton_actor_update_config() {
         limit = 512
     })
     .unwrap();
-    assert!(matches!(
-        proxy.request(UpdateConfig::new(config)).await,
-        Ok(_)
-    ));
+    assert!(proxy.request(UpdateConfig::new(config)).await.is_ok());
     assert_eq!(proxy.request(GetLimit).await, 512);
 
     // Update with invalid config through message.
