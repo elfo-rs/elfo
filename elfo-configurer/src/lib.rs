@@ -216,6 +216,11 @@ impl Configurer {
             });
         }
 
+        if configs.is_empty() {
+            info!("all groups' configs are up-to-date, nothing to update");
+            return Ok(());
+        }
+
         // Validation.
         // It is important that we perform config validation of *all* groups before
         // starting any actors. This ensures that each actor has a config to work with.
@@ -246,14 +251,10 @@ impl Configurer {
             .map(|config| config.group_name)
             .collect();
 
-        if updated_groups.is_empty() {
-            info!("all groups' configs are up-to-date, nothing to update");
-        } else {
-            info!(
-                message = "groups' configs are updated",
-                groups = ?updated_groups,
-            );
-        }
+        info!(
+            message = "groups' configs are updated",
+            groups = ?updated_groups,
+        );
 
         Ok(())
     }
