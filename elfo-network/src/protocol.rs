@@ -5,7 +5,7 @@ use crate::socket::Socket;
 // Internal.
 
 #[message]
-pub(crate) struct HandleConnection {
+pub(crate) struct HandleDataConnection {
     pub(crate) local: (GroupNo, String),
     pub(crate) remote: (NodeNo, GroupNo, String),
     pub(crate) socket: MoveOwnership<Socket>,

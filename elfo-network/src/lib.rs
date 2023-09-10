@@ -20,10 +20,11 @@ use elfo_core::{
     ActorGroup, Blueprint, Context, GroupNo, RestartPolicy, Topology,
 };
 
-use crate::{config::Config, protocol::HandleConnection};
+use crate::{config::Config, protocol::HandleDataConnection};
 
 mod codec;
 mod config;
+mod connection;
 mod discovery;
 mod frame;
 mod node_map;
@@ -67,7 +68,7 @@ pub fn new(topology: &Topology) -> Blueprint {
             msg!(match envelope {
                 // TODO: send to all connections.
                 UpdateConfig => Outcome::Unicast(ActorKey::Discovery),
-                msg @ HandleConnection => Outcome::Unicast(ActorKey::Worker {
+                msg @ HandleDataConnection => Outcome::Unicast(ActorKey::Worker {
                     local: msg.local.clone(),
                     remote: msg.remote.clone(),
                 }),

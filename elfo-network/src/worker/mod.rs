@@ -34,7 +34,7 @@ use crate::{
         },
     },
     frame::write::FrameState,
-    protocol::{internode, HandleConnection},
+    protocol::{internode, HandleDataConnection},
     rtt::Rtt,
     socket::{ReadError, ReadHalf, WriteHalf},
     NetworkContext,
@@ -85,7 +85,7 @@ impl Worker {
     pub(super) async fn main(mut self) -> Result<()> {
         // Receive the socket. It must always be a first message.
         let first_message = msg!(match self.ctx.try_recv().await? {
-            msg @ HandleConnection => msg,
+            msg @ HandleDataConnection => msg,
             _ => unreachable!("unexpected initial message"),
         });
 

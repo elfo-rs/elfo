@@ -15,7 +15,7 @@ use crate::{
     node_map::{NodeInfo, NodeMap},
     protocol::{
         internode::{self, GroupInfo},
-        HandleConnection,
+        HandleDataConnection,
     },
     socket::{self, ReadError, Socket},
     NetworkContext,
@@ -296,7 +296,7 @@ impl Discovery {
 
                 let res = self.ctx.try_send_to(
                     self.ctx.group(),
-                    HandleConnection {
+                    HandleDataConnection {
                         local: (remote.your_group_no, local_group_name),
                         remote: (peer.node_no, remote.my_group_no, remote_group_name),
                         socket: socket.into(),
