@@ -8,8 +8,7 @@ use elfo::{
     Topology,
     _priv::do_start,
 };
-use serde::Deserialize;
-use serde_value::Value;
+use elfo_core::config::AnyConfig;
 use tracing::info;
 
 #[message(ret = u64)]
@@ -68,13 +67,6 @@ async fn test_stealing_request_routing() {
         .with_test_writer()
         .try_init();
 
-    let config = toml::toml! {
-        [requester]
-        [responder]
-        [thief]
-    };
-    let config = Value::deserialize(config).expect("invalid config");
-
     let topology = Topology::empty();
     let configurers = topology.local("system.configurers").entrypoint();
     let requester = topology.local("requester");
@@ -89,7 +81,7 @@ async fn test_stealing_request_routing() {
         })
     });
 
-    configurers.mount(elfo_configurer::fixture(&topology, config));
+    configurers.mount(elfo_configurer::fixture(&topology, AnyConfig::default()));
     requester.mount(requester_blueprint);
     responder.mount(responder_blueprint);
     thief.mount(thief_blueprint);
