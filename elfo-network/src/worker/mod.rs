@@ -81,6 +81,8 @@ impl Drop for Worker {
                     remote: (self.remote.0, self.remote.1),
                 },
             );
+        } else {
+            info!("transport to reopen connection is unknown");
         }
     }
 }
@@ -179,8 +181,11 @@ impl Worker {
 
                     // TODO: perform health check
                 }
-                HandleConnection => {
+                msg @ HandleConnection => {
                     info!("duplicate connection, skipping PLT-4775");
+                    if self.transport.is_none() {
+                        self.transport = msg.transport;
+                    }
                 }
                 StartPusher(addr) => {
                     let pusher = Pusher {
