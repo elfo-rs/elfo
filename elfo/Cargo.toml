@@ -56,6 +56,8 @@ criterion = "0.4.0"
 static_assertions = "1.1.0"
 parking_lot = "0.12"
 libc = "0.2.97"
+serde-value = "0.7.0"
+futures-intrusive = "0.5"
 
 [package.metadata.docs.rs]
 all-features = true
