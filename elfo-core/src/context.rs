@@ -210,14 +210,15 @@ impl<C, K> Context<C, K> {
                     Ok(()) => success = true,
                     Err(err) => {
                         has_full |= err.is_full();
-                        unused = Some(err.into_inner());
+                        forget_and_replace(&mut unused, Some(err.into_inner()));
                     }
                 },
-                None => unused = Some(envelope),
+                None => forget_and_replace(&mut unused, Some(envelope)),
             };
         }
 
         if success {
+            forget_and_replace(&mut unused, None);
             Ok(())
         } else if has_full {
             Err(TrySendError::Full(e2m(unused.unwrap())))
@@ -297,20 +298,22 @@ impl<C, K> Context<C, K> {
         for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
             match self.book.get_owned(addr) {
                 Some(object) => {
-                    unused = object
+                    let returned_envelope = object
                         .send(self, Addr::NULL, envelope)
                         .await
                         .err()
                         .map(|err| err.0);
+                    forget_and_replace(&mut unused, returned_envelope);
                     if unused.is_none() {
                         success = true;
                     }
                 }
-                None => unused = Some(envelope),
+                None => forget_and_replace(&mut unused, Some(envelope)),
             };
         }
 
         if success {
+            forget_and_replace(&mut unused, None);
             Ok(())
         } else {
             Err(SendError(e2m(unused.unwrap())))
@@ -811,6 +814,14 @@ fn addrs_with_envelope(
             },
         )
     })
+}
+
+fn forget_and_replace(dest: &mut Option<Envelope>, value: Option<Envelope>) {
+    if let Some(old_value) = dest.take() {
+        let (_, token) = old_value.unpack_request();
+        token.forget();
+    }
+    *dest = value;
 }
 
 impl Context {
