@@ -1,10 +1,20 @@
-use elfo::prelude::*;
+use std::time::Duration;
+
+use elfo::{errors::TrySendError, prelude::*, time::Interval, topology::Outcome};
 use tracing::{info, warn};
 
 use crate::protocol::{AskName, Hello};
 
+#[message]
+struct TimerTick;
+
 fn consumer() -> Blueprint {
     ActorGroup::new().exec(|mut ctx| async move {
+        ctx.attach(Interval::new(TimerTick))
+            .start(Duration::from_millis(100));
+
+        let mut target = None;
+
         while let Some(envelope) = ctx.recv().await {
             let sender = envelope.sender();
 
@@ -19,6 +29,30 @@ fn consumer() -> Blueprint {
                 (AskName, token) => {
                     info!("asked for name");
                     ctx.respond(token, "Bob".into());
+                    target = Some(sender);
+                }
+                TimerTick => {
+                    let Some(t) = target else {
+                        continue;
+                    };
+
+                    let mut i = 0;
+                    loop {
+                        match ctx.try_send_to(t, Hello(i)) {
+                            Ok(()) => {
+                                i += 1;
+                            }
+                            Err(TrySendError::Full(_)) => {
+                                info!(%i, "target full");
+                                break;
+                            }
+                            Err(TrySendError::Closed(_)) => {
+                                info!(%i, "target closed");
+                                target = None;
+                                break;
+                            }
+                        }
+                    }
                 }
             });
         }

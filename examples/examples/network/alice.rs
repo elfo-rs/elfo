@@ -6,30 +6,22 @@ use tracing::{info, warn};
 use crate::protocol::{AskName, Hello};
 
 fn producer() -> Blueprint {
-    #[message]
-    struct TimerTick;
-
     ActorGroup::new().exec(|mut ctx| async move {
-        ctx.attach(Interval::new(TimerTick))
-            .start(Duration::from_secs(1));
+        ctx.request(AskName(0)).resolve().await.unwrap();
 
+        let batch = 100_000;
         let mut i = 0;
 
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
-                TimerTick => {
-                    match ctx.send(Hello(i)).await {
-                        Ok(_) => i += 1,
-                        Err(err) => warn!("cannot say hello: {}", err),
-                    }
+                Hello(_) => {
+                    i += 1;
 
-                    match ctx.request(AskName(0)).resolve().await {
-                        Ok(name) => info!("received name: {}", name),
-                        Err(err) => warn!("cannot ask name: {}", err),
+                    if i == batch {
+                        info!(%i, "received");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        i = 0;
                     }
-                }
-                Hello(i) => {
-                    info!("received Hello({})", i);
                 }
             });
         }
