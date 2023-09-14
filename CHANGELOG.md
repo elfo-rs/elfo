@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - network: avoid sending repetitive `CloseFlow`.
 - network: increase the window of routed flow if messages are lost.
+- network: flow control bug in case of an unstable actor.
 - configurer: avoid race condition with configs on startup ([#109]).
 - core: forget tokens in duplicated envelopes ([#110]).
 
