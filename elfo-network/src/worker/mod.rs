@@ -487,6 +487,16 @@ impl SocketReader {
                 let trace_id = network_envelope.trace_id;
                 let recipient = network_envelope.recipient;
 
+                // Adjust RX flow.
+                {
+                    let mut flows = self.rx_flows.lock();
+                    if let Some(mut flow) = flows.get_flow(recipient) {
+                        flow.acquire_direct(true);
+                        // Responds are unbounded, so release immediately.
+                        self.send_back(flow.release_direct());
+                    }
+                }
+
                 let Some(token) = self
                     .requests
                     .lock()
@@ -522,6 +532,7 @@ impl SocketReader {
                 // Since this is a response to a request which originated from this node,
                 // all the neccessary flows have been already added.
                 object.respond(token, envelope);
+
                 return None;
             }
         };
