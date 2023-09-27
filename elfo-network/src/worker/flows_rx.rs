@@ -4,10 +4,10 @@ use fxhash::FxHashMap;
 use metrics::{decrement_gauge, increment_gauge};
 use tracing::{debug, info};
 
-use elfo_core::{Addr, Envelope};
+use elfo_core::{Addr, Envelope, _priv::NodeNo};
 
 use super::flow_control::RxFlowControl;
-use crate::protocol::internode;
+use crate::{codec::format::NetworkAddr, protocol::internode};
 
 // TODO: add `kind="Routed|Direct"` to the `elfo_network_rx_flows`.
 // TODO: add `stability="Stable|Unstable"` to the `elfo_network_rx_flows`.
@@ -25,6 +25,7 @@ use crate::protocol::internode;
 //   - release_routed() (when a message is sent)
 // * release_routed()
 pub(super) struct RxFlows {
+    node_no: NodeNo,
     // local addr => flow data
     map: FxHashMap<Addr, RxFlowData>,
     routed_control: RxFlowControl,
@@ -56,8 +57,9 @@ impl Drop for RxFlowData {
 }
 
 impl RxFlows {
-    pub(super) fn new(initial_window: i32) -> Self {
+    pub(super) fn new(node_no: NodeNo, initial_window: i32) -> Self {
         Self {
+            node_no,
             map: Default::default(),
             routed_control: RxFlowControl::new(initial_window),
             routed_used: false,
@@ -68,7 +70,11 @@ impl RxFlows {
     pub(super) fn get_flow(&mut self, addr: Addr) -> Option<RxFlow<'_>> {
         debug_assert!(addr.is_local());
 
-        self.map.get_mut(&addr).map(|flow| RxFlow { addr, flow })
+        self.map.get_mut(&addr).map(|flow| RxFlow {
+            node_no: self.node_no,
+            addr,
+            flow,
+        })
     }
 
     pub(super) fn get_or_create_flow(&mut self, addr: Addr) -> RxFlow<'_> {
@@ -84,7 +90,11 @@ impl RxFlows {
             }
         });
 
-        RxFlow { addr, flow }
+        RxFlow {
+            node_no: self.node_no,
+            addr,
+            flow,
+        }
     }
 
     pub(super) fn acquire_routed(&mut self, tx_knows: bool) {
@@ -100,7 +110,7 @@ impl RxFlows {
         self.routed_control
             .release()
             .map(|delta| internode::UpdateFlow {
-                addr: Addr::NULL,
+                addr: NetworkAddr::NULL,
                 window_delta: delta,
             })
     }
@@ -140,11 +150,11 @@ impl RxFlows {
         );
 
         let close = Some(internode::CloseFlow {
-            addr: addr.into_remote(),
+            addr: NetworkAddr::from_local(addr, self.node_no),
         });
 
         let update = (flow.routed != 0).then_some(internode::UpdateFlow {
-            addr: Addr::NULL,
+            addr: NetworkAddr::NULL,
             window_delta: flow.routed,
         });
 
@@ -154,6 +164,7 @@ impl RxFlows {
 
 #[must_use]
 pub(super) struct RxFlow<'a> {
+    node_no: NodeNo,
     addr: Addr,
     flow: &'a mut RxFlowData,
 }
@@ -172,7 +183,7 @@ impl RxFlow<'_> {
             .control
             .release()
             .map(|delta| internode::UpdateFlow {
-                addr: self.addr.into_remote(),
+                addr: NetworkAddr::from_local(self.addr, self.node_no),
                 window_delta: delta,
             })
     }

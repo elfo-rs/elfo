@@ -75,7 +75,7 @@ impl<R, C> ActorGroup<R, C> {
         C: Config,
     {
         let run = move |ctx: Context, name: String, rt_manager: RuntimeManager| {
-            let addr = ctx.addr();
+            let addr = ctx.group();
             let sv = Arc::new(Supervisor::new(
                 ctx,
                 name,

@@ -1,5 +1,5 @@
 use crate::{
-    address_book::Addr,
+    addr::Addr,
     envelope::Envelope,
     errors::{RequestError, SendError, TrySendError},
     request_table::ResponseToken,

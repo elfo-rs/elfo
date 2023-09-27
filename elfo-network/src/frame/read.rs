@@ -1,3 +1,5 @@
+use eyre::{eyre, Result};
+
 use crate::{
     codec::{
         self,
@@ -9,8 +11,6 @@ use crate::{
         lz4::{DecompressState, DecompressStats, LZ4Buffer},
     },
 };
-
-use eyre::{eyre, Result};
 
 pub(crate) enum FramedRead {
     Lz4(LZ4FramedRead),

@@ -68,12 +68,14 @@ mod tests {
 
     #[test]
     fn it_works() {
+        crate::node::set_node_no(65535);
+
         let validator = TraceIdValidator::default().max_time_difference(Duration::from_secs(5));
 
         assert_eq!(validator.validate(0), Err(CANNOT_BE_ZERO));
         assert_eq!(validator.validate(1 << 63), Err(HIGHEST_BIT_MUST_BE_ZERO));
         assert_eq!(
-            validator.validate(u64::from(node::node_no()) << 22),
+            validator.validate(u64::from(node::node_no().map_or(0, |n| n.into_bits())) << 22),
             Err(INVALID_NODE_NO)
         );
 

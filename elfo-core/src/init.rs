@@ -12,6 +12,7 @@ use crate::{memory_tracker::MemoryTracker, time::Interval};
 
 use crate::{
     actor::{Actor, ActorMeta, ActorStatus},
+    addr::{Addr, GroupNo},
     config::SystemConfig,
     context::Context,
     demux::Demux,
@@ -22,9 +23,8 @@ use crate::{
     scope::{Scope, ScopeGroupShared},
     signal::{Signal, SignalKind},
     subscription::SubscriptionManager,
-    topology::Topology,
+    topology::{Topology, SYSTEM_INIT_GROUP_NO},
     tracing::TraceId,
-    Addr,
 };
 
 const INIT_GROUP_NAME: &str = "system.init";
@@ -154,7 +154,8 @@ pub async fn do_start<F: Future>(
     is_check_only: bool,
     and_then: impl FnOnce(Context, Topology) -> F,
 ) -> Result<F::Output> {
-    let entry = topology.book.vacant_entry(0);
+    let group_no = GroupNo::new(SYSTEM_INIT_GROUP_NO, topology.launch_id()).unwrap();
+    let entry = topology.book.vacant_entry(group_no);
     let addr = entry.addr();
     let ctx = Context::new(topology.book.clone(), Demux::default());
 

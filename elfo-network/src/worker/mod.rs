@@ -8,15 +8,13 @@ use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
     message, Local, Message,
-    _priv::{EnvelopeOwned, GroupVisitor, MessageKind, Object, ObjectArc},
+    _priv::{EnvelopeOwned, GroupVisitor, MessageKind, NodeNo, Object, ObjectArc},
     errors::{RequestError, SendError, TrySendError},
     messages::{ConfigUpdated, Impossible},
-    msg,
-    node::NodeNo,
-    remote, scope,
+    msg, remote, scope,
     stream::Stream,
     time::Interval,
-    Addr, Context, Envelope, GroupNo, ResponseToken, Topology,
+    Addr, Context, Envelope, ResponseToken, Topology,
 };
 use elfo_utils::{likely, unlikely};
 
@@ -29,12 +27,12 @@ use crate::{
     codec::{
         decode::EnvelopeDetails,
         format::{
-            NetworkEnvelope, NetworkEnvelopePayload, KIND_REQUEST_ALL, KIND_REQUEST_ANY,
-            KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
+            NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload, KIND_REQUEST_ALL,
+            KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
         },
     },
     frame::write::FrameState,
-    protocol::{internode, HandleConnection},
+    protocol::{internode, GroupInfo, HandleConnection},
     rtt::Rtt,
     socket::{ReadError, ReadHalf, WriteHalf},
     NetworkContext,
@@ -63,15 +61,15 @@ struct ConnectionClosed;
 pub(crate) struct Worker {
     ctx: NetworkContext,
     topology: Topology,
-    local: (GroupNo, String),
-    remote: (NodeNo, GroupNo, String),
+    local: GroupInfo,
+    remote: GroupInfo,
 }
 
 impl Worker {
     pub(super) fn new(
         ctx: NetworkContext,
-        local: (GroupNo, String),
-        remote: (NodeNo, GroupNo, String),
+        local: GroupInfo,
+        remote: GroupInfo,
         topology: Topology,
     ) -> Self {
         Self {
@@ -91,7 +89,10 @@ impl Worker {
 
         let time_origin = Instant::now();
         let tx_flows = Arc::new(TxFlows::new(first_message.initial_window));
-        let rx_flows = Arc::new(Mutex::new(RxFlows::new(first_message.initial_window)));
+        let rx_flows = Arc::new(Mutex::new(RxFlows::new(
+            self.local.node_no,
+            first_message.initial_window,
+        )));
         let requests = Arc::new(Mutex::new(OutgoingRequests::default()));
         let socket = first_message.socket.take().unwrap();
 
@@ -102,14 +103,15 @@ impl Worker {
             tx_flows: tx_flows.clone(),
         };
         let remote_group_guard = self.topology.register_remote(
-            self.local.0,
-            (self.remote.0, self.remote.1),
-            &self.remote.2,
+            self.local.group_no,
+            (self.remote.node_no, self.remote.group_no),
+            &self.remote.group_name,
             remote_handle,
         );
 
         // Start handling local incoming messages.
         let sw = SocketWriter {
+            node_no: self.local.node_no,
             rx: local_rx,
             tx: socket.write,
             requests: requests.clone(),
@@ -123,7 +125,7 @@ impl Worker {
                 .topology
                 .locals()
                 .map(|g| g.addr)
-                .find(|a| a.group_no() == self.local.0)
+                .find(|a| a.group_no() == Some(self.local.group_no))
                 .expect("invalid local group"),
             handle_addr: remote_group_guard.handle_addr(),
             time_origin,
@@ -154,7 +156,7 @@ impl Worker {
                     let envelope = make_system_envelope(internode::Ping {
                         payload: time_origin.elapsed().as_nanos() as u64,
                     });
-                    let _ = local_tx.try_send(KanalItem::simple(Addr::NULL, envelope));
+                    let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
 
                     // TODO: perform health check
                 }
@@ -184,6 +186,7 @@ impl Worker {
 /// A subtask that handles incoming messages from local actors and writes them
 /// to the socket.
 struct SocketWriter {
+    node_no: NodeNo,
     rx: kanal::AsyncReceiver<KanalItem>,
     tx: WriteHalf,
     requests: Arc<Mutex<OutgoingRequests>>,
@@ -207,7 +210,7 @@ impl SocketWriter {
             // TODO: error handling, metrics.
             let mut item = self.rx.recv().await.unwrap();
             loop {
-                let (network_envelope, response_token) = make_network_envelope(item);
+                let (network_envelope, response_token) = make_network_envelope(item, self.node_no);
                 scope::set_trace_id(network_envelope.trace_id);
 
                 // NOTE: We use `unwrap()` for results from all `self.tx` methods because these
@@ -235,7 +238,10 @@ impl SocketWriter {
     }
 }
 
-fn make_network_envelope(item: KanalItem) -> (NetworkEnvelope, Option<ResponseToken>) {
+fn make_network_envelope(
+    item: KanalItem,
+    node_no: NodeNo,
+) -> (NetworkEnvelope, Option<ResponseToken>) {
     let (sender, trace_id, payload, token) = match (item.envelope, item.token) {
         // Regular, RequestAny, RequestAll
         (Ok(envelope), None) => {
@@ -316,7 +322,7 @@ fn make_network_envelope(item: KanalItem) -> (NetworkEnvelope, Option<ResponseTo
     };
 
     let envelope = NetworkEnvelope {
-        sender,
+        sender: NetworkAddr::from_local(sender, node_no),
         recipient: item.recipient,
         trace_id,
         payload,
@@ -373,10 +379,10 @@ impl SocketReader {
             self.tx_flows.add_flow_if_needed(sender);
 
             // `NULL` means we should route to the group.
-            if recipient == Addr::NULL {
+            if recipient == NetworkAddr::NULL {
                 self.handle_routed_message(envelope);
             } else {
-                self.handle_direct_message(recipient, envelope);
+                self.handle_direct_message(recipient.into_local(), envelope);
             }
         }
 
@@ -390,12 +396,12 @@ impl SocketReader {
     fn handle_skipped_message(&self, details: EnvelopeDetails) {
         let update = {
             let mut rx_flows = self.rx_flows.lock();
-            if details.recipient == Addr::NULL {
+            if details.recipient == NetworkAddr::NULL {
                 rx_flows.acquire_routed(true);
                 rx_flows.release_routed()
             } else {
                 // TODO: it's debatable that we should create a flow here.
-                let mut rx_flow = rx_flows.get_or_create_flow(details.recipient);
+                let mut rx_flow = rx_flows.get_or_create_flow(details.recipient.into_local());
                 rx_flow.acquire_direct(true);
                 rx_flow.release_direct()
             }
@@ -411,7 +417,7 @@ impl SocketReader {
                 .expect("bug: remote group is missing in the address book");
 
             let token = ResponseToken::new(
-                details.sender,
+                details.sender.into_remote(),
                 details.request_id.expect("bug: request_id is missing"),
                 details.trace_id,
                 self.ctx.book().clone(),
@@ -427,7 +433,7 @@ impl SocketReader {
             || details.kind == KIND_RESPONSE_IGNORED
         {
             let Some(token) = self.requests.lock().get_token(
-                details.recipient,
+                details.recipient.into_remote(),
                 details.request_id.expect("bug: request_id is missing"),
                 true,
             ) else {
@@ -447,35 +453,28 @@ impl SocketReader {
     }
 
     fn make_envelope(&self, network_envelope: NetworkEnvelope) -> Option<Envelope> {
+        let sender = network_envelope.sender.into_remote();
+        let recipient = network_envelope.recipient.into_local();
+        let trace_id = network_envelope.trace_id;
+
         let (message, message_kind) = match network_envelope.payload {
-            NetworkEnvelopePayload::Regular { message } => (
-                message,
-                MessageKind::Regular {
-                    sender: network_envelope.sender,
-                },
-            ),
+            NetworkEnvelopePayload::Regular { message } => {
+                (message, MessageKind::Regular { sender })
+            }
             NetworkEnvelopePayload::RequestAny {
                 request_id,
                 message,
             } => {
-                let token = ResponseToken::new(
-                    network_envelope.sender,
-                    request_id,
-                    network_envelope.trace_id,
-                    self.ctx.book().clone(),
-                );
+                let token =
+                    ResponseToken::new(sender, request_id, trace_id, self.ctx.book().clone());
                 (message, MessageKind::RequestAny(token))
             }
             NetworkEnvelopePayload::RequestAll {
                 request_id,
                 message,
             } => {
-                let token = ResponseToken::new(
-                    network_envelope.sender,
-                    request_id,
-                    network_envelope.trace_id,
-                    self.ctx.book().clone(),
-                );
+                let token =
+                    ResponseToken::new(sender, request_id, trace_id, self.ctx.book().clone());
                 (message, MessageKind::RequestAll(token))
             }
             NetworkEnvelopePayload::Response {
@@ -483,10 +482,6 @@ impl SocketReader {
                 message,
                 is_last,
             } => {
-                let sender = network_envelope.sender;
-                let trace_id = network_envelope.trace_id;
-                let recipient = network_envelope.recipient;
-
                 // Adjust RX flow.
                 {
                     let mut flows = self.rx_flows.lock();
@@ -537,11 +532,7 @@ impl SocketReader {
             }
         };
 
-        Some(Envelope::with_trace_id(
-            message,
-            message_kind,
-            network_envelope.trace_id,
-        ))
+        Some(Envelope::with_trace_id(message, message_kind, trace_id))
     }
 
     fn handle_system_message(&mut self, envelope: &Envelope) -> bool {
@@ -690,7 +681,7 @@ impl SocketReader {
     fn send_back(&self, message: Option<impl Message>) {
         if let Some(envelope) = message.map(make_system_envelope) {
             self.tx
-                .try_send(KanalItem::simple(Addr::NULL, envelope))
+                .try_send(KanalItem::simple(NetworkAddr::NULL, envelope))
                 .unwrap();
         }
     }
@@ -766,7 +757,7 @@ impl Pusher {
     fn send_back(&self, message: Option<impl Message>) {
         if let Some(envelope) = message.map(make_system_envelope) {
             self.tx
-                .try_send(KanalItem::simple(Addr::NULL, envelope))
+                .try_send(KanalItem::simple(NetworkAddr::NULL, envelope))
                 .unwrap();
         }
     }
@@ -781,13 +772,13 @@ impl Drop for Pusher {
 // === RemoteHandle ===
 
 struct KanalItem {
-    recipient: Addr,
+    recipient: NetworkAddr,
     envelope: Result<Envelope, RequestError>,
     token: Option<ResponseToken>,
 }
 
 impl KanalItem {
-    fn simple(recipient: Addr, envelope: Envelope) -> Self {
+    fn simple(recipient: NetworkAddr, envelope: Envelope) -> Self {
         Self {
             recipient,
             envelope: Ok(envelope),
@@ -803,7 +794,7 @@ struct RemoteHandle {
 
 impl remote::RemoteHandle for RemoteHandle {
     fn send(&self, recipient: Addr, envelope: Envelope) -> remote::SendResult {
-        debug_assert!(!recipient.is_local());
+        let recipient = NetworkAddr::from_remote(recipient);
 
         match self.tx_flows.acquire(recipient) {
             Acquire::Done => {
@@ -822,7 +813,7 @@ impl remote::RemoteHandle for RemoteHandle {
     }
 
     fn try_send(&self, recipient: Addr, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        debug_assert!(!recipient.is_local());
+        let recipient = NetworkAddr::from_remote(recipient);
 
         match self.tx_flows.try_acquire(recipient) {
             TryAcquire::Done => {
@@ -840,8 +831,9 @@ impl remote::RemoteHandle for RemoteHandle {
 
     fn respond(&self, token: ResponseToken, envelope: Result<Envelope, RequestError>) {
         debug_assert!(!token.is_forgotten());
-        let recipient = token.sender();
-        debug_assert!(recipient.is_remote());
+        debug_assert!(token.sender().is_remote());
+
+        let recipient = NetworkAddr::from_remote(token.sender());
 
         if likely(self.tx_flows.do_acquire(recipient)) {
             let item = KanalItem {

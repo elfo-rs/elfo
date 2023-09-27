@@ -6,12 +6,12 @@ use smallvec::SmallVec;
 use crate::remote::{self, RemoteHandle};
 use crate::{
     actor::Actor,
-    address_book::{AddressBook, SlabConfig},
+    addr::{Addr, SlabConfig},
+    address_book::AddressBook,
     context::Context,
     envelope::Envelope,
     errors::{RequestError, SendError, TrySendError},
     request_table::ResponseToken,
-    Addr,
 };
 
 // Reexported in `_priv`.
@@ -46,6 +46,7 @@ impl Object {
     }
 
     #[stability::unstable]
+    #[inline]
     pub fn addr(&self) -> Addr {
         self.addr
     }

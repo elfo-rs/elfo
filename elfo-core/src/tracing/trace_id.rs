@@ -7,10 +7,9 @@ use std::{
 use derive_more::{Deref, Display, From, Into};
 use serde::{Deserialize, Serialize};
 
-use crate::node::NodeNo;
+use crate::addr::NodeNo;
 
-/// The struct that represents the trace id layout. It's built around
-/// `NonZeroU64` for now.
+/// The struct that represents the trace id.
 // TODO(v0.2): remove `derive(Deserialize)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[derive(Serialize, Deserialize, Into, From, Display)]
@@ -20,7 +19,7 @@ pub struct TraceId(NonZeroU64);
 impl TraceId {
     pub(crate) fn from_layout(layout: TraceIdLayout) -> Self {
         let raw = (u64::from(*layout.timestamp)) << 38
-            | u64::from(layout.node_no) << 22
+            | u64::from(layout.node_no.map_or(0, |n| n.into_bits())) << 22
             | u64::from(*layout.bottom);
 
         Self::try_from(raw).unwrap()
@@ -31,7 +30,7 @@ impl TraceId {
 
         TraceIdLayout {
             timestamp: TruncatedTime((raw >> 38) as u32 & 0x1ff_ffff),
-            node_no: (raw >> 22 & 0xffff) as NodeNo,
+            node_no: NodeNo::from_bits((raw >> 22 & 0xffff) as u16),
             bottom: Bottom((raw & 0x3f_ffff) as u32),
         }
     }
@@ -58,7 +57,7 @@ impl From<TraceId> for u64 {
 #[derive(Clone, Copy)]
 pub(crate) struct TraceIdLayout {
     pub(crate) timestamp: TruncatedTime,
-    pub(crate) node_no: NodeNo,
+    pub(crate) node_no: Option<NodeNo>,
     pub(crate) bottom: Bottom,
 }
 

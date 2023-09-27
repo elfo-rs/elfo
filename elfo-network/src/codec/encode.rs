@@ -1,13 +1,14 @@
+use byteorder::{LittleEndian, WriteBytesExt};
+use derive_more::{Display, From};
+use tracing::error;
+
+use elfo_core::{errors::RequestError, scope, Message};
+use elfo_utils::likely;
+
 use crate::codec::format::{
     NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE, KIND_REGULAR, KIND_REQUEST_ALL,
     KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
 };
-
-use byteorder::{LittleEndian, WriteBytesExt};
-use derive_more::{Display, From};
-use elfo_core::{errors::RequestError, scope, Message};
-use elfo_utils::likely;
-use tracing::error;
 
 #[derive(Debug, Display, From)]
 pub(crate) enum EncodeError {
@@ -107,9 +108,7 @@ fn do_encode(
     dst.write_u8(flags | kind)?;
 
     // sender
-    // TODO: avoid `into_remote`, transform on the caller's site.
-    let sender = envelope.sender.into_remote().into_bits();
-    dst.write_u64::<LittleEndian>(sender)?;
+    dst.write_u64::<LittleEndian>(envelope.sender.into_bits())?;
 
     // recipient
     dst.write_u64::<LittleEndian>(envelope.recipient.into_bits())?;

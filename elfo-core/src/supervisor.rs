@@ -272,7 +272,7 @@ where
             return None;
         }
 
-        let group_no = self.context.group().group_no();
+        let group_no = self.context.group().group_no().expect("invalid group addr");
         let entry = self.context.book().vacant_entry(group_no);
         let addr = entry.addr();
 

@@ -3,8 +3,9 @@ use std::{borrow::Cow, io, mem};
 use serde::ser::SerializeStruct;
 
 use elfo_core::{
+    _priv::NodeNo,
     dumping::{Dump, MessageKind},
-    node::{self, NodeNo},
+    node,
 };
 use elfo_utils::unlikely;
 
@@ -14,7 +15,7 @@ use crate::{config::OnOverflow, reporter::Report, rule_set::DumpParams};
 
 pub(crate) struct Serializer {
     class: &'static str,
-    node_no: NodeNo,
+    node_no: Option<NodeNo>,
     chunk_size: usize,
     /// A buffer to make complex names contiguous.
     name_buffer: String,
@@ -178,7 +179,7 @@ impl Serializer {
 struct CompactDump<'a> {
     dump: &'a Dump,
     class: &'a str,
-    node_no: NodeNo,
+    node_no: Option<NodeNo>,
     message_name: &'a str,
     message: Option<Cow<'a, str>>,
 }
@@ -187,6 +188,7 @@ impl<'a> serde::Serialize for CompactDump<'a> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let field_count = 11
             + !self.dump.meta.key.is_empty() as usize // "k"
+            + self.node_no.is_some() as usize // "n"
             + !matches!(self.dump.message_kind, MessageKind::Regular) as usize; // "c"
 
         let mut s = serializer.serialize_struct("Dump", field_count)?;
@@ -199,7 +201,10 @@ impl<'a> serde::Serialize for CompactDump<'a> {
             s.serialize_field("k", &self.dump.meta.key)?;
         }
 
-        s.serialize_field("n", &self.node_no)?;
+        if let Some(node_no) = self.node_no {
+            s.serialize_field("n", &node_no.into_bits())?;
+        }
+
         s.serialize_field("s", &self.dump.sequence_no)?;
         s.serialize_field("t", &self.dump.trace_id)?;
         s.serialize_field("th", &self.dump.thread_id)?;
@@ -321,6 +326,8 @@ mod tests {
 
     #[test]
     fn normal() {
+        elfo_core::_priv::node::set_node_no(65535);
+
         let chunk_size = 1024;
         let mut serializer = Serializer::with_chunk_size(chunk_size, "some");
 
@@ -349,6 +356,8 @@ mod tests {
 
     #[test]
     fn skipped() {
+        elfo_core::_priv::node::set_node_no(65535);
+
         let chunk_size = 1024;
         let mut serializer = Serializer::with_chunk_size(chunk_size, "some");
 
@@ -401,6 +410,8 @@ mod tests {
 
     #[test]
     fn truncated() {
+        elfo_core::_priv::node::set_node_no(65535);
+
         let chunk_size = 1024;
         let mut serializer = Serializer::with_chunk_size(chunk_size, "some");
 
@@ -443,6 +454,8 @@ mod tests {
 
     #[test]
     fn take() {
+        elfo_core::_priv::node::set_node_no(65535);
+
         let chunk_size = 1024;
         let mut serializer = Serializer::with_chunk_size(chunk_size, "some");
 

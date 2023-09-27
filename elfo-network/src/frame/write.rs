@@ -1,3 +1,6 @@
+use eyre::Result;
+
+use super::buffers::{COMPRESSED_DATA_BUFFER_CAPACITY, DECOMPRESSED_DATA_BUFFER_CAPACITY};
 use crate::{
     codec::{
         self,
@@ -6,10 +9,6 @@ use crate::{
     },
     frame::lz4::{CompressStats, LZ4Buffer},
 };
-
-use eyre::Result;
-
-use super::buffers::{COMPRESSED_DATA_BUFFER_CAPACITY, DECOMPRESSED_DATA_BUFFER_CAPACITY};
 
 #[derive(PartialEq, Eq)]
 pub(crate) enum FrameState {

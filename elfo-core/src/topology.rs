@@ -7,30 +7,46 @@ use tokio::runtime::Handle;
 #[cfg(feature = "unstable-stuck-detection")]
 use crate::stuck_detection::StuckDetector;
 use crate::{
-    address_book::{AddressBook, GroupNo, VacantEntry},
+    addr::{Addr, GroupNo, NodeLaunchId},
+    address_book::{AddressBook, VacantEntry},
     context::Context,
     demux::Demux,
     envelope::Envelope,
     group::Blueprint,
     object::Object,
     runtime::RuntimeManager,
-    Addr,
 };
+
+pub(crate) const SYSTEM_INIT_GROUP_NO: u8 = 1;
 
 /// The topology defines local and remote groups, and routes between them.
 #[derive(Clone)]
 pub struct Topology {
+    launch_id: NodeLaunchId,
     pub(crate) book: AddressBook,
     inner: Arc<RwLock<Inner>>,
 }
 
-#[derive(Default)]
 struct Inner {
+    last_group_no: u8,
     locals: Vec<LocalActorGroup>,
     #[cfg(feature = "network")]
     remotes: Vec<RemoteActorGroup>,
     connections: Vec<Connection>,
     rt_manager: RuntimeManager,
+}
+
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            last_group_no: SYSTEM_INIT_GROUP_NO,
+            locals: Vec::new(),
+            #[cfg(feature = "network")]
+            remotes: Vec::new(),
+            connections: Vec::new(),
+            rt_manager: RuntimeManager::default(),
+        }
+    }
 }
 
 /// Represents a local group.
@@ -79,10 +95,17 @@ impl Default for Topology {
 impl Topology {
     /// Creates a new empty topology.
     pub fn empty() -> Self {
+        let launch_id = NodeLaunchId::generate();
         Self {
-            book: AddressBook::new(),
+            launch_id,
+            book: AddressBook::new(launch_id),
             inner: Arc::new(RwLock::new(Inner::default())),
         }
+    }
+
+    #[stability::unstable]
+    pub fn launch_id(&self) -> NodeLaunchId {
+        self.launch_id
     }
 
     #[stability::unstable]
@@ -115,14 +138,10 @@ impl Topology {
             }
         }
 
-        let group_no = inner.locals.len() + 1; // 0 is reserved for `system.init`.
+        inner.last_group_no = inner.last_group_no.checked_add(1).expect("too many groups");
+        let group_no = GroupNo::new(inner.last_group_no, self.launch_id).expect("invalid group no");
 
-        // `GroupNo::MAX` is reserved for `Addr::NULL`, so we cannot use it.
-        if group_no == usize::from(GroupNo::MAX) {
-            panic!("too many groups");
-        }
-
-        let entry = self.book.vacant_entry(group_no as GroupNo);
+        let entry = self.book.vacant_entry(group_no);
         inner.locals.push(LocalActorGroup {
             addr: entry.addr(),
             name: name.clone(),
@@ -206,7 +225,7 @@ impl<'t> Local<'t> {
     /// Local to remote (requires the `network` feature): TODO
     pub fn route_to<F>(&self, dest: &impl Destination<F>, filter: F) {
         dest.extend_demux(
-            self.entry.addr().group_no(),
+            self.entry.addr().group_no().expect("invalid addr"),
             &mut self.demux.borrow_mut(),
             filter,
         );
@@ -269,7 +288,7 @@ cfg_network!({
     use arc_swap::ArcSwap;
     use fxhash::FxHashMap;
 
-    use crate::{node::NodeNo, remote::RemoteHandle};
+    use crate::{addr::NodeNo, remote::RemoteHandle};
 
     /// Contains nodes available for routing between one specific local group
     /// and set of remote ones with the same group name.
@@ -298,8 +317,10 @@ cfg_network!({
             handle: impl RemoteHandle,
         ) -> RegisterRemoteGroupGuard<'_> {
             // Register the handle to make `send_to(addr)` work.
-            // XXX: get rid of `MAX` here, use system.network's group_no.
-            let entry = self.book.vacant_entry(GroupNo::MAX);
+            // XXX: use system.network's group_no instead.
+            let group_no =
+                GroupNo::new(SYSTEM_INIT_GROUP_NO, self.launch_id).expect("invalid group no");
+            let entry = self.book.vacant_entry(group_no);
             let handle_addr = entry.addr();
             let object = Object::new(handle_addr, Box::new(handle) as Box<dyn RemoteHandle>);
             entry.insert(object);

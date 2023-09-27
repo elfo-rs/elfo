@@ -7,12 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Changed
+- core: improve uniqueness of `Addr` between node restarts.
+
 ### Fixed
 - network: avoid sending repetitive `CloseFlow`.
 - network: increase the window of routed flow if messages are lost.
 - network: flow control bug in case of an unstable actor.
 - configurer: avoid race condition with configs on startup ([#109]).
 - core: forget tokens in duplicated envelopes ([#110]).
+- core: check an address on slab accesses.
 
 [#109]: https://github.com/elfo-rs/elfo/pull/109
 [#110]: https://github.com/elfo-rs/elfo/pull/110

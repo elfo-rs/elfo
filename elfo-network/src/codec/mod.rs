@@ -4,15 +4,13 @@ pub(crate) mod format;
 
 #[cfg(test)]
 mod tests {
-    use elfo_core::{message, tracing::TraceId, Addr, Message, _priv::AnyMessage};
+    use elfo_core::{message, tracing::TraceId, Message, _priv::AnyMessage};
     use std::convert::TryFrom;
 
-    use crate::codec::decode::DecodeState;
-
     use super::{
-        decode::decode,
+        decode::{decode, DecodeState},
         encode::{encode, EncodeError},
-        format::{NetworkEnvelope, NetworkEnvelopePayload},
+        format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     };
 
     #[message]
@@ -25,8 +23,8 @@ mod tests {
 
     fn make_envelope(message: AnyMessage, trace_index: u64) -> NetworkEnvelope {
         NetworkEnvelope {
-            sender: Addr::NULL,
-            recipient: Addr::NULL,
+            sender: NetworkAddr::NULL,
+            recipient: NetworkAddr::NULL,
             trace_id: TraceId::try_from(trace_index).unwrap(),
             payload: NetworkEnvelopePayload::Regular { message },
         }
@@ -149,5 +147,5 @@ mod tests {
         }
     }
 
-    // TODO: test errors.
+    // TODO: test errors (including mismatch node_no).
 }

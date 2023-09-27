@@ -1,21 +1,21 @@
-use crate::codec::format::{
-    NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE, KIND_MASK, KIND_REGULAR,
-    KIND_REQUEST_ALL, KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED,
-    KIND_RESPONSE_OK,
-};
-
 use std::{convert::TryFrom, io::Cursor};
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use eyre::{ensure, eyre, Error, WrapErr};
+use tracing::error;
+
 use elfo_core::{
-    errors::RequestError,
-    Addr,
     _priv::{AnyMessage, RequestId},
+    errors::RequestError,
     tracing::TraceId,
 };
 use elfo_utils::likely;
-use eyre::{ensure, eyre, WrapErr};
-use tracing::error;
+
+use crate::codec::format::{
+    NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE, KIND_MASK,
+    KIND_REGULAR, KIND_REQUEST_ALL, KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED,
+    KIND_RESPONSE_OK,
+};
 
 #[derive(Default)]
 pub(crate) struct DecodeStats {
@@ -28,8 +28,8 @@ pub(crate) struct DecodeStats {
 #[derive(Debug)]
 pub(crate) struct EnvelopeDetails {
     pub(crate) kind: u8,
-    pub(crate) sender: Addr,
-    pub(crate) recipient: Addr,
+    pub(crate) sender: NetworkAddr,
+    pub(crate) recipient: NetworkAddr,
     pub(crate) request_id: Option<RequestId>,
     pub(crate) trace_id: TraceId,
 }
@@ -150,6 +150,11 @@ where
     }
 }
 
+fn get_addr(frame: &mut Cursor<&[u8]>) -> eyre::Result<NetworkAddr> {
+    let bits = frame.read_u64::<LittleEndian>()?;
+    NetworkAddr::from_bits(bits).map_err(Error::msg)
+}
+
 fn get_request_id(frame: &mut Cursor<&[u8]>) -> eyre::Result<RequestId> {
     Ok(RequestId::from_ffi(frame.read_u64::<LittleEndian>()?))
 }
@@ -201,9 +206,8 @@ fn do_decode(frame: &mut Cursor<&[u8]>) -> Result<NetworkEnvelope, DecodeError> 
     let flags = frame.read_u8()?;
     let kind = flags & KIND_MASK;
 
-    let sender = Addr::from_bits(frame.read_u64::<LittleEndian>()?);
-    // TODO: avoid `into_local`, transform on the caller's site.
-    let recipient = Addr::from_bits(frame.read_u64::<LittleEndian>()?).into_local();
+    let sender = get_addr(frame)?;
+    let recipient = get_addr(frame)?;
     let trace_id = TraceId::try_from(frame.read_u64::<LittleEndian>()?)?;
 
     let map_decode_error = |result: Result<AnyMessage, MessageDecodeError>,

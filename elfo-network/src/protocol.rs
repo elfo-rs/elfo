@@ -1,17 +1,28 @@
-use elfo_core::{message, node::NodeNo, Addr, GroupNo, MoveOwnership};
+use elfo_core::{
+    _priv::{GroupNo, NodeNo},
+    message, MoveOwnership,
+};
 
-use crate::socket::Socket;
+use crate::{codec::format::NetworkAddr, socket::Socket};
 
 // Internal.
 
 #[message]
 pub(crate) struct HandleConnection {
-    pub(crate) local: (GroupNo, String),
-    pub(crate) remote: (NodeNo, GroupNo, String),
+    pub(crate) local: GroupInfo,
+    pub(crate) remote: GroupInfo,
     pub(crate) socket: MoveOwnership<Socket>,
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
     // TODO: different windows for rx/tx and routed flows.
+}
+
+#[message(part)]
+#[derive(PartialEq, Eq, Hash)]
+pub(crate) struct GroupInfo {
+    pub(crate) node_no: NodeNo,
+    pub(crate) group_no: GroupNo,
+    pub(crate) group_name: String,
 }
 
 pub(crate) mod internode {
@@ -71,15 +82,13 @@ pub(crate) mod internode {
 
     #[message]
     pub(crate) struct UpdateFlow {
-        #[serde(with = "sendable_addr")]
-        pub(crate) addr: Addr,
+        pub(crate) addr: NetworkAddr,
         pub(crate) window_delta: i32,
     }
 
     #[message]
     pub(crate) struct CloseFlow {
-        #[serde(with = "sendable_addr")]
-        pub(crate) addr: Addr,
+        pub(crate) addr: NetworkAddr,
     }
 
     #[message]
@@ -90,26 +99,5 @@ pub(crate) mod internode {
     #[message]
     pub(crate) struct Pong {
         pub(crate) payload: u64,
-    }
-}
-
-// See docs of `Addr` for details why it's required.
-mod sendable_addr {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    use super::*;
-
-    pub(super) fn serialize<S: Serializer>(addr: &Addr, serializer: S) -> Result<S::Ok, S::Error> {
-        debug_assert!(!addr.is_local());
-        addr.into_bits().serialize(serializer)
-    }
-
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Addr, D::Error> {
-        let bits = u64::deserialize(deserializer)?;
-        let addr = Addr::from_bits(bits);
-        debug_assert!(!addr.is_local());
-        Ok(addr)
     }
 }

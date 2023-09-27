@@ -32,12 +32,15 @@
 
 // TODO: send message ID instead of protocol/name.
 
+use derive_more::Display;
+
 use elfo_core::{
     errors::RequestError,
     tracing::TraceId,
     Addr, Message,
-    _priv::{AnyMessage, RequestId},
+    _priv::{AnyMessage, NodeNo, RequestId},
 };
+use elfo_utils::likely;
 
 // Flags are shifted by 4 bits to the left because of the kind.
 pub(crate) const FLAG_IS_LAST_RESPONSE: u8 = 1 << 7;
@@ -52,10 +55,74 @@ pub(crate) const KIND_RESPONSE_IGNORED: u8 = 5;
 
 #[derive(Debug)]
 pub(crate) struct NetworkEnvelope {
-    pub(crate) sender: Addr,
-    pub(crate) recipient: Addr,
+    pub(crate) sender: NetworkAddr,
+    pub(crate) recipient: NetworkAddr,
     pub(crate) trace_id: TraceId,
     pub(crate) payload: NetworkEnvelopePayload,
+}
+
+/// A wrapper around `Addr` to ensure it's not local.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+pub(crate) struct NetworkAddr(Addr);
+
+impl NetworkAddr {
+    pub(crate) const NULL: Self = Self(Addr::NULL);
+
+    pub(crate) fn from_local(addr: Addr, node_no: NodeNo) -> Self {
+        debug_assert!(!addr.is_remote());
+        Self(addr.into_remote(node_no))
+    }
+
+    pub(crate) fn from_remote(addr: Addr) -> Self {
+        debug_assert!(!addr.is_local());
+        Self(addr)
+    }
+
+    pub(crate) fn from_bits(bits: u64) -> Result<Self, &'static str> {
+        let addr = Addr::from_bits(bits).ok_or("invalid addr")?;
+
+        if likely(!addr.is_local()) {
+            Ok(Self(addr))
+        } else {
+            Err("addr cannot be local")
+        }
+    }
+
+    pub(crate) fn into_local(self) -> Addr {
+        self.0.into_local()
+    }
+
+    pub(crate) fn into_remote(self) -> Addr {
+        self.0
+    }
+
+    pub(crate) fn into_bits(self) -> u64 {
+        self.0.into_bits()
+    }
+}
+
+// It's safe to serialize `NetworkAddr` because it's not local.
+// Used by the internode protocol.
+impl serde::Serialize for NetworkAddr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.into_bits().serialize(serializer)
+    }
+}
+
+// It's safe to deserialize `NetworkAddr` after ensuring it's not local.
+// Used by the internode protocol.
+impl<'de> serde::Deserialize<'de> for NetworkAddr {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+        let bits = u64::deserialize(deserializer)?;
+        NetworkAddr::from_bits(bits).map_err(D::Error::custom)
+    }
 }
 
 #[derive(Debug)]

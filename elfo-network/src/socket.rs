@@ -14,7 +14,7 @@ use tokio::{
 };
 use tracing::{error, info, trace, warn};
 
-use elfo_core::node::NodeNo;
+use elfo_core::_priv::{NodeLaunchId, NodeNo};
 use elfo_utils::likely;
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
         read::{FramedRead, FramedReadState, FramedReadStrategy},
         write::{FrameState, FramedWrite, FramedWriteStrategy},
     },
-    node_map::{LaunchId, NodeInfo},
+    node_map::NodeInfo,
 };
 
 // === Socket ===
@@ -41,7 +41,7 @@ const THIS_NODE_VERSION: u8 = 0;
 pub(crate) struct Handshake {
     pub(crate) version: u8,
     pub(crate) node_no: NodeNo,
-    pub(crate) launch_id: LaunchId,
+    pub(crate) launch_id: NodeLaunchId,
     pub(crate) capabilities: Capabilities,
 }
 
@@ -70,8 +70,8 @@ impl Handshake {
 
         buf.write_u64::<LittleEndian>(HANDSHAKE_MAGIC)?;
         buf.write_u8(self.version)?;
-        buf.write_u16::<LittleEndian>(self.node_no)?;
-        buf.write_u64::<LittleEndian>(self.launch_id.into())?;
+        buf.write_u16::<LittleEndian>(self.node_no.into_bits())?;
+        buf.write_u64::<LittleEndian>(self.launch_id.into_bits())?;
         buf.write_u32::<LittleEndian>(self.capabilities.bits())?;
 
         let result = buf.into_inner();
@@ -96,8 +96,9 @@ impl Handshake {
 
         let result = Self {
             version: input.read_u8()?,
-            node_no: input.read_u16::<LittleEndian>()?,
-            launch_id: LaunchId::from_raw(input.read_u64::<LittleEndian>()?),
+            node_no: NodeNo::from_bits(input.read_u16::<LittleEndian>()?)
+                .ok_or_else(|| eyre!("invalid node no"))?,
+            launch_id: NodeLaunchId::from_bits(input.read_u64::<LittleEndian>()?),
             capabilities: Capabilities::from_bits_truncate(input.read_u32::<LittleEndian>()?),
         };
 
@@ -159,7 +160,7 @@ impl TcpSocket {
 #[display(fmt = "peer(node_no={node_no}, launch_id={launch_id}, transport={transport})")]
 pub(crate) struct Peer {
     pub(crate) node_no: NodeNo,
-    pub(crate) launch_id: LaunchId,
+    pub(crate) launch_id: NodeLaunchId,
     pub(crate) transport: Transport,
 }
 
@@ -456,15 +457,17 @@ async fn listen_tcp(
 
 #[cfg(test)]
 mod tests {
-    use elfo_core::{message, tracing::TraceId, Addr, Message};
-    use futures::{future, stream::StreamExt};
     use std::{
         convert::TryFrom,
         net::{IpAddr, Ipv4Addr},
     };
+
+    use futures::{future, stream::StreamExt};
     use tracing::debug;
 
-    use crate::codec::format::NetworkEnvelopePayload;
+    use elfo_core::{message, tracing::TraceId, Message};
+
+    use crate::codec::format::{NetworkAddr, NetworkEnvelopePayload};
 
     use super::*;
 
@@ -524,8 +527,8 @@ mod tests {
 
     async fn ensure_read_write(capabilities: Capabilities, port: u16) {
         let server_node = NodeInfo {
-            node_no: 0,
-            launch_id: LaunchId::generate(),
+            node_no: NodeNo::from_bits(2).unwrap(),
+            launch_id: NodeLaunchId::from_bits(1),
             groups: vec![],
         };
         let server_transport = Transport::Tcp(SocketAddr::new(
@@ -539,8 +542,8 @@ mod tests {
         let server_socket_fut = listen_stream.next();
 
         let client_node = NodeInfo {
-            node_no: 1,
-            launch_id: LaunchId::generate(),
+            node_no: NodeNo::from_bits(1).unwrap(),
+            launch_id: NodeLaunchId::from_bits(2),
             groups: vec![],
         };
         let client_socket_fut = connect(&server_transport, &client_node, capabilities);
@@ -554,8 +557,8 @@ mod tests {
 
         for i in 0..10 {
             let envelope = NetworkEnvelope {
-                sender: Addr::NULL,
-                recipient: Addr::NULL,
+                sender: NetworkAddr::NULL,
+                recipient: NetworkAddr::NULL,
                 trace_id: TraceId::try_from(1).unwrap(),
                 payload: NetworkEnvelopePayload::Regular {
                     message: TestSocketMessage("a".repeat(i * 10)).upcast(),

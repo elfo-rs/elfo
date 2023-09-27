@@ -3,19 +3,16 @@ use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use tracing::{debug, warn};
 
-use elfo_core::{
-    remote::{SendNotified, SendNotify},
-    Addr,
-};
+use elfo_core::remote::{SendNotified, SendNotify};
 use elfo_utils::likely;
 
 use super::flow_control::TxFlowControl;
-use crate::protocol::internode;
+use crate::{codec::format::NetworkAddr, protocol::internode};
 
 #[derive(Default)]
 pub(super) struct TxFlows {
     // remote or null addr => flow data
-    map: DashMap<Addr, TxFlow, FxBuildHasher>,
+    map: DashMap<NetworkAddr, TxFlow, FxBuildHasher>,
     initial_window: i32,
 }
 
@@ -50,13 +47,11 @@ impl TxFlows {
         };
 
         // A flow for the group is always present.
-        this.add_flow_if_needed(Addr::NULL);
+        this.add_flow_if_needed(NetworkAddr::NULL);
         this
     }
 
-    pub(super) fn acquire(&self, addr: Addr) -> Acquire {
-        debug_assert!(!addr.is_local());
-
+    pub(super) fn acquire(&self, addr: NetworkAddr) -> Acquire {
         let Some(flow) = self.map.get(&addr) else {
             return Acquire::Closed;
         };
@@ -71,9 +66,7 @@ impl TxFlows {
         }
     }
 
-    pub(super) fn try_acquire(&self, addr: Addr) -> TryAcquire {
-        debug_assert!(!addr.is_local());
-
+    pub(super) fn try_acquire(&self, addr: NetworkAddr) -> TryAcquire {
         let Some(flow) = self.map.get(&addr) else {
             return TryAcquire::Closed;
         };
@@ -85,9 +78,7 @@ impl TxFlows {
         }
     }
 
-    pub(super) fn do_acquire(&self, addr: Addr) -> bool {
-        debug_assert!(!addr.is_local());
-
+    pub(super) fn do_acquire(&self, addr: NetworkAddr) -> bool {
         let Some(flow) = self.map.get(&addr) else {
             return false;
         };
@@ -96,9 +87,7 @@ impl TxFlows {
         true
     }
 
-    pub(super) fn add_flow_if_needed(&self, addr: Addr) {
-        debug_assert!(!addr.is_local());
-
+    pub(super) fn add_flow_if_needed(&self, addr: NetworkAddr) {
         if likely(self.map.contains_key(&addr)) {
             return;
         }

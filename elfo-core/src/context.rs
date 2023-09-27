@@ -8,7 +8,8 @@ use elfo_utils::unlikely;
 
 use crate::{
     actor::{Actor, ActorStatus},
-    address_book::{Addr, AddressBook},
+    addr::Addr,
+    address_book::AddressBook,
     config::AnyConfig,
     demux::Demux,
     dumping::{Direction, Dump, Dumper, INTERNAL_CLASS},

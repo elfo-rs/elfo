@@ -5,18 +5,18 @@ use futures::StreamExt;
 use tracing::{debug, error, info, warn};
 
 use elfo_core::{
-    message, msg, scope, Addr, Envelope, Message, MoveOwnership, RestartPolicy, _priv::MessageKind,
-    messages::ConfigUpdated, stream::Stream, GroupNo, Topology,
+    message, msg, scope, Envelope, Message, MoveOwnership, RestartPolicy,
+    _priv::{GroupNo, MessageKind},
+    messages::ConfigUpdated,
+    stream::Stream,
+    Topology,
 };
 
 use crate::{
-    codec::format::{NetworkEnvelope, NetworkEnvelopePayload},
+    codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     config::{CompressionAlgorithm, Transport},
     node_map::{NodeInfo, NodeMap},
-    protocol::{
-        internode::{self, GroupInfo},
-        HandleConnection,
-    },
+    protocol::{internode, GroupInfo, HandleConnection},
     socket::{self, ReadError, Socket},
     NetworkContext,
 };
@@ -297,8 +297,16 @@ impl Discovery {
                 let res = self.ctx.try_send_to(
                     self.ctx.group(),
                     HandleConnection {
-                        local: (remote.your_group_no, local_group_name),
-                        remote: (peer.node_no, remote.my_group_no, remote_group_name),
+                        local: GroupInfo {
+                            node_no: self.node_map.this.node_no,
+                            group_no: remote.your_group_no,
+                            group_name: local_group_name,
+                        },
+                        remote: GroupInfo {
+                            node_no: peer.node_no,
+                            group_no: remote.my_group_no,
+                            group_name: remote_group_name,
+                        },
                         socket: socket.into(),
                         initial_window: remote.initial_window,
                     },
@@ -368,8 +376,8 @@ async fn accept_connection(
 }
 
 fn infer_connections<'a>(
-    one: &'a [GroupInfo],
-    two: &'a [GroupInfo],
+    one: &'a [internode::GroupInfo],
+    two: &'a [internode::GroupInfo],
 ) -> impl Iterator<Item = (GroupNo, GroupNo)> + 'a {
     one.iter().flat_map(move |o| {
         two.iter()
@@ -381,8 +389,8 @@ fn infer_connections<'a>(
 async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
     let name = msg.name();
     let envelope = NetworkEnvelope {
-        sender: Addr::NULL,    // doesn't matter
-        recipient: Addr::NULL, // doesn't matter
+        sender: NetworkAddr::NULL,    // doesn't matter
+        recipient: NetworkAddr::NULL, // doesn't matter
         trace_id: scope::trace_id(),
         payload: NetworkEnvelopePayload::Regular {
             message: msg.upcast(),
@@ -418,7 +426,7 @@ async fn recv(socket: &mut Socket) -> Result<Envelope> {
     Ok(Envelope::new(
         message,
         MessageKind::Regular {
-            sender: envelope.sender,
+            sender: envelope.sender.into_remote(),
         },
     ))
 }

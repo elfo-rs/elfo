@@ -1,10 +1,9 @@
-use derive_more::Display;
 use fxhash::FxHashMap;
 use parking_lot::Mutex;
 
 use elfo_core::{
-    message,
-    node::{self, NodeNo},
+    _priv::{NodeLaunchId, NodeNo},
+    node,
     topology::Topology,
 };
 
@@ -20,8 +19,8 @@ pub(crate) struct NodeMap {
 impl NodeMap {
     pub(crate) fn new(topology: &Topology) -> Self {
         let this = NodeInfo {
-            node_no: node::node_no(),
-            launch_id: LaunchId::generate(),
+            node_no: node::node_no().expect("node no is not set"),
+            launch_id: topology.launch_id(),
             groups: topology
                 .locals()
                 .map(|group| {
@@ -35,7 +34,7 @@ impl NodeMap {
                         .collect();
 
                     GroupInfo {
-                        group_no: group.addr.group_no(),
+                        group_no: group.addr.group_no().expect("invalid group no"),
                         name: group.name,
                         interests,
                     }
@@ -53,39 +52,6 @@ impl NodeMap {
 #[derive(Clone)]
 pub(crate) struct NodeInfo {
     pub(crate) node_no: NodeNo,
-    pub(crate) launch_id: LaunchId,
+    pub(crate) launch_id: NodeLaunchId,
     pub(crate) groups: Vec<GroupInfo>,
-}
-
-#[message(part, transparent)]
-#[derive(Copy, PartialEq, Eq, Display)]
-pub(crate) struct LaunchId(u64);
-
-impl From<LaunchId> for u64 {
-    fn from(value: LaunchId) -> Self {
-        value.0
-    }
-}
-
-impl LaunchId {
-    pub(crate) fn from_raw(value: u64) -> Self {
-        LaunchId(value)
-    }
-
-    pub(crate) fn generate() -> Self {
-        use std::{
-            collections::hash_map::RandomState,
-            hash::{BuildHasher, Hasher},
-        };
-
-        // `RandomState` is randomly seeded.
-        let mut hasher = RandomState::new().build_hasher();
-        hasher.write_u32(42);
-        Self(hasher.finish())
-    }
-}
-
-#[test]
-fn launch_id_is_random() {
-    assert_ne!(LaunchId::generate(), LaunchId::generate());
 }

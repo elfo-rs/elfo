@@ -15,12 +15,14 @@ use std::{
 use elfo_core::{
     messages::UpdateConfig,
     msg,
-    node::NodeNo,
     routers::{MapRouter, Outcome},
-    ActorGroup, Blueprint, Context, GroupNo, RestartPolicy, Topology,
+    ActorGroup, Blueprint, Context, RestartPolicy, Topology,
 };
 
-use crate::{config::Config, protocol::HandleConnection};
+use crate::{
+    config::Config,
+    protocol::{GroupInfo, HandleConnection},
+};
 
 mod codec;
 mod config;
@@ -35,19 +37,19 @@ mod worker;
 #[derive(PartialEq, Eq, Hash, Clone)]
 enum ActorKey {
     Discovery,
-    Worker {
-        local: (GroupNo, String),
-        remote: (NodeNo, GroupNo, String),
-    },
+    Worker { local: GroupInfo, remote: GroupInfo },
 }
 
 impl Display for ActorKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: resolve `group_no` to name.
         match self {
             ActorKey::Discovery => f.write_str("discovery"),
             ActorKey::Worker { local, remote } => {
-                write!(f, "{}:{}:{}", local.1, remote.0, remote.2)
+                write!(
+                    f,
+                    "{}:{}:{}",
+                    local.group_name, remote.node_no, remote.group_name
+                )
             }
         }
     }

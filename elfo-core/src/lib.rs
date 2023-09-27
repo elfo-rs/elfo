@@ -9,12 +9,10 @@ extern crate elfo_utils;
 // To make `#[message]` and `msg!` work inside `elfo-core`.
 extern crate self as elfo_core;
 
-// TODO: revise this list, what about `NodeNo`?
-#[cfg(feature = "unstable")]
-pub use crate::address_book::GroupNo;
+// TODO: revise this list
 pub use crate::{
     actor::{ActorMeta, ActorStatus, ActorStatusKind},
-    address_book::Addr,
+    addr::Addr,
     config::Config,
     context::{Context, RequestBuilder},
     envelope::Envelope,
@@ -48,6 +46,7 @@ pub mod topology;
 pub mod tracing;
 
 mod actor;
+mod addr;
 mod address_book;
 mod context;
 mod demux;
@@ -76,11 +75,13 @@ mod thread;
 #[doc(hidden)]
 pub mod _priv {
     pub mod node {
-        pub fn set_node_no(node_no: crate::node::NodeNo) {
+        pub fn set_node_no(node_no: u16) {
             crate::node::set_node_no(node_no)
         }
     }
 
+    #[cfg(feature = "unstable")]
+    pub use crate::addr::{GroupNo, NodeLaunchId, NodeNo};
     pub use crate::{
         address_book::AddressBook,
         envelope::{
