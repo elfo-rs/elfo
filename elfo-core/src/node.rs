@@ -1,12 +1,13 @@
 use std::sync::atomic::{AtomicU16, Ordering};
 
-use crate::addr::NodeNo;
+#[cfg(feature = "unstable")]
+pub use crate::addr::NodeNo;
 
 static NODE_NO: AtomicU16 = AtomicU16::new(0);
 
 /// Returns the current `node_no`.
-pub fn node_no() -> Option<NodeNo> {
-    NodeNo::from_bits(NODE_NO.load(Ordering::Relaxed))
+pub fn node_no() -> Option<crate::addr::NodeNo> {
+    crate::addr::NodeNo::from_bits(NODE_NO.load(Ordering::Relaxed))
 }
 
 /// Sets the current `node_no`.
