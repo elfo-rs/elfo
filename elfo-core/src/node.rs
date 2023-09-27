@@ -3,11 +3,17 @@ use std::sync::atomic::{AtomicU16, Ordering};
 #[cfg(feature = "unstable")]
 pub use crate::addr::NodeNo;
 
-// Temporary (?) conversion.
+// Temporary (?) conversions until release.
 #[cfg(feature = "unstable")]
 impl From<NodeNo> for u16 {
     fn from(node_no: NodeNo) -> Self {
         node_no.into_bits()
+    }
+}
+#[cfg(feature = "unstable")]
+impl From<u16> for NodeNo {
+    fn from(node_no: u16) -> Self {
+        NodeNo::from_bits(node_no).expect("don't use 0 node_no")
     }
 }
 
