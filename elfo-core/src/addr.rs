@@ -79,7 +79,7 @@ impl NodeLaunchId {
 pub struct GroupNo(NonZeroU8);
 
 impl GroupNo {
-    #[cfg(feature = "network")]
+    #[cfg(feature = "network-2")] // TODO(loyd): enable after fixing reconnects
     pub(crate) fn new(no: u8, launch_id: NodeLaunchId) -> Option<Self> {
         if no == 0 {
             return None;
@@ -93,7 +93,7 @@ impl GroupNo {
         Some(Self(NonZeroU8::new(group_no).unwrap()))
     }
 
-    #[cfg(not(feature = "network"))]
+    #[cfg(not(feature = "network-2"))]
     pub(crate) fn new(no: u8, _launch_id: NodeLaunchId) -> Option<Self> {
         NonZeroU8::new(no).map(Self)
     }
