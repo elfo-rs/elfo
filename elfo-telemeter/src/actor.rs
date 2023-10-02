@@ -177,7 +177,7 @@ fn start_server(ctx: &Context<Config>) -> JoinHandle<()> {
     tokio::spawn(async move {
         if let Err(err) = serving.await {
             let f = async {
-                let _ = ctx1.send(ServerFailed(err.into())).await;
+                let _ = ctx1.send_to(ctx1.group(), ServerFailed(err.into())).await;
             };
 
             scope1.set_trace_id(TraceId::generate());
