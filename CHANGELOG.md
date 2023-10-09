@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- core: unstable `ActorGroup::stop_order()` to specify termination order.
+
 ### Changed
 - core: improve uniqueness of `Addr` between node restarts.
 

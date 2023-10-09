@@ -17,6 +17,7 @@ use crate::{
 pub struct ActorGroup<R, C> {
     restart_policy: RestartPolicy,
     termination_policy: TerminationPolicy,
+    stop_order: i8,
     router: R,
     _config: PhantomData<C>,
 }
@@ -28,6 +29,7 @@ impl ActorGroup<(), ()> {
             restart_policy: RestartPolicy::default(),
             termination_policy: TerminationPolicy::default(),
             router: (),
+            stop_order: 0,
             _config: PhantomData,
         }
     }
@@ -39,6 +41,7 @@ impl<R, C> ActorGroup<R, C> {
             restart_policy: self.restart_policy,
             termination_policy: self.termination_policy,
             router: self.router,
+            stop_order: self.stop_order,
             _config: PhantomData,
         }
     }
@@ -57,15 +60,36 @@ impl<R, C> ActorGroup<R, C> {
         self
     }
 
+    /// Installs a router.
     pub fn router<R1: Router<C>>(self, router: R1) -> ActorGroup<R1, C> {
         ActorGroup {
             restart_policy: self.restart_policy,
             termination_policy: self.termination_policy,
             router,
+            stop_order: self.stop_order,
             _config: self._config,
         }
     }
 
+    /// Specifies the order of stopping among other groups.
+    ///
+    /// Actors in groups with lower values are stopped first.
+    /// Actors in groups with higher values start stopping when all actors in
+    /// groups with lower values are stopped or timeout is reached.
+    /// It also means that a lot of different values of this parameter among
+    /// groups can lead to longer shutdown time of the node. In some
+    /// environment (e.g. systemd) there is a hard limit on the shutdown
+    /// time, thus the node can be forcibly terminated (by SIGKILL) before all
+    /// actors are stopped gracefully.
+    ///
+    /// `0` by default.
+    #[stability::unstable]
+    pub fn stop_order(mut self, stop_order: i8) -> Self {
+        self.stop_order = stop_order;
+        self
+    }
+
+    /// Builds the group with the specified executor function.
     pub fn exec<X, O, ER>(self, exec: X) -> Blueprint
     where
         R: Router<C>,
@@ -74,7 +98,7 @@ impl<R, C> ActorGroup<R, C> {
         ER: ExecResult,
         C: Config,
     {
-        let run = move |ctx: Context, name: String, rt_manager: RuntimeManager| {
+        let mount = move |ctx: Context, name: String, rt_manager: RuntimeManager| {
             let addr = ctx.group();
             let sv = Arc::new(Supervisor::new(
                 ctx,
@@ -89,7 +113,10 @@ impl<R, C> ActorGroup<R, C> {
             Object::new(addr, Box::new(Handle(sv)) as Box<dyn GroupHandle>)
         };
 
-        Blueprint { run: Box::new(run) }
+        Blueprint {
+            mount: Box::new(mount),
+            stop_order: self.stop_order,
+        }
     }
 }
 
@@ -112,7 +139,8 @@ where
 }
 
 pub struct Blueprint {
-    pub(crate) run: Box<dyn FnOnce(Context, String, RuntimeManager) -> Object>,
+    pub(crate) mount: Box<dyn FnOnce(Context, String, RuntimeManager) -> Object>,
+    pub(crate) stop_order: i8,
 }
 
 /// The behaviour on the `Terminate` message.

@@ -39,6 +39,7 @@ struct ServerFailed(MoveOwnership<hyper::Error>);
 pub(crate) fn new(storage: Arc<Storage>) -> Blueprint {
     ActorGroup::new()
         .config::<Config>()
+        .stop_order(100)
         .exec(move |ctx| Telemeter::new(ctx, storage.clone()).main())
 }
 

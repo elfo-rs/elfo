@@ -51,9 +51,7 @@ const HANDSHAKE_MAGIC: u64 = 0xE1F0E1F0E1F0E1F0;
 
 impl Handshake {
     pub(crate) fn make_containing_buf() -> Vec<u8> {
-        let mut buffer = Vec::new();
-        buffer.resize(HANDSHAKE_LENGTH, 0);
-        buffer
+        vec![0; HANDSHAKE_LENGTH]
     }
 
     pub(crate) fn new(this_node: &NodeInfo, capabilities: Capabilities) -> Self {

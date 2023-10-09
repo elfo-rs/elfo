@@ -4,7 +4,6 @@ use metrics::increment_counter;
 use tokio::{
     fs::{File, OpenOptions},
     io::AsyncWriteExt,
-    time,
 };
 use tracing::Metadata;
 
@@ -43,6 +42,7 @@ impl Logger {
         ActorGroup::new()
             .config::<Config>()
             .termination_policy(TerminationPolicy::manually())
+            .stop_order(105)
             .exec(move |ctx| Logger::new(ctx, shared.clone(), filtering_layer.clone()).main())
     }
 
@@ -102,8 +102,7 @@ impl Logger {
                             self.filtering_layer.configure(&self.ctx.config().targets);
                         },
                         Terminate => {
-                            // TODO: use phases instead of hardcoded delay.
-                            time::sleep(time::Duration::from_millis(250)).await;
+                            // Close the channel and wait for the rest of the events.
                             self.shared.channel.close();
                         },
                     });

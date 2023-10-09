@@ -1,4 +1,4 @@
-use std::{iter, panic, sync::Arc, time::Duration};
+use std::{iter, panic, sync::Arc};
 
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
@@ -174,8 +174,7 @@ impl Dumper {
                     self.spawn_dumpers_if_needed();
                 }
                 Terminate => {
-                    // TODO: use phases instead of a hardcoded delay.
-                    self.interval.set_period(Duration::from_millis(250));
+                    // Wait until the next tick to write the last dumps.
                     need_to_terminate = true;
                 }
             });
@@ -253,6 +252,7 @@ pub(crate) fn new(dump_storage: Arc<Mutex<DumpStorage>>) -> Blueprint {
     ActorGroup::new()
         .config::<Config>()
         .termination_policy(TerminationPolicy::manually())
+        .stop_order(100)
         .router(MapRouter::new(move |envelope| {
             msg!(match envelope {
                 // TODO: there is a rare race condition here,

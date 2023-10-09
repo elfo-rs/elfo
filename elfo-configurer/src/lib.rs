@@ -36,14 +36,19 @@ const WARN_INTERVAL: Duration = Duration::from_secs(5);
 pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Blueprint {
     let config = Value::deserialize(config).map_err(|err| err.to_string());
     let source = ConfigSource::Fixture(config);
-    let topology = topology.clone();
-    ActorGroup::new().exec(move |ctx| Configurer::new(ctx, topology.clone(), source.clone()).main())
+    blueprint(topology, source)
 }
 
 pub fn from_path(topology: &Topology, path_to_config: impl AsRef<Path>) -> Blueprint {
     let source = ConfigSource::File(path_to_config.as_ref().to_path_buf());
+    blueprint(topology, source)
+}
+
+fn blueprint(topology: &Topology, source: ConfigSource) -> Blueprint {
     let topology = topology.clone();
-    ActorGroup::new().exec(move |ctx| Configurer::new(ctx, topology.clone(), source.clone()).main())
+    ActorGroup::new()
+        .stop_order(100)
+        .exec(move |ctx| Configurer::new(ctx, topology.clone(), source.clone()).main())
 }
 
 struct Configurer {
