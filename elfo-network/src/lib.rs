@@ -65,6 +65,7 @@ pub fn new(topology: &Topology) -> Blueprint {
         .config::<Config>()
         // The restart policy is overrided by the discovery actor.
         .restart_policy(RestartPolicy::never())
+        .stop_order(100)
         .router(MapRouter::new(|envelope| {
             msg!(match envelope {
                 // TODO: send to all connections.

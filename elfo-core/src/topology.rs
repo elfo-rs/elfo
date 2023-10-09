@@ -56,6 +56,7 @@ pub struct LocalActorGroup {
     pub addr: Addr,
     pub name: String,
     pub is_entrypoint: bool,
+    pub(crate) stop_order: i8,
 }
 
 /// Represents a connection between two groups.
@@ -146,6 +147,7 @@ impl Topology {
             addr: entry.addr(),
             name: name.clone(),
             is_entrypoint: false,
+            stop_order: 0,
         });
 
         Local {
@@ -191,13 +193,7 @@ impl<'t> Local<'t> {
     ///
     /// Usually, only `system.configurers` group is marked as an entrypoint.
     pub fn entrypoint(self) -> Self {
-        let mut inner = self.topology.inner.write();
-        let group = inner
-            .locals
-            .iter_mut()
-            .find(|group| group.addr == self.entry.addr())
-            .expect("just created");
-        group.is_entrypoint = true;
+        self.with_group_mut(|group| group.is_entrypoint = true);
         self
     }
 
@@ -247,12 +243,24 @@ impl<'t> Local<'t> {
 
     /// Mounts a blueprint to this group.
     pub fn mount(self, blueprint: Blueprint) {
+        self.with_group_mut(|group| group.stop_order = blueprint.stop_order);
+
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
         let ctx = Context::new(book, self.demux.into_inner()).with_group(addr);
         let rt_manager = self.topology.inner.read().rt_manager.clone();
-        let object = (blueprint.run)(ctx, self.name, rt_manager);
+        let object = (blueprint.mount)(ctx, self.name, rt_manager);
         self.entry.insert(object);
+    }
+
+    fn with_group_mut(&self, f: impl FnOnce(&mut LocalActorGroup)) {
+        let mut inner = self.topology.inner.write();
+        let group = inner
+            .locals
+            .iter_mut()
+            .find(|group| group.addr == self.entry.addr())
+            .expect("no corresponding group for Local<_>");
+        f(group);
     }
 }
 

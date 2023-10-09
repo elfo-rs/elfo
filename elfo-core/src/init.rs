@@ -1,9 +1,10 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use futures::future::join_all;
+use quanta::Instant;
 use tokio::{
     pin, select,
-    time::{sleep, timeout, Instant},
+    time::{sleep, timeout},
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
@@ -274,22 +275,29 @@ async fn termination(mut ctx: Context, topology: Topology) {
 }
 
 async fn do_termination(ctx: Context, topology: Topology) {
-    info!("terminating user actor groups");
-    terminate_groups(&ctx, &topology, true).await;
-    info!("terminating system actor groups");
-    terminate_groups(&ctx, &topology, false).await;
-    info!("system terminated");
+    let mut stop_order_list = topology
+        .locals()
+        .map(|group| group.stop_order)
+        .collect::<Vec<_>>();
+
+    stop_order_list.sort_unstable();
+    stop_order_list.dedup();
+
+    for stop_order in stop_order_list {
+        info!(%stop_order, "terminating groups");
+        terminate_groups(&ctx, &topology, stop_order).await;
+    }
 }
 
-async fn terminate_groups(ctx: &Context, topology: &Topology, user: bool) {
-    // TODO: specify order of system groups.
+async fn terminate_groups(ctx: &Context, topology: &Topology, stop_order: i8) {
     let futures = topology
         .locals()
-        .filter(|group| user ^ group.name.starts_with("system."))
+        .filter(|group| group.stop_order == stop_order)
         .map(|group| async move {
+            let started_at = Instant::now();
             select! {
-                _ = terminate_group(ctx, group.addr, group.name.clone()) => {},
-                _ = watch_group(ctx, group.addr, group.name) => {},
+                _ = terminate_group(ctx, group.addr, group.name.clone(), started_at) => {},
+                _ = watch_group(ctx, group.addr, group.name, started_at) => {},
             }
         })
         .collect::<Vec<_>>();
@@ -297,50 +305,52 @@ async fn terminate_groups(ctx: &Context, topology: &Topology, user: bool) {
     join_all(futures).await;
 }
 
-async fn terminate_group(ctx: &Context, addr: Addr, name: String) {
-    let start_time = Instant::now();
-
+async fn terminate_group(ctx: &Context, addr: Addr, name: String, started_at: Instant) {
     // Terminate::default
 
     info!(group = %name, "sending polite Terminate");
     let fut = ctx.send_to(addr, Terminate::default());
 
     if timeout(SEND_CLOSING_TERMINATE_AFTER, fut).await.is_ok() {
-        let elapsed = start_time.elapsed();
+        let elapsed = started_at.elapsed();
         if let Some(delta) = SEND_CLOSING_TERMINATE_AFTER.checked_sub(elapsed) {
             sleep(delta).await;
         }
     } else {
-        warn!(
-            group = %name,
-            "failed to deliver polite Terminate, some actors are too busy"
-        );
+        warn!(group = %name, "failed to deliver polite Terminate, some actors are too busy");
     }
 
     // Terminate::closing
 
     warn!(
+        message = "actor group hasn't finished yet, sending closing Terminate",
         group = %name,
-        "actor group hasn't finished yet, sending closing terminate"
+        elapsed = ?started_at.elapsed(),
     );
     let fut = ctx.send_to(addr, Terminate::closing());
 
     if timeout(STOP_GROUP_TERMINATION_AFTER, fut).await.is_ok() {
-        let elapsed = start_time.elapsed();
+        let elapsed = started_at.elapsed();
         if let Some(delta) = STOP_GROUP_TERMINATION_AFTER.checked_sub(elapsed) {
             sleep(delta).await;
         }
     } else {
-        warn!(
-            group = %name,
-            "failed to deliver closing Terminate"
-        );
+        warn!(group = %name, "failed to deliver closing Terminate");
     }
 
-    error!(group = %name, "failed to terminate an actor group");
+    error!(
+        message = "failed to terminate an actor group, skipped",
+        group = %name,
+        elapsed = ?started_at.elapsed(),
+    );
 }
 
-async fn watch_group(ctx: &Context, addr: Addr, name: String) {
+async fn watch_group(ctx: &Context, addr: Addr, name: String, started_at: Instant) {
     ctx.finished(addr).await;
-    info!(group = %name, "actor group finished");
+
+    info!(
+        message = "actor group finished",
+        group = %name,
+        elapsed = ?started_at.elapsed(),
+    );
 }
