@@ -21,7 +21,7 @@ use elfo_core::{
 
 use crate::{
     config::Config,
-    protocol::{GroupInfo, HandleConnection},
+    protocol::{DataConnectionFailed, GroupInfo, HandleConnection},
 };
 
 mod codec;
@@ -74,6 +74,7 @@ pub fn new(topology: &Topology) -> Blueprint {
                     local: msg.local.clone(),
                     remote: msg.remote.clone(),
                 }),
+                DataConnectionFailed => Outcome::Unicast(ActorKey::Discovery),
                 _ => Outcome::Default,
             })
         }))

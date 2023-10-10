@@ -16,7 +16,7 @@ use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     config::{CompressionAlgorithm, Transport},
     node_map::{NodeInfo, NodeMap},
-    protocol::{internode, GroupInfo, HandleConnection},
+    protocol::{internode, DataConnectionFailed, GroupInfo, HandleConnection},
     socket::{self, ReadError, Socket},
     NetworkContext,
 };
@@ -99,6 +99,15 @@ impl Discovery {
                 msg @ ConnectionEstablished => self.on_connection_established(msg),
                 msg @ ConnectionAccepted => self.on_connection_accepted(msg),
                 msg @ ConnectionRejected => self.on_connection_rejected(msg),
+                msg @ DataConnectionFailed => {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    let role = ConnectionRole::Data(internode::SwitchToData {
+                        my_group_no: msg.local,
+                        your_group_no: msg.remote.1,
+                        initial_window: INITIAL_WINDOW_SIZE,
+                    });
+                    self.open_connection(&msg.transport, role);
+                }
             });
         }
 
@@ -172,6 +181,9 @@ impl Discovery {
         let launch_id = self.node_map.this.launch_id;
         let capabilities = self.get_capabilities();
 
+        let shift =
+            std::time::Duration::from_millis(self.node_map.this.launch_id.into_bits() % 5000);
+
         self.ctx.attach(Stream::once(async move {
             loop {
                 debug!(message = "connecting to peer", addr = %transport, role = ?role);
@@ -202,9 +214,11 @@ impl Discovery {
                     }
                 }
 
+                let delay = interval + shift;
+
                 // TODO: should we change trace_id?
-                debug!(message = "retrying after some time", addr = %transport, delay = ?interval);
-                tokio::time::sleep(interval).await;
+                debug!(message = "retrying after some time", addr = %transport, delay = ?delay);
+                tokio::time::sleep(delay).await;
             }
         }))
     }
@@ -338,6 +352,7 @@ impl Discovery {
                             group_no: remote.my_group_no,
                             group_name: remote_group_name,
                         },
+                        transport: msg.transport.clone(),
                         socket: socket.into(),
                         initial_window: remote.initial_window,
                     },

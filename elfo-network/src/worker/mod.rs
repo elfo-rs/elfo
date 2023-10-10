@@ -23,6 +23,7 @@ use self::{
     flows_tx::{Acquire, TryAcquire, TxFlows},
     requests::OutgoingRequests,
 };
+
 use crate::{
     codec::{
         decode::EnvelopeDetails,
@@ -31,8 +32,9 @@ use crate::{
             KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
         },
     },
+    config::Transport,
     frame::write::FrameState,
-    protocol::{internode, GroupInfo, HandleConnection},
+    protocol::{internode, DataConnectionFailed, GroupInfo, HandleConnection},
     rtt::Rtt,
     socket::{ReadError, ReadHalf, WriteHalf},
     NetworkContext,
@@ -63,6 +65,24 @@ pub(crate) struct Worker {
     topology: Topology,
     local: GroupInfo,
     remote: GroupInfo,
+    transport: Option<Transport>,
+}
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        if let Some(transport) = self.transport.take() {
+            let _ = self.ctx.try_send_to(
+                self.ctx.group(),
+                DataConnectionFailed {
+                    transport,
+                    local: self.local.group_no,
+                    remote: (self.remote.node_no, self.remote.group_no),
+                },
+            );
+        } else {
+            info!("transport to reopen connection is unknown");
+        }
+    }
 }
 
 impl Worker {
@@ -77,6 +97,7 @@ impl Worker {
             topology,
             local,
             remote,
+            transport: None,
         }
     }
 
@@ -86,6 +107,8 @@ impl Worker {
             msg @ HandleConnection => msg,
             _ => unreachable!("unexpected initial message"),
         });
+
+        self.transport = first_message.transport;
 
         let time_origin = Instant::now();
         let tx_flows = Arc::new(TxFlows::new(first_message.initial_window));
@@ -159,6 +182,12 @@ impl Worker {
                     let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
 
                     // TODO: perform health check
+                }
+                msg @ HandleConnection => {
+                    info!("duplicate connection, skipping"); // TODO
+                    if self.transport.is_none() {
+                        self.transport = msg.transport;
+                    }
                 }
                 StartPusher(addr) => {
                     let pusher = Pusher {
