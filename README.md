@@ -28,11 +28,5 @@ elfo = { version = "0.2.0-alpha.8", features = ["full"] }
 elfo = { version = "0.2.0-alpha.8", features = ["test-util"] }
 ```
 
-Note: until [sharded-slab#80](https://github.com/hawkw/sharded-slab/pull/80) is merged, it should be added:
-```toml
-[patch.crates-io]
-sharded-slab = { git = 'https://github.com/loyd/sharded-slab.git' }
-```
-
 ## Examples
 [Examples](examples).
