@@ -1,6 +1,9 @@
-use std::{net::SocketAddr, time::Duration};
+#[cfg(unix)]
+use std::path::PathBuf;
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use derive_more::Display;
+use eyre::{bail, ensure, Result, WrapErr};
 use serde::{
     de::{self, Deserializer},
     Deserialize, Serialize,
@@ -49,6 +52,39 @@ fn default_attempt_interval() -> Duration {
 pub(crate) enum Transport {
     #[display(fmt = "tcp://{}", _0)]
     Tcp(SocketAddr),
+    #[cfg(unix)]
+    #[display(fmt = "uds://{}", "_0.display()")]
+    Uds(PathBuf),
+}
+
+impl FromStr for Transport {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        #[cfg(unix)]
+        const PROTOCOLS: &str = "tcp or uds";
+        #[cfg(not(unix))]
+        const PROTOCOLS: &str = "tcp";
+
+        let (protocol, addr) = s.split_once("://").unwrap_or_default();
+
+        match protocol {
+            "" => bail!("protocol must be specified ({PROTOCOLS})"),
+            "tcp" => addr
+                .parse()
+                .map(Transport::Tcp)
+                .wrap_err("invalid TCP address"),
+            #[cfg(unix)]
+            "uds" => {
+                ensure!(
+                    !addr.ends_with('/'),
+                    "path to UDS socket cannot be directory"
+                );
+                Ok(Transport::Uds(PathBuf::from(addr)))
+            }
+            proto => bail!("unknown protocol: {proto}"),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for Transport {
@@ -59,21 +95,65 @@ impl<'de> Deserialize<'de> for Transport {
         // FIXME: cannot use `&str` here: `expected borrowed string`.
         let s: String = Deserialize::deserialize(deserializer)?;
 
-        parse_transport(&s)
+        s.parse::<Transport>()
             .map_err(|err| de::Error::custom(format!(r#"unsupported transport: "{}", {}"#, s, err)))
     }
 }
 
-fn parse_transport(s: &str) -> Result<Transport, &'static str> {
-    if !s.contains("://") {
-        return Err(r#"protocol must be specified (e.g. "tcp://")"#);
-    }
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
 
-    if let Some(addr) = s.strip_prefix("tcp://") {
-        addr.parse()
-            .map(Transport::Tcp)
-            .map_err(|_| "invalid TCP address")
-    } else {
-        Err("unknown protocol")
+    use super::*;
+
+    #[test]
+    fn transport_parsing() {
+        // Missing protocol
+        assert!(Transport::from_str("")
+            .unwrap_err()
+            .to_string()
+            .starts_with("protocol must be specified"));
+        assert!(Transport::from_str("://a/b")
+            .unwrap_err()
+            .to_string()
+            .starts_with("protocol must be specified"));
+
+        // Unknown protocol
+        assert!(Transport::from_str("foo://a")
+            .unwrap_err()
+            .to_string()
+            .starts_with("unknown protocol"));
+        #[cfg(not(unix))]
+        assert!(Transport::from_str("uds://a")
+            .unwrap_err()
+            .starts_with("unknown protocol"));
+
+        // TCP
+        let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 4242);
+        assert_eq!(
+            Transport::from_str("tcp://127.0.0.1:4242").unwrap(),
+            Transport::Tcp(expected)
+        );
+        assert_eq!(
+            Transport::from_str("tcp://foobar").unwrap_err().to_string(),
+            "invalid TCP address"
+        );
+
+        // UDS
+        #[cfg(unix)]
+        {
+            assert_eq!(
+                Transport::from_str("uds:///a/b").unwrap(),
+                Transport::Uds("/a/b".into())
+            );
+            assert_eq!(
+                Transport::from_str("uds://rel/a/b").unwrap(),
+                Transport::Uds("rel/a/b".into())
+            );
+            assert_eq!(
+                Transport::from_str("uds:///a/").unwrap_err().to_string(),
+                "path to UDS socket cannot be directory"
+            );
+        }
     }
 }

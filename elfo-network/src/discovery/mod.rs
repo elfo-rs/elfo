@@ -29,6 +29,8 @@ const INITIAL_WINDOW_SIZE: i32 = 100_000;
 struct ConnectionEstablished {
     role: ConnectionRole,
     socket: MoveOwnership<Socket>,
+    // `Some` only on the client side.
+    transport: Option<Transport>,
 }
 
 #[message(part)]
@@ -51,15 +53,15 @@ impl ConnectionRole {
 
 #[message]
 struct ConnectionAccepted {
-    is_initiator: bool,
     role: ConnectionRole,
     socket: MoveOwnership<Socket>,
+    // `Some` only on the client side.
+    transport: Option<Transport>,
 }
 
 #[message]
 struct ConnectionRejected {
     error: String,
-    peer: Transport,
 }
 
 pub(super) struct Discovery {
@@ -71,7 +73,6 @@ pub(super) struct Discovery {
 // TODO: discover tick.
 // TODO: status of in-progress connections
 // TODO: launch_id changed.
-// TODO: repeat discovery by timer.
 
 impl Discovery {
     pub(super) fn new(ctx: NetworkContext, topology: Topology) -> Self {
@@ -113,18 +114,35 @@ impl Discovery {
     }
 
     async fn listen(&mut self) -> Result<()> {
+        let node_no = self.node_map.this.node_no;
+        let launch_id = self.node_map.this.launch_id;
+        let capabilities = self.get_capabilities();
+
         for transport in self.ctx.config().listen.clone() {
-            let stream = socket::listen(&transport, &self.node_map.this, self.get_capabilities())
+            let stream = socket::listen(&transport, node_no, launch_id, capabilities)
                 .await
                 .wrap_err_with(|| eyre!("cannot listen {}", transport))?
+                .filter_map(move |socket| async move {
+                    if socket.peer.node_no != node_no {
+                        Some(socket)
+                    } else {
+                        info!(
+                            message = "connection to self ignored",
+                            socket = %socket.info,
+                            peer = %socket.peer,
+                        );
+                        None
+                    }
+                })
                 .map(|socket| ConnectionEstablished {
                     role: ConnectionRole::Unknown,
                     socket: socket.into(),
+                    transport: None,
                 });
 
             info!(
                 message = "listening for connections",
-                listener = %transport,
+                addr = %transport,
             );
 
             self.ctx.attach(Stream::from_futures03(stream));
@@ -145,40 +163,47 @@ impl Discovery {
 
     fn open_connection(
         &mut self,
-        peer: &Transport,
+        transport: &Transport,
         role: ConnectionRole,
     ) -> Stream<ConnectionEstablished> {
         let interval = self.ctx.config().discovery.attempt_interval;
-        let peer = peer.clone();
-        let this_node = self.node_map.this.clone();
+        let transport = transport.clone();
+        let node_no = self.node_map.this.node_no;
+        let launch_id = self.node_map.this.launch_id;
         let capabilities = self.get_capabilities();
 
         self.ctx.attach(Stream::once(async move {
             loop {
-                debug!(message = "connecting to peer", peer = %peer, role = ?role);
+                debug!(message = "connecting to peer", addr = %transport, role = ?role);
 
-                match socket::connect(&peer, &this_node, capabilities).await {
-                    Ok(socket) => match socket {
-                        Some(socket) => {
+                match socket::connect(&transport, node_no, launch_id, capabilities).await {
+                    Ok(socket) => {
+                        if socket.peer.node_no != node_no {
                             break ConnectionEstablished {
                                 role,
                                 socket: socket.into(),
-                            }
-                        }
-                        None => {
+                                transport: Some(transport),
+                            };
+                        } else {
                             info!(
                                 message = "connection to self ignored",
-                                peer = %peer,
+                                socket = %socket.info,
+                                peer = %socket.peer,
                             );
                         }
-                    },
+                    }
                     Err(err) => {
-                        info!(message = "cannot connect", peer = %peer, error = %err);
+                        // TODO: some errors should be logged as warnings.
+                        info!(
+                            message = "cannot connect",
+                            error = %err,
+                            addr = %transport,
+                        );
                     }
                 }
 
                 // TODO: should we change trace_id?
-                debug!(message = "retrying after some time", peer = %peer, delay = ?interval);
+                debug!(message = "retrying after some time", addr = %transport, delay = ?interval);
                 tokio::time::sleep(interval).await;
             }
         }))
@@ -186,31 +211,32 @@ impl Discovery {
 
     fn on_connection_established(&mut self, msg: ConnectionEstablished) {
         let socket = msg.socket.take().unwrap();
+        let transport = msg.transport;
 
         info!(
             message = "new connection established",
+            socket = %socket.info,
             peer = %socket.peer,
             role = msg.role.as_str(),
         );
 
         let node_map = self.node_map.clone();
         self.ctx.attach(Stream::once(async move {
-            let peer = socket.peer.transport.clone();
+            let info = socket.info.clone();
+            let peer = socket.peer.clone();
 
-            let result = accept_connection(socket, msg.role, &node_map.this).await;
+            let result = accept_connection(socket, msg.role, transport, &node_map.this).await;
             match result {
                 Ok(accepted) => Ok(accepted),
                 Err(err) => {
-                    let error_msg = format!("{:#}", err);
+                    let error = format!("{:#}", err);
                     warn!(
                         message = "new connection rejected",
+                        socket = %info,
                         peer = %peer,
-                        error = %error_msg,
+                        error = %error,
                     );
-                    Err(ConnectionRejected {
-                        error: error_msg,
-                        peer,
-                    })
+                    Err(ConnectionRejected { error })
                 }
             }
         }));
@@ -218,11 +244,11 @@ impl Discovery {
 
     fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
         let socket = msg.socket.take().unwrap();
-        let peer = &socket.peer;
 
         info!(
             message = "new connection accepted",
-            peer = %peer,
+            socket = %socket.info,
+            peer = %socket.peer,
             role = msg.role.as_str(),
         );
 
@@ -232,10 +258,10 @@ impl Discovery {
                 {
                     let mut nodes = self.node_map.nodes.lock();
                     nodes.insert(
-                        peer.node_no,
+                        socket.peer.node_no,
                         NodeInfo {
-                            node_no: peer.node_no,
-                            launch_id: peer.launch_id,
+                            node_no: socket.peer.node_no,
+                            launch_id: socket.peer.launch_id,
                             groups: remote.groups.clone(),
                         },
                     );
@@ -245,9 +271,9 @@ impl Discovery {
 
                 // Only initiator (client) can start new connections,
                 // because he knows the transport address.
-                if !msg.is_initiator {
+                let Some(transport) = msg.transport else {
                     return;
-                }
+                };
 
                 let this_node = &self.node_map.clone().this;
 
@@ -260,7 +286,7 @@ impl Discovery {
                     .for_each(|(local_group_no, remote_group_no)| {
                         // TODO: save stream to cancel later.
                         self.open_connection(
-                            &socket.peer.transport,
+                            &transport,
                             ConnectionRole::Data(internode::SwitchToData {
                                 my_group_no: local_group_no,
                                 your_group_no: remote_group_no,
@@ -280,8 +306,12 @@ impl Discovery {
                     .find(|g| g.group_no == remote.your_group_no)
                     .map(|g| g.name.clone());
 
-                let remote_group_name =
-                    self.node_map.nodes.lock().get(&peer.node_no).and_then(|n| {
+                let remote_group_name = self
+                    .node_map
+                    .nodes
+                    .lock()
+                    .get(&socket.peer.node_no)
+                    .and_then(|n| {
                         n.groups
                             .iter()
                             .find(|g| g.group_no == remote.my_group_no)
@@ -290,7 +320,8 @@ impl Discovery {
 
                 let (local_group_name, remote_group_name) =
                     ward!(local_group_name.zip(remote_group_name), {
-                        error!("control and data connections contradict each other");
+                        // TODO: it should be error once connection manager is implemented.
+                        info!("control and data connections contradict each other");
                         return;
                     });
 
@@ -303,7 +334,7 @@ impl Discovery {
                             group_name: local_group_name,
                         },
                         remote: GroupInfo {
-                            node_no: peer.node_no,
+                            node_no: socket.peer.node_no,
                             group_no: remote.my_group_no,
                             group_name: remote_group_name,
                         },
@@ -328,9 +359,10 @@ impl Discovery {
 async fn accept_connection(
     mut socket: Socket,
     role: ConnectionRole,
+    transport: Option<Transport>,
     this_node: &NodeInfo,
 ) -> Result<ConnectionAccepted> {
-    let (is_initiator, role) = match role {
+    let role = match role {
         ConnectionRole::Unknown => {
             msg!(match recv(&mut socket).await? {
                 msg @ internode::SwitchToControl => {
@@ -338,7 +370,7 @@ async fn accept_connection(
                         groups: this_node.groups.clone(),
                     };
                     send_regular(&mut socket, my_msg).await?;
-                    (false, ConnectionRole::Control(msg))
+                    ConnectionRole::Control(msg)
                 }
                 msg @ internode::SwitchToData => {
                     let my_msg = internode::SwitchToData {
@@ -347,7 +379,7 @@ async fn accept_connection(
                         initial_window: INITIAL_WINDOW_SIZE,
                     };
                     send_regular(&mut socket, my_msg).await?;
-                    (false, ConnectionRole::Data(msg))
+                    ConnectionRole::Data(msg)
                 }
                 envelope =>
                     return Err(unexpected_message_error(
@@ -359,19 +391,19 @@ async fn accept_connection(
         ConnectionRole::Control(msg) => {
             send_regular(&mut socket, msg).await?;
             let msg = recv_regular::<internode::SwitchToControl>(&mut socket).await?;
-            (true, ConnectionRole::Control(msg))
+            ConnectionRole::Control(msg)
         }
         ConnectionRole::Data(msg) => {
             send_regular(&mut socket, msg).await?;
             let msg = recv_regular::<internode::SwitchToData>(&mut socket).await?;
-            (true, ConnectionRole::Data(msg))
+            ConnectionRole::Data(msg)
         }
     };
 
     Ok(ConnectionAccepted {
-        is_initiator,
         role,
         socket: socket.into(),
+        transport,
     })
 }
 

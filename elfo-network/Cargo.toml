@@ -20,6 +20,7 @@ eyre = "0.6.8"
 fxhash = "0.2.1"
 futures = "0.3.21"
 tokio = { version = "1.19.2", features = ["net", "io-util"] }
+tokio-util = "0.7"
 tracing = "0.1.25"
 parking_lot = "0.12"
 derive_more = "0.99.11"
@@ -34,4 +35,4 @@ lz4_flex = "0.11.1"
 byteorder = "1.4.3"
 
 [dev-dependencies]
-tracing-test = "0.2.4"
+tracing-test = "0.2.4" # TODO: actually unused?

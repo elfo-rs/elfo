@@ -1,5 +1,3 @@
-//! This module contains `Encoder` and `Decoder` instances.
-//!
 //! The structure of the network envelope:
 //!           name           bits       presence
 //! +-----------------------+----+---------------------+
