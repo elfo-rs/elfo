@@ -1,18 +1,11 @@
-use std::{io::Cursor, net::SocketAddr};
+use std::{future::Future, time::Duration};
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use derive_more::Display;
+use derive_more::{Constructor, Display};
 use eyre::{eyre, Result, WrapErr};
-use futures::Future;
+use futures::StreamExt;
 use metrics::counter;
-use tokio::{
-    io,
-    net::{
-        tcp::{self, OwnedReadHalf, OwnedWriteHalf},
-        TcpListener, TcpStream,
-    },
-};
-use tracing::{error, info, trace, warn};
+use tokio::io;
+use tracing::{trace, warn};
 
 use elfo_core::_priv::{NodeLaunchId, NodeNo};
 use elfo_utils::likely;
@@ -24,10 +17,10 @@ use crate::{
         read::{FramedRead, FramedReadState, FramedReadStrategy},
         write::{FrameState, FramedWrite, FramedWriteStrategy},
     },
-    node_map::NodeInfo,
 };
 
-// === Socket ===
+mod handshake;
+mod raw;
 
 bitflags::bitflags! {
     #[derive(Clone, Copy)]
@@ -36,172 +29,42 @@ bitflags::bitflags! {
     }
 }
 
-const THIS_NODE_VERSION: u8 = 0;
-
-pub(crate) struct Handshake {
-    pub(crate) version: u8,
-    pub(crate) node_no: NodeNo,
-    pub(crate) launch_id: NodeLaunchId,
-    pub(crate) capabilities: Capabilities,
+pub(crate) struct Socket {
+    pub(crate) info: raw::SocketInfo,
+    pub(crate) peer: Peer,
+    pub(crate) read: ReadHalf,
+    pub(crate) write: WriteHalf,
 }
 
-// NOTE: 16 bytes at the end are reserved.
-const HANDSHAKE_LENGTH: usize = 39;
-const HANDSHAKE_MAGIC: u64 = 0xE1F0E1F0E1F0E1F0;
-
-impl Handshake {
-    pub(crate) fn make_containing_buf() -> Vec<u8> {
-        vec![0; HANDSHAKE_LENGTH]
-    }
-
-    pub(crate) fn new(this_node: &NodeInfo, capabilities: Capabilities) -> Self {
-        Self {
-            version: THIS_NODE_VERSION,
-            node_no: this_node.node_no,
-            launch_id: this_node.launch_id,
-            capabilities,
-        }
-    }
-
-    pub(crate) fn as_bytes(&self) -> Result<Vec<u8>> {
-        let mut buf = Cursor::new(Self::make_containing_buf());
-
-        buf.write_u64::<LittleEndian>(HANDSHAKE_MAGIC)?;
-        buf.write_u8(self.version)?;
-        buf.write_u16::<LittleEndian>(self.node_no.into_bits())?;
-        buf.write_u64::<LittleEndian>(self.launch_id.into_bits())?;
-        buf.write_u32::<LittleEndian>(self.capabilities.bits())?;
-
-        let result = buf.into_inner();
-        debug_assert_eq!(result.len(), HANDSHAKE_LENGTH);
-        Ok(result)
-    }
-
-    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() < HANDSHAKE_LENGTH {
-            return Err(eyre!(
-                "expected handshake of length {}, got {} instead",
-                HANDSHAKE_LENGTH,
-                bytes.len()
-            ));
-        }
-
-        let mut input = Cursor::new(bytes);
-
-        if input.read_u64::<LittleEndian>()? != HANDSHAKE_MAGIC {
-            return Err(eyre!("handshake magic did not match"));
-        }
-
-        let result = Self {
-            version: input.read_u8()?,
-            node_no: NodeNo::from_bits(input.read_u16::<LittleEndian>()?)
-                .ok_or_else(|| eyre!("invalid node no"))?,
-            launch_id: NodeLaunchId::from_bits(input.read_u64::<LittleEndian>()?),
-            capabilities: Capabilities::from_bits_truncate(input.read_u32::<LittleEndian>()?),
-        };
-
-        Ok(result)
-    }
-}
-
-pub(crate) struct TcpSocket {
-    read: OwnedReadHalf,
-    write: OwnedWriteHalf,
-    pub(crate) peer: Transport,
-}
-
-impl TcpSocket {
-    fn new(stream: TcpStream, peer: Transport) -> Self {
-        let (read, write) = stream.into_split();
-        Self { read, write, peer }
-    }
-
-    pub(crate) async fn handshake(
-        mut self,
-        this_node: &NodeInfo,
-        capabilities: Capabilities,
-    ) -> Result<Option<Socket>> {
-        let this_node_handshake = Handshake::new(this_node, capabilities);
-        io::AsyncWriteExt::write_all(&mut self.write, &this_node_handshake.as_bytes()?).await?;
-
-        let mut buffer = Handshake::make_containing_buf();
-        io::AsyncReadExt::read_exact(&mut self.read, &mut buffer).await?;
-        let other_node_handshake = Handshake::from_bytes(&buffer)?;
-
-        if this_node_handshake.node_no == other_node_handshake.node_no {
-            return Ok(None);
-        }
-
-        let peer = Peer {
-            node_no: other_node_handshake.node_no,
-            launch_id: other_node_handshake.launch_id,
-            transport: self.peer,
-        };
-        let version = this_node_handshake
-            .version
-            .min(other_node_handshake.version);
-        let capabilities = this_node_handshake
-            .capabilities
-            .intersection(other_node_handshake.capabilities);
-
-        Ok(Some(Socket::tcp(
-            self.read,
-            self.write,
-            peer,
-            version,
-            capabilities,
-        )))
-    }
-}
-
-#[derive(Display, Clone)]
-#[display(fmt = "peer(node_no={node_no}, launch_id={launch_id}, transport={transport})")]
+#[derive(Display, Clone, Constructor)]
+#[display(fmt = "peer(node_no={node_no}, launch_id={launch_id})")] // TODO: use `valuable` after tracing#1570
 pub(crate) struct Peer {
     pub(crate) node_no: NodeNo,
     pub(crate) launch_id: NodeLaunchId,
-    pub(crate) transport: Transport,
-}
-
-// TODO: Make `Socket`, `ReadHalf` and `WriteHalf` generic over transport type.
-pub(crate) struct Socket {
-    pub(crate) read: ReadHalf,
-    pub(crate) write: WriteHalf,
-    pub(crate) peer: Peer,
 }
 
 impl Socket {
-    fn tcp(
-        read: OwnedReadHalf,
-        write: OwnedWriteHalf,
-        peer: Peer,
-        _version: u8,
-        capabilities: Capabilities,
-    ) -> Self {
+    fn new(raw: raw::Socket, handshake: handshake::Handshake) -> Self {
         // TODO: maybe do something with the version.
 
-        let (framed_read, framed_write) = if capabilities.contains(Capabilities::LZ4) {
+        let (framed_read, framed_write) = if handshake.capabilities.contains(Capabilities::LZ4) {
             (FramedRead::lz4(), FramedWrite::lz4(None))
         } else {
             (FramedRead::none(), FramedWrite::none(None))
         };
 
         Self {
-            read: ReadHalf::new(framed_read, read),
-            write: WriteHalf::new(framed_write, write),
-            peer,
+            info: raw.info,
+            peer: Peer::new(handshake.node_no, handshake.launch_id),
+            read: ReadHalf::new(framed_read, raw.read),
+            write: WriteHalf::new(framed_write, raw.write),
         }
     }
 }
 
 pub(crate) struct ReadHalf {
     framing: FramedRead,
-    read: tcp::OwnedReadHalf,
-}
-
-impl ReadHalf {
-    pub(crate) fn new(framing: FramedRead, read: tcp::OwnedReadHalf) -> Self {
-        Self { framing, read }
-    }
+    read: raw::OwnedReadHalf,
 }
 
 #[derive(Debug)]
@@ -220,6 +83,10 @@ where
 }
 
 impl ReadHalf {
+    fn new(framing: FramedRead, read: raw::OwnedReadHalf) -> Self {
+        Self { framing, read }
+    }
+
     fn report_framing_metrics(&mut self) {
         let stats = self.framing.take_stats();
         counter!(
@@ -275,11 +142,11 @@ impl ReadHalf {
 
 pub(crate) struct WriteHalf {
     framing: FramedWrite,
-    write: tcp::OwnedWriteHalf,
+    write: raw::OwnedWriteHalf,
 }
 
 impl WriteHalf {
-    pub(crate) fn new(framing: FramedWrite, write: tcp::OwnedWriteHalf) -> Self {
+    fn new(framing: FramedWrite, write: raw::OwnedWriteHalf) -> Self {
         Self { framing, write }
     }
 
@@ -347,118 +214,64 @@ impl WriteHalf {
     }
 }
 
-// === connect ===
+// TODO: make configurable.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const LISTEN_TIMEOUT: Duration = Duration::from_secs(3);
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+const HANDSHAKE_CONCURRENCY: usize = 64;
 
 pub(crate) async fn connect(
-    transport: &Transport,
-    this_node: &NodeInfo,
+    addr: &Transport,
+    node_no: NodeNo,
+    launch_id: NodeLaunchId,
     capabilities: Capabilities,
-) -> Result<Option<Socket>> {
-    match transport {
-        Transport::Tcp(addr) => connect_tcp(*addr, this_node, capabilities).await,
-    }
+) -> Result<Socket> {
+    let mut raw_socket = timeout(CONNECT_TIMEOUT, raw::connect(addr)).await?;
+    let handshaking = handshake::handshake(&mut raw_socket, node_no, launch_id, capabilities);
+    let handshake = timeout(HANDSHAKE_TIMEOUT, handshaking)
+        .await
+        .wrap_err("handshake")?;
+    Ok(Socket::new(raw_socket, handshake))
 }
-
-async fn connect_tcp(
-    peer: SocketAddr,
-    this_node: &NodeInfo,
-    capabilities: Capabilities,
-) -> Result<Option<Socket>> {
-    // TODO: timeout
-    // TODO: settings (keepalive, linger, etc.)
-    let stream = TcpStream::connect(peer).await?;
-    stream.set_nodelay(true)?;
-    let socket = TcpSocket::new(stream, Transport::Tcp(peer));
-    socket.handshake(this_node, capabilities).await
-}
-
-// === listen ===
 
 pub(crate) async fn listen(
-    transport: &Transport,
-    this_node: &NodeInfo,
+    addr: &Transport,
+    node_no: NodeNo,
+    launch_id: NodeLaunchId,
     capabilities: Capabilities,
 ) -> Result<futures::stream::BoxStream<'static, Socket>> {
-    match transport {
-        Transport::Tcp(addr) => listen_tcp(*addr, this_node.clone(), capabilities).await,
-    }
-}
+    let stream = timeout(LISTEN_TIMEOUT, raw::listen(addr)).await?;
+    let stream = stream
+        .map(move |mut raw_socket| async move {
+            let handshaking =
+                handshake::handshake(&mut raw_socket, node_no, launch_id, capabilities);
 
-async fn listen_tcp(
-    addr: SocketAddr,
-    this_node: NodeInfo,
-    capabilities: Capabilities,
-) -> Result<futures::stream::BoxStream<'static, Socket>> {
-    // TODO: timeout
-    let listener = TcpListener::bind(addr)
-        .await
-        .wrap_err("cannot bind TCP listener")?;
-
-    let accept = move |(listener, this_node): (TcpListener, NodeInfo)| async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, peer)) => {
-                    if let Err(err) = stream.set_nodelay(true) {
-                        error!(
-                            message = "cannot turn off Nagle's algorithm for incoming connection",
-                            error = %err,
-                            listener = %addr,
-                        );
-                        continue;
-                    }
-                    let socket = TcpSocket::new(stream, Transport::Tcp(peer));
-                    match socket.handshake(&this_node, capabilities).await {
-                        Ok(connection) => {
-                            match connection {
-                                Some(connection) => {
-                                    return Some((connection, (listener, this_node)))
-                                }
-                                None => {
-                                    info!(
-                                        message = "connection to self ignored",
-                                        listener = %addr,
-                                    );
-
-                                    // Continue listening.
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            warn!(
-                                message = "handshake failed",
-                                error = %err,
-                                listener = %addr,
-                            );
-
-                            // Continue listening.
-                        }
-                    }
-                }
+            match timeout(HANDSHAKE_TIMEOUT, handshaking).await {
+                Ok(handshake) => Some(Socket::new(raw_socket, handshake)),
                 Err(err) => {
                     warn!(
-                        message = "cannot accept TCP connection",
+                        message = "cannot handshake accepted connection",
                         error = %err,
-                        listener = %addr,
+                        socket = %raw_socket.info,
                     );
-
-                    // Continue listening.
+                    None
                 }
             }
-        }
-    };
+        })
+        // Enable concurrent handshakes.
+        .buffer_unordered(HANDSHAKE_CONCURRENCY)
+        .filter_map(|opt| async move { opt });
 
-    Ok(Box::pin(futures::stream::unfold(
-        (listener, this_node),
-        accept,
-    )))
+    Ok(Box::pin(stream))
+}
+
+async fn timeout<T>(duration: Duration, fut: impl Future<Output = Result<T>>) -> Result<T> {
+    tokio::time::timeout(duration, fut).await?
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        convert::TryFrom,
-        net::{IpAddr, Ipv4Addr},
-    };
+    use std::convert::TryFrom;
 
     use futures::{future, stream::StreamExt};
     use tracing::debug;
@@ -523,35 +336,24 @@ mod tests {
         })
     }
 
-    async fn ensure_read_write(capabilities: Capabilities, port: u16) {
-        let server_node = NodeInfo {
-            node_no: NodeNo::from_bits(2).unwrap(),
-            launch_id: NodeLaunchId::from_bits(1),
-            groups: vec![],
-        };
-        let server_transport = Transport::Tcp(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            port,
-        ));
+    async fn ensure_read_write(transport: &str, capabilities: Capabilities) {
+        let transport = transport.parse().unwrap();
+        let node_no = NodeNo::from_bits(2).unwrap();
+        let launch_id = NodeLaunchId::from_bits(1);
 
-        let mut listen_stream = listen(&server_transport, &server_node, capabilities)
+        let mut listen_stream = listen(&transport, node_no, launch_id, capabilities)
             .await
             .expect("failed to bind server to a port");
         let server_socket_fut = listen_stream.next();
 
-        let client_node = NodeInfo {
-            node_no: NodeNo::from_bits(1).unwrap(),
-            launch_id: NodeLaunchId::from_bits(2),
-            groups: vec![],
-        };
-        let client_socket_fut = connect(&server_transport, &client_node, capabilities);
+        let node_no = NodeNo::from_bits(1).unwrap();
+        let launch_id = NodeLaunchId::from_bits(2);
+        let client_socket_fut = connect(&transport, node_no, launch_id, capabilities);
 
         let (server_socket, client_socket) =
             future::join(server_socket_fut, client_socket_fut).await;
         let mut server_socket = server_socket.expect("server failed");
-        let mut client_socket = client_socket
-            .expect("failed to connect to the server")
-            .expect("handshake failed");
+        let mut client_socket = client_socket.expect("failed to connect to the server");
 
         for i in 0..10 {
             let envelope = NetworkEnvelope {
@@ -572,13 +374,24 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[tracing_test::traced_test]
-    async fn read_write_no_framing() {
-        ensure_read_write(Capabilities::empty(), 9200).await;
+    async fn tcp_read_write_no_framing() {
+        ensure_read_write("tcp://127.0.0.1:9200", Capabilities::empty()).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[tracing_test::traced_test]
-    async fn read_write_lz4() {
-        ensure_read_write(Capabilities::LZ4, 9201).await;
+    async fn tcp_read_write_lz4() {
+        ensure_read_write("tcp://127.0.0.1:9201", Capabilities::LZ4).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tracing_test::traced_test]
+    async fn uds_read_write_no_framing() {
+        ensure_read_write(
+            "uds://test_uds_read_write_no_framing.socket",
+            Capabilities::empty(),
+        )
+        .await;
     }
 }

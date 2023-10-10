@@ -9,9 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - ReleaseDate
 ### Added
 - core: unstable `ActorGroup::stop_order()` to specify termination order.
+- network: support UDS (configured as `uds://path/to/socket`).
 
 ### Changed
 - core: improve uniqueness of `Addr` between node restarts.
+- network: add connect, bind and handshake timeouts.
+- network: concurrent connection establishing on listening nodes.
 
 ### Fixed
 - network: avoid sending repetitive `CloseFlow`.
