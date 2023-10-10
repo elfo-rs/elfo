@@ -8,6 +8,7 @@ use derive_more::Display;
 use eyre::Result;
 use futures::{Stream, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+#[cfg(unix)]
 use tokio_util::either::Either;
 
 use crate::config::Transport;
@@ -122,9 +123,9 @@ pub(super) async fn connect(addr: &Transport) -> Result<Socket> {
 pub(super) async fn listen(addr: &Transport) -> Result<impl Stream<Item = Socket> + 'static> {
     match addr {
         Transport::Tcp(addr) => {
-            let result = tcp::listen(*addr).await;
+            let result = tcp::listen(*addr).await.map(|s| s.map(Into::into));
             #[cfg(unix)]
-            let result = result.map(|s| Either::Left(s.map(Into::into)));
+            let result = result.map(Either::Left);
             result
         }
         #[cfg(unix)]
