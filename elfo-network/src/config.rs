@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use derive_more::Display;
-use eyre::{bail, ensure, Result, WrapErr};
+use eyre::{bail, Result, WrapErr};
 use serde::{
     de::{self, Deserializer},
     Deserialize, Serialize,
@@ -76,7 +76,7 @@ impl FromStr for Transport {
                 .wrap_err("invalid TCP address"),
             #[cfg(unix)]
             "uds" => {
-                ensure!(
+                eyre::ensure!(
                     !addr.ends_with('/'),
                     "path to UDS socket cannot be directory"
                 );
@@ -126,6 +126,7 @@ mod tests {
         #[cfg(not(unix))]
         assert!(Transport::from_str("uds://a")
             .unwrap_err()
+            .to_string()
             .starts_with("unknown protocol"));
 
         // TCP

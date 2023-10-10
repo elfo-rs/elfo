@@ -8,6 +8,7 @@ use std::{
 
 use pin_project::pin_project;
 use sealed::sealed;
+#[cfg(unix)]
 use tokio::signal;
 #[cfg(unix)]
 use tokio::signal::unix;
