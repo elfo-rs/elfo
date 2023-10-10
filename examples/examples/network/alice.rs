@@ -18,14 +18,14 @@ fn producer() -> Blueprint {
         while let Some(envelope) = ctx.recv().await {
             msg!(match envelope {
                 TimerTick => {
+                    match ctx.request(AskName(i)).resolve().await {
+                        Ok(name) => info!("received name: {}", name),
+                        Err(err) => warn!("cannot ask name: {}", err),
+                    }
+
                     match ctx.send(Hello(i)).await {
                         Ok(_) => i += 1,
                         Err(err) => warn!("cannot say hello: {}", err),
-                    }
-
-                    match ctx.request(AskName(0)).resolve().await {
-                        Ok(name) => info!("received name: {}", name),
-                        Err(err) => warn!("cannot ask name: {}", err),
                     }
                 }
                 Hello(i) => {
