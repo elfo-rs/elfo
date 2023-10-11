@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.2.0-alpha.10] - 2023-10-11
+
 ## [0.2.0-alpha.9] - 2023-10-11
 ### Added
 - core: unstable `ActorGroup::stop_order()` to specify termination order.
@@ -537,7 +539,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.9...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.10...HEAD
+[0.2.0-alpha.10]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.9...elfo-v0.2.0-alpha.10
 [0.2.0-alpha.9]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.8...elfo-v0.2.0-alpha.9
 [0.2.0-alpha.8]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.7...elfo-v0.2.0-alpha.8
 [0.2.0-alpha.7]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.6...elfo-v0.2.0-alpha.7

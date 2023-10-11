@@ -1,6 +1,6 @@
 [package]
 name = "elfo-dumper"
-version = "0.2.0-alpha.9"
+version = "0.2.0-alpha.10"
 description = "Dumps messages of the elfo system on disk"
 keywords = ["elfo", "actor", "distributed", "tokio", "dumping"]
 
@@ -11,7 +11,7 @@ edition.workspace = true
 readme.workspace = true
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.9", path = "../elfo-core", features = ["unstable"] }
+elfo-core = { version = "0.2.0-alpha.10", path = "../elfo-core", features = ["unstable"] }
 elfo-utils = { version = "0.2.3", path = "../elfo-utils" }
 
 tokio = { version = "1", features = ["fs", "io-util", "sync"] }
