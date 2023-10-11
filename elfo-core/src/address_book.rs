@@ -43,11 +43,8 @@ impl AddressBook {
         self.remote.insert(local_group, remote_group, handle_addr);
     }
 
-    pub fn get(&self, mut addr: Addr) -> Option<ObjectRef<'_>> {
-        #[cfg(feature = "network")]
-        if addr.is_remote() {
-            addr = self.remote.get(addr)?;
-        }
+    pub fn get(&self, addr: Addr) -> Option<ObjectRef<'_>> {
+        let addr = self.prepare_addr(addr)?;
 
         self.local
             .get(addr.slot_key(self.launch_id))
@@ -56,11 +53,8 @@ impl AddressBook {
             .filter(|object| object.addr() == addr)
     }
 
-    pub fn get_owned(&self, mut addr: Addr) -> Option<ObjectArc> {
-        #[cfg(feature = "network")]
-        if addr.is_remote() {
-            addr = self.remote.get(addr)?;
-        }
+    pub fn get_owned(&self, addr: Addr) -> Option<ObjectArc> {
+        let addr = self.prepare_addr(addr)?;
 
         self.local
             .clone()
@@ -83,6 +77,23 @@ impl AddressBook {
 
     pub(crate) fn remove(&self, addr: Addr) {
         self.local.remove(addr.into_bits() as usize);
+    }
+
+    #[inline(always)]
+    fn prepare_addr(&self, addr: Addr) -> Option<Addr> {
+        // If the address is null, return `None`.
+        // It's required, because `Addr::NULL.slot_key()` can be valid for sharded-slab.
+        if addr.is_null() {
+            return None;
+        }
+
+        // If the address is remote, replace it with a remote handler's address.
+        #[cfg(feature = "network")]
+        if addr.is_remote() {
+            return self.remote.get(addr);
+        }
+
+        Some(addr)
     }
 }
 
