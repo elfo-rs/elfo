@@ -199,8 +199,8 @@ struct TerminateSystem;
 struct CheckMemoryUsageTick;
 
 // TODO: make these values configurable.
-const SEND_CLOSING_TERMINATE_AFTER: Duration = Duration::from_secs(30);
-const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(45);
+const SEND_CLOSING_TERMINATE_AFTER: Duration = Duration::from_secs(25);
+const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(35);
 
 async fn termination(mut ctx: Context, topology: Topology) {
     ctx.attach(Signal::new(SignalKind::UnixTerminate, TerminateSystem));
