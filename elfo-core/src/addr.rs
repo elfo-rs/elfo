@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Represents the node's number.
 /// Cannot be `0`, it's reserved to represent the local node.
 #[stability::unstable]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(Display, Serialize, Deserialize)]
 pub struct NodeNo(NonZeroU16);
 
