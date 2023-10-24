@@ -137,7 +137,7 @@ impl Configurer {
 
         // Reload and validate configs in case the actor was restarted by the
         // supervisor.
-        if !validated_configs && self.load_and_update_configs(true).await.is_ok() {
+        if !validated_configs && self.load_and_update_configs(true).await.is_err() {
             panic!("configs are invalid at startup");
         }
 
