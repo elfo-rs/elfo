@@ -65,6 +65,7 @@ impl<F: Future> Future for MeasurePoll<F> {
         #[cfg(feature = "unstable-stuck-detection")]
         this.stuck_detector.exit();
 
+        #[allow(clippy::let_and_return)]
         result
     }
 }
