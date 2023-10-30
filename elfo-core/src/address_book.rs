@@ -36,16 +36,29 @@ impl AddressBook {
     #[cfg(feature = "network")]
     pub(crate) fn register_remote(
         &self,
+        network_actor_addr: Addr,
         local_group: GroupNo,
         remote_group: (NodeNo, GroupNo),
         handle_addr: Addr,
     ) {
-        self.remote.insert(local_group, remote_group, handle_addr);
+        self.remote
+            .insert(network_actor_addr, local_group, remote_group, handle_addr);
+    }
+
+    #[cfg(feature = "network")]
+    pub(crate) fn deregister_remote(
+        &self,
+        network_actor_addr: Addr,
+        local_group: GroupNo,
+        remote_group: (NodeNo, GroupNo),
+        handle_addr: Addr,
+    ) {
+        self.remote
+            .remove(network_actor_addr, local_group, remote_group, handle_addr);
     }
 
     pub fn get(&self, addr: Addr) -> Option<ObjectRef<'_>> {
         let addr = self.prepare_addr(addr)?;
-
         self.local
             .get(addr.slot_key(self.launch_id))
             // sharded-slab doesn't check top bits, so we need to check them manually.
@@ -117,15 +130,21 @@ cfg_network!({
     use arc_swap::ArcSwap;
     use fxhash::FxHashMap;
 
-    #[derive(Default)]
-    pub(super) struct RemoteToHandleMap {
+    #[derive(Clone, Default)]
+    struct RemoteToHandleMapInner {
         // (local_group_no, remote_node_no_group_no) -> handle_addr
-        map: ArcSwap<FxHashMap<u64, Addr>>,
+        map: FxHashMap<u64, Addr>,
+        // network_actor_addr -> handle_addr
+        fallback: FxHashMap<Addr, Addr>,
     }
+
+    #[derive(Default)]
+    pub(super) struct RemoteToHandleMap(ArcSwap<RemoteToHandleMapInner>);
 
     impl RemoteToHandleMap {
         pub(super) fn insert(
             &self,
+            network_actor_addr: Addr,
             local_group: GroupNo,
             remote_group: (NodeNo, GroupNo),
             handle_addr: Addr,
@@ -134,21 +153,50 @@ cfg_network!({
                 | u64::from(remote_group.0.into_bits()) << 8
                 | u64::from(remote_group.1.into_bits());
 
-            self.map.rcu(|map| {
-                let mut map = (**map).clone();
-                map.insert(key, handle_addr);
-                map
+            self.0.rcu(|inner| {
+                let mut inner = (**inner).clone();
+                inner.map.insert(key, handle_addr);
+                inner.fallback.insert(network_actor_addr, handle_addr);
+                inner
+            });
+        }
+
+        pub(super) fn remove(
+            &self,
+            network_actor_addr: Addr,
+            local_group: GroupNo,
+            remote_group: (NodeNo, GroupNo),
+            handle_addr: Addr,
+        ) {
+            let key = u64::from(local_group.into_bits()) << 32
+                | u64::from(remote_group.0.into_bits()) << 8
+                | u64::from(remote_group.1.into_bits());
+
+            self.0.rcu(|inner| {
+                // We don't want to remove a handle that was not registered by us.
+                let mut inner = (**inner).clone();
+                if inner.map.get(&key) == Some(&handle_addr) {
+                    inner.map.remove(&key);
+                }
+                // In the fallback map `network_actor_addr` is unique, so no lookups are needed.
+                inner.fallback.remove(&network_actor_addr);
+                inner
             });
         }
 
         pub(super) fn get(&self, remote_addr: Addr) -> Option<Addr> {
             debug_assert!(remote_addr.is_remote());
 
-            let local = crate::scope::with(|scope| scope.group()).node_no_group_no();
+            let local_actor = crate::scope::with(|scope| scope.actor());
             let remote = remote_addr.node_no_group_no();
-            let key = u64::from(local) << 32 | u64::from(remote);
+            let key = u64::from(local_actor.node_no_group_no()) << 32 | u64::from(remote);
 
-            self.map.load().get(&key).copied()
+            let inner = self.0.load();
+            inner
+                .map
+                .get(&key)
+                .or_else(|| inner.fallback.get(&local_actor))
+                .copied()
         }
     }
 });

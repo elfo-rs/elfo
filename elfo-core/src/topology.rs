@@ -319,6 +319,7 @@ cfg_network!({
         #[stability::unstable]
         pub fn register_remote(
             &self,
+            network_actor_addr: Addr,
             local_group: GroupNo,
             remote_group: (NodeNo, GroupNo),
             remote_group_name: &str,
@@ -334,7 +335,7 @@ cfg_network!({
             entry.insert(object);
 
             self.book
-                .register_remote(local_group, remote_group, handle_addr);
+                .register_remote(network_actor_addr, local_group, remote_group, handle_addr);
 
             // Update the demux to make `send()` work,
             // but only if there is a route between these groups.
@@ -358,7 +359,9 @@ cfg_network!({
             RegisterRemoteGroupGuard {
                 book: &self.book,
                 handle_addr,
-                remote_node: remote_group.0,
+                network_actor_addr,
+                local_group,
+                remote_group,
                 nodes,
             }
         }
@@ -470,11 +473,14 @@ cfg_network!({
     // Nothing for now, reserved for future use.
     pub struct NodeDiscovery(());
 
+    // TODO: should undo register_remote in drop
     #[stability::unstable]
     pub struct RegisterRemoteGroupGuard<'a> {
         book: &'a AddressBook,
         handle_addr: Addr,
-        remote_node: NodeNo,
+        network_actor_addr: Addr,
+        local_group: GroupNo,
+        remote_group: (NodeNo, GroupNo),
         nodes: Option<Nodes>,
     }
 
@@ -486,6 +492,14 @@ cfg_network!({
 
     impl Drop for RegisterRemoteGroupGuard<'_> {
         fn drop(&mut self) {
+            // Undo the registration.
+            self.book.deregister_remote(
+                self.network_actor_addr,
+                self.local_group,
+                self.remote_group,
+                self.handle_addr,
+            );
+
             // Disable direct messaging.
             self.book.remove(self.handle_addr);
 
@@ -495,8 +509,8 @@ cfg_network!({
                     let mut nodes = (**nodes).clone();
 
                     // We don't want to remove the node if it was re-registered by another handle.
-                    if nodes.get(&self.remote_node) == Some(&self.handle_addr) {
-                        nodes.remove(&self.remote_node);
+                    if nodes.get(&self.remote_group.0) == Some(&self.handle_addr) {
+                        nodes.remove(&self.remote_group.0);
                     }
 
                     nodes
