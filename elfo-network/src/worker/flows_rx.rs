@@ -108,7 +108,7 @@ impl RxFlows {
 
     pub(super) fn release_routed(&mut self) -> Option<internode::UpdateFlow> {
         self.routed_control
-            .release()
+            .release(1)
             .map(|delta| internode::UpdateFlow {
                 addr: NetworkAddr::NULL,
                 window_delta: delta,
@@ -153,10 +153,13 @@ impl RxFlows {
             addr: NetworkAddr::from_local(addr, self.node_no),
         });
 
-        let update = (flow.routed != 0).then_some(internode::UpdateFlow {
-            addr: NetworkAddr::NULL,
-            window_delta: flow.routed,
-        });
+        let update = self
+            .routed_control
+            .release(flow.routed)
+            .map(|delta| internode::UpdateFlow {
+                addr: NetworkAddr::NULL,
+                window_delta: delta,
+            });
 
         (close, update)
     }
@@ -181,7 +184,7 @@ impl RxFlow<'_> {
     pub(super) fn release_direct(&mut self) -> Option<internode::UpdateFlow> {
         self.flow
             .control
-            .release()
+            .release(1)
             .map(|delta| internode::UpdateFlow {
                 addr: NetworkAddr::from_local(self.addr, self.node_no),
                 window_delta: delta,

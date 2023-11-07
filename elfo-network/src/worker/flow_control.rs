@@ -114,10 +114,10 @@ impl RxFlowControl {
         self.rx_window = self.rx_window.checked_sub(1).expect("window underflow");
     }
 
-    // Increases the window by 1 when a message is sent to an actor.
+    // Increases the window by `delta` (e.g. 1 when a message is sent to an actor).
     // Returns `Some(delta)` if the window update should be sent to the sender.
-    pub(super) fn release(&mut self) -> Option<i32> {
-        self.rx_window = self.rx_window.checked_add(1).expect("window overflow");
+    pub(super) fn release(&mut self, delta: i32) -> Option<i32> {
+        self.rx_window = self.rx_window.checked_add(delta).expect("window overflow");
 
         if self.rx_window <= 0 {
             return None;
@@ -175,7 +175,7 @@ mod tests {
         let total = 1000;
         let sent = (0..total).fold(0, |sent, _| {
             fc.do_acquire(true);
-            sent + u32::from(fc.release().is_some())
+            sent + u32::from(fc.release(1).is_some())
         });
         let ratio = sent as f64 / total as f64;
         assert!(ratio < 0.01, "{}", ratio);
@@ -183,7 +183,7 @@ mod tests {
         // Resuming after an actor is unstuck.
         let mut fc = RxFlowControl::new(0);
         let total = 2000;
-        let sent = (0..total).fold(0, |sent, _| sent + fc.release().is_some() as u32);
+        let sent = (0..total).fold(0, |sent, _| sent + fc.release(1).is_some() as u32);
         let ratio = sent as f64 / total as f64;
         assert!(ratio < 0.01, "{}", ratio);
     }
