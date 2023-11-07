@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Fixed
+- network: unrouted requests don't lead to infinite waiting anymore ([#116]).
+
+[#116]: https://github.com/elfo-rs/elfo/pull/116
 
 ## [0.2.0-alpha.10] - 2023-10-11
 ### Added
@@ -72,7 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#102]: https://github.com/elfo-rs/elfo/pull/102
 
 ## [0.2.0-alpha.4] - 2023-07-06
-
 ### Fixed
 - configurer: fix data race with empty mailbox ([#97])
 

@@ -473,7 +473,6 @@ cfg_network!({
     // Nothing for now, reserved for future use.
     pub struct NodeDiscovery(());
 
-    // TODO: should undo register_remote in drop
     #[stability::unstable]
     pub struct RegisterRemoteGroupGuard<'a> {
         book: &'a AddressBook,
