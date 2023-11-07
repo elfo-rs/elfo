@@ -7,7 +7,7 @@
 
 [crates-badge]: https://img.shields.io/crates/v/elfo.svg
 [crates-url]: https://crates.io/crates/elfo
-[docs-badge]: https://docs.rs/elfo/0.2.0-alpha.10/elfo
+[docs-badge]: https://docs.rs/elfo/badge.svg
 [docs-url]: https://docs.rs/elfo/0.2.0-alpha.10/elfo
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://github.com/loyd/elfo/blob/master/LICENSE
