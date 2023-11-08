@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - network: unrouted requests don't lead to infinite waiting anymore ([#116]).
 - network: release routed if flow closed.
+- core: use the right slot's key to remove actors.
 
 [#116]: https://github.com/elfo-rs/elfo/pull/116
 

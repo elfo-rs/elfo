@@ -89,7 +89,7 @@ impl AddressBook {
     }
 
     pub(crate) fn remove(&self, addr: Addr) {
-        self.local.remove(addr.into_bits() as usize);
+        self.local.remove(addr.slot_key(self.launch_id));
     }
 
     #[inline(always)]
