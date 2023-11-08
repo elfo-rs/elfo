@@ -22,3 +22,6 @@ authors = ["Paul Loyd <pavelko95@gmail.com>"]
 license = "MIT"
 edition = "2021"
 readme = "README.md"
+
+[profile.release]
+debug = 1
