@@ -7,8 +7,8 @@
 
 [crates-badge]: https://img.shields.io/crates/v/elfo.svg
 [crates-url]: https://crates.io/crates/elfo
-[docs-badge]: https://docs.rs/elfo/badge.svg
-[docs-url]: https://docs.rs/elfo/0.2.0-alpha.10/elfo
+[docs-badge]: https://docs.rs/elfo/0.2.0-alpha.11/elfo
+[docs-url]: https://docs.rs/elfo/0.2.0-alpha.11/elfo
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://github.com/loyd/elfo/blob/master/LICENSE
 [actions-badge]: https://github.com/elfo-rs/elfo/actions/workflows/ci.yml/badge.svg
@@ -22,10 +22,10 @@ Elfo is another actor system. Check [The Actoromicon](http://actoromicon.rs/).
 To use `elfo`, add this to your `Cargo.toml`:
 ```toml
 [dependencies]
-elfo = { version = "0.2.0-alpha.10", features = ["full"] }
+elfo = { version = "0.2.0-alpha.11", features = ["full"] }
 
 [dev-dependencies]
-elfo = { version = "0.2.0-alpha.10", features = ["test-util"] }
+elfo = { version = "0.2.0-alpha.11", features = ["test-util"] }
 ```
 
 ## Examples
