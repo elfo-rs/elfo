@@ -57,6 +57,8 @@ impl Generator {
 fn it_works() {
     use std::{sync::Arc, time::Duration};
 
+    crate::node::set_node_no(65535);
+
     let chunk_registry = Arc::new(ChunkRegistry::default());
     let mut generator = Generator::default();
 

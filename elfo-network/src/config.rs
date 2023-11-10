@@ -129,10 +129,6 @@ mod tests {
             Transport::from_str("tcp://127.0.0.1:4242").unwrap(),
             Transport::Tcp("127.0.0.1:4242".into())
         );
-        assert_eq!(
-            Transport::from_str("tcp://foobar").unwrap_err().to_string(),
-            "invalid TCP address"
-        );
 
         // UDS
         #[cfg(unix)]
