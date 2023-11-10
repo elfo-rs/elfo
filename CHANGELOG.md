@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- network: DNS resolve for TCP transport.
+
 ### Fixed
 - network: unrouted requests don't lead to infinite waiting anymore ([#116]).
 - network: release routed if flow closed.

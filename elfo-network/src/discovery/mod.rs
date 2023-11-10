@@ -316,6 +316,7 @@ impl Discovery {
                     .into_iter()
                     .for_each(|(local_group_no, remote_group_no)| {
                         // TODO: save stream to cancel later.
+                        // TODO: connect without DNS resolving here.
                         self.open_connection(
                             &transport,
                             ConnectionRole::Data(internode::SwitchToData {

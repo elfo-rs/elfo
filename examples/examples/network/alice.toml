@@ -7,9 +7,9 @@ path = "example.alice.{class}.dump"
 
 [system.network]
 # TCP
-#listen = ["tcp://127.0.0.1:9200"]
-#discovery.predefined = ["tcp://127.0.0.1:9201"]
+listen = ["tcp://127.0.0.1:9200"]
+discovery.predefined = ["tcp://localhost:9201"]
 
 # UDS (unix only)
-listen = ["uds://example-alice.socket"]
-discovery.predefined = ["uds://example-bob.socket"]
+#listen = ["uds://example-alice.socket"]
+#discovery.predefined = ["uds://example-bob.socket"]

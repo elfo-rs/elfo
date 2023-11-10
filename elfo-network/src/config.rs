@@ -1,9 +1,9 @@
 #[cfg(unix)]
 use std::path::PathBuf;
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 use derive_more::Display;
-use eyre::{bail, Result, WrapErr};
+use eyre::{bail, Result};
 use serde::{
     de::{self, Deserializer},
     Deserialize, Serialize,
@@ -51,7 +51,7 @@ fn default_attempt_interval() -> Duration {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Serialize)]
 pub(crate) enum Transport {
     #[display(fmt = "tcp://{}", _0)]
-    Tcp(SocketAddr),
+    Tcp(String),
     #[cfg(unix)]
     #[display(fmt = "uds://{}", "_0.display()")]
     Uds(PathBuf),
@@ -70,10 +70,7 @@ impl FromStr for Transport {
 
         match protocol {
             "" => bail!("protocol must be specified ({PROTOCOLS})"),
-            "tcp" => addr
-                .parse()
-                .map(Transport::Tcp)
-                .wrap_err("invalid TCP address"),
+            "tcp" => Ok(Transport::Tcp(addr.into())),
             #[cfg(unix)]
             "uds" => {
                 eyre::ensure!(
@@ -102,8 +99,6 @@ impl<'de> Deserialize<'de> for Transport {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
-
     use super::*;
 
     #[test]
@@ -130,10 +125,9 @@ mod tests {
             .starts_with("unknown protocol"));
 
         // TCP
-        let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 4242);
         assert_eq!(
             Transport::from_str("tcp://127.0.0.1:4242").unwrap(),
-            Transport::Tcp(expected)
+            Transport::Tcp("127.0.0.1:4242".into())
         );
         assert_eq!(
             Transport::from_str("tcp://foobar").unwrap_err().to_string(),

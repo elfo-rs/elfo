@@ -7,9 +7,9 @@ path = "example.bob.{class}.dump"
 
 [system.network]
 # TCP
-#listen = ["tcp://127.0.0.1:9201"]
-#discovery.predefined = ["tcp://127.0.0.1:9200"]
+listen = ["tcp://127.0.0.1:9201"]
+discovery.predefined = ["tcp://127.0.0.1:9200"]
 
 # UDS (unix only)
-listen = ["uds://example-bob.socket"]
-discovery.predefined = ["uds://example-alice.socket"]
+#listen = ["uds://example-bob.socket"]
+#discovery.predefined = ["uds://example-alice.socket"]

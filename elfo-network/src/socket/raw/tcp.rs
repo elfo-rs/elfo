@@ -40,11 +40,11 @@ fn prepare_stream(stream: TcpStream) -> Result<Socket> {
     Ok(Socket { read, write, info })
 }
 
-pub(super) async fn connect(addr: SocketAddr) -> Result<Socket> {
+pub(super) async fn connect(addr: &str) -> Result<Socket> {
     prepare_stream(TcpStream::connect(addr).await?)
 }
 
-pub(super) async fn listen(addr: SocketAddr) -> Result<impl Stream<Item = Socket> + 'static> {
+pub(super) async fn listen(addr: &str) -> Result<impl Stream<Item = Socket> + 'static> {
     let listener = TcpListener::bind(addr).await?;
 
     let accept = move |listener: TcpListener| async move {
@@ -61,7 +61,7 @@ pub(super) async fn listen(addr: SocketAddr) -> Result<impl Stream<Item = Socket
                     warn!(
                         message = "cannot accept TCP connection",
                         error = %err,
-                        addr = %addr,
+                        // TODO: addr
                     );
 
                     // Continue listening.

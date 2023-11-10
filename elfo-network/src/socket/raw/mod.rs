@@ -114,7 +114,7 @@ impl From<uds::Socket> for Socket {
 
 pub(super) async fn connect(addr: &Transport) -> Result<Socket> {
     match addr {
-        Transport::Tcp(addr) => tcp::connect(*addr).await.map(Into::into),
+        Transport::Tcp(addr) => tcp::connect(addr).await.map(Into::into),
         #[cfg(unix)]
         Transport::Uds(addr) => uds::connect(addr).await.map(Into::into),
     }
@@ -123,7 +123,7 @@ pub(super) async fn connect(addr: &Transport) -> Result<Socket> {
 pub(super) async fn listen(addr: &Transport) -> Result<impl Stream<Item = Socket> + 'static> {
     match addr {
         Transport::Tcp(addr) => {
-            let result = tcp::listen(*addr).await.map(|s| s.map(Into::into));
+            let result = tcp::listen(addr).await.map(|s| s.map(Into::into));
             #[cfg(unix)]
             let result = result.map(Either::Left);
             result
