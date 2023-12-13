@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 ### Changed
-- deps: update `quanta` to v0.12.
+- deps: update `quanta` to v0.12 and `erased-serde` to v0.4.
 - context: slightly improve performance of time measurements.
 - utils: slightly improve performance of `RateLimiter`.
 

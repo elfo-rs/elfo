@@ -40,7 +40,7 @@ smallvec = { version = "1.6.1", features = ["union"] }
 slotmap = "1.0.2"
 serde-value = "0.7.0"
 arc-swap = "1.2.0"
-erased-serde = "0.3.16"
+erased-serde = "0.4.0"
 pin-project = "1.0.8"
 sealed = "0.5"
 stability = "0.1.1"
