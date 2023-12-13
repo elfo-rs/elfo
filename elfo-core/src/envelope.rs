@@ -1,4 +1,4 @@
-use quanta::Instant;
+use elfo_utils::time::Instant;
 
 use crate::{
     message::{AnyMessage, Message},

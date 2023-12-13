@@ -9,6 +9,7 @@ pub use self::{
 
 mod likely;
 mod rate_limiter;
+pub mod time;
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Deref)]
 // Spatial prefetcher is now pulling two lines at a time, so we use `align(128)`.

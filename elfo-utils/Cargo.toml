@@ -14,9 +14,12 @@ readme.workspace = true
 name = "rate_limiter"
 harness = false
 
+[features]
+test-util = []
+
 [dependencies]
 derive_more = "0.99.11"
-quanta = "0.11"
+quanta = "0.12"
 
 [dev-dependencies]
 criterion = "0.4"

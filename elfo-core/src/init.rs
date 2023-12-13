@@ -1,12 +1,13 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use futures::future::join_all;
-use quanta::Instant;
 use tokio::{
     pin, select,
     time::{sleep, timeout},
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
+
+use elfo_utils::time::Instant;
 
 #[cfg(target_os = "linux")]
 use crate::{memory_tracker::MemoryTracker, time::Interval};
@@ -155,6 +156,9 @@ pub async fn do_start<F: Future>(
     is_check_only: bool,
     and_then: impl FnOnce(Context, Topology) -> F,
 ) -> Result<F::Output> {
+    // Perform the clock calibration if needed.
+    Instant::now();
+
     let group_no = GroupNo::new(SYSTEM_INIT_GROUP_NO, topology.launch_id()).unwrap();
     let entry = topology.book.vacant_entry(group_no);
     let addr = entry.addr();

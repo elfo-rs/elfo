@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Changed
+- deps: update `quanta` to v0.12.
+- context: slightly improve performance of time measurements.
+- utils: slightly improve performance of `RateLimiter`.
 
 ## [0.2.0-alpha.11] - 2023-11-10
 ### Added

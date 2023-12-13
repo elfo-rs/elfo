@@ -3,7 +3,6 @@ use std::{sync::Arc, time::Duration};
 use eyre::Result;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::Mutex;
-use quanta::Instant;
 use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
@@ -16,7 +15,7 @@ use elfo_core::{
     time::Interval,
     Addr, Context, Envelope, ResponseToken, Topology,
 };
-use elfo_utils::{likely, unlikely};
+use elfo_utils::{likely, time::Instant, unlikely};
 
 use self::{
     flows_rx::RxFlows,
@@ -178,7 +177,7 @@ impl Worker {
                 }
                 PingTick => {
                     let envelope = make_system_envelope(internode::Ping {
-                        payload: time_origin.elapsed().as_nanos() as u64,
+                        payload: Instant::now().nanos_since(time_origin),
                     });
                     let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
 
@@ -579,7 +578,7 @@ impl SocketReader {
                 }));
             }
             msg @ internode::Pong => {
-                let time_ns = self.time_origin.elapsed().as_nanos() as u64 - msg.payload;
+                let time_ns = Instant::now().nanos_since(self.time_origin) - msg.payload;
                 self.rtt.push(Duration::from_nanos(time_ns));
             }
             _ => return false,

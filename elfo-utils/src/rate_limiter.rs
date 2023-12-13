@@ -3,11 +3,10 @@ use std::{
     time::Duration,
 };
 
-use quanta::Instant;
+use crate::time;
 
 /// A rate limiter implementing [GCRA](https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm).
 pub struct RateLimiter {
-    start_time: Instant,
     step: AtomicU64,
     period: AtomicU64,
     vtime: AtomicU64,
@@ -49,7 +48,6 @@ impl RateLimiter {
         let (step, period) = limit.step_and_period();
 
         Self {
-            start_time: Instant::now(),
             step: AtomicU64::new(step),
             period: AtomicU64::new(period),
             vtime: AtomicU64::new(0),
@@ -60,7 +58,6 @@ impl RateLimiter {
     pub fn configure(&self, limit: RateLimit) {
         let (step, period) = limit.step_and_period();
 
-        // FIXME: order matters.
         self.step.store(step, Relaxed);
         self.period.store(period, Relaxed);
     }
@@ -85,13 +82,14 @@ impl RateLimiter {
         }
 
         let period = self.period.load(Relaxed);
-        let now = (Instant::now() - self.start_time).as_nanos() as u64;
+        let now = time::nanos_since_unknown_epoch();
+        let deadline = now + period;
 
         // GCRA logic.
         self.vtime
             // It seems to be enough to use `Relaxed` here.
             .fetch_update(Relaxed, Relaxed, |vtime| {
-                if vtime < now + period {
+                if vtime < deadline {
                     Some(vtime.max(now) + step)
                 } else {
                     None
@@ -117,13 +115,10 @@ fn calculate_step(max_rate: u64, period: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use quanta::{Clock, Mock};
-
     use super::*;
 
-    fn with_time_mock(f: impl FnOnce(&Mock)) {
-        let (clock, mock) = Clock::mock();
-        quanta::with_clock(&clock, || f(&mock));
+    fn ns(ns: u64) -> Duration {
+        Duration::from_nanos(ns)
     }
 
     #[test]
@@ -141,18 +136,18 @@ mod tests {
 
     #[test]
     fn forbidding() {
-        with_time_mock(|mock| {
+        time::with_instant_mock(|mock| {
             let limiter = RateLimiter::new(RateLimit::Rps(0));
             for _ in 0..=5 {
                 assert!(!limiter.acquire());
-                mock.increment(SEC);
+                mock.advance(ns(SEC));
             }
         });
     }
 
     #[test]
     fn unlimited() {
-        with_time_mock(|_mock| {
+        time::with_instant_mock(|_mock| {
             let limiter = RateLimiter::new(RateLimit::Unlimited);
             let limiter2 = RateLimiter::new(RateLimit::Rps(1_000_000_000));
             let limiter3 = RateLimiter::new(RateLimit::Custom(2_000, Duration::from_micros(2)));
@@ -167,7 +162,7 @@ mod tests {
     #[test]
     fn limited() {
         for limit in [1, 2, 3, 4, 5, 17, 100, 1_000, 1_013] {
-            with_time_mock(|mock| {
+            time::with_instant_mock(|mock| {
                 let limiter = RateLimiter::new(RateLimit::Rps(limit));
 
                 for _ in 0..=5 {
@@ -175,7 +170,7 @@ mod tests {
                         assert!(limiter.acquire());
                     }
                     assert!(!limiter.acquire());
-                    mock.increment(SEC);
+                    mock.advance(ns(SEC));
                 }
             });
         }
@@ -184,7 +179,7 @@ mod tests {
     #[test]
     fn keeps_rate() {
         for limit in [1, 5, 25, 50] {
-            with_time_mock(|mock| {
+            time::with_instant_mock(|mock| {
                 let limiter = RateLimiter::new(RateLimit::Rps(limit));
 
                 // Skip the first second.
@@ -197,7 +192,7 @@ mod tests {
                 let mut counter = 0;
 
                 for _ in 0..(10 * parts) {
-                    mock.increment(SEC / parts);
+                    mock.advance(ns(SEC / parts));
                     while limiter.acquire() {
                         counter += 1;
                     }
@@ -210,7 +205,7 @@ mod tests {
 
     #[test]
     fn reset() {
-        with_time_mock(|mock| {
+        time::with_instant_mock(|mock| {
             let limit = 10;
             let limiter = RateLimiter::new(RateLimit::Rps(limit));
 
@@ -223,7 +218,7 @@ mod tests {
                     assert!(limiter.acquire());
                 }
                 assert!(!limiter.acquire());
-                mock.increment(SEC);
+                mock.advance(ns(SEC));
             }
         });
     }

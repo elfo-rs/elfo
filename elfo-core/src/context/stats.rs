@@ -1,6 +1,7 @@
 use derive_more::Constructor;
 use metrics::{self, Key, Label};
-use quanta::Instant;
+
+use elfo_utils::time::Instant;
 
 use crate::{envelope::Envelope, message::Message};
 
@@ -11,7 +12,7 @@ pub(super) struct Stats {
 #[derive(Constructor)]
 struct InHandling {
     labels: &'static [Label],
-    start_time: quanta::Instant,
+    start_time: Instant,
 }
 
 static STARTUP_LABELS: &[Label] = &[Label::from_static_parts("message", "<Startup>")];
@@ -39,8 +40,9 @@ impl Stats {
         let recorder = ward!(metrics::try_recorder());
         let key = Key::from_static_name("elfo_message_waiting_time_seconds");
         let now = Instant::now();
+
         // Now envelope cannot be forwarded, so use the created time as a start time.
-        let value = (now - envelope.created_time()).as_secs_f64();
+        let value = now.secs_f64_since(envelope.created_time());
         recorder.record_histogram(&key, value);
 
         self.in_handling = Some(InHandling::new(envelope.message().labels(), now));
@@ -62,7 +64,7 @@ impl Stats {
         let in_handling = ward!(self.in_handling.take());
         let recorder = ward!(metrics::try_recorder());
         let key = Key::from_static_parts("elfo_message_handling_time_seconds", in_handling.labels);
-        let value = (Instant::now() - in_handling.start_time).as_secs_f64();
+        let value = Instant::now().secs_f64_since(in_handling.start_time);
         recorder.record_histogram(&key, value);
     }
 }

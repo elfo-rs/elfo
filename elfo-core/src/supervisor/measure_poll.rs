@@ -6,7 +6,8 @@ use std::{
 
 use metrics::Key;
 use pin_project::pin_project;
-use quanta::Instant;
+
+use elfo_utils::time::Instant;
 
 #[cfg(feature = "unstable-stuck-detection")]
 use crate::stuck_detection::StuckDetector;
@@ -50,8 +51,8 @@ impl<F: Future> Future for MeasurePoll<F> {
         let result = if let Some(recorder) = metrics::try_recorder() {
             let start_time = Instant::now();
             let res = this.inner.poll(cx);
-            let elapsed = Instant::now().duration_since(start_time);
-            recorder.record_histogram(&BUSY_TIME_SECONDS, elapsed.as_secs_f64());
+            let elapsed = Instant::now().secs_f64_since(start_time);
+            recorder.record_histogram(&BUSY_TIME_SECONDS, elapsed);
             crate::scope::with(|scope| {
                 recorder.increment_counter(&ALLOCATED_BYTES, scope.take_allocated_bytes() as u64);
                 recorder
