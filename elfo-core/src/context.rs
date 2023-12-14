@@ -7,7 +7,7 @@ use tracing::{info, trace};
 use elfo_utils::unlikely;
 
 use crate::{
-    actor::{Actor, ActorStatus},
+    actor::{Actor, ActorStartInfo, ActorStatus},
     addr::Addr,
     address_book::AddressBook,
     config::AnyConfig,
@@ -15,12 +15,12 @@ use crate::{
     dumping::{Direction, Dump, Dumper, INTERNAL_CLASS},
     envelope::{AnyMessageBorrowed, AnyMessageOwned, Envelope, EnvelopeOwned, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
-    group::RestartPolicy,
     mailbox::RecvResult,
     message::{Message, Request},
     messages, msg,
     object::ObjectArc,
     request_table::ResponseToken,
+    restarting::RestartPolicy,
     routers::Singleton,
     scope,
     source::{SourceHandle, Sources, UnattachedSource},
@@ -38,6 +38,7 @@ pub struct Context<C = (), K = Singleton> {
     book: AddressBook,
     actor: Option<ObjectArc>, // `None` for group's and pruned context.
     actor_addr: Addr,
+    actor_start_info: Option<ActorStartInfo>, // `None` for group's context,
     group_addr: Addr,
     demux: Demux,
     config: Arc<C>,
@@ -624,6 +625,39 @@ impl<C, K> Context<C, K> {
         }
     }
 
+    /// Retrieves information related to the start of the actor.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the context is pruned, indicating that the
+    /// required information is no longer available.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # use elfo_core::{ActorStartCause, ActorStartInfo};
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// match ctx.start_info().cause {
+    ///     ActorStartCause::GroupMounted => {
+    ///         // The actor started because its group was mounted.
+    ///     }
+    ///     ActorStartCause::OnMessage => {
+    ///         // The actor started in response to a message.
+    ///     }
+    ///     ActorStartCause::Restarted => {
+    ///         // The actor started due to the restart policy.
+    ///     }
+    ///     _ => {}
+    /// }
+    /// # }
+    /// ```
+    pub fn start_info(&self) -> &ActorStartInfo {
+        self.actor_start_info
+            .as_ref()
+            .expect("start_info is not available for a group context")
+    }
+
     fn pre_recv(&mut self) {
         self.stats.on_recv();
 
@@ -718,6 +752,7 @@ impl<C, K> Context<C, K> {
             book: self.book.clone(),
             actor: None,
             actor_addr: self.actor_addr,
+            actor_start_info: self.actor_start_info.clone(),
             group_addr: self.group_addr,
             demux: self.demux.clone(),
             config: Arc::new(()),
@@ -740,6 +775,7 @@ impl<C, K> Context<C, K> {
             book: self.book,
             actor: self.actor,
             actor_addr: self.actor_addr,
+            actor_start_info: self.actor_start_info,
             group_addr: self.group_addr,
             demux: self.demux,
             config,
@@ -764,11 +800,17 @@ impl<C, K> Context<C, K> {
         self
     }
 
+    pub(crate) fn with_start_info(mut self, actor_start_info: ActorStartInfo) -> Self {
+        self.actor_start_info = Some(actor_start_info);
+        self
+    }
+
     pub(crate) fn with_key<K1>(self, key: K1) -> Context<C, K1> {
         Context {
             book: self.book,
             actor: self.actor,
             actor_addr: self.actor_addr,
+            actor_start_info: self.actor_start_info,
             group_addr: self.group_addr,
             demux: self.demux,
             config: self.config,
@@ -832,6 +874,7 @@ impl Context {
             actor: None,
             actor_addr: Addr::NULL,
             group_addr: Addr::NULL,
+            actor_start_info: None,
             demux,
             config: Arc::new(()),
             key: Singleton,
@@ -850,6 +893,7 @@ impl<C, K: Clone> Clone for Context<C, K> {
             book: self.book.clone(),
             actor: self.book.get_owned(self.actor_addr),
             actor_addr: self.actor_addr,
+            actor_start_info: self.actor_start_info.clone(),
             group_addr: self.group_addr,
             demux: self.demux.clone(),
             config: self.config.clone(),

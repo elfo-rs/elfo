@@ -22,7 +22,7 @@ use elfo_core::{
     },
     msg, scope,
     signal::{Signal, SignalKind},
-    ActorGroup, ActorStatus, Addr, Blueprint, Context, Topology,
+    ActorGroup, ActorStatus, Addr, Blueprint, Context, RestartParams, RestartPolicy, Topology,
 };
 
 pub use self::protocol::*;
@@ -48,6 +48,10 @@ fn blueprint(topology: &Topology, source: ConfigSource) -> Blueprint {
     let topology = topology.clone();
     ActorGroup::new()
         .stop_order(100)
+        .restart_policy(RestartPolicy::on_failure(RestartParams::new(
+            Duration::from_secs(5),
+            Duration::from_secs(30),
+        )))
         .exec(move |ctx| Configurer::new(ctx, topology.clone(), source.clone()).main())
 }
 

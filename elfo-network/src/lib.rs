@@ -16,7 +16,7 @@ use elfo_core::{
     messages::UpdateConfig,
     msg,
     routers::{MapRouter, Outcome},
-    ActorGroup, Blueprint, Context, RestartPolicy, Topology,
+    ActorGroup, Blueprint, Context, Topology,
 };
 
 use crate::{
@@ -63,8 +63,6 @@ pub fn new(topology: &Topology) -> Blueprint {
 
     ActorGroup::new()
         .config::<Config>()
-        // The restart policy is overrided by the discovery actor.
-        .restart_policy(RestartPolicy::never())
         .stop_order(100)
         .router(MapRouter::new(|envelope| {
             msg!(match envelope {

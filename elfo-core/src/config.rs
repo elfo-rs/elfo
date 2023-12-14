@@ -162,6 +162,7 @@ pub(crate) struct SystemConfig {
     pub(crate) logging: crate::logging::LoggingConfig,
     pub(crate) dumping: crate::dumping::DumpingConfig,
     pub(crate) telemetry: crate::telemetry::TelemetryConfig,
+    pub(crate) restart_policy: crate::restarting::RestartPolicyConfig,
 }
 
 // === Secret ===

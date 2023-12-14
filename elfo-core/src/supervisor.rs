@@ -11,17 +11,18 @@ use tracing::{debug, error, error_span, info, warn, Instrument, Span};
 
 use elfo_utils::CachePadded;
 
-use self::{backoff::Backoff, error_chain::ErrorChain, measure_poll::MeasurePoll};
+use self::{error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
-    actor::{Actor, ActorMeta, ActorStatus},
+    actor::{Actor, ActorMeta, ActorStartInfo, ActorStatus},
     config::{AnyConfig, Config, SystemConfig},
     context::Context,
     envelope::Envelope,
     exec::{Exec, ExecResult},
-    group::{RestartMode, RestartPolicy, TerminationPolicy},
+    group::TerminationPolicy,
     message::Request,
     messages, msg,
     object::{GroupVisitor, Object, ObjectArc},
+    restarting::{RestartBackoff, RestartPolicy},
     routers::{Outcome, Router},
     runtime::RuntimeManager,
     scope::{self, Scope, ScopeGroupShared},
@@ -30,7 +31,6 @@ use crate::{
     Addr, ResponseToken,
 };
 
-mod backoff;
 mod error_chain;
 mod measure_poll;
 
@@ -58,14 +58,14 @@ struct ControlBlock<C> {
 
 /// Returns `None` if cannot be spawned.
 macro_rules! get_or_spawn {
-    ($this:ident, $key:expr) => {{
+    ($this:ident, $key:expr, $start_info:expr) => {{
         let key = $key;
         match $this.objects.get(&key) {
             Some(object) => Some(object),
             None => $this
                 .objects
                 .entry(key.clone())
-                .or_try_insert_with(|| $this.spawn(key, Default::default()).ok_or(()))
+                .or_try_insert_with(|| $this.spawn(key, $start_info, Default::default()).ok_or(()))
                 .map(|o| o.downgrade()) // FIXME: take an exclusive lock here.
                 .ok(),
         }
@@ -173,7 +173,7 @@ where
                     let outcome = self.router.route(&envelope);
 
                     if only_spawn {
-                        self.spawn_by_outcome(outcome);
+                        self.spawn_on_group_mounted(outcome);
                         let token = extract_response_token::<messages::UpdateConfig>(envelope);
                         self.context.respond(token, Ok(()));
                         return visitor.done();
@@ -216,8 +216,9 @@ where
             }
         });
 
+        let start_info = ActorStartInfo::on_message();
         match outcome {
-            Outcome::Unicast(key) => match get_or_spawn!(self, key) {
+            Outcome::Unicast(key) => match get_or_spawn!(self, key, start_info) {
                 Some(object) => visitor.visit_last(&object, envelope),
                 None => visitor.empty(envelope),
             },
@@ -228,7 +229,7 @@ where
             Outcome::Multicast(list) => {
                 for key in list.iter() {
                     if !self.objects.contains_key(key) {
-                        get_or_spawn!(self, key.clone());
+                        get_or_spawn!(self, key.clone(), start_info.clone());
                     }
                 }
                 let iter = list.into_iter().filter_map(|key| self.objects.get(&key));
@@ -266,7 +267,12 @@ where
         }
     }
 
-    fn spawn(self: &Arc<Self>, key: R::Key, mut backoff: Backoff) -> Option<ObjectArc> {
+    fn spawn(
+        self: &Arc<Self>,
+        key: R::Key,
+        start_info: ActorStartInfo,
+        mut backoff: RestartBackoff,
+    ) -> Option<ObjectArc> {
         let control = self.control.read();
         if control.stop_spawning {
             return None;
@@ -285,6 +291,7 @@ where
         );
 
         let system_config = control.system_config.clone();
+
         let user_config = control
             .user_config
             .as_ref()
@@ -315,7 +322,7 @@ where
                 .on_start();
 
             // It must be called after `entry.insert()`.
-            let ctx = ctx.with_addr(addr);
+            let ctx = ctx.with_addr(addr).with_start_info(start_info);
             let fut = AssertUnwindSafe(async { sv.exec.exec(ctx).await.unify() }).catch_unwind();
             let new_status = match fut.await {
                 Ok(Ok(())) => ActorStatus::TERMINATED,
@@ -323,26 +330,37 @@ where
                 Err(panic) => ActorStatus::FAILED.with_details(panic_to_string(panic)),
             };
 
-            let should_restart = {
+            let restart_after = {
                 let object = sv.objects.get(&key).expect("where is the current actor?");
+
                 let actor = object.as_actor().expect("a supervisor stores only actors");
 
-                let rp_override = actor.restart_policy();
-                let restart_policy = rp_override.as_ref().unwrap_or(&sv.restart_policy);
-                let should_restart = match restart_policy.mode {
-                    RestartMode::Always => true,
-                    RestartMode::OnFailures => new_status.is_failed(),
-                    RestartMode::Never => false,
-                };
+                // Select the restart policy with the following priority: actor override >
+                // config override > blueprint restart policy..
+                let default_restart_policy = sv
+                    .control
+                    .read()
+                    .system_config
+                    .restart_policy
+                    .make_policy()
+                    .unwrap_or(sv.restart_policy.clone());
+                let restart_policy = actor.restart_policy().unwrap_or(default_restart_policy);
+
+                let restarting_allowed = restart_policy.restarting_allowed(&new_status)
+                    && !sv.control.read().stop_spawning;
 
                 actor.set_status(new_status);
-                should_restart
+
+                restarting_allowed
+                    .then(|| {
+                        restart_policy
+                            .restart_params()
+                            .and_then(|p| backoff.next(&p))
+                    })
+                    .flatten()
             };
 
-            let need_to_restart = should_restart && !sv.control.read().stop_spawning;
-            if need_to_restart {
-                let after = backoff.next();
-
+            if let Some(after) = restart_after {
                 if after == Duration::ZERO {
                     debug!("actor will be restarted immediately");
                 } else {
@@ -357,7 +375,7 @@ where
                 scope::set_trace_id(TraceId::generate());
 
                 backoff.start();
-                if let Some(object) = sv.spawn(key.clone(), backoff) {
+                if let Some(object) = sv.spawn(key.clone(), ActorStartInfo::on_restart(), backoff) {
                     sv.objects.insert(key.clone(), object)
                 } else {
                     sv.objects.remove(&key).map(|(_, v)| v)
@@ -400,14 +418,15 @@ where
         Some(object)
     }
 
-    fn spawn_by_outcome(self: &Arc<Self>, outcome: Outcome<R::Key>) {
+    fn spawn_on_group_mounted(self: &Arc<Self>, outcome: Outcome<R::Key>) {
+        let start_info = ActorStartInfo::on_group_mounted();
         match outcome {
             Outcome::Unicast(key) => {
-                get_or_spawn!(self, key);
+                get_or_spawn!(self, key, start_info);
             }
             Outcome::Multicast(keys) => {
                 for key in keys {
-                    get_or_spawn!(self, key);
+                    get_or_spawn!(self, key, start_info.clone());
                 }
             }
             Outcome::GentleUnicast(_)
@@ -425,6 +444,7 @@ where
         // Update user's config.
         control.system_config = config.get_system().clone();
         control.user_config = Some(config.get_user::<C>().clone());
+
         self.router
             .update(control.user_config.as_ref().expect("just saved"));
 

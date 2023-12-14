@@ -11,15 +11,16 @@ extern crate self as elfo_core;
 
 // TODO: revise this list
 pub use crate::{
-    actor::{ActorMeta, ActorStatus, ActorStatusKind},
+    actor::{ActorMeta, ActorStartCause, ActorStartInfo, ActorStatus, ActorStatusKind},
     addr::Addr,
     config::Config,
     context::{Context, RequestBuilder},
     envelope::Envelope,
-    group::{ActorGroup, Blueprint, RestartPolicy, TerminationPolicy},
+    group::{ActorGroup, Blueprint, TerminationPolicy},
     local::{Local, MoveOwnership},
     message::{Message, Request},
     request_table::ResponseToken,
+    restarting::{RestartParams, RestartPolicy},
     source::{SourceHandle, UnattachedSource},
     topology::Topology,
 };
@@ -65,6 +66,7 @@ pub mod remote;
 #[cfg(all(feature = "network", not(feature = "unstable")))]
 mod remote;
 mod request_table;
+mod restarting;
 mod runtime;
 mod source;
 mod subscription;

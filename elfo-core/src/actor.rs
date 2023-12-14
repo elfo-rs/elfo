@@ -9,11 +9,12 @@ use tracing::{error, info, warn};
 use crate::{
     envelope::Envelope,
     errors::{SendError, TrySendError},
-    group::{RestartPolicy, TerminationPolicy},
+    group::TerminationPolicy,
     mailbox::{Mailbox, RecvResult},
     messages::{ActorStatusReport, Terminate},
     msg,
     request_table::RequestTable,
+    restarting::RestartPolicy,
     scope,
     subscription::SubscriptionManager,
     Addr,
@@ -114,6 +115,63 @@ impl ActorStatusKind {
             ActorStatusKind::Alarming => "Alarming",
             ActorStatusKind::Failed => "Failed",
         }
+    }
+}
+
+// === ActorStartInfo ===
+
+/// A struct holding information related to an actor start.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct ActorStartInfo {
+    /// The cause for the actor start, indicating why the actor is being
+    /// initialized.
+    pub cause: ActorStartCause,
+}
+
+/// An enum representing various causes for an actor to start.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum ActorStartCause {
+    /// The actor started because its group was mounted.
+    GroupMounted,
+    /// The actor started in response to a message.
+    OnMessage,
+    /// The actor started due to the restart policy.
+    Restarted,
+}
+
+impl ActorStartInfo {
+    pub(crate) fn on_group_mounted() -> Self {
+        Self {
+            cause: ActorStartCause::GroupMounted,
+        }
+    }
+
+    pub(crate) fn on_message() -> Self {
+        Self {
+            cause: ActorStartCause::OnMessage,
+        }
+    }
+
+    pub(crate) fn on_restart() -> Self {
+        Self {
+            cause: ActorStartCause::Restarted,
+        }
+    }
+}
+
+impl ActorStartCause {
+    pub fn is_group_mounted(&self) -> bool {
+        matches!(self, ActorStartCause::GroupMounted)
+    }
+
+    pub fn is_restarted(&self) -> bool {
+        matches!(self, ActorStartCause::Restarted)
+    }
+
+    pub fn is_on_message(&self) -> bool {
+        matches!(self, ActorStartCause::OnMessage)
     }
 }
 

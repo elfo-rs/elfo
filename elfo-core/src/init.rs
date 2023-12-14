@@ -13,7 +13,7 @@ use elfo_utils::time::Instant;
 use crate::{memory_tracker::MemoryTracker, time::Interval};
 
 use crate::{
-    actor::{Actor, ActorMeta, ActorStatus},
+    actor::{Actor, ActorMeta, ActorStartInfo, ActorStatus},
     addr::{Addr, GroupNo},
     config::SystemConfig,
     context::Context,
@@ -187,7 +187,9 @@ pub async fn do_start<F: Future>(
     entry.insert(Object::new(addr, actor));
 
     // It must be called after `entry.insert()`.
-    let ctx = ctx.with_addr(addr);
+    let ctx = ctx
+        .with_addr(addr)
+        .with_start_info(ActorStartInfo::on_group_mounted());
 
     let init = async move {
         start_entrypoints(&ctx, &topology, is_check_only).await?;
