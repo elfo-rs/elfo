@@ -7,7 +7,8 @@ pub(crate) struct Config {
     /// The sink's type.
     pub(crate) sink: Sink,
     /// The address to expose for scraping.
-    pub(crate) address: SocketAddr,
+    #[serde(alias = "address")]
+    pub(crate) listen: SocketAddr,
     /// How long samples should be considered in summaries.
     #[serde(default)]
     pub(crate) retention: Retention,

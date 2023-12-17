@@ -31,7 +31,7 @@
 
 [system.telemeters]
 sink = "Prometheus"
-address = "0.0.0.0:9042"
+listen = "0.0.0.0:9042"
 #global_labels = [["label", "value"]]
 #quantiles = [0.75, 0.9, 0.95, 0.99]
 

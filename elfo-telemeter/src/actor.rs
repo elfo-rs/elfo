@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use metrics::gauge;
-use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use elfo_core::{
-    message, messages::ConfigUpdated, msg, scope, time::Interval, tracing::TraceId, ActorGroup,
-    Blueprint, Context, MoveOwnership,
+    message, messages::ConfigUpdated, msg, stream::Stream, time::Interval, ActorGroup, Blueprint,
+    Context, SourceHandle,
 };
 
 use crate::{
     config::{Config, Retention, Sink},
-    protocol::{GetSnapshot, Snapshot},
+    hyper,
+    protocol::{GetSnapshot, Render, Rendered, ServerFailed, Snapshot},
     render::Renderer,
     storage::Storage,
 };
@@ -19,22 +19,14 @@ use crate::{
 struct Telemeter {
     ctx: Context<Config>,
     interval: Interval<CompactionTick>,
+    server: Option<Stream<ServerFailed>>,
     storage: Arc<Storage>,
     snapshot: Arc<Snapshot>,
     renderer: Renderer,
 }
 
-#[message(ret = Rendered)]
-struct Render;
-
-#[message]
-struct Rendered(#[serde(serialize_with = "elfo_core::dumping::hide")] String);
-
 #[message]
 struct CompactionTick;
-
-#[message]
-struct ServerFailed(MoveOwnership<hyper::Error>);
 
 pub(crate) fn new(storage: Arc<Storage>) -> Blueprint {
     ActorGroup::new()
@@ -50,6 +42,7 @@ impl Telemeter {
 
         Self {
             interval: ctx.attach(Interval::new(CompactionTick)),
+            server: None,
             storage,
             snapshot: Default::default(),
             renderer,
@@ -61,8 +54,8 @@ impl Telemeter {
         // Now only prometheus is supported.
         assert_eq!(self.ctx.config().sink, Sink::Prometheus);
 
-        let mut address = self.ctx.config().address;
-        let mut server = start_server(&self.ctx);
+        let mut listen = self.ctx.config().listen;
+        self.start_server();
 
         self.interval.start(self.ctx.config().compaction_interval);
 
@@ -71,14 +64,17 @@ impl Telemeter {
                 ConfigUpdated => {
                     let config = self.ctx.config();
 
-                    if config.address != address {
-                        info!("address changed, rerun the server");
-                        server.abort();
-                        address = config.address;
-                        server = start_server(&self.ctx);
-                    }
-
                     self.renderer.configure(config);
+
+                    if config.listen != listen {
+                        info!(
+                            message = "listen address changed, rerun the server",
+                            old = %listen,
+                            new = %config.listen,
+                        );
+                        listen = config.listen;
+                        self.start_server();
+                    }
                 }
                 (GetSnapshot, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
@@ -105,14 +101,12 @@ impl Telemeter {
                 CompactionTick => {
                     self.fill_snapshot(/* only_histograms = */ true);
                 }
-                ServerFailed(error) => {
-                    error!(error = %&error.take().unwrap(), "server failed");
-                    panic!("server failed");
+                ServerFailed(err) => {
+                    error!(error = %err, "server failed");
+                    panic!("server failed, cannot continue");
                 }
             });
         }
-
-        server.abort();
     }
 
     fn fill_snapshot(&mut self, only_histograms: bool) {
@@ -130,59 +124,18 @@ impl Telemeter {
         let snapshot = Arc::make_mut(&mut self.snapshot);
         snapshot.distributions_mut().for_each(|d| d.reset());
     }
-}
 
-fn start_server(ctx: &Context<Config>) -> JoinHandle<()> {
-    use hyper::{
-        server::{conn::AddrStream, Server},
-        service::{make_service_fn, service_fn},
-        Body, Error as HyperError, Response,
-    };
-
-    let address = ctx.config().address;
-    let ctx = Arc::new(ctx.pruned());
-    let ctx1 = ctx.clone();
-
-    let scope = scope::expose();
-    let scope1 = scope.clone();
-
-    let serving = async move {
-        let server = Server::try_bind(&address)?;
-        let make_svc = make_service_fn(move |_socket: &AddrStream| {
-            let ctx = ctx.clone();
-            let scope = scope.clone();
-
-            async move {
-                Ok::<_, HyperError>(service_fn(move |_| {
-                    let ctx = ctx.clone();
-                    let scope = scope.clone();
-
-                    let f = async move {
-                        let Rendered(output) = ctx
-                            .request_to(ctx.addr(), Render)
-                            .resolve()
-                            .await
-                            .expect("failed to send to the telemeter");
-
-                        Ok::<_, HyperError>(Response::new(Body::from(output)))
-                    };
-
-                    scope.set_trace_id(TraceId::generate());
-                    scope.within(f)
-                }))
-            }
-        });
-        server.serve(make_svc).await
-    };
-
-    tokio::spawn(async move {
-        if let Err(err) = serving.await {
-            let f = async {
-                let _ = ctx1.send_to(ctx1.group(), ServerFailed(err.into())).await;
-            };
-
-            scope1.set_trace_id(TraceId::generate());
-            scope1.within(f).await;
+    fn start_server(&mut self) {
+        // Terminate a running server.
+        if let Some(source) = self.server.take() {
+            source.terminate();
         }
-    })
+
+        // Start a new one.
+        let listen = self.ctx.config().listen;
+        let pruned_ctx = self.ctx.pruned();
+        let source = Stream::once(hyper::server(listen, pruned_ctx));
+
+        self.server = Some(self.ctx.attach(source));
+    }
 }

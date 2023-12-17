@@ -8,6 +8,15 @@ use metrics_util::Summary;
 
 use elfo_core::{message, ActorMeta, Local};
 
+#[message(ret = Rendered)]
+pub(crate) struct Render;
+
+#[message]
+pub(crate) struct Rendered(#[serde(serialize_with = "elfo_core::dumping::hide")] pub(crate) String);
+
+#[message]
+pub(crate) struct ServerFailed(pub(crate) String);
+
 /// A command to get actual snapshot of all metrics.
 /// The response is restricted to be local only for now.
 #[message(ret = Local<Arc<Snapshot>>)]

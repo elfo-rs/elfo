@@ -27,6 +27,7 @@ pub mod protocol;
 
 mod actor;
 mod config;
+mod hyper;
 mod recorder;
 mod render;
 mod storage;
