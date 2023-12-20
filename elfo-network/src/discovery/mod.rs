@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use eyre::{bail, eyre, Result, WrapErr};
 use futures::StreamExt;
@@ -9,7 +9,7 @@ use elfo_core::{
     _priv::{GroupNo, MessageKind},
     messages::ConfigUpdated,
     stream::Stream,
-    Topology,
+    RestartParams, Topology,
 };
 
 use crate::{
@@ -90,7 +90,11 @@ impl Discovery {
 
     pub(super) async fn main(mut self) -> Result<()> {
         // The default restart policy of this group is `never`, so override it.
-        self.ctx.set_restart_policy(RestartPolicy::on_failures());
+        self.ctx
+            .set_restart_policy(RestartPolicy::on_failure(RestartParams::new(
+                Duration::from_secs(5),
+                Duration::from_secs(30),
+            )));
 
         self.listen().await?;
         self.discover();

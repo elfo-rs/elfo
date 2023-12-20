@@ -1,4 +1,4 @@
-use std::{iter, panic, sync::Arc};
+use std::{iter, panic, sync::Arc, time::Duration};
 
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
@@ -15,7 +15,7 @@ use elfo_core::{
     scope::{self, SerdeMode},
     signal::{Signal, SignalKind},
     time::Interval,
-    ActorGroup, Blueprint, Context, TerminationPolicy,
+    ActorGroup, Blueprint, Context, RestartParams, RestartPolicy, TerminationPolicy,
 };
 use elfo_utils::ward;
 
@@ -252,6 +252,10 @@ pub(crate) fn new(dump_storage: Arc<Mutex<DumpStorage>>) -> Blueprint {
     ActorGroup::new()
         .config::<Config>()
         .termination_policy(TerminationPolicy::manually())
+        .restart_policy(RestartPolicy::on_failure(RestartParams::new(
+            Duration::from_secs(5),
+            Duration::from_secs(30),
+        )))
         .stop_order(100)
         .router(MapRouter::new(move |envelope| {
             msg!(match envelope {

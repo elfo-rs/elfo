@@ -1,4 +1,5 @@
 #![cfg(feature = "test-util")]
+#![allow(clippy::never_loop)]
 
 use elfo::{messages::Terminate, prelude::*, TerminationPolicy};
 

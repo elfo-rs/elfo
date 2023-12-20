@@ -8,6 +8,7 @@ use crate::{
     envelope::Envelope,
     exec::{Exec, ExecResult},
     object::{GroupHandle, GroupVisitor, Object},
+    restarting::RestartPolicy,
     routers::Router,
     runtime::RuntimeManager,
     supervisor::Supervisor,
@@ -47,13 +48,15 @@ impl<R, C> ActorGroup<R, C> {
     }
 
     /// The behaviour on actor termination.
-    /// `RestartPolicy::on_failures` is used by default.
+    ///
+    /// `RestartPolicy::never` is used by default.
     pub fn restart_policy(mut self, policy: RestartPolicy) -> Self {
         self.restart_policy = policy;
         self
     }
 
     /// The behaviour on the `Terminate` message.
+    ///
     /// `TerminationPolicy::closing` is used by default.
     pub fn termination_policy(mut self, policy: TerminationPolicy) -> Self {
         self.termination_policy = policy;
@@ -182,43 +185,4 @@ impl TerminationPolicy {
     }
 
     // TODO: add `stop_spawning`?
-}
-
-/// The behaviour on actor termination.
-#[derive(Debug, Clone)]
-pub struct RestartPolicy {
-    pub(crate) mode: RestartMode,
-}
-
-impl Default for RestartPolicy {
-    fn default() -> Self {
-        Self::on_failures()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum RestartMode {
-    Always,
-    OnFailures,
-    Never,
-}
-
-impl RestartPolicy {
-    pub fn always() -> Self {
-        Self {
-            mode: RestartMode::Always,
-        }
-    }
-
-    pub fn on_failures() -> Self {
-        Self {
-            mode: RestartMode::OnFailures,
-        }
-    }
-
-    pub fn never() -> Self {
-        Self {
-            mode: RestartMode::Never,
-        }
-    }
 }

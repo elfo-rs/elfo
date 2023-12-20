@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use metrics::gauge;
 use tracing::{error, info};
 
 use elfo_core::{
     message, messages::ConfigUpdated, msg, stream::Stream, time::Interval, ActorGroup, Blueprint,
-    Context, SourceHandle,
+    Context, RestartParams, RestartPolicy, SourceHandle,
 };
 
 use crate::{
@@ -31,6 +31,10 @@ struct CompactionTick;
 pub(crate) fn new(storage: Arc<Storage>) -> Blueprint {
     ActorGroup::new()
         .config::<Config>()
+        .restart_policy(RestartPolicy::on_failure(RestartParams::new(
+            Duration::from_secs(5),
+            Duration::from_secs(30),
+        )))
         .stop_order(100)
         .exec(move |ctx| Telemeter::new(ctx, storage.clone()).main())
 }

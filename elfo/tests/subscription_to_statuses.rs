@@ -9,6 +9,7 @@ use elfo::{
     test::Proxy,
     ActorStatus, ActorStatusKind,
 };
+use elfo_core::{RestartParams, RestartPolicy};
 
 #[message]
 struct Start(u32);
@@ -27,6 +28,10 @@ async fn run_group() -> Proxy {
                 _ => Outcome::Default,
             })
         }))
+        .restart_policy(RestartPolicy::on_failure(RestartParams::new(
+            Duration::from_secs(5),
+            Duration::from_secs(30),
+        )))
         .exec(move |mut ctx| async move {
             while let Some(envelope) = ctx.recv().await {
                 msg!(match envelope {

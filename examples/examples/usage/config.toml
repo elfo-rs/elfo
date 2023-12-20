@@ -41,10 +41,20 @@ path = "example.{class}.dump"
 [producers]
 group_count = 3
 item_count = 10
+# Override restart policy for this actor group.
+[producers.system.restart_policy]
+when = "OnFailure"
+min_backoff = "5s"
+max_backoff = "30s"
 
 [aggregators]
 system.telemetry.per_actor_key = true
 #system.telemetry.per_actor_key = ["(.*)", "${1}-overrided"]
+# Override restart policy for this actor group.
+[aggregators.system.restart_policy]
+when = "OnFailure"
+min_backoff = "5s"
+max_backoff = "30s"
 
 [reporters]
 interval = "2s"

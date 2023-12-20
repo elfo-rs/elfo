@@ -19,6 +19,7 @@ impl From<u16> for NodeNo {
 
 static NODE_NO: AtomicU16 = AtomicU16::new(0);
 
+#[stability::unstable]
 /// Returns the current `node_no`.
 pub fn node_no() -> Option<crate::addr::NodeNo> {
     crate::addr::NodeNo::from_bits(NODE_NO.load(Ordering::Relaxed))
