@@ -12,7 +12,7 @@ readme.workspace = true
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.11", path = "../elfo-core", features = ["unstable", "network"] }
-elfo-utils = { version = "0.2.2", path = "../elfo-utils" }
+elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
 serde = { version = "1.0.120", features = ["derive"] }
 static_assertions = "1.1.0"

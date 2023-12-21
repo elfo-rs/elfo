@@ -18,7 +18,7 @@ unstable-stuck-detection = ["dep:thread_local"]
 
 [dependencies]
 elfo-macros = { version = "0.2.0-alpha.11", path = "../elfo-macros" }
-elfo-utils = { version = "0.2.3", path = "../elfo-utils" }
+elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
 tokio = { version = "1.16", features = ["rt", "sync", "time", "signal", "macros"] }
 sharded-slab = "0.1.7"
@@ -53,7 +53,7 @@ rmp-serde = { version = "1.1.0", optional = true }
 humantime-serde = "1"
 
 [dev-dependencies]
-elfo-utils = { version = "0.2.3", path = "../elfo-utils", features = ["test-util"] }
+elfo-utils = { version = "0.2.5", path = "../elfo-utils", features = ["test-util"] }
 
 anyhow = "1.0.40"
 tokio = { version = "1", features = ["full"] }

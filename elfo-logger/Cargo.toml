@@ -15,7 +15,7 @@ tracing-log = [ "dep:tracing-log", "log" ]
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.11", path = "../elfo-core", features = ["unstable"] }
-elfo-utils = { version = "0.2.3", path = "../elfo-utils" }
+elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
 arc-swap = "1.2.0"
 once_cell = { version = "1.8.0", features = ["parking_lot"] }
