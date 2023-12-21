@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.12] - 2023-12-21
 ### Changed
 - **BREAKING** restarting: the default restart policy is `RestartPolicy::never()` now ([#118]).
 - restarting: linear backoff is replaced with exponential backoff ([#118]).
@@ -563,7 +565,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.11...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.12...HEAD
+[0.2.0-alpha.12]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.11...elfo-v0.2.0-alpha.12
 [0.2.0-alpha.11]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.10...elfo-v0.2.0-alpha.11
 [0.2.0-alpha.10]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.8...elfo-v0.2.0-alpha.10
 [0.2.0-alpha.8]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.7...elfo-v0.2.0-alpha.8
