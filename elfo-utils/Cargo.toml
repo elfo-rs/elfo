@@ -1,6 +1,6 @@
 [package]
 name = "elfo-utils"
-version = "0.2.3"
+version = "0.2.4"
 description = "Some utils for the elfo system"
 keywords = ["elfo", "actor", "distributed"]
 

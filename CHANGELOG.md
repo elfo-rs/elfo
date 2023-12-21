@@ -8,15 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 ### Changed
+- **BREAKING** restarting: the default restart policy is `RestartPolicy::never()` now ([#118]).
+- restarting: linear backoff is replaced with exponential backoff ([#118]).
+- restarting: the restart policy can be overridden through configuration ([#118]).
 - deps: update `quanta` to v0.12, `hyper` to v1 and `erased-serde` to v0.4.
 - context: slightly improve performance of time measurements.
 - utils: slightly improve performance of `RateLimiter`.
 - telemeter: handle only `GET /metrics` requests.
 - telemeter: rename the `address` config parameter to `listen` with alias to the old name.
-- **BREAKING** restarting: The default restart policy has been updated. `RestartPolicy::never()` is now set by default ([#118]).
-- restarting: linear backoff is replaced with exponential backoff ([#118]).
-- restarting: the restart policy can be overridden through configuration ([#118]).
-- context: added `Context::start_info` to retrieves information related to the start of the actor ([#118]).
+- context: added `Context::start_info` to retrieve information related to the start of the actor ([#118]).
 
 [#118]: https://github.com/elfo-rs/elfo/pull/118
 
