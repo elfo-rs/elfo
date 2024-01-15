@@ -684,6 +684,7 @@ impl<C, K> Context<C, K> {
 
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
+                metrics::increment_counter!("elfo_debug_update_config_count");
                 self.config = config.get_user::<C>().clone();
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
@@ -694,7 +695,12 @@ impl<C, K> Context<C, K> {
                 self.respond(token, Ok(()));
                 envelope
             }
-            envelope => envelope,
+            envelope => {
+                if envelope.is::<messages::ValidateConfig>() {
+                    metrics::increment_counter!("elfo_debug_validate_config_count");
+                }
+                envelope
+            }
         });
 
         let message = envelope.message();
