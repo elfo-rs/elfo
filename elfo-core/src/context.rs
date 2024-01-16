@@ -681,7 +681,22 @@ impl<C, K> Context<C, K> {
         self.budget.decrement();
 
         scope::set_trace_id(envelope.trace_id());
+
         let recorder = metrics::try_recorder();
+        if let Some(recorder) = recorder {
+            if envelope.is::<messages::ValidateConfig>() {
+                recorder.increment_counter(
+                    &metrics::Key::from_static_name("elfo_debug_validate_config_count"),
+                    1,
+                );
+            }
+            if envelope.is::<messages::UpdateConfig>() {
+                recorder.increment_counter(
+                    &metrics::Key::from_static_name("elfo_debug_update_config_count"),
+                    1,
+                );
+            }
+        }
 
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
@@ -695,23 +710,7 @@ impl<C, K> Context<C, K> {
                 self.respond(token, Ok(()));
                 envelope
             }
-            envelope => {
-                if let Some(recorder) = recorder {
-                    if envelope.is::<messages::ValidateConfig>() {
-                        recorder.increment_counter(
-                            &metrics::Key::from_static_name("elfo_debug_validate_config_count"),
-                            1,
-                        );
-                    }
-                    if envelope.is::<messages::UpdateConfig>() {
-                        recorder.increment_counter(
-                            &metrics::Key::from_static_name("elfo_debug_update_config_count"),
-                            1,
-                        );
-                    }
-                }
-                envelope
-            }
+            envelope => envelope,
         });
 
         let message = envelope.message();
