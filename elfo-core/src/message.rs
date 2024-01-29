@@ -6,14 +6,14 @@ use metrics::Label;
 use once_cell::sync::Lazy;
 use serde::{
     de::{DeserializeSeed, SeqAccess, Visitor},
-    ser::SerializeTuple,
+    ser::{SerializeStruct as _, SerializeTuple as _},
     Deserialize, Deserializer, Serialize,
 };
 use smallbox::{smallbox, SmallBox};
 
 use elfo_utils::unlikely;
 
-use crate::dumping;
+use crate::{dumping, scope::SerdeMode};
 
 pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deserialize<'de> {
     #[inline(always)]
@@ -145,20 +145,28 @@ impl fmt::Debug for AnyMessage {
     }
 }
 
+// `Serialize` / `Deserialize` impls for `AnyMessage` are not used when sending it by itself,
+// only when it's used in other messages.
 impl Serialize for AnyMessage {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
     {
-        let mut tuple = serializer.serialize_tuple(3)?;
-        tuple.serialize_element(self.protocol())?;
-        tuple.serialize_element(self.name())?;
-
         // TODO: avoid allocation here
         let erased_msg = self._erase();
-        tuple.serialize_element(&*erased_msg)?;
-
-        tuple.end()
+        if crate::scope::serde_mode() == SerdeMode::Dumping {
+            let mut fields = serializer.serialize_struct("AnyMessage", 3)?;
+            fields.serialize_field("protocol", self.protocol())?;
+            fields.serialize_field("name", self.name())?;
+            fields.serialize_field("payload", &*erased_msg)?;
+            fields.end()
+        } else {
+            let mut tuple = serializer.serialize_tuple(3)?;
+            tuple.serialize_element(self.protocol())?;
+            tuple.serialize_element(self.name())?;
+            tuple.serialize_element(&*erased_msg)?;
+            tuple.end()
+        }
     }
 }
 
@@ -167,6 +175,7 @@ impl<'de> Deserialize<'de> for AnyMessage {
     where
         D: serde::de::Deserializer<'de>,
     {
+        // We don't deserialize dumps, so we can assume it's a tuple.
         deserializer.deserialize_tuple(3, AnyMessageDeserializeVisitor)
     }
 }
@@ -391,23 +400,29 @@ pub(crate) fn check_uniqueness() -> Result<(), Vec<(String, String)>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{message, message::AnyMessage, Message};
+    use crate::{message, message::AnyMessage, scope::SerdeMode, Message};
+
+    #[message]
+    #[derive(PartialEq)]
+    struct MyCoolMessage {
+        field_a: u32,
+        field_b: String,
+        field_c: f64,
+    }
+
+    impl MyCoolMessage {
+        fn example() -> Self {
+            Self {
+                field_a: 123,
+                field_b: String::from("Hello world"),
+                field_c: 0.5,
+            }
+        }
+    }
 
     #[test]
     fn any_message_deserialize() {
-        #[message]
-        #[derive(PartialEq)]
-        struct MyCoolMessage {
-            field_a: u32,
-            field_b: String,
-            field_c: f64,
-        }
-
-        let msg = MyCoolMessage {
-            field_a: 123,
-            field_b: String::from("Hello world"),
-            field_c: 0.5,
-        };
+        let msg = MyCoolMessage::example();
         let any_msg = msg.clone().upcast();
         let serialized = serde_json::to_string(&any_msg).unwrap();
 
@@ -415,5 +430,30 @@ mod tests {
         let deserialized_msg: MyCoolMessage = deserialized_any_msg.downcast().unwrap();
 
         assert_eq!(msg, deserialized_msg);
+    }
+
+    #[test]
+    fn any_message_serialize() {
+        let any_msg = MyCoolMessage::example().upcast();
+        for mode in [SerdeMode::Normal, SerdeMode::Network] {
+            let dump =
+                crate::scope::with_serde_mode(mode, || serde_json::to_string(&any_msg).unwrap());
+            assert_eq!(
+                dump,
+                r#"["elfo-core","MyCoolMessage",{"field_a":123,"field_b":"Hello world","field_c":0.5}]"#
+            );
+        }
+    }
+
+    #[test]
+    fn any_message_dump() {
+        let any_msg = MyCoolMessage::example().upcast();
+        let dump = crate::scope::with_serde_mode(SerdeMode::Dumping, || {
+            serde_json::to_string(&any_msg).unwrap()
+        });
+        assert_eq!(
+            dump,
+            r#"{"protocol":"elfo-core","name":"MyCoolMessage","payload":{"field_a":123,"field_b":"Hello world","field_c":0.5}}"#
+        );
     }
 }
