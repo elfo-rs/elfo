@@ -64,18 +64,10 @@ mod proc_stats {
         const PROC_SELF_STATM: &str = "/proc/self/statm";
         const PAGE_SIZE: usize = 4096; // TODO: use `sysconf(_SC_PAGESIZE)`
 
-        // Assumes `MemTotal` is always the 1st line in `/proc/meminfo`.
-        const MEM_TOTAL_LINE_NO: usize = 0;
-        // Assumes `MemAvailable` is always the 3rd line in `/proc/meminfo`.
-        const MEM_AVAILABLE_LINE_NO: usize = 2;
-
         let proc_meminfo = fs::read_to_string(PROC_MEMINFO)
             .map_err(|err| format!("cannot read {PROC_MEMINFO}: {err}"))?;
-        let proc_meminfo = proc_meminfo.split_ascii_whitespace();
 
-        let total = get_value_from_meminfo(proc_meminfo.clone(), "MemTotal", MEM_TOTAL_LINE_NO)?;
-        let available =
-            get_value_from_meminfo(proc_meminfo, "MemAvailable", MEM_AVAILABLE_LINE_NO)?;
+        let (total, available) = get_values_from_meminfo(&proc_meminfo)?;
 
         // Get `used`.
         let proc_self_statm = fs::read_to_string(PROC_SELF_STATM)
@@ -95,29 +87,103 @@ mod proc_stats {
         })
     }
 
-    fn get_value_from_meminfo<'a>(
-        mut proc_meminfo: impl Iterator<Item = &'a str>,
-        item_name: &str,
-        line: usize,
-    ) -> Result<usize, String> {
-        const MEMINFO_ITEM_PER_LINE: usize = 3;
-        const MEMINFO_VALUE_INDEX: usize = 1;
-        let Some(value) = proc_meminfo.nth(line * MEMINFO_ITEM_PER_LINE + MEMINFO_VALUE_INDEX)
-        else {
+    fn get_values_from_meminfo(proc_meminfo: &str) -> Result<(usize, usize), String> {
+        const MEM_TOTAL_NAME: &str = "MemTotal";
+        const MEM_AVAILABLE_NAME: &str = "MemAvailable";
+
+        let mut total = None;
+        let mut available = None;
+
+        for line in proc_meminfo.split('\n') {
+            let Some((name, suffix)) = line.split_once(':') else {
+                continue;
+            };
+
+            match name {
+                MEM_TOTAL_NAME => {
+                    total = Some(
+                        parse_size(suffix)
+                            .map_err(|err| format!("failed to parse {MEM_TOTAL_NAME}: {err}"))?,
+                    )
+                }
+                MEM_AVAILABLE_NAME => {
+                    available =
+                        Some(parse_size(suffix).map_err(|err| {
+                            format!("failed to parse {MEM_AVAILABLE_NAME}: {err}")
+                        })?)
+                }
+                _ => continue,
+            }
+
+            if total.is_some() && available.is_some() {
+                break;
+            }
+        }
+
+        let Some(total) = total else {
             return Err(format!(
-                "failed to find `{item_name}` at line {line}, in {PROC_MEMINFO}"
+                "failed to find {MEM_AVAILABLE_NAME} in {PROC_MEMINFO}"
             ));
         };
-
-        let value = match value.parse::<usize>() {
-            Ok(x) => x * 1024, // always in KiB.
-            Err(err) => {
-                return Err(format!(
-                    "failed to parse `{item_name}`: {err}, in {PROC_MEMINFO}"
-                ));
-            }
+        let Some(available) = available else {
+            return Err(format!("failed to find {MEM_TOTAL_NAME} in {PROC_MEMINFO}"));
         };
-        Ok(value)
+
+        Ok((total, available))
+    }
+
+    fn parse_size(suffix: &str) -> Result<usize, String> {
+        suffix
+            .trim_start()
+            .strip_suffix(" kB")
+            .map(|n_str| n_str.parse::<usize>().map_err(|err| err.to_string()))
+            .unwrap_or_else(|| {
+                Err(format!(
+                    "failed to parse amount in {suffix} from {PROC_MEMINFO}"
+                ))
+            })
+            .map(|kb| 1024 * kb)
+    }
+
+    #[test]
+    fn parsing_works() {
+        let linux_correct = "MemTotal:       32446772 kB
+MemFree:        27748552 kB
+MemAvailable:   27718224 kB
+Buffers:           22520 kB
+Cached:           256296 kB
+SwapCached:        23344 kB";
+
+        let (total, available) = get_values_from_meminfo(linux_correct).unwrap();
+        assert_eq!(total, 32446772 * 1024);
+        assert_eq!(available, 27718224 * 1024);
+
+        let possible = "MemFree:        27748552 kB
+MemTotal:       32446772 kB
+Buffers:           22520 kB
+Cached:           256296 kB
+MemAvailable:   27718224 kB
+SwapCached:        23344 kB";
+
+        let (total, available) = get_values_from_meminfo(possible).unwrap();
+        assert_eq!(total, 32446772 * 1024);
+        assert_eq!(available, 27718224 * 1024);
+
+        let no_total = "MemFree:        27748552 kB
+Buffers:           22520 kB
+Cached:           256296 kB
+MemAvailable:   27718224 kB
+SwapCached:        23344 kB";
+        get_values_from_meminfo(no_total).unwrap_err();
+
+        let not_kb = "MemTotal:       32446772 kB
+MemFree:        27748552 kB
+MemAvailable:   27718224 GB
+Buffers:           22520 kB
+Cached:           256296 kB
+SwapCached:        23344 kB";
+
+        get_values_from_meminfo(not_kb).unwrap_err();
     }
 
     #[test]
@@ -138,7 +204,7 @@ mod mock_stats {
     use super::MemoryStats;
 
     thread_local! {
-        static STATS: Cell<Result<MemoryStats, &'static str>> = const { Cell::new(Err("not exists")) };
+        static STATS: Cell<Result<MemoryStats, &'static str>> = Cell::new(Err("not exists"));
     }
 
     pub(super) fn get() -> Result<MemoryStats, String> {

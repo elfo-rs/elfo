@@ -145,8 +145,8 @@ impl fmt::Debug for AnyMessage {
     }
 }
 
-// `Serialize` / `Deserialize` impls for `AnyMessage` are not used when sending it by itself,
-// only when it's used in other messages.
+// `Serialize` / `Deserialize` impls for `AnyMessage` are not used when sending
+// it by itself, only when it's used in other messages.
 impl Serialize for AnyMessage {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

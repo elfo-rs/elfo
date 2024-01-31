@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - core: changed OOM prevention trigger (that gracefully shutdowns the service) from old `used > total * ratio` to new `avail < total * (1 - ratio)`.  ([#120])
 
+[#120] - https://github.com/elfo-rs/elfo/pull/120
+
 ## [0.2.0-alpha.12] - 2023-12-21
 ### Changed
 - **BREAKING** restarting: the default restart policy is `RestartPolicy::never()` now ([#118]).
