@@ -19,6 +19,7 @@ use crate::{
     context::Context,
     demux::Demux,
     errors::{RequestError, StartError, StartGroupError},
+    memory_tracker::MemoryCheckResult,
     message,
     messages::{StartEntrypoint, Terminate, UpdateConfig},
     object::Object,
@@ -241,9 +242,19 @@ async fn termination(mut ctx: Context, topology: Topology) {
         #[cfg(target_os = "linux")]
         if envelope.is::<CheckMemoryUsageTick>() {
             match memory_tracker.as_ref().map(|mt| mt.check()) {
-                Some(Ok(true)) | None => {}
-                Some(Ok(false)) => {
-                    error!("maximum memory usage is reached, forcibly terminating");
+                Some(Ok(MemoryCheckResult::Passed)) | None => {}
+                Some(Ok(MemoryCheckResult::Failed(stats))) => {
+                    let percents_of_total =
+                        |x| ((x as f64) / (stats.total as f64) * 100.).round() as u64;
+                    let used = percents_of_total(stats.used);
+                    let available = percents_of_total(stats.available);
+                    error!(
+                        total = stats.total,
+                        used_pct = used,
+                        available_pct = available,
+                        "maximum memory usage is reached, forcibly terminating"
+                    );
+
                     let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
                     oom_prevented = true;
                 }
