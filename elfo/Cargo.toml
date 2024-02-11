@@ -50,8 +50,6 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1.25"
 tracing-subscriber = "0.3"
 serde = { version = "1.0.120", features = ["derive"] }
-humantime-serde = "1"
-criterion = "0.5.1"
 static_assertions = "1.1.0"
 parking_lot = "0.12"
 libc = "0.2.97"

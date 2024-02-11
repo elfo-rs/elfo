@@ -1,18 +1,16 @@
 #[macro_export]
 macro_rules! assert_msg {
     ($envelope:expr, $pat:pat) => {{
-        use $crate::_priv::{AnyMessageBorrowed, EnvelopeBorrowed};
-
         let envelope = &$envelope;
-        let msg = envelope.unpack_regular().downcast2();
+        let message = envelope.message();
 
+        // TODO: use `msg!` to support multiple messages in a pattern.
         #[allow(unreachable_patterns)]
-        match &msg {
-            &$pat => {}
+        match &message.downcast_ref() {
+            Some($pat) => {}
             _ => panic!(
-                "\na message doesn't match a pattern\npattern: {}\nmessage: {:#?}\n",
+                "\na message doesn't match a pattern\npattern: {}\nmessage: {message:#?}\n",
                 stringify!($pat),
-                msg,
             ),
         }
     }};
@@ -21,11 +19,11 @@ macro_rules! assert_msg {
 #[macro_export]
 macro_rules! assert_msg_eq {
     ($envelope:expr, $expected:expr) => {{
-        use $crate::_priv::{AnyMessageBorrowed, EnvelopeBorrowed};
-
         let envelope = &$envelope;
 
-        let actual = envelope.unpack_regular().downcast2();
+        let Some(actual) = envelope.message().downcast_ref() else {
+            panic!("unexpected message: {:#?}", envelope.message());
+        };
         let expected = &$expected;
 
         fn unify<T>(_rhs: &T, _lhs: &T) {}

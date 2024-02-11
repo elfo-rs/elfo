@@ -18,7 +18,7 @@ pub use crate::{
     envelope::Envelope,
     group::{ActorGroup, Blueprint, TerminationPolicy},
     local::{Local, MoveOwnership},
-    message::{Message, Request},
+    message::{AnyMessage, AnyMessageRef, Message, Request},
     request_table::ResponseToken,
     restarting::{RestartParams, RestartPolicy},
     source::{SourceHandle, UnattachedSource},
@@ -87,9 +87,7 @@ pub mod _priv {
     pub use crate::addr::{GroupNo, NodeLaunchId, NodeNo};
     pub use crate::{
         address_book::AddressBook,
-        envelope::{
-            AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned, MessageKind,
-        },
+        envelope::{EnvelopeBorrowed, EnvelopeOwned, MessageKind},
         init::do_start,
         message::*,
         object::{GroupVisitor, Object, OwnedObject},

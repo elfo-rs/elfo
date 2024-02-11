@@ -199,23 +199,10 @@ pub fn message_impl(
 
     let network_fns = cfg!(feature = "network").then(|| {
         quote! {
-            fn write_msgpack(
-                message: &#internal::AnyMessage,
-                buffer: &mut Vec<u8>,
-                limit: usize
-            ) -> ::std::result::Result<(), #internal::rmps::encode::Error> {
-                #internal::write_msgpack(buffer, limit, cast_ref(message))
-            }
-
-            fn read_msgpack(buffer: &[u8]) ->
-                ::std::result::Result<#internal::AnyMessage, #internal::rmps::decode::Error>
-            {
-                #internal::read_msgpack::<#name>(buffer).map(#crate_::Message::upcast)
-            }
+            read_msgpack: #internal::vtablefns::read_msgpack::<#name>,
+            write_msgpack: #internal::vtablefns::write_msgpack::<#name>,
         }
     });
-
-    let network_fns_ref = cfg!(feature = "network").then(|| quote! { write_msgpack, read_msgpack });
 
     let protocol = if let Some(protocol) = &args.protocol {
         quote! { #protocol }
@@ -227,41 +214,23 @@ pub fn message_impl(
         quote! {
             impl #crate_::Message for #name {
                 #[inline(always)]
-                fn _vtable(&self) -> &'static #internal::MessageVTable {
-                    &VTABLE
+                fn _type_id() -> #internal::MessageTypeId {
+                    #internal::MessageTypeId::new(VTABLE)
                 }
 
                 #[inline(always)]
-                fn _touch(&self) {
-                    touch();
+                fn _vtable(&self) -> &'static #internal::MessageVTable {
+                    VTABLE
                 }
+
+                #[inline(never)]
+                fn _touch(&self) {}
             }
 
-            fn cast_ref(message: &#internal::AnyMessage) -> &#name {
-                message.downcast_ref::<#name>().expect("invalid vtable")
-            }
-
-            fn clone(message: &#internal::AnyMessage) -> #internal::AnyMessage {
-                #crate_::Message::upcast(Clone::clone(cast_ref(message)))
-            }
-
-            fn debug(message: &#internal::AnyMessage, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                ::std::fmt::Debug::fmt(cast_ref(message), f)
-            }
-
-            fn erase(message: &#internal::AnyMessage) -> #crate_::dumping::ErasedMessage {
-                smallbox!(Clone::clone(cast_ref(message)))
-            }
-
-            fn deserialize_any(deserializer: &mut dyn #internal::erased_serde::Deserializer<'_>) -> Result<#internal::AnyMessage, #internal::erased_serde::Error> {
-                #internal::erased_serde::deserialize::<#name>(deserializer).map(#crate_::Message::upcast)
-            }
-
-            #network_fns
-
-            #[linkme::distributed_slice(MESSAGE_LIST)]
+            #[linkme::distributed_slice(MESSAGE_VTABLES_LIST)]
             #[linkme(crate = linkme)]
-            static VTABLE: &'static #internal::MessageVTable = &#internal::MessageVTable {
+            static VTABLE: &#internal::MessageVTable = &#internal::MessageVTable {
+                repr_layout: ::std::alloc::Layout::new::<#internal::MessageRepr<#name>>(),
                 name: #name_str,
                 protocol: #protocol,
                 labels: &[
@@ -269,17 +238,13 @@ pub fn message_impl(
                     #internal::metrics::Label::from_static_parts("protocol", #protocol),
                 ],
                 dumping_allowed: #dumping_allowed,
-                clone,
-                debug,
-                erase,
-                deserialize_any,
-                #network_fns_ref
+                debug: #internal::vtablefns::debug::<#name>,
+                clone: #internal::vtablefns::clone::<#name>,
+                erase: #internal::vtablefns::erase::<#name>,
+                deserialize_any: #internal::vtablefns::deserialize_any::<#name>,
+                drop: #internal::vtablefns::drop::<#name>,
+                #network_fns
             };
-
-            // See [rust#47384](https://github.com/rust-lang/rust/issues/47384).
-            #[doc(hidden)]
-            #[inline(never)]
-            pub fn touch() {}
         }
     });
 
@@ -337,7 +302,7 @@ pub fn message_impl(
         const _: () = {
             // Keep this list as minimal as possible to avoid possible collisions with `#name`.
             // Especially avoid `PascalCase`.
-            use #internal::{MESSAGE_LIST, smallbox::smallbox, linkme};
+            use #internal::{MESSAGE_VTABLES_LIST, linkme}; // TODO: remove
 
             #impl_message
             #impl_request

@@ -1,56 +1,118 @@
-use futures_intrusive::{
-    buffer::GrowingHeapBuf,
-    channel::{self, GenericChannel},
+use std::ptr::{self, NonNull};
+
+use cordyceps::{
+    mpsc_queue::{Links, MpscQueue},
+    Linked,
 };
-use parking_lot::{Mutex, RawMutex};
+use parking_lot::Mutex;
+use tokio::sync::{Notify, Semaphore, TryAcquireError};
+
+use elfo_utils::CachePadded;
 
 use crate::{
-    envelope::Envelope,
+    envelope::{Envelope, EnvelopeHeader},
     errors::{SendError, TrySendError},
     tracing::TraceId,
 };
 
-// TODO: make mailboxes bounded by time instead of size.
+pub(crate) type Link = Links<EnvelopeHeader>;
+
+unsafe impl Linked<Links<EnvelopeHeader>> for EnvelopeHeader {
+    type Handle = Envelope;
+
+    // TODO: Pin?
+
+    fn into_ptr(handle: Self::Handle) -> NonNull<Self> {
+        handle.into_header_ptr()
+    }
+
+    /// Convert a raw pointer back into an owned `Handle`.
+    unsafe fn from_ptr(ptr: NonNull<Self>) -> Self::Handle {
+        unsafe { Self::Handle::from_header_ptr(ptr) }
+    }
+
+    /// Access an element's `Links`.
+    unsafe fn links(ptr: NonNull<Self>) -> NonNull<Links<Self>> {
+        // Using `ptr::addr_of_mut!` permits us to avoid creating a temporary
+        // reference without using layout-dependent casts.
+        let links = ptr::addr_of_mut!((*ptr.as_ptr()).link);
+
+        // `NonNull::new_unchecked` is safe to use here, because the pointer that
+        // we offset was not null, implying that the pointer produced by offsetting
+        // it will also not be null.
+        NonNull::new_unchecked(links)
+    }
+}
+
+// TODO: make configurable && limit by time.
 const LIMIT: usize = 100_000;
 
 pub(crate) struct Mailbox {
-    queue: GenericChannel<RawMutex, Envelope, GrowingHeapBuf<Envelope>>,
+    queue: MpscQueue<EnvelopeHeader>,
+    tx_semaphore: Semaphore,
+    rx_notify: CachePadded<Notify>,
     closed_trace_id: Mutex<Option<TraceId>>,
 }
 
 impl Mailbox {
     pub(crate) fn new() -> Self {
         Self {
-            queue: GenericChannel::with_capacity(LIMIT),
+            queue: MpscQueue::new_with_stub(Envelope::stub()),
+            tx_semaphore: Semaphore::new(LIMIT),
+            rx_notify: CachePadded(Notify::new()),
             closed_trace_id: Mutex::new(None),
         }
     }
 
     pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
-        let fut = self.queue.send(envelope);
-        fut.await.map_err(|err| SendError(err.0))
+        let permit = match self.tx_semaphore.acquire().await {
+            Ok(permit) => permit,
+            Err(_) => return Err(SendError(envelope)),
+        };
+
+        permit.forget();
+        self.queue.enqueue(envelope);
+        self.rx_notify.notify_one();
+        Ok(())
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        self.queue.try_send(envelope).map_err(|err| match err {
-            channel::TrySendError::Full(envelope) => TrySendError::Full(envelope),
-            channel::TrySendError::Closed(envelope) => TrySendError::Closed(envelope),
-        })
+        match self.tx_semaphore.try_acquire() {
+            Ok(permit) => {
+                permit.forget();
+                self.queue.enqueue(envelope);
+                self.rx_notify.notify_one();
+                Ok(())
+            }
+            Err(TryAcquireError::NoPermits) => Err(TrySendError::Full(envelope)),
+            Err(TryAcquireError::Closed) => Err(TrySendError::Closed(envelope)),
+        }
     }
 
     pub(crate) async fn recv(&self) -> RecvResult {
-        let fut = self.queue.receive();
-        match fut.await {
-            Some(envelope) => RecvResult::Data(envelope),
-            None => self.on_close(),
+        loop {
+            if let Some(envelope) = self.queue.dequeue() {
+                // TODO: try_dequeue?
+                self.tx_semaphore.add_permits(1);
+                return RecvResult::Data(envelope);
+            }
+
+            if self.tx_semaphore.is_closed() {
+                return self.on_close();
+            }
+
+            self.rx_notify.notified().await;
         }
     }
 
     pub(crate) fn try_recv(&self) -> Option<RecvResult> {
-        match self.queue.try_receive() {
-            Ok(envelope) => Some(RecvResult::Data(envelope)),
-            Err(channel::TryReceiveError::Empty) => None,
-            Err(channel::TryReceiveError::Closed) => Some(self.on_close()),
+        match self.queue.dequeue() {
+            Some(envelope) => {
+                self.tx_semaphore.add_permits(1);
+                Some(RecvResult::Data(envelope))
+            }
+            None if self.tx_semaphore.is_closed() => Some(self.on_close()),
+            None => None,
         }
     }
 
@@ -61,23 +123,33 @@ impl Mailbox {
         // possible when we try to `recv()` after the channel is closed, but
         // before the `closed_trace_id` is assigned.
         let mut closed_trace_id = self.closed_trace_id.lock();
-        if self.queue.close().is_newly_closed() {
-            *closed_trace_id = Some(trace_id);
-            true
-        } else {
-            false
+
+        if self.tx_semaphore.is_closed() {
+            return false;
         }
+
+        *closed_trace_id = Some(trace_id);
+
+        self.tx_semaphore.close();
+        self.rx_notify.notify_one();
+        true
     }
 
     #[cold]
     pub(crate) fn drop_all(&self) {
-        while self.queue.try_receive().is_ok() {}
+        while self.queue.dequeue().is_some() {}
     }
 
     #[cold]
     fn on_close(&self) -> RecvResult {
-        let trace_id = self.closed_trace_id.lock().expect("called before close()");
-        RecvResult::Closed(trace_id)
+        // Some messages may be in the queue after the channel is closed.
+        match self.queue.dequeue() {
+            Some(envelope) => RecvResult::Data(envelope),
+            None => {
+                let trace_id = self.closed_trace_id.lock().expect("called before close()");
+                RecvResult::Closed(trace_id)
+            }
+        }
     }
 }
 
