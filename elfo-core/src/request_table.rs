@@ -263,7 +263,7 @@ impl ResponseToken {
 
     #[doc(hidden)]
     #[inline]
-    pub fn forget(mut self) {
+    pub fn forget(&mut self) {
         self.data = None;
     }
 

@@ -86,9 +86,7 @@ pub mod _priv {
     pub use crate::addr::{GroupNo, NodeLaunchId, NodeNo};
     pub use crate::{
         address_book::AddressBook,
-        envelope::{
-            AnyMessageBorrowed, AnyMessageOwned, EnvelopeBorrowed, EnvelopeOwned, MessageKind,
-        },
+        envelope::{EnvelopeBorrowed, EnvelopeOwned, MessageKind},
         init::do_start,
         message::*,
         object::{GroupVisitor, Object, ObjectArc},

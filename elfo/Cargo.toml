@@ -57,6 +57,7 @@ static_assertions = "1.1.0"
 parking_lot = "0.12"
 libc = "0.2.97"
 futures-intrusive = "0.5"
+mimalloc = { version = "0.1.39", default-features = false }
 
 [package.metadata.docs.rs]
 all-features = true
