@@ -84,12 +84,13 @@ mod mock {
     }
 
     /// Mocks `Instant`, see [`InstantMock`].
-    pub fn with_instant_mock(f: impl FnOnce(InstantMock)) {
+    pub fn with_instant_mock<R>(f: impl FnOnce(InstantMock) -> R) -> R {
         let (clock, mock) = Clock::mock();
         let mock = InstantMock(mock);
         CLOCK.with(|c| *c.borrow_mut() = Some(clock));
-        f(mock);
+        let result = f(mock);
         CLOCK.with(|c| *c.borrow_mut() = None);
+        result
     }
 
     /// Controllable time source for use in tests.

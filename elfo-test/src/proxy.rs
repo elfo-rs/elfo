@@ -254,7 +254,7 @@ fn testers(tx: shared::OneshotSender<ProxyContext>) -> Blueprint {
                         (StealContext, token) => {
                             ctx.pruned().respond(token, Local::from(ctx));
                         }
-                        envelope => panic!("unexpected message: {envelope:?}"),
+                        envelope => panic!("unexpected message: {:?}", envelope.message()),
                     });
                 }
 

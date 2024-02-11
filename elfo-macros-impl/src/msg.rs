@@ -226,8 +226,8 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
         add_groups(&mut groups, arm);
     }
 
+    let type_id_ident = quote! { _elfo_type_id };
     let envelope_ident = quote! { _elfo_envelope };
-    let type_id_ident = quote! { _type_id_envelope };
 
     // println!(">>> HERE {:#?}", groups);
 
@@ -238,7 +238,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
             // - used the regular syntax while the request one is expected
             // - unexhaustive match
             (GroupKind::Regular(path), arms) => quote_spanned! { path.span()=>
-                else if #type_id_ident == std::any::TypeId::of::<#path>() {
+                else if #type_id_ident == <#path as #crate_::Message>::_type_id() {
                     // Ensure it's not a request, or a request but only in a borrowed context.
                     // We cannot use `static_assertions` here because it wraps the check into
                     // a closure that forbids us to use generic `msg!`: (`msg!(match e { M => .. })`).
@@ -255,18 +255,15 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                     match {
                         // Support both owned and borrowed contexts, relying on the type inference.
                         #[allow(unused_imports)]
-                        use #internal::{
-                            EnvelopeOwned as _, EnvelopeBorrowed as _,
-                            AnyMessageOwned as _, AnyMessageBorrowed as _,
-                        };
-                        #envelope_ident.unpack_regular().downcast2::<#path>()
+                        use #internal::{EnvelopeOwned as _, EnvelopeBorrowed as _};
+                        unsafe { #envelope_ident.unpack_regular_unchecked::<#path>() }
                     } {
                         #(#arms)*
                     }
                 }
             },
             (GroupKind::Request(path), arms) => quote_spanned! { path.span()=>
-                else if #type_id_ident == std::any::TypeId::of::<#path>() {
+                else if #type_id_ident == <#path as #crate_::Message>::_type_id() {
                     // Ensure it's a request. We cannot use `static_assertions` here
                     // because it wraps the check into a closure that forbids us to
                     // use generic `msg!`: (`msg!(match e { (R, token) => .. })`).
@@ -279,9 +276,8 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                     match {
                         // Only the owned context is supported.
                         #[allow(unused_imports)]
-                        use #internal::{EnvelopeOwned as _, AnyMessageOwned as _};
-                        let (message, token) = #envelope_ident.unpack_request();
-                        (message.downcast2::<#path>(), token.into_received::<#path>())
+                        use #internal::EnvelopeOwned as _;
+                        unsafe { #envelope_ident.unpack_request_unchecked::<#path>() }
                     } {
                         #(#arms)*
                     }
