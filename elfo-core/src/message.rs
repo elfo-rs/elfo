@@ -34,8 +34,8 @@ pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deseri
 
     #[doc(hidden)]
     #[inline(always)]
-    fn dumping_allowed(&self) -> bool {
-        self._vtable().dumping_allowed
+    fn dumping_level(&self) -> dumping::Level {
+        self._vtable().dumping_level
     }
 
     #[doc(hidden)]
@@ -331,7 +331,7 @@ pub struct MessageVTable {
     /// Usually, it's a crate name where the message is defined.
     pub protocol: &'static str,
     pub labels: &'static [Label],
-    pub dumping_allowed: bool, // TODO: introduce `DumpingMode`.
+    pub dumping_level: dumping::Level,
     pub clone: fn(&AnyMessage) -> AnyMessage,
     pub debug: fn(&AnyMessage, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub erase: fn(&AnyMessage) -> dumping::ErasedMessage,
