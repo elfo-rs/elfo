@@ -8,7 +8,7 @@ use elfo::{_priv::AnyMessage, prelude::*, Message};
 
 fn parse<A: Message + PartialEq, B: Message + PartialEq>(input: A, expected: B) -> Result<()> {
     let mut buf = Vec::new();
-    let input = input.upcast();
+    let input = AnyMessage::new(input);
     input.write_msgpack(&mut buf, 512)?;
     let actual = AnyMessage::read_msgpack(&buf, expected.protocol(), expected.name())?
         .ok_or_else(|| anyhow!("no such message"))?

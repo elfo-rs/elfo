@@ -7,7 +7,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
     message, Local, Message,
-    _priv::{EbrGuard, EnvelopeOwned, GroupVisitor, MessageKind, NodeNo, Object, OwnedObject},
+    _priv::{AnyMessage, EbrGuard, GroupVisitor, MessageKind, NodeNo, Object, OwnedObject},
     errors::{RequestError, SendError, TrySendError},
     messages::{ConfigUpdated, Impossible},
     msg, remote, scope,
@@ -276,50 +276,41 @@ fn make_network_envelope(
         (Ok(envelope), None) => {
             let sender = envelope.sender();
             let trace_id = envelope.trace_id();
+            let (message, kind) = envelope.unpack::<AnyMessage>().expect("impossible");
 
-            let (payload, token) = match envelope.message_kind() {
-                MessageKind::Regular { .. } => (
-                    NetworkEnvelopePayload::Regular {
-                        message: envelope.unpack_regular(),
+            let (payload, token) = match kind {
+                MessageKind::Regular { .. } => (NetworkEnvelopePayload::Regular { message }, None),
+                MessageKind::RequestAny(token) => (
+                    NetworkEnvelopePayload::RequestAny {
+                        request_id: token.request_id(),
+                        message,
                     },
-                    None,
+                    Some(token),
                 ),
-                MessageKind::RequestAny(_) => {
-                    let (message, token) = envelope.unpack_request();
-                    (
-                        NetworkEnvelopePayload::RequestAny {
-                            request_id: token.request_id(),
-                            message,
-                        },
-                        Some(token),
-                    )
-                }
-                MessageKind::RequestAll(_) => {
-                    let (message, token) = envelope.unpack_request();
-                    (
-                        NetworkEnvelopePayload::RequestAll {
-                            request_id: token.request_id(),
-                            message,
-                        },
-                        Some(token),
-                    )
-                }
+                MessageKind::RequestAll(token) => (
+                    NetworkEnvelopePayload::RequestAll {
+                        request_id: token.request_id(),
+                        message,
+                    },
+                    Some(token),
+                ),
                 MessageKind::Response { .. } => unreachable!(),
             };
 
             (sender, trace_id, payload, token)
         }
         // Response
-        (Ok(envelope), Some(token)) => {
+        (Ok(envelope), Some(mut token)) => {
             let sender = envelope.sender();
             let trace_id = envelope.trace_id();
+            let (message, kind) = envelope.unpack::<AnyMessage>().expect("impossible");
 
-            let payload = match envelope.message_kind() {
+            let payload = match kind {
                 MessageKind::Response { request_id, .. } => {
-                    debug_assert_eq!(*request_id, token.request_id());
+                    debug_assert_eq!(request_id, token.request_id());
                     NetworkEnvelopePayload::Response {
-                        request_id: *request_id,
-                        message: Ok(envelope.unpack_regular()),
+                        request_id,
+                        message: Ok(message),
                         is_last: token.is_last(),
                     }
                 }
@@ -332,7 +323,7 @@ fn make_network_envelope(
             (sender, trace_id, payload, None)
         }
         // Failed/Ignored Response
-        (Err(err), Some(token)) => {
+        (Err(err), Some(mut token)) => {
             let sender = Addr::NULL;
             let trace_id = token.trace_id();
 
@@ -721,10 +712,7 @@ impl SocketReader {
 }
 
 fn make_system_envelope(message: impl Message) -> Envelope {
-    Envelope::new(
-        message.upcast(),
-        MessageKind::Regular { sender: Addr::NULL },
-    )
+    Envelope::new(message, MessageKind::Regular { sender: Addr::NULL })
 }
 
 // === Pusher ===

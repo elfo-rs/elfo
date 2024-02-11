@@ -123,6 +123,7 @@ impl<'de> serde::Deserialize<'de> for NetworkAddr {
     }
 }
 
+// TODO: use `elfo::Envelope` to avoid extra allocation with `AnyMessage`.
 #[derive(Debug)]
 pub(crate) enum NetworkEnvelopePayload {
     Regular {

@@ -275,7 +275,8 @@ pub struct Emitter(mpsc::Sender<AnyMessage>);
 impl Emitter {
     /// Emits a message from the generated stream.
     pub async fn emit<M: Message>(&mut self, message: M) {
-        let _ = self.0.send(message.upcast()).await;
+        // TODO: create `Envelope` to avoid extra allocation.
+        let _ = self.0.send(AnyMessage::new(message)).await;
     }
 }
 
@@ -293,7 +294,8 @@ impl<M: Message> StreamItem for M {
     /// This method is private.
     #[doc(hidden)]
     fn to_any_message(self) -> AnyMessage {
-        self.upcast()
+        // TODO: create `Envelope` to avoid extra allocation.
+        AnyMessage::new(self)
     }
 }
 

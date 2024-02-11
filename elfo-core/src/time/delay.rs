@@ -126,7 +126,7 @@ impl<M: Message> SourceStream for DelaySource<M> {
         let message = this.message.take().unwrap();
         let kind = MessageKind::Regular { sender: Addr::NULL };
         let trace_id = this.trace_id.take().unwrap_or_else(TraceId::generate);
-        let envelope = Envelope::with_trace_id(message, kind, trace_id).upcast();
+        let envelope = Envelope::with_trace_id(message, kind, trace_id);
 
         Poll::Ready(Some(envelope))
     }
