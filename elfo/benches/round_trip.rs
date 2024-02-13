@@ -259,3 +259,6 @@ fn command_event(c: &mut Criterion) {
 
 criterion_group!(benches, request_response, only_command, command_event);
 criterion_main!(benches);
+
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

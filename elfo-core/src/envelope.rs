@@ -17,7 +17,7 @@ pub struct Envelope<M = AnyMessage> {
 }
 
 assert_impl_all!(Envelope: Send);
-assert_eq_size!(Envelope, [u8; 256]);
+assert_eq_size!(Envelope, [u8; 64]);
 
 // Reexported in `elfo::_priv`.
 #[derive(Debug)]
