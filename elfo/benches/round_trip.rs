@@ -12,8 +12,17 @@ use elfo::{
 };
 
 #[message]
+#[derive(Default)]
 struct Command {
     value: u32,
+    a: u64,
+    b: f64,
+    c: Option<u64>,
+    d: Option<u64>,
+    e: u8,
+    f: f64,
+    g: f64,
+    h: bool,
 }
 
 #[message]
@@ -75,7 +84,12 @@ fn make_producers<const FLAGS: Flags>(actor_count: u32, iter_count: u32) -> Blue
                     let response = ctx.request(Request { value }).resolve().await.unwrap();
                     black_box(response.value);
                 } else if flag!(SEND_COMMAND) {
-                    ctx.send(Command { value }).await.unwrap();
+                    ctx.send(Command {
+                        value,
+                        ..Command::default()
+                    })
+                    .await
+                    .unwrap();
 
                     if flag!(SEND_EVENT_BACK) {
                         // FIXME
@@ -114,8 +128,9 @@ fn make_consumers<const FLAGS: Flags>(actor_count: u32) -> Blueprint {
             while let Some(envelope) = ctx.recv().await {
                 let sender = envelope.sender();
                 msg!(match envelope {
-                    Command { value } => {
-                        black_box(value);
+                    msg @ Command => {
+                        let value = msg.value;
+                        black_box(msg);
                         if flag!(SEND_EVENT_BACK) {
                             ctx.send_to(sender, Event { value }).await.unwrap();
                         }
