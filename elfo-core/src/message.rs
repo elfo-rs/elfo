@@ -127,6 +127,9 @@ pub trait Request: Message {
 #[derive(Clone, Copy, Debug)]
 pub struct MessageTypeId(*const ());
 
+unsafe impl Send for MessageTypeId {}
+unsafe impl Sync for MessageTypeId {}
+
 impl MessageTypeId {
     #[inline]
     pub const fn new(vtable: &'static MessageVTable) -> Self {

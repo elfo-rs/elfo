@@ -4,7 +4,7 @@ use elfo_utils::time::Instant;
 
 use crate::{
     mailbox,
-    message::{AnyMessageRef, Message, MessageRepr, Request},
+    message::{AnyMessageRef, Message, MessageRepr, MessageTypeId, Request},
     request_table::{RequestId, ResponseToken},
     tracing::TraceId,
     Addr,
@@ -132,6 +132,11 @@ impl Envelope {
             MessageKind::RequestAll(token) => token.sender(),
             MessageKind::Response { sender, .. } => *sender,
         }
+    }
+
+    #[inline]
+    pub fn type_id(&self) -> MessageTypeId {
+        self.message().type_id()
     }
 
     #[inline]
