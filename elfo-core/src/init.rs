@@ -10,7 +10,10 @@ use tracing::{error, info, level_filters::LevelFilter, warn};
 use elfo_utils::time::Instant;
 
 #[cfg(target_os = "linux")]
-use crate::{memory_tracker::MemoryTracker, time::Interval};
+use crate::{
+    memory_tracker::{MemoryCheckResult, MemoryTracker},
+    time::Interval,
+};
 
 use crate::{
     actor::{Actor, ActorMeta, ActorStartInfo, ActorStatus},
@@ -19,7 +22,6 @@ use crate::{
     context::Context,
     demux::Demux,
     errors::{RequestError, StartError, StartGroupError},
-    memory_tracker::MemoryCheckResult,
     message,
     messages::{StartEntrypoint, Terminate, UpdateConfig},
     object::Object,
