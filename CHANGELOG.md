@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.13] - 2024-02-26
 ### Added
 - test: `extract_message` and `extract_request` helpers ([#121]).
 - test: unstable `proxy_with_route()` ([#123]).
@@ -578,7 +580,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.12...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.13...HEAD
+[0.2.0-alpha.13]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.12...elfo-v0.2.0-alpha.13
 [0.2.0-alpha.12]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.11...elfo-v0.2.0-alpha.12
 [0.2.0-alpha.11]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.10...elfo-v0.2.0-alpha.11
 [0.2.0-alpha.10]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.8...elfo-v0.2.0-alpha.10
