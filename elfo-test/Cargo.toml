@@ -21,3 +21,4 @@ futures-intrusive = "0.5"
 futures = "0.3.12"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 once_cell = { version = "1.8.0" }
+stability = "0.1.1"

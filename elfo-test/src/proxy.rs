@@ -224,7 +224,16 @@ fn testers(tx: shared::OneshotSender<ProxyContext>) -> Blueprint {
         })
 }
 
-pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>) -> Proxy {
+#[doc(hidden)]
+#[stability::unstable]
+pub async fn proxy_with_route<F>(
+    blueprint: Blueprint,
+    route_filter: F,
+    config: impl for<'de> Deserializer<'de>,
+) -> Proxy
+where
+    F: Fn(&Envelope) -> bool + Send + Sync + 'static,
+{
     let _ = tracing_subscriber::fmt()
         .with_target(false)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -244,7 +253,7 @@ pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>
     let subject_addr = subject.addr();
 
     testers.route_all_to(&subject);
-    subject.route_all_to(&testers);
+    subject.route_to(&testers, route_filter);
 
     // TODO: capture log messages.
     // TODO: capture metrics.
@@ -269,6 +278,10 @@ pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>
         subject_addr,
         recv_timeout: Duration::from_millis(150),
     }
+}
+
+pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>) -> Proxy {
+    proxy_with_route(blueprint, |_| true, config).await
 }
 
 #[cfg(test)]
