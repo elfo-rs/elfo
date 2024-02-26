@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
-### Changed
-- core: changed OOM prevention trigger (that gracefully shutdowns the service) from old `used > total * ratio` to new `avail < total * (1 - ratio)`.  ([#120])
+### Added
+- test: `extract_message` and `extract_request` helpers ([#121]).
+- test: unstable `proxy_with_route()` ([#123]).
 
-[#120] - https://github.com/elfo-rs/elfo/pull/120
+### Changed
+- core: changed OOM prevention trigger (that gracefully shutdowns the service) from old `used > total * ratio` to new `avail < total * (1 - ratio)` ([#120]).
+
+[#120]: https://github.com/elfo-rs/elfo/pull/120
+[#121]: https://github.com/elfo-rs/elfo/pull/121
+[#123]: https://github.com/elfo-rs/elfo/pull/123
 
 ## [0.2.0-alpha.12] - 2023-12-21
 ### Changed
