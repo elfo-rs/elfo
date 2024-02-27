@@ -249,7 +249,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                         <#path as MustBeRegularNotRequest<_, _>>::test(&#envelope_ident)
                     }
 
-                    #[allow(clippy::blocks_in_conditions)]
+                    #[allow(unknown_lints, clippy::blocks_in_conditions)]
                     match {
                         // Support both owned and borrowed contexts, relying on the type inference.
                         #[allow(unused_imports)]
@@ -273,7 +273,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                         must_be_request::<#path>();
                     }
 
-                    #[allow(clippy::blocks_in_conditions)]
+                    #[allow(unknown_lints, clippy::blocks_in_conditions)]
                     match {
                         // Only the owned context is supported.
                         #[allow(unused_imports)]
