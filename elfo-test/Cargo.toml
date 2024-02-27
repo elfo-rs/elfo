@@ -10,6 +10,9 @@ license.workspace = true
 edition.workspace = true
 readme.workspace = true
 
+[features]
+unstable = []
+
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.13", path = "../elfo-core", features = ["test-util"] }
 elfo-configurer = { version = "0.2.0-alpha.13", path = "../elfo-configurer" }
