@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Fixed
+- test: `unstable` features ([#124]).
+- macros/msg: allow unknown lints to avoid warnings on clippy before 0.1.76.
+
+[#124]: https://github.com/elfo-rs/elfo/pull/124
 
 ## [0.2.0-alpha.13] - 2024-02-26
 ### Added
