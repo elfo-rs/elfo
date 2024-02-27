@@ -2,6 +2,8 @@ use derive_more::From;
 use futures::future::{join_all, BoxFuture};
 use smallvec::SmallVec;
 
+use elfo_utils::likely;
+
 #[cfg(feature = "network")]
 use crate::remote::{self, RemoteHandle};
 use crate::{
@@ -191,8 +193,11 @@ impl<'a> SendGroupVisitor<'a> {
         }
     }
 
-    #[inline]
     async fn finish(mut self) -> Result<(), SendError<Envelope>> {
+        if likely(self.has_ok && self.full.is_empty()) {
+            return Ok(());
+        }
+
         // Wait until messages reach all full actors.
         #[allow(clippy::comparison_chain)]
         if self.full.len() == 1 {
