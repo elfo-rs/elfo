@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.14] - 2024-02-27
 ### Fixed
 - test: `unstable` features ([#124]).
 - macros/msg: allow unknown lints to avoid warnings on clippy before 0.1.76.
@@ -585,7 +587,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.13...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.14...HEAD
+[0.2.0-alpha.14]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.13...elfo-v0.2.0-alpha.14
 [0.2.0-alpha.13]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.12...elfo-v0.2.0-alpha.13
 [0.2.0-alpha.12]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.11...elfo-v0.2.0-alpha.12
 [0.2.0-alpha.11]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.10...elfo-v0.2.0-alpha.11
