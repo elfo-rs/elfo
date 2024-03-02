@@ -203,7 +203,7 @@ impl<'a> SendGroupVisitor<'a> {
         if self.full.len() == 1 {
             let (addr, envelope) = self.full.pop().unwrap();
 
-            if let Some(object) = self.book.get_owned(addr) {
+            if let Some(object) = self.book.get(addr) {
                 let actor = object.as_actor().expect("group stores only actors");
                 match actor.send(envelope).await {
                     Ok(()) => self.has_ok = true,
@@ -220,7 +220,7 @@ impl<'a> SendGroupVisitor<'a> {
             let mut futures = Vec::new();
 
             for (addr, envelope) in self.full.drain(..) {
-                let object = self.book.get_owned(addr);
+                let object = self.book.get(addr);
                 futures.push(async move {
                     match object {
                         Some(object) => {

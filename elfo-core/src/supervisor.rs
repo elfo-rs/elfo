@@ -492,7 +492,7 @@ where
 
         let fut = async move {
             for addr in addrs {
-                let object = ward!(sv.context.book().get_owned(addr), continue);
+                let object = ward!(sv.context.book().get(addr), continue);
                 let actor = object.as_actor().expect("a supervisor stores only actors");
                 actor.finished().await;
             }
