@@ -284,7 +284,7 @@ impl<C, K> Context<C, K> {
 
         if addrs.len() == 1 {
             let recipient = addrs[0];
-            return match self.book.get_owned(recipient) {
+            return match self.book.get(recipient) {
                 Some(object) => object
                     .send(self, Addr::NULL, envelope)
                     .await
@@ -298,7 +298,7 @@ impl<C, K> Context<C, K> {
 
         // TODO: send concurrently.
         for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
-            match self.book.get_owned(addr) {
+            match self.book.get(addr) {
                 Some(object) => {
                     let returned_envelope = object
                         .send(self, Addr::NULL, envelope)
@@ -363,7 +363,7 @@ impl<C, K> Context<C, K> {
             permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
-        let entry = self.book.get_owned(recipient);
+        let entry = self.book.get(recipient);
         let object = ward!(entry, return Err(SendError(message)));
         let envelope = Envelope::new(message, kind);
         let fut = object.send(self, recipient, envelope.upcast());
@@ -725,7 +725,7 @@ impl<C, K> Context<C, K> {
     /// We should provide a way to handle it asynchronous.
     #[doc(hidden)]
     pub async fn finished(&self, addr: Addr) {
-        ward!(self.book.get_owned(addr)).finished().await;
+        ward!(self.book.get(addr)).finished().await;
     }
 
     /// Used to get the typed config from `ValidateConfig`.
@@ -953,7 +953,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     pub async fn resolve(self) -> Result<R::Response, RequestError> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.actor_addr;
-        let object = self.context.book.get_owned(this).expect("invalid addr");
+        let object = self.context.book.get(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
         let token =
             actor
@@ -984,7 +984,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError>> {
         // TODO: cache `OwnedEntry`?
         let this = self.context.actor_addr;
-        let object = self.context.book.get_owned(this).expect("invalid addr");
+        let object = self.context.book.get(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
         let token =
             actor
