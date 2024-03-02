@@ -1,0 +1,38 @@
+[package]
+name = "benches"
+version = "0.0.0"
+publish = false
+
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dev-dependencies]
+elfo = { path = "../elfo" }
+
+criterion = "0.5.1"
+tokio = { version = "1.36.0", features = ["rt-multi-thread"] }
+mimalloc = { version = "0.1.39", default-features = false }
+jemallocator = "0.5.4"
+tcmalloc = { version = "0.3.0", features = ["bundled"] }
+
+[[bench]]
+name = "messaging_sys"
+path = "messaging_sys.rs"
+harness = false
+
+[[bench]]
+name = "messaging_mi"
+path = "messaging_mi.rs"
+harness = false
+
+[[bench]]
+name = "messaging_je"
+path = "messaging_je.rs"
+harness = false
+
+[[bench]]
+name = "messaging_tc"
+path = "messaging_tc.rs"
+harness = false
