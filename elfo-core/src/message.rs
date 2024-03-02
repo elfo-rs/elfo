@@ -87,6 +87,11 @@ impl AnyMessage {
     }
 
     #[inline]
+    pub fn type_id(&self) -> std::any::TypeId {
+        (*self.data).type_id()
+    }
+
+    #[inline]
     pub fn downcast_ref<M: Message>(&self) -> Option<&M> {
         self.data.downcast_ref::<M>().map(|message| {
             message._touch();
