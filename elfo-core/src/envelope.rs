@@ -98,6 +98,11 @@ impl Envelope {
         self.message.is::<M>()
     }
 
+    #[inline]
+    pub fn type_id(&self) -> std::any::TypeId {
+        self.message.type_id()
+    }
+
     #[doc(hidden)]
     #[stability::unstable]
     pub fn duplicate(&self) -> Self {

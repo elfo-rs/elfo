@@ -226,6 +226,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
     }
 
     let envelope_ident = quote! { _elfo_envelope };
+    let type_id_ident = quote! { _type_id_envelope };
 
     // println!(">>> HERE {:#?}", groups);
 
@@ -236,7 +237,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
             // - used the regular syntax while the request one is expected
             // - unexhaustive match
             (GroupKind::Regular(path), arms) => quote_spanned! { path.span()=>
-                else if #envelope_ident.is::<#path>() {
+                else if #type_id_ident == std::any::TypeId::of::<#path>() {
                     // Ensure it's not a request, or a request but only in a borrowed context.
                     // We cannot use `static_assertions` here because it wraps the check into
                     // a closure that forbids us to use generic `msg!`: (`msg!(match e { M => .. })`).
@@ -264,7 +265,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                 }
             },
             (GroupKind::Request(path), arms) => quote_spanned! { path.span()=>
-                else if #envelope_ident.is::<#path>() {
+                else if #type_id_ident == std::any::TypeId::of::<#path>() {
                     // Ensure it's a request. We cannot use `static_assertions` here
                     // because it wraps the check into a closure that forbids us to
                     // use generic `msg!`: (`msg!(match e { (R, token) => .. })`).
@@ -308,6 +309,7 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
     // TODO: propagate `input.attrs`?
     let expanded = quote! {{
         let #envelope_ident = #match_expr;
+        let #type_id_ident = #envelope_ident.type_id();
         #[allow(clippy::suspicious_else_formatting)]
         if false { unreachable!(); }
         #(#groups)*
