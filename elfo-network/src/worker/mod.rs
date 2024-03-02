@@ -761,7 +761,7 @@ impl Pusher {
     }
 
     async fn push(&self, envelope: Envelope, routed: bool) -> bool {
-        let Some(object) = self.ctx.book().get_owned(self.actor_addr) else {
+        let Some(object) = self.ctx.book().get(self.actor_addr) else {
             return false;
         };
 
