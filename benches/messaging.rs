@@ -264,8 +264,8 @@ fn case<const FLAGS: Flags>(c: &mut Criterion) {
     let (group_id, function_id) = make_name::<FLAGS>();
     let mut group = c.benchmark_group(group_id);
 
-    for n in 1..=12 {
-        group.throughput(Throughput::Elements(n as u64));
+    for n in 1..=max_parallelism() {
+        group.throughput(Throughput::Elements(u64::from(n)));
 
         group.bench_with_input(BenchmarkId::new(function_id, n), &n, |b, &n| {
             b.iter_custom(|iter_count| {
@@ -277,6 +277,17 @@ fn case<const FLAGS: Flags>(c: &mut Criterion) {
         });
     }
     group.finish();
+}
+
+fn max_parallelism() -> u32 {
+    use std::{env, str::FromStr, thread::available_parallelism};
+
+    env::var("ELFO_BENCH_MAX_PARALLELISM")
+        .ok()
+        .map(|s| u32::from_str(&s).expect("invalid value for ELFO_BENCH_MAX_PARALLELISM"))
+        .unwrap_or_else(|| {
+            usize::from(available_parallelism().expect("cannot get available parallelism")) as u32
+        })
 }
 
 // === Cases ===
