@@ -1,15 +1,11 @@
-use std::{
-    ptr::{self, NonNull},
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::ptr::{self, NonNull};
 
 use cordyceps::{
     mpsc_queue::{Links, MpscQueue},
     Linked,
 };
-use futures_intrusive::sync::GenericSemaphore;
-use parking_lot::{Mutex, RawMutex};
-use tokio::sync::Notify;
+use parking_lot::Mutex;
+use tokio::sync::{Notify, Semaphore, TryAcquireError};
 
 use elfo_utils::CachePadded;
 
@@ -53,9 +49,8 @@ const LIMIT: usize = 100_000;
 
 pub(crate) struct Mailbox {
     queue: MpscQueue<EnvelopeHeader>,
-    tx_semaphore: GenericSemaphore<RawMutex>,
+    tx_semaphore: Semaphore,
     rx_notify: CachePadded<Notify>,
-    is_closed: AtomicBool,
     closed_trace_id: Mutex<Option<TraceId>>,
 }
 
@@ -63,39 +58,34 @@ impl Mailbox {
     pub(crate) fn new() -> Self {
         Self {
             queue: MpscQueue::new_with_stub(Envelope::stub()),
-            tx_semaphore: GenericSemaphore::new(true, LIMIT),
+            tx_semaphore: Semaphore::new(LIMIT),
             rx_notify: CachePadded(Notify::new()),
-            is_closed: AtomicBool::new(false),
             closed_trace_id: Mutex::new(None),
         }
     }
 
     pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
-        let mut permit = self.tx_semaphore.acquire(1).await;
+        let permit = match self.tx_semaphore.acquire().await {
+            Ok(permit) => permit,
+            Err(_) => return Err(SendError(envelope)),
+        };
 
-        if self.is_closed.load(Ordering::Relaxed) {
-            return Err(SendError(envelope));
-        }
-
-        permit.disarm();
+        permit.forget();
         self.queue.enqueue(envelope);
         self.rx_notify.notify_one();
         Ok(())
     }
 
     pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        match self.tx_semaphore.try_acquire(1) {
-            Some(mut permit) => {
-                if self.is_closed.load(Ordering::Relaxed) {
-                    return Err(TrySendError::Closed(envelope));
-                }
-
-                permit.disarm();
+        match self.tx_semaphore.try_acquire() {
+            Ok(permit) => {
+                permit.forget();
                 self.queue.enqueue(envelope);
                 self.rx_notify.notify_one();
                 Ok(())
             }
-            None => Err(TrySendError::Full(envelope)),
+            Err(TryAcquireError::NoPermits) => Err(TrySendError::Full(envelope)),
+            Err(TryAcquireError::Closed) => Err(TrySendError::Closed(envelope)),
         }
     }
 
@@ -103,11 +93,11 @@ impl Mailbox {
         loop {
             if let Some(envelope) = self.queue.dequeue() {
                 // TODO: try_dequeue?
-                self.tx_semaphore.release(1);
+                self.tx_semaphore.add_permits(1);
                 return RecvResult::Data(envelope);
             }
 
-            if self.is_closed.load(Ordering::Relaxed) {
+            if self.tx_semaphore.is_closed() {
                 return self.on_close();
             }
 
@@ -118,10 +108,10 @@ impl Mailbox {
     pub(crate) fn try_recv(&self) -> Option<RecvResult> {
         match self.queue.dequeue() {
             Some(envelope) => {
-                self.tx_semaphore.release(1);
+                self.tx_semaphore.add_permits(1);
                 Some(RecvResult::Data(envelope))
             }
-            None if self.is_closed.load(Ordering::Relaxed) => Some(self.on_close()),
+            None if self.tx_semaphore.is_closed() => Some(self.on_close()),
             None => None,
         }
     }
@@ -134,12 +124,13 @@ impl Mailbox {
         // before the `closed_trace_id` is assigned.
         let mut closed_trace_id = self.closed_trace_id.lock();
 
-        if self.is_closed.load(Ordering::Relaxed) {
+        if self.tx_semaphore.is_closed() {
             return false;
         }
 
         *closed_trace_id = Some(trace_id);
-        self.is_closed.store(true, Ordering::Relaxed);
+
+        self.tx_semaphore.close();
         self.rx_notify.notify_one();
         true
     }
