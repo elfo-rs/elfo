@@ -1,6 +1,12 @@
-use std::time::{Duration, Instant};
+use std::{
+    env,
+    str::FromStr,
+    thread::available_parallelism,
+    time::{Duration, Instant},
+};
 
 use criterion::{black_box, criterion_group, BenchmarkId, Criterion, Throughput};
+use derive_more::Display;
 use tokio::runtime::{Builder, Runtime};
 
 use elfo::{
@@ -165,7 +171,11 @@ fn make_consumers<const FLAGS: Flags>(actor_count: u32) -> Blueprint {
 
 // === Harness ===
 
-async fn run<const FLAGS: Flags>(producer_count: u32, iter_count: u32) -> Duration {
+async fn run<const FLAGS: Flags>(
+    producer_count: u32,
+    consumer_count: u32,
+    iter_count: u32,
+) -> Duration {
     let topology = Topology::empty();
     let producers = topology.local("producers");
     let consumers = topology.local("consumers");
@@ -175,8 +185,6 @@ async fn run<const FLAGS: Flags>(producer_count: u32, iter_count: u32) -> Durati
 
     let producers_addr = producers.addr();
     let consumers_addr = consumers.addr();
-
-    let consumer_count = if flag!(ALL_TO_ONE) { 1 } else { producer_count };
 
     producers.mount(make_producers::<FLAGS>(producer_count, iter_count));
     consumers.mount(make_consumers::<FLAGS>(consumer_count));
@@ -239,7 +247,7 @@ fn make_name<const FLAGS: Flags>() -> (&'static str, &'static str) {
     (group_id, function_id)
 }
 
-fn make_runtime() -> Runtime {
+fn make_runtime(worker_threads: u32) -> Runtime {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     // To make it easier to check in the profiler.
@@ -252,6 +260,7 @@ fn make_runtime() -> Runtime {
 
     Builder::new_multi_thread()
         .enable_all()
+        .worker_threads(worker_threads as usize)
         .thread_name_fn(move || {
             let worker_no = next_worker_no.fetch_add(1, Ordering::Relaxed);
             format!("b{test_no}-w{worker_no}")
@@ -261,16 +270,19 @@ fn make_runtime() -> Runtime {
 }
 
 fn case<const FLAGS: Flags>(c: &mut Criterion) {
+    let params = CaseParams::new::<FLAGS>();
+
     let (group_id, function_id) = make_name::<FLAGS>();
     let mut group = c.benchmark_group(group_id);
 
-    for n in 1..=max_parallelism() {
-        group.throughput(Throughput::Elements(u64::from(n)));
+    for p in params {
+        group.throughput(Throughput::Elements(u64::from(p.producers)));
 
-        group.bench_with_input(BenchmarkId::new(function_id, n), &n, |b, &n| {
+        group.bench_with_input(BenchmarkId::new(function_id, &p), &p.producers, |b, _| {
             b.iter_custom(|iter_count| {
-                let rt = make_runtime();
-                let elapsed = rt.block_on(run::<FLAGS>(n, iter_count as u32));
+                let rt = make_runtime(p.workers);
+                let elapsed =
+                    rt.block_on(run::<FLAGS>(p.producers, p.consumers, iter_count as u32));
                 rt.shutdown_timeout(Duration::from_secs(10));
                 elapsed
             })
@@ -279,9 +291,48 @@ fn case<const FLAGS: Flags>(c: &mut Criterion) {
     group.finish();
 }
 
-fn max_parallelism() -> u32 {
-    use std::{env, str::FromStr, thread::available_parallelism};
+#[derive(Display)]
+#[display(fmt = "{}p{}c{}w", producers, consumers, workers)]
+struct CaseParams {
+    workers: u32,
+    producers: u32,
+    consumers: u32,
+}
 
+impl CaseParams {
+    fn new<const FLAGS: Flags>() -> Vec<Self> {
+        let max_parallelism = max_parallelism();
+        let workers = tokio_worker_threads();
+
+        (1..=10)
+            .chain((12..=30).step_by(2))
+            .chain((35..=60).step_by(5))
+            .chain((70..).step_by(10))
+            .take_while(|p| *p <= max_parallelism)
+            .map(|p| {
+                let producers = p;
+                let consumers = if flag!(ALL_TO_ONE) { 1 } else { p };
+
+                Self {
+                    workers,
+                    producers,
+                    consumers,
+                }
+            })
+            .collect()
+    }
+}
+
+fn tokio_worker_threads() -> u32 {
+    env::var("TOKIO_WORKER_THREADS")
+        .ok()
+        .map(|s| u32::from_str(&s).expect("invalid value for TOKIO_WORKER_THREADS"))
+        .unwrap_or_else(|| {
+            usize::from(available_parallelism().expect("cannot get available parallelism")) as u32
+        })
+}
+
+fn max_parallelism() -> u32 {
     env::var("ELFO_BENCH_MAX_PARALLELISM")
         .ok()
         .map(|s| u32::from_str(&s).expect("invalid value for ELFO_BENCH_MAX_PARALLELISM"))
