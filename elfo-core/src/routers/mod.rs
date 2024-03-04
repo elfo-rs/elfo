@@ -10,7 +10,7 @@ pub use self::map::MapRouter;
 mod map;
 
 pub trait Router<C>: Send + Sync + 'static {
-    type Key: Clone + Hash + Eq + Display + Send + Sync; // TODO: why is `Sync` required?
+    type Key: Clone + Hash + Eq + Display + Send + Sync + 'static;
 
     fn update(&self, _config: &C) {}
     fn route(&self, envelope: &Envelope) -> Outcome<Self::Key>;

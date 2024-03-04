@@ -35,7 +35,7 @@ tracing-subscriber = { version = "0.3.2", default-features = false, features = [
 metrics = "0.17"
 futures = "0.3.12"
 static_assertions = "1.1.0"
-dashmap = "5"
+scc = "2.0.16"
 fxhash = "0.2.1"
 linkme = "0.3"
 smallvec = { version = "1.6.1", features = ["union"] }

@@ -1,12 +1,13 @@
-use std::{
-    any::Any, future::Future, mem, ops::Deref, panic::AssertUnwindSafe, sync::Arc, time::Duration,
-};
+use std::{any::Any, future::Future, mem, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
-use dashmap::DashMap;
 use futures::{future::BoxFuture, FutureExt};
 use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
+use scc::{
+    ebr::Guard as EbrGuard,
+    hash_index::{Entry as HashIndexEntry, HashIndex},
+};
 use tracing::{debug, error, error_span, info, warn, Instrument, Span};
 
 use elfo_utils::CachePadded;
@@ -21,7 +22,7 @@ use crate::{
     group::TerminationPolicy,
     message::Request,
     messages, msg,
-    object::{GroupVisitor, Object, ObjectArc},
+    object::{GroupVisitor, Object, ObjectRef},
     restarting::{RestartBackoff, RestartPolicy},
     routers::{Outcome, Router},
     runtime::RuntimeManager,
@@ -40,7 +41,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     termination_policy: TerminationPolicy,
     span: Span,
     context: Context,
-    objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
+    objects: HashIndex<R::Key, Addr, FxBuildHasher>,
     router: R,
     exec: X,
     control: CachePadded<RwLock<ControlBlock<C>>>,
@@ -54,22 +55,6 @@ struct ControlBlock<C> {
     user_config: Option<Arc<C>>,
     is_started: bool,
     stop_spawning: bool,
-}
-
-/// Returns `None` if cannot be spawned.
-macro_rules! get_or_spawn {
-    ($this:ident, $key:expr, $start_info:expr) => {{
-        let key = $key;
-        match $this.objects.get(&key) {
-            Some(object) => Some(object),
-            None => $this
-                .objects
-                .entry(key.clone())
-                .or_try_insert_with(|| $this.spawn(key, $start_info, Default::default()).ok_or(()))
-                .map(|o| o.downgrade()) // FIXME: take an exclusive lock here.
-                .ok(),
-        }
-    }};
 }
 
 impl<R, C, X> Supervisor<R, C, X>
@@ -105,7 +90,7 @@ where
             }),
             restart_policy,
             termination_policy,
-            objects: DashMap::default(),
+            objects: HashIndex::default(),
             router,
             exec,
             control: CachePadded(RwLock::new(control)),
@@ -218,38 +203,65 @@ where
 
         let start_info = ActorStartInfo::on_message();
         match outcome {
-            Outcome::Unicast(key) => match get_or_spawn!(self, key, start_info) {
+            Outcome::Unicast(key) => match self.get_object_or_spawn(key, start_info) {
                 Some(object) => visitor.visit_last(&object, envelope),
                 None => visitor.empty(envelope),
             },
-            Outcome::GentleUnicast(key) => match self.objects.get(&key) {
+            Outcome::GentleUnicast(key) => match self.get_object(&key) {
                 Some(object) => visitor.visit_last(&object, envelope),
                 None => visitor.empty(envelope),
             },
             Outcome::Multicast(list) => {
-                for key in list.iter() {
-                    if !self.objects.contains_key(key) {
-                        get_or_spawn!(self, key.clone(), start_info.clone());
-                    }
-                }
-                let iter = list.into_iter().filter_map(|key| self.objects.get(&key));
+                let iter = list
+                    .into_iter()
+                    .filter_map(|key| self.get_object_or_spawn(key, start_info.clone()));
                 self.visit_multiple(envelope, visitor, iter);
             }
             Outcome::GentleMulticast(list) => {
-                let iter = list.into_iter().filter_map(|key| self.objects.get(&key));
+                let iter = list.into_iter().filter_map(|key| self.get_object(&key));
                 self.visit_multiple(envelope, visitor, iter);
             }
-            Outcome::Broadcast => self.visit_multiple(envelope, visitor, self.objects.iter()),
+            Outcome::Broadcast => {
+                let guard = EbrGuard::new();
+                self.visit_multiple(envelope, visitor, self.iter_objects(&guard))
+            }
             Outcome::Discard => visitor.empty(envelope),
             Outcome::Default => unreachable!("must be altered earlier"),
         }
     }
 
-    fn visit_multiple(
-        &self,
+    fn get_object(&self, key: &R::Key) -> Option<ObjectRef<'_>> {
+        self.objects
+            .get(key)
+            .and_then(|entry| self.context.book().get(*entry.get()))
+    }
+
+    fn get_object_or_spawn<'a>(
+        self: &'a Arc<Self>,
+        key: R::Key,
+        start_info: ActorStartInfo,
+    ) -> Option<ObjectRef<'a>> {
+        match self.objects.get(&key) {
+            Some(entry) => Some(*entry.get()),
+            None => self.spawn(key, start_info, Default::default()),
+        }
+        .and_then(|addr| self.context.book().get(addr))
+    }
+
+    fn iter_objects<'a: 'g, 'g>(
+        &'a self,
+        guard: &'g EbrGuard,
+    ) -> impl Iterator<Item = ObjectRef<'a>> + 'g {
+        self.objects
+            .iter(guard)
+            .filter_map(move |(_, &addr)| self.context.book().get(addr))
+    }
+
+    fn visit_multiple<'a>(
+        &'a self,
         envelope: Envelope,
         visitor: &mut dyn GroupVisitor,
-        iter: impl Iterator<Item = impl Deref<Target = ObjectArc>>,
+        iter: impl Iterator<Item = ObjectRef<'a>>,
     ) {
         let mut iter = iter.peekable();
 
@@ -267,13 +279,24 @@ where
         }
     }
 
+    #[inline(never)]
     fn spawn(
         self: &Arc<Self>,
         key: R::Key,
         start_info: ActorStartInfo,
         mut backoff: RestartBackoff,
-    ) -> Option<ObjectArc> {
-        let control = self.control.read();
+    ) -> Option<Addr> {
+        let is_restarting = start_info.cause.is_restarted();
+
+        let control = self.control.write();
+
+        if !is_restarting {
+            // TODO: use entry API + comment
+            if let Some(entry) = self.objects.get(&key) {
+                return Some(*entry.get());
+            }
+        }
+
         if control.stop_spawning {
             return None;
         }
@@ -281,7 +304,9 @@ where
         let group_no = self.context.group().group_no().expect("invalid group addr");
         let entry = self.context.book().vacant_entry(group_no);
         let addr = entry.addr();
+        debug_assert_ne!(addr, Addr::NULL);
 
+        let key_2 = key.clone();
         let key_str = key.to_string();
         let span = error_span!(
             parent: Span::none(),
@@ -304,8 +329,6 @@ where
             .with_key(key.clone())
             .with_config(user_config);
 
-        drop(control);
-
         let sv = self.clone();
 
         // TODO: move to `harness.rs`.
@@ -314,12 +337,14 @@ where
 
             info!(%addr, thread = %thread.name().unwrap_or("?"), "started");
 
-            sv.objects
-                .get(&key)
-                .expect("where is the current actor?")
-                .as_actor()
-                .expect("a supervisor stores only actors")
-                .on_start();
+            let object = sv
+                .context
+                .book()
+                .get(addr)
+                .expect("where is the current actor?");
+            let actor = object.as_actor().expect("a supervisor stores only actors");
+
+            actor.on_start();
 
             // It must be called after `entry.insert()`.
             let ctx = ctx.with_addr(addr).with_start_info(start_info);
@@ -331,10 +356,6 @@ where
             };
 
             let restart_after = {
-                let object = sv.objects.get(&key).expect("where is the current actor?");
-
-                let actor = object.as_actor().expect("a supervisor stores only actors");
-
                 // Select the restart policy with the following priority: actor override >
                 // config override > blueprint restart policy..
                 let default_restart_policy = sv
@@ -375,18 +396,23 @@ where
                 scope::set_trace_id(TraceId::generate());
 
                 backoff.start();
-                if let Some(object) = sv.spawn(key.clone(), ActorStartInfo::on_restart(), backoff) {
-                    sv.objects.insert(key.clone(), object)
-                } else {
-                    sv.objects.remove(&key).map(|(_, v)| v)
-                }
+
+                sv.spawn(key, ActorStartInfo::on_restart(), backoff);
             } else {
                 debug!("actor won't be restarted");
-                sv.objects.remove(&key).map(|(_, v)| v)
-            }
-            .expect("where is the current actor?");
 
-            // TODO: should we unregister the address right after failure?
+                // There is a small chance that `spawn()` hasn't been finished yet.
+                // So, we need to lock the supervisor to avoid the remove-insert order.
+                let _guard = sv.control.read();
+
+                let is_removed = sv.objects.remove(&key);
+                debug_assert!(is_removed, "actor is not registered");
+            }
+
+            // It's usually the last reference to the actor.
+            // Allows the slab to drop the entry immediately below.
+            drop(object);
+
             sv.context.book().remove(addr);
         };
 
@@ -414,19 +440,30 @@ where
         let fut = MeasurePoll::new(fut.instrument(span));
 
         rt.spawn(scope.within(fut));
-        let object = self.context.book().get_owned(addr).expect("just created");
-        Some(object)
+
+        match self.objects.entry(key_2) {
+            HashIndexEntry::Occupied(entry) => {
+                debug_assert!(is_restarting);
+                entry.update(addr);
+            }
+            HashIndexEntry::Vacant(entry) => {
+                debug_assert!(!is_restarting);
+                entry.insert_entry(addr);
+            }
+        }
+
+        Some(addr)
     }
 
     fn spawn_on_group_mounted(self: &Arc<Self>, outcome: Outcome<R::Key>) {
         let start_info = ActorStartInfo::on_group_mounted();
         match outcome {
             Outcome::Unicast(key) => {
-                get_or_spawn!(self, key, start_info);
+                self.get_object_or_spawn(key, start_info);
             }
             Outcome::Multicast(keys) => {
                 for key in keys {
-                    get_or_spawn!(self, key, start_info.clone());
+                    self.get_object_or_spawn(key, start_info.clone());
                 }
             }
             Outcome::GentleUnicast(_)
@@ -457,26 +494,30 @@ where
         });
     }
 
-    fn subscribe_to_statuses(&self, addr: Addr, forcing: bool) {
+    fn subscribe_to_statuses(&self, sender: Addr, forcing: bool) {
         // Firstly, add the subscriber to handle new objects right way.
-        if !self.status_subscription.add(addr) && !forcing {
+        if !self.status_subscription.add(sender) && !forcing {
             // Already subscribed.
             return;
         }
 
         // Send active statuses to the subscriber.
-        for item in self.objects.iter() {
-            let actor = item
-                .value()
-                .as_actor()
-                .expect("a supervisor stores only actors");
+        let guard = EbrGuard::new();
 
-            let result = actor.with_status(|report| self.context.try_send_to(addr, report));
+        // TODO: the same actor can be visited multiple times.
+        for (_, &addr) in self.objects.iter(&guard) {
+            let Some(object) = self.context.book().get(addr) else {
+                // TODO: comment
+                continue;
+            };
+
+            let actor = object.as_actor().expect("a supervisor stores only actors");
+            let result = actor.with_status(|report| self.context.try_send_to(sender, report));
 
             if result.is_err() {
                 // TODO: `unbounded_send(Unsubscribed)`
-                warn!(%addr, "status cannot be sent, unsubscribing");
-                self.status_subscription.remove(addr);
+                warn!(addr = %sender, "status cannot be sent, unsubscribing");
+                self.status_subscription.remove(sender);
                 break;
             }
         }
@@ -484,10 +525,14 @@ where
 
     pub(crate) fn finished(self: &Arc<Self>) -> BoxFuture<'static, ()> {
         let sv = self.clone();
+
+        // TODO: added after iter?
+        let guard = EbrGuard::new();
+
         let addrs = self
             .objects
-            .iter()
-            .map(|r| r.value().addr())
+            .iter(&guard)
+            .map(|(_, &addr)| addr)
             .collect::<Vec<_>>();
 
         let fut = async move {

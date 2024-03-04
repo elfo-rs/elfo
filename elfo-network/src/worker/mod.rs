@@ -7,7 +7,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
     message, Local, Message,
-    _priv::{AnyMessage, GroupVisitor, MessageKind, NodeNo, Object, ObjectArc},
+    _priv::{AnyMessage, GroupVisitor, MessageKind, NodeNo, Object, ObjectRef},
     errors::{RequestError, SendError, TrySendError},
     messages::{ConfigUpdated, Impossible},
     msg, remote, scope,
@@ -605,13 +605,13 @@ impl SocketReader {
                 // TODO: maybe emit some metric?
             }
 
-            fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
+            fn visit(&mut self, object: &ObjectRef<'_>, envelope: &Envelope) {
                 let envelope = envelope.duplicate();
                 self.this
                     .do_handle_message(self.flows, object, envelope, true);
             }
 
-            fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+            fn visit_last(&mut self, object: &ObjectRef<'_>, envelope: Envelope) {
                 self.this
                     .do_handle_message(self.flows, object, envelope, true);
             }

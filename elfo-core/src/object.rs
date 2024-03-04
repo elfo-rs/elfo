@@ -27,9 +27,9 @@ assert_impl_all!(Object: Sync);
 // assert_eq_size!(Object, [u8; 256]);
 
 // TODO: move to `address_book` and wrap to avoid calling the `key()` method.
-pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object, SlabConfig>;
+pub type ObjectRef<'a> = sharded_slab::Entry<'a, Object, SlabConfig>;
 // Reexported in `_priv`.
-pub type ObjectArc = sharded_slab::OwnedEntry<Object, SlabConfig>;
+pub(crate) type ObjectArc = sharded_slab::OwnedEntry<Object, SlabConfig>;
 
 #[derive(From)]
 pub(crate) enum ObjectKind {
@@ -155,8 +155,8 @@ pub(crate) trait GroupHandle: Send + Sync + 'static {
 pub trait GroupVisitor {
     fn done(&mut self);
     fn empty(&mut self, envelope: Envelope);
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope);
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope);
+    fn visit(&mut self, object: &ObjectRef<'_>, envelope: &Envelope);
+    fn visit_last(&mut self, object: &ObjectRef<'_>, envelope: Envelope);
 }
 
 // === SendGroupVisitor ===
@@ -180,7 +180,7 @@ impl<'a> SendGroupVisitor<'a> {
 
     // We must send while visiting to ensure that a message starting a new actor
     // is actually the first message that the actor receives.
-    fn try_send(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn try_send(&mut self, object: &ObjectRef<'_>, envelope: Envelope) {
         let actor = object.as_actor().expect("group stores only actors");
         match actor.try_send(envelope) {
             Ok(()) => self.has_ok = true,
@@ -272,12 +272,12 @@ impl GroupVisitor for SendGroupVisitor<'_> {
         self.extra = Some(envelope);
     }
 
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
+    fn visit(&mut self, object: &ObjectRef<'_>, envelope: &Envelope) {
         let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
         self.try_send(object, envelope);
     }
 
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn visit_last(&mut self, object: &ObjectRef<'_>, envelope: Envelope) {
         self.try_send(object, envelope);
     }
 }
@@ -294,7 +294,7 @@ struct TrySendGroupVisitor {
 impl TrySendGroupVisitor {
     // We must send while visiting to ensure that a message starting a new actor
     // is actually the first message that the actor receives.
-    fn try_send(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn try_send(&mut self, object: &ObjectRef<'_>, envelope: Envelope) {
         let actor = object.as_actor().expect("group stores only actors");
         match actor.try_send(envelope) {
             Ok(()) => self.has_ok = true,
@@ -334,12 +334,12 @@ impl GroupVisitor for TrySendGroupVisitor {
         self.extra = Some(envelope);
     }
 
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
+    fn visit(&mut self, object: &ObjectRef<'_>, envelope: &Envelope) {
         let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
         self.try_send(object, envelope);
     }
 
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn visit_last(&mut self, object: &ObjectRef<'_>, envelope: Envelope) {
         self.try_send(object, envelope);
     }
 }

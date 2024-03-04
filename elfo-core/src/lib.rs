@@ -89,7 +89,7 @@ pub mod _priv {
         envelope::{EnvelopeBorrowed, EnvelopeOwned, MessageKind},
         init::do_start,
         message::*,
-        object::{GroupVisitor, Object, ObjectArc},
+        object::{GroupVisitor, Object, ObjectRef},
         permissions::{AtomicPermissions, Permissions},
         request_table::RequestId,
     };
