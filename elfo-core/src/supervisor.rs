@@ -201,24 +201,27 @@ where
             }
         });
 
+        let guard = EbrGuard::new();
         let start_info = ActorStartInfo::on_message();
         match outcome {
-            Outcome::Unicast(key) => match self.get_object_or_spawn(key, start_info) {
+            Outcome::Unicast(key) => match self.get_object_or_spawn(key, start_info, &guard) {
                 Some(object) => visitor.visit_last(&object, envelope),
                 None => visitor.empty(envelope),
             },
-            Outcome::GentleUnicast(key) => match self.get_object(&key) {
+            Outcome::GentleUnicast(key) => match self.get_object(&key, &guard) {
                 Some(object) => visitor.visit_last(&object, envelope),
                 None => visitor.empty(envelope),
             },
             Outcome::Multicast(list) => {
                 let iter = list
                     .into_iter()
-                    .filter_map(|key| self.get_object_or_spawn(key, start_info.clone()));
+                    .filter_map(|key| self.get_object_or_spawn(key, start_info.clone(), &guard));
                 self.visit_multiple(envelope, visitor, iter);
             }
             Outcome::GentleMulticast(list) => {
-                let iter = list.into_iter().filter_map(|key| self.get_object(&key));
+                let iter = list
+                    .into_iter()
+                    .filter_map(|key| self.get_object(&key, &guard));
                 self.visit_multiple(envelope, visitor, iter);
             }
             Outcome::Broadcast => {
@@ -230,20 +233,21 @@ where
         }
     }
 
-    fn get_object(&self, key: &R::Key) -> Option<ObjectRef<'_>> {
+    fn get_object(&self, key: &R::Key, guard: &EbrGuard) -> Option<ObjectRef<'_>> {
         self.objects
-            .get(key)
-            .and_then(|entry| self.context.book().get(*entry.get()))
+            .peek(key, guard)
+            .and_then(|addr| self.context.book().get(*addr))
     }
 
     fn get_object_or_spawn<'a>(
         self: &'a Arc<Self>,
         key: R::Key,
         start_info: ActorStartInfo,
+        guard: &EbrGuard,
     ) -> Option<ObjectRef<'a>> {
-        match self.objects.get(&key) {
-            Some(entry) => Some(*entry.get()),
-            None => self.spawn(key, start_info, Default::default()),
+        match self.objects.peek(&key, guard) {
+            Some(addr) => Some(*addr),
+            None => self.spawn(key, start_info, Default::default(), guard),
         }
         .and_then(|addr| self.context.book().get(addr))
     }
@@ -285,6 +289,7 @@ where
         key: R::Key,
         start_info: ActorStartInfo,
         mut backoff: RestartBackoff,
+        guard: &EbrGuard,
     ) -> Option<Addr> {
         let is_restarting = start_info.cause.is_restarted();
 
@@ -292,8 +297,8 @@ where
 
         if !is_restarting {
             // TODO: use entry API + comment
-            if let Some(entry) = self.objects.get(&key) {
-                return Some(*entry.get());
+            if let Some(addr) = self.objects.peek(&key, guard) {
+                return Some(*addr);
             }
         }
 
@@ -397,7 +402,7 @@ where
 
                 backoff.start();
 
-                sv.spawn(key, ActorStartInfo::on_restart(), backoff);
+                sv.spawn(key, ActorStartInfo::on_restart(), backoff, &EbrGuard::new());
             } else {
                 debug!("actor won't be restarted");
 
@@ -456,14 +461,15 @@ where
     }
 
     fn spawn_on_group_mounted(self: &Arc<Self>, outcome: Outcome<R::Key>) {
+        let guard = EbrGuard::new();
         let start_info = ActorStartInfo::on_group_mounted();
         match outcome {
             Outcome::Unicast(key) => {
-                self.get_object_or_spawn(key, start_info);
+                self.get_object_or_spawn(key, start_info, &guard);
             }
             Outcome::Multicast(keys) => {
                 for key in keys {
-                    self.get_object_or_spawn(key, start_info.clone());
+                    self.get_object_or_spawn(key, start_info.clone(), &guard);
                 }
             }
             Outcome::GentleUnicast(_)
