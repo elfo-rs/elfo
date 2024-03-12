@@ -29,4 +29,4 @@ readme = "README.md"
 debug = 1
 
 [patch.crates-io]
-sharded-slab = { git = "https://github.com/loyd/sharded-slab", branch = "main" }
+sharded-slab = { git = "https://github.com/loyd/sharded-slab", branch = "without-get-contention" }
