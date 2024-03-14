@@ -75,10 +75,16 @@ pub fn init() -> Blueprint {
 
     if env::var(EnvFilter::DEFAULT_ENV).is_ok() {
         let filter = EnvFilter::try_from_default_env().expect("invalid env");
+        #[cfg(feature = "tokio-console")]
+        let filter = filter
+            .add_directive("tokio=trace".parse().unwrap())
+            .add_directive("runtime=trace".parse().unwrap());
         let subscriber = registry.with(filter).with(printer);
         install_subscriber(subscriber);
     } else {
         let subscriber = registry.with(filter).with(printer);
+        #[cfg(feature = "tokio-console")]
+        let subscriber = subscriber.with(console_subscriber::spawn());
         install_subscriber(subscriber);
     };
 

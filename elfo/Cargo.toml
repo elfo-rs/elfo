@@ -27,6 +27,7 @@ network = ["elfo-network"]
 unstable = ["elfo-core/unstable", "elfo-telemeter/unstable", "elfo-test/unstable" ]
 unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
 tracing-log = ["elfo-logger/tracing-log"]
+tokio-console = ["elfo-logger/tokio-console"]
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.14", path = "../elfo-core" }
