@@ -58,8 +58,8 @@ impl FilteringLayer {
                     .map(|(target, target_config)| (target, target_config.max_level)),
             )
             .with_targets([
-                ("tokio", tracing::Level::Trace),
-                ("runtime", tracing::Level::Trace),
+                ("tokio", tracing::Level::TRACE),
+                ("runtime", tracing::Level::TRACE),
             ]);
 
         let config = Arc::new(FilteringConfig { targets });
@@ -129,8 +129,7 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
                 }
             }
         })
-        // `INFO` is a global cap for non-actor logs.
-        .unwrap_or(level <= LevelFilter::INFO)
+        .unwrap_or(level <= LevelFilter::TRACE)
     }
 
     // TODO: global max level and `max_level_hint()`.
