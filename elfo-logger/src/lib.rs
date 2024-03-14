@@ -79,12 +79,16 @@ pub fn init() -> Blueprint {
         let filter = filter
             .add_directive("tokio=trace".parse().unwrap())
             .add_directive("runtime=trace".parse().unwrap());
-        let subscriber = registry.with(filter).with(printer);
-        install_subscriber(subscriber);
-    } else {
-        let subscriber = registry.with(filter).with(printer);
+        let subscriber = registry.with(filter);
         #[cfg(feature = "tokio-console")]
         let subscriber = subscriber.with(console_subscriber::spawn());
+        let subscriber = subscriber.with(printer);
+        install_subscriber(subscriber);
+    } else {
+        let subscriber = registry.with(filter);
+        #[cfg(feature = "tokio-console")]
+        let subscriber = subscriber.with(console_subscriber::spawn());
+        let subscriber = subscriber.with(printer);
         install_subscriber(subscriber);
     };
 

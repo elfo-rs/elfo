@@ -56,7 +56,11 @@ impl FilteringLayer {
                 targets
                     .iter()
                     .map(|(target, target_config)| (target, target_config.max_level)),
-            );
+            )
+            .with_targets([
+                ("tokio", tracing::Level::Trace),
+                ("runtime", tracing::Level::Trace),
+            ]);
 
         let config = Arc::new(FilteringConfig { targets });
         let old_config = self.inner.config.swap(Arc::clone(&config));
