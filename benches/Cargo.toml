@@ -1,5 +1,5 @@
 [package]
-name = "benches"
+name = "elfo-benches"
 version = "0.0.0"
 publish = false
 
@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
+readme.workspace = true
 
 [dev-dependencies]
 elfo = { path = "../elfo" }
@@ -36,4 +37,9 @@ harness = false
 [[bench]]
 name = "messaging_tc"
 path = "messaging_tc.rs"
+harness = false
+
+[[bench]]
+name = "coop"
+path = "coop.rs"
 harness = false

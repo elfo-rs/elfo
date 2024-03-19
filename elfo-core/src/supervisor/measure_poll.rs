@@ -50,6 +50,7 @@ impl<F: Future> Future for MeasurePoll<F> {
 
         let result = if let Some(recorder) = metrics::try_recorder() {
             let start_time = Instant::now();
+            crate::coop::reset(Some(start_time));
             let res = this.inner.poll(cx);
             let elapsed = Instant::now().secs_f64_since(start_time);
             recorder.record_histogram(&BUSY_TIME_SECONDS, elapsed);
@@ -60,6 +61,7 @@ impl<F: Future> Future for MeasurePoll<F> {
             });
             res
         } else {
+            crate::coop::reset(None);
             this.inner.poll(cx)
         };
 

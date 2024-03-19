@@ -8,7 +8,7 @@ use quanta::Clock;
 
 /// A measurement of a monotonically nondecreasing clock.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Instant(u64);
+pub struct Instant(u64); // TODO: make it `NonZeroU64`?
 
 impl Instant {
     /// Returns the current time.

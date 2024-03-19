@@ -30,6 +30,7 @@ pub use elfo_macros::{message_core as message, msg_core as msg};
 mod macros;
 
 pub mod config;
+pub mod coop;
 pub mod dumping;
 pub mod errors;
 pub mod init;

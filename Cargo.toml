@@ -27,6 +27,3 @@ readme = "README.md"
 
 [profile.release]
 debug = 1
-
-[patch.crates-io]
-sharded-slab = { git = "https://github.com/loyd/sharded-slab", branch = "main" }

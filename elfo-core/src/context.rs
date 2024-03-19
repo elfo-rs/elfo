@@ -11,6 +11,7 @@ use crate::{
     addr::Addr,
     address_book::AddressBook,
     config::AnyConfig,
+    coop,
     demux::Demux,
     dumping::{Direction, Dump, Dumper, INTERNAL_CLASS},
     envelope::{AnyMessageBorrowed, AnyMessageOwned, Envelope, EnvelopeOwned, MessageKind},
@@ -26,9 +27,8 @@ use crate::{
     source::{SourceHandle, Sources, UnattachedSource},
 };
 
-use self::{budget::Budget, stats::Stats};
+use self::stats::Stats;
 
-mod budget;
 mod stats;
 
 static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
@@ -46,7 +46,6 @@ pub struct Context<C = (), K = Singleton> {
     sources: Sources,
     stage: Stage,
     stats: Stats,
-    budget: Budget,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -457,7 +456,7 @@ impl<C, K> Context<C, K> {
     ///
     /// The method returns the execution back to the runtime once the actor's
     /// budget has been exhausted. It prevents the actor from blocking the
-    /// runtime for too long.
+    /// runtime for too long. See [`coop`] for details.
     ///
     /// # Cancel safety
     ///
@@ -487,10 +486,7 @@ impl<C, K> Context<C, K> {
         C: 'static,
     {
         'outer: loop {
-            // TODO: reset if the mailbox is empty.
-            self.budget.acquire().await;
-
-            self.pre_recv();
+            self.pre_recv().await;
 
             let envelope = 'received: {
                 let mailbox_fut = self.actor.as_ref()?.as_actor()?.recv();
@@ -534,7 +530,7 @@ impl<C, K> Context<C, K> {
     ///
     /// The method returns the execution back to the runtime once the actor's
     /// budget has been exhausted. It prevents the actor from blocking the
-    /// runtime for too long.
+    /// runtime for too long. See [`coop`] for details.
     ///
     /// # Cancel safety
     ///
@@ -580,9 +576,7 @@ impl<C, K> Context<C, K> {
     {
         #[allow(clippy::never_loop)] // false positive
         loop {
-            self.budget.acquire().await;
-
-            self.pre_recv();
+            self.pre_recv().await;
 
             let envelope = 'received: {
                 let actor = ward!(
@@ -658,8 +652,10 @@ impl<C, K> Context<C, K> {
             .expect("start_info is not available for a group context")
     }
 
-    fn pre_recv(&mut self) {
+    async fn pre_recv(&mut self) {
         self.stats.on_recv();
+
+        coop::consume_budget().await;
 
         if unlikely(self.stage == Stage::Closed) {
             panic!("calling `recv()` or `try_recv()` after `None` is returned, an infinite loop?");
@@ -678,8 +674,6 @@ impl<C, K> Context<C, K> {
     where
         C: 'static,
     {
-        self.budget.decrement();
-
         scope::set_trace_id(envelope.trace_id());
 
         let envelope = msg!(match envelope {
@@ -760,7 +754,6 @@ impl<C, K> Context<C, K> {
             sources: Sources::new(),
             stage: self.stage,
             stats: Stats::empty(),
-            budget: self.budget.clone(),
         }
     }
 
@@ -783,7 +776,6 @@ impl<C, K> Context<C, K> {
             sources: self.sources,
             stage: self.stage,
             stats: self.stats,
-            budget: self.budget,
         }
     }
 
@@ -818,7 +810,6 @@ impl<C, K> Context<C, K> {
             sources: self.sources,
             stage: self.stage,
             stats: self.stats,
-            budget: self.budget,
         }
     }
 }
@@ -881,7 +872,6 @@ impl Context {
             sources: Sources::new(),
             stage: Stage::PreRecv,
             stats: Stats::empty(),
-            budget: Budget::default(),
         }
     }
 }
@@ -901,7 +891,6 @@ impl<C, K: Clone> Clone for Context<C, K> {
             sources: Sources::new(),
             stage: self.stage,
             stats: Stats::empty(),
-            budget: self.budget.clone(),
         }
     }
 }

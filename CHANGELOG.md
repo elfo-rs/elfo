@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- coop: expose `coop::consume_budget()` to call in long computations. See documentation of the `coop` module for details.
+- coop: prefer a time-based budgeting if the telemetry is enabled.
+
+### Fixed
+- telemetry: now `elfo_message_handling_time_seconds` doesn't include the time of task switching if an actor is preempted due to elfo's budget system.
 
 ## [0.2.0-alpha.14] - 2024-02-27
 ### Fixed
