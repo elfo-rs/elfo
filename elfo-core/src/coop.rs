@@ -16,7 +16,7 @@
 //!
 //! Elfo supports two kinds of budgeting for actors:
 //! * by time: the actor yields to the executor after a certain amount of time,
-//!   5s by default.
+//!   5ms by default.
 //! * by count: the actor yields to the executor after a certain number of
 //!   [`consume_budget()`] calls, 64 by default.
 //!
