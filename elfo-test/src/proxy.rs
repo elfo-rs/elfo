@@ -57,12 +57,6 @@ impl Proxy {
         })
     }
 
-    pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
-        self.scope
-            .clone()
-            .sync_within(|| self.context.try_send(message))
-    }
-
     #[track_caller]
     pub fn send_to<M: Message>(
         &self,
@@ -79,11 +73,45 @@ impl Proxy {
     }
 
     #[track_caller]
+    pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
+        self.scope
+            .clone()
+            .sync_within(|| self.context.try_send(message))
+    }
+
+    #[track_caller]
+    pub fn try_send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+    ) -> Result<(), TrySendError<M>> {
+        self.scope
+            .clone()
+            .sync_within(|| self.context.try_send_to(recipient, message))
+    }
+
+    #[track_caller]
     pub fn request<R: Request>(&self, request: R) -> impl Future<Output = R::Response> + '_ {
         let location = Location::caller();
         self.scope.clone().within(async move {
             let name = request.name();
             match self.context.request(request).resolve().await {
+                Ok(response) => response,
+                Err(err) => panic!("cannot send {} ({}) at {}", name, err, location),
+            }
+        })
+    }
+
+    #[track_caller]
+    pub fn request_to<R: Request>(
+        &self,
+        recipient: Addr,
+        request: R,
+    ) -> impl Future<Output = R::Response> + '_ {
+        let location = Location::caller();
+        self.scope.clone().within(async move {
+            let name = request.name();
+            match self.context.request_to(recipient, request).resolve().await {
                 Ok(response) => response,
                 Err(err) => panic!("cannot send {} ({}) at {}", name, err, location),
             }
