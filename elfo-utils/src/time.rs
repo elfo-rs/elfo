@@ -73,10 +73,12 @@ pub use mock::*;
 
 #[cfg(any(test, feature = "test-util"))]
 mod mock {
+    use std::cell::RefCell;
+
     use super::*;
 
     thread_local! {
-        pub(super) static CLOCK: std::cell::RefCell<Option<Clock>> = std::cell::RefCell::new(None);
+        pub(super) static CLOCK: RefCell<Option<Clock>> = const { RefCell::new(None) };
     }
 
     /// Mocks `Instant`, see [`InstantMock`].
