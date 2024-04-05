@@ -204,7 +204,9 @@ mod mock_stats {
     use super::MemoryStats;
 
     thread_local! {
-        static STATS: Cell<Result<MemoryStats, &'static str>> = Cell::new(Err("not exists"));
+        static STATS: Cell<Result<MemoryStats, &'static str>> = const {
+            Cell::new(Err("not exists"))
+        };
     }
 
     pub(super) fn get() -> Result<MemoryStats, String> {
