@@ -1,6 +1,7 @@
 use std::{
     convert::Infallible,
     future::Future,
+    io::{self, Write},
     net::SocketAddr,
     pin::Pin,
     string::ToString,
@@ -8,7 +9,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use hyper::{body::Body, rt, server::conn, service, Method, Request, Response, StatusCode};
+use http_body_util::Full;
+use hyper::{
+    body::Body,
+    header::{HeaderMap, ACCEPT_ENCODING, CONTENT_ENCODING},
+    rt,
+    server::conn,
+    service, Method, Request, Response, StatusCode,
+};
 use hyper_util::rt::TokioIo;
 use pin_project_lite::pin_project;
 use tokio::{net::TcpListener, time::timeout};
@@ -23,9 +31,9 @@ const SERVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Runs a simple HTTP server that responds to `GET /metrics` requests.
 /// * It supports only HTTP/1.
+/// * It supports gzip compression.
 /// * It doesn't support keep-alive connections.
 /// * It doesn't support TLS.
-/// * It doesn't support compression.
 /// * It handles requests one by one with some reasonable timeouts.
 pub(crate) async fn server(addr: SocketAddr, ctx: Context) -> ServerFailed {
     let listener = match TcpListener::bind(addr).await {
@@ -68,34 +76,84 @@ pub(crate) async fn server(addr: SocketAddr, ctx: Context) -> ServerFailed {
     }
 }
 
+type ResBody = Full<io::Cursor<Vec<u8>>>;
+
 // Supports only `GET /metrics` requests.
-async fn handle(req: Request<impl Body>, ctx: Context) -> Result<Response<String>, Infallible> {
+async fn handle(req: Request<impl Body>, ctx: Context) -> Result<Response<ResBody>, Infallible> {
     if req.method() != Method::GET {
         return Ok(Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
-            .body(String::new())
+            .body(<_>::default())
             .unwrap());
     }
 
     if req.uri().path() != "/metrics" {
         return Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .body(String::new())
+            .body(<_>::default())
             .unwrap());
     }
+
+    let use_gzip = use_gzip(req.headers());
 
     ctx.request_to(ctx.addr(), Render)
         .resolve()
         .await
-        .map(|Rendered(text)| Response::new(text))
+        .map(|Rendered(text)| {
+            let builder = Response::builder();
+
+            let gzipped = if use_gzip {
+                match try_gzip(text.as_bytes()) {
+                    Ok(gzipped) => Some(gzipped),
+                    Err(err) => {
+                        warn!(error = %err, "failed to gzip metrics, sending uncompressed");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            if let Some(gzipped) = gzipped {
+                builder
+                    .header(CONTENT_ENCODING, "gzip")
+                    .body(into_res_body(gzipped))
+            } else {
+                builder.body(into_res_body(text.into_bytes()))
+            }
+            .unwrap()
+        })
         .or_else(|err| {
             warn!(error = %err, "failed to render metrics for HTTP response");
 
             Ok(Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(String::new())
+                .body(<_>::default())
                 .unwrap())
         })
+}
+
+fn use_gzip(headers: &HeaderMap) -> bool {
+    let Some(encoding) = headers.get(ACCEPT_ENCODING) else {
+        return false;
+    };
+
+    let Ok(encoding) = encoding.to_str() else {
+        return false;
+    };
+
+    encoding.contains("gzip")
+}
+
+fn try_gzip(data: &[u8]) -> io::Result<Vec<u8>> {
+    let out = Vec::with_capacity(data.len() / 4); // good enough estimation
+    let mut encoder = flate2::write::GzEncoder::new(out, flate2::Compression::default());
+    encoder.write_all(data)?;
+    encoder.finish()
+}
+
+fn into_res_body(data: Vec<u8>) -> ResBody {
+    Full::new(io::Cursor::new(data))
 }
 
 fn flat_error(res: Result<Result<(), impl ToString>, impl ToString>) -> Result<(), String> {
