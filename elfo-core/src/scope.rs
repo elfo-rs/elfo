@@ -312,7 +312,7 @@ pub fn try_meta() -> Option<Arc<ActorMeta>> {
 }
 
 thread_local! {
-    static SERDE_MODE: Cell<SerdeMode> = Cell::new(SerdeMode::Normal);
+    static SERDE_MODE: Cell<SerdeMode> = const { Cell::new(SerdeMode::Normal) };
 }
 
 /// A mode of (de)serialization.

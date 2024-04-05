@@ -53,7 +53,7 @@ const MAX_TIME_NS: u64 = 5_000_000; // 5ms
 const MAX_COUNT: u32 = 64;
 
 thread_local! {
-    static BUDGET: Cell<Budget> = Cell::new(Budget::ByCount(0));
+    static BUDGET: Cell<Budget> = const { Cell::new(Budget::ByCount(0)) };
 }
 
 #[derive(Debug, Clone, Copy)]

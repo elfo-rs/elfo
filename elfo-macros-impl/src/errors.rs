@@ -4,7 +4,7 @@ use proc_macro2::TokenStream;
 use syn::Error;
 
 thread_local! {
-    static ERROR: RefCell<Option<Error>> = RefCell::new(None);
+    static ERROR: RefCell<Option<Error>> = const { RefCell::new(None) };
 }
 
 macro_rules! emit_error {
