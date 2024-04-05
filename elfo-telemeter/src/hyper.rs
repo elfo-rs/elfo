@@ -1,24 +1,19 @@
 use std::{
     convert::Infallible,
-    future::Future,
     io::{self, Write},
     net::SocketAddr,
-    pin::Pin,
     string::ToString,
-    task::Poll,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use http_body_util::Full;
 use hyper::{
     body::Body,
     header::{HeaderMap, ACCEPT_ENCODING, CONTENT_ENCODING},
-    rt,
     server::conn,
     service, Method, Request, Response, StatusCode,
 };
-use hyper_util::rt::TokioIo;
-use pin_project_lite::pin_project;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::{net::TcpListener, time::timeout};
 use tracing::{debug, info, warn};
 
@@ -57,7 +52,7 @@ pub(crate) async fn server(addr: SocketAddr, ctx: Context) -> ServerFailed {
         let ctx = ctx.clone();
 
         let serving = conn::http1::Builder::new()
-            .timer(TokioTimer)
+            .timer(TokioTimer::new())
             .keep_alive(false) // KA is meaningless for rare requests.
             .header_read_timeout(HEADER_READ_TIMEOUT)
             .serve_connection(
@@ -161,55 +156,5 @@ fn flat_error(res: Result<Result<(), impl ToString>, impl ToString>) -> Result<(
         Ok(Ok(())) => Ok(()),
         Ok(Err(err)) => Err(err.to_string()),
         Err(err) => Err(err.to_string()),
-    }
-}
-
-// === TokioTimer ===
-// TODO: Replace once https://github.com/hyperium/hyper-util/pull/73 is released.
-//       Don't forget to remove `pin-project-lite` from `Cargo.toml`.
-
-#[derive(Clone, Debug)]
-struct TokioTimer;
-
-impl rt::Timer for TokioTimer {
-    fn sleep(&self, duration: Duration) -> Pin<Box<dyn rt::Sleep>> {
-        Box::pin(TokioSleep {
-            inner: tokio::time::sleep(duration),
-        })
-    }
-
-    fn sleep_until(&self, deadline: Instant) -> Pin<Box<dyn rt::Sleep>> {
-        Box::pin(TokioSleep {
-            inner: tokio::time::sleep_until(deadline.into()),
-        })
-    }
-
-    fn reset(&self, sleep: &mut Pin<Box<dyn rt::Sleep>>, new_deadline: Instant) {
-        if let Some(sleep) = sleep.as_mut().downcast_mut_pin::<TokioSleep>() {
-            sleep.reset(new_deadline)
-        }
-    }
-}
-
-pin_project! {
-    struct TokioSleep {
-        #[pin]
-        inner: tokio::time::Sleep,
-    }
-}
-
-impl Future for TokioSleep {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        self.project().inner.poll(cx)
-    }
-}
-
-impl rt::Sleep for TokioSleep {}
-
-impl TokioSleep {
-    fn reset(self: Pin<&mut Self>, deadline: Instant) {
-        self.project().inner.as_mut().reset(deadline.into());
     }
 }
