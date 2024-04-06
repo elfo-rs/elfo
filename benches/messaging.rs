@@ -197,7 +197,7 @@ async fn run<const FLAGS: Flags>(
             .resolve()
             .await
             .into_iter()
-            .map(|spent| spent.unwrap().into_inner())
+            .map(|ts| ts.unwrap().into_inner())
             .min()
             .unwrap();
 
@@ -209,7 +209,7 @@ async fn run<const FLAGS: Flags>(
             .resolve()
             .await
             .into_iter()
-            .map(|spent| spent.unwrap().into_inner())
+            .map(|ts| ts.unwrap().into_inner())
             .max()
             .unwrap();
 

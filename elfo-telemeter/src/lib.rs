@@ -10,8 +10,6 @@
 //! Such information is added as labels. By default, only the `actor_group`
 //! label is added, but it's possible to provide `actor_key` on a group basis.
 //! It's useful, if a group has few actors inside.
-//!
-//! I'm going to extend the original crate to reuse code.
 
 #![warn(rust_2018_idioms, unreachable_pub, missing_docs)]
 
