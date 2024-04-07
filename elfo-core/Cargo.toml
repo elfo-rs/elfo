@@ -57,7 +57,7 @@ elfo-utils = { version = "0.2.5", path = "../elfo-utils", features = ["test-util
 
 anyhow = "1.0.40"
 tokio = { version = "1", features = ["full"] }
-proptest = "1.2.0"
+proptest = "1.4.0"
 
 [package.metadata.docs.rs]
 all-features = true
