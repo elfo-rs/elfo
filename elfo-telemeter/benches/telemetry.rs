@@ -9,7 +9,7 @@ use std::{
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
-use metrics::{counter, gauge, histogram};
+use metrics::{counter, histogram, increment_gauge};
 use tokio::{
     runtime::Builder,
     sync::{mpsc, oneshot},
@@ -165,11 +165,11 @@ fn all_cases(c: &mut Criterion) {
     let mut group = c.benchmark_group("telemetry");
 
     for contention in 1..=max_parallelism() {
-        case(&mut group, &tx, "gauge", contention, |v| {
-            gauge!("prefix_some_more_realistic_name", v)
-        });
         case(&mut group, &tx, "counter", contention, |v| {
             counter!("prefix_some_more_realistic_name", v as u64)
+        });
+        case(&mut group, &tx, "gauge", contention, |v| {
+            increment_gauge!("prefix_some_more_realistic_name", v)
         });
         case(&mut group, &tx, "histogram", contention, |v| {
             histogram!("prefix_some_more_realistic_name", v)

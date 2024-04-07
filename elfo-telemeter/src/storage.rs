@@ -1,248 +1,344 @@
-use std::{
-    hash::{Hash, Hasher},
-    mem,
-    sync::Arc,
-};
+#![allow(private_interfaces)]
+
+use std::{hash::Hash, mem, sync::Arc};
 
 use fxhash::FxHashMap;
-use metrics::{GaugeValue, Key, KeyHasher};
-use metrics_util::{Generational, Handle, Hashable, MetricKind, NotTracked, Registry};
-use parking_lot::{RwLock, RwLockReadGuard};
+use metrics::{Key, Unit};
+use parking_lot::{Mutex, MutexGuard};
+use thread_local::ThreadLocal;
 
 use elfo_core::{scope::Scope, ActorMeta, Addr};
 
-use crate::protocol::{Metrics, Snapshot};
+use crate::{
+    metrics::{Counter, Gauge, GaugeOrigin, Histogram, MetricKind},
+    protocol::{Metrics, Snapshot},
+};
 
-pub(crate) struct Storage {
-    registry: Registry<ExtKey, ExtHandle, NotTracked<ExtHandle>>,
-    descriptions: RwLock<FxHashMap<String, &'static str>>,
+// === Scopes ===
+
+// TODO: use real `Key` (with pointer comparison).
+type KeyHash = u64;
+
+pub(crate) trait ScopeKind: Sized {
+    type Scope;
+    type Key: Copy + Hash + Eq;
+    type Meta: Clone;
+
+    fn get_meta(scope: &Self::Scope) -> &Self::Meta;
+    fn make_key(scope: &Self::Scope, key: &Key) -> Self::Key;
+    fn registries(shard: &Shard) -> &Registries<Self>;
+    fn gauge_shared(storage: &Storage) -> &Mutex<GaugeOrigins<Self>>;
+    fn snapshot<'s>(snapshot: &'s mut Snapshot, meta: &Self::Meta) -> &'s mut Metrics;
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct ExtKey {
-    group: Addr, // `Addr::NULL` if global.
-    // XXX: we are forced to use hash here, because API of `Registry`
-    //      isn't composable with composite keys for now.
-    key_hash: u64,
-}
+pub(crate) struct GlobalScope;
 
-fn make_ext_key(scope: Option<&Scope>, key: &Key, with_actor_key: bool) -> ExtKey {
-    let mut key_hash = key.get_hash();
+impl ScopeKind for GlobalScope {
+    type Key = KeyHash;
+    type Meta = ();
+    type Scope = ();
 
-    if let Some(scope) = scope.filter(|_| with_actor_key) {
-        debug_assert!(!scope.telemetry_meta().key.is_empty());
-        let mut hasher = KeyHasher::default();
-        scope.telemetry_meta().key.hash(&mut hasher);
-        key_hash ^= hasher.finish();
+    fn get_meta(_scope: &Self::Scope) -> &Self::Meta {
+        &()
     }
 
-    let group = if let Some(scope) = scope {
+    fn make_key(_scope: &Self::Scope, key: &Key) -> Self::Key {
+        key.get_hash()
+    }
+
+    fn registries(shard: &Shard) -> &Registries<Self> {
+        &shard.global
+    }
+
+    fn gauge_shared(storage: &Storage) -> &Mutex<GaugeOrigins<Self>> {
+        &storage.gauge_shared.global
+    }
+
+    fn snapshot<'s>(snapshot: &'s mut Snapshot, _meta: &Self::Meta) -> &'s mut Metrics {
+        &mut snapshot.global
+    }
+}
+
+pub(crate) struct GroupScope;
+
+impl ScopeKind for GroupScope {
+    type Key = (Addr, KeyHash);
+    // TODO: replace with EBR?
+    type Meta = Arc<ActorMeta>;
+    type Scope = Scope;
+
+    fn get_meta(scope: &Self::Scope) -> &Self::Meta {
+        scope.telemetry_meta()
+    }
+
+    fn make_key(scope: &Self::Scope, key: &Key) -> Self::Key {
         debug_assert_ne!(scope.group(), Addr::NULL);
-        scope.group()
-    } else {
-        Addr::NULL
-    };
+        (scope.group(), key.get_hash())
+    }
 
-    ExtKey { group, key_hash }
-}
+    fn registries(shard: &Shard) -> &Registries<Self> {
+        &shard.groupwise
+    }
 
-impl Hashable for ExtKey {
-    #[inline]
-    fn hashable(&self) -> u64 {
-        // TODO: get rid of double hashing.
-        let mut hasher = KeyHasher::default();
-        self.hash(&mut hasher);
-        hasher.finish()
+    fn gauge_shared(storage: &Storage) -> &Mutex<GaugeOrigins<Self>> {
+        &storage.gauge_shared.groupwise
+    }
+
+    fn snapshot<'s>(snapshot: &'s mut Snapshot, meta: &Self::Meta) -> &'s mut Metrics {
+        snapshot.groupwise.entry(meta.group.clone()).or_default()
     }
 }
 
-#[derive(Clone)]
-struct ExtHandle {
-    meta: Option<Arc<ActorMeta>>, // `None` if global.
-    with_actor_key: bool,
-    key: Key,
-    handle: Handle,
+pub(crate) struct ActorScope;
+
+impl ScopeKind for ActorScope {
+    type Key = (/* group */ Addr, KeyHash);
+    // TODO: replace with EBR?
+    type Meta = Arc<ActorMeta>;
+    type Scope = Scope;
+
+    fn get_meta(scope: &Self::Scope) -> &Self::Meta {
+        scope.telemetry_meta()
+    }
+
+    fn make_key(scope: &Self::Scope, key: &Key) -> Self::Key {
+        debug_assert_ne!(scope.group(), Addr::NULL);
+
+        let telemetry_key = &scope.telemetry_meta().key;
+        debug_assert!(!telemetry_key.is_empty());
+
+        // TODO: cache a hash of the telemetry key.
+        let key_hash = fxhash::hash64(&(telemetry_key, key.get_hash()));
+        (scope.group(), key_hash)
+    }
+
+    fn registries(shard: &Shard) -> &Registries<Self> {
+        &shard.actorwise
+    }
+
+    fn gauge_shared(storage: &Storage) -> &Mutex<GaugeOrigins<Self>> {
+        &storage.gauge_shared.actorwise
+    }
+
+    fn snapshot<'s>(snapshot: &'s mut Snapshot, meta: &Self::Meta) -> &'s mut Metrics {
+        snapshot.actorwise.entry(meta.clone()).or_default()
+    }
 }
 
-fn make_ext_handle(
-    scope: Option<&Scope>,
-    key: &Key,
-    handle: Handle,
-    with_actor_key: bool,
-) -> ExtHandle {
-    ExtHandle {
-        meta: scope.map(|scope| scope.telemetry_meta().clone()),
-        with_actor_key,
-        key: key.clone(),
-        handle,
+// === Storage ===
+
+/// The storage for metrics.
+///
+/// The main idea here is to have a separate shard for each thread and merge
+/// them periodically by the telemeter actor. It *dramatically* reduces
+/// contention, especially if multiple actors use the same telemetry key,
+/// what's common for per-group telemetry or per-actor grouped telemetry.
+pub(crate) struct Storage {
+    shards: ThreadLocal<Shard>,
+    // Shared gauge origins between shards. See `Gauge` for more details.
+    gauge_shared: GaugeShared,
+    descriptions: Mutex<FxHashMap<String, &'static str>>,
+}
+
+#[derive(Default)]
+struct Shard {
+    global: Registries<GlobalScope>,
+    groupwise: Registries<GroupScope>,
+    actorwise: Registries<ActorScope>,
+}
+
+// Most of the time, the mutexes are uncontended, because they are accessed only
+// by one thread. Periodically, they are accessed by the telemeter actor for the
+// short period of time in order to replace these registries with empty ones.
+struct Registries<S: ScopeKind> {
+    counters: Mutex<Registry<S, Counter>>,
+    gauges: Mutex<Registry<S, Gauge>>,
+    histograms: Mutex<Registry<S, Histogram>>,
+}
+
+impl<S: ScopeKind> Default for Registries<S> {
+    fn default() -> Self {
+        Self {
+            counters: Default::default(),
+            gauges: Default::default(),
+            histograms: Default::default(),
+        }
+    }
+}
+
+type Registry<S, M> = FxHashMap<<S as ScopeKind>::Key, RegEntry<S, M>>;
+
+struct RegEntry<S: ScopeKind, M> {
+    key: Key,
+    data: M,
+    meta: S::Meta,
+}
+
+impl<S: ScopeKind, M: MetricKind> RegEntry<S, M> {
+    #[cold]
+    fn new(scope: &S::Scope, key: &Key, shared: M::Shared) -> Self {
+        Self {
+            key: key.clone(),
+            data: M::new(shared),
+            meta: S::get_meta(scope).clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct GaugeShared {
+    global: Mutex<GaugeOrigins<GlobalScope>>,
+    groupwise: Mutex<GaugeOrigins<GroupScope>>,
+    actorwise: Mutex<GaugeOrigins<ActorScope>>,
+}
+
+type GaugeOrigins<S> = FxHashMap<<S as ScopeKind>::Key, Arc<GaugeOrigin>>;
+
+impl Default for Storage {
+    fn default() -> Self {
+        Self {
+            shards: ThreadLocal::new(),
+            gauge_shared: Default::default(),
+            descriptions: Default::default(),
+        }
     }
 }
 
 impl Storage {
-    pub(crate) fn new() -> Self {
-        Self {
-            registry: Registry::<ExtKey, ExtHandle, NotTracked<ExtHandle>>::untracked(),
-            descriptions: Default::default(),
-        }
+    pub(crate) fn descriptions(&self) -> MutexGuard<'_, FxHashMap<String, &'static str>> {
+        self.descriptions.lock()
     }
 
-    pub(crate) fn descriptions(&self) -> RwLockReadGuard<'_, FxHashMap<String, &'static str>> {
-        self.descriptions.read()
-    }
-
-    pub(crate) fn add_description_if_missing(&self, key: &Key, description: Option<&'static str>) {
+    // TODO: use `unit`
+    pub(crate) fn describe(
+        &self,
+        key: &Key,
+        _unit: Option<Unit>,
+        description: Option<&'static str>,
+    ) {
         if let Some(description) = description {
-            let mut descriptions = self.descriptions.write();
+            let mut descriptions = self.descriptions.lock();
             if !descriptions.contains_key(key.name().to_string().as_str()) {
                 descriptions.insert(key.name().to_string(), description);
             }
         }
     }
 
-    pub(crate) fn touch_counter(&self, scope: Option<&Scope>, key: &Key, with_actor_key: bool) {
-        let ext_key = make_ext_key(scope, key, with_actor_key);
-        self.registry.op(
-            MetricKind::Counter,
-            &ext_key,
-            |_| {},
-            || make_ext_handle(scope, key, Handle::counter(), with_actor_key),
-        );
-    }
+    pub(crate) fn upsert<S, M>(&self, scope: &S::Scope, key: &Key, value: M::Value)
+    where
+        S: ScopeKind,
+        M: Storable,
+    {
+        let shard = self.shards.get_or_default();
+        let registries = S::registries(shard);
+        let reg_key = S::make_key(scope, key);
+        let mut registry = M::registry(registries).lock();
 
-    pub(crate) fn touch_gauge(&self, scope: Option<&Scope>, key: &Key, with_actor_key: bool) {
-        let ext_key = make_ext_key(scope, key, with_actor_key);
-        self.registry.op(
-            MetricKind::Gauge,
-            &ext_key,
-            |_| {},
-            || make_ext_handle(scope, key, Handle::gauge(), with_actor_key),
-        );
-    }
-
-    pub(crate) fn touch_histogram(&self, scope: Option<&Scope>, key: &Key, with_actor_key: bool) {
-        let ext_key = make_ext_key(scope, key, with_actor_key);
-        self.registry.op(
-            MetricKind::Histogram,
-            &ext_key,
-            |_| {},
-            || make_ext_handle(scope, key, Handle::histogram(), with_actor_key),
-        );
-    }
-
-    pub(crate) fn increment_counter(
-        &self,
-        scope: Option<&Scope>,
-        key: &Key,
-        value: u64,
-        with_actor_key: bool,
-    ) {
-        let ext_key = make_ext_key(scope, key, with_actor_key);
-        self.registry.op(
-            MetricKind::Counter,
-            &ext_key,
-            |h| h.handle.increment_counter(value),
-            || make_ext_handle(scope, key, Handle::counter(), with_actor_key),
-        );
-    }
-
-    pub(crate) fn update_gauge(
-        &self,
-        scope: Option<&Scope>,
-        key: &Key,
-        value: GaugeValue,
-        with_actor_key: bool,
-    ) {
-        let ext_key = make_ext_key(scope, key, with_actor_key);
-        self.registry.op(
-            MetricKind::Gauge,
-            &ext_key,
-            |h| h.handle.update_gauge(value),
-            || make_ext_handle(scope, key, Handle::gauge(), with_actor_key),
-        );
-    }
-
-    pub(crate) fn record_histogram(
-        &self,
-        scope: Option<&Scope>,
-        key: &Key,
-        value: f64,
-        with_actor_key: bool,
-    ) {
-        let ext_key = make_ext_key(scope, key, with_actor_key);
-        self.registry.op(
-            MetricKind::Histogram,
-            &ext_key,
-            |h| h.handle.record_histogram(value),
-            || make_ext_handle(scope, key, Handle::histogram(), with_actor_key),
-        );
-    }
-
-    pub(crate) fn fill_snapshot(&self, snapshot: &mut Snapshot, only_histograms: bool) -> usize {
-        let mut histograms = Vec::new();
-        let mut estimated_size = 0;
-
-        self.registry.visit(|kind, (_, h)| {
-            if kind == MetricKind::Histogram {
-                // Defer processing to unlock the registry faster.
-                histograms.push(h.get_inner().clone());
-                return;
-            }
-
-            if only_histograms {
-                return;
-            }
-
-            estimated_size += fill_metric(snapshot, h.get_inner());
+        let entry = registry.entry(reg_key).or_insert_with(|| {
+            let shared = M::shared::<S>(self, reg_key);
+            RegEntry::<S, M>::new(scope, key, shared)
         });
 
-        // Process deferred histograms.
-        for handle in histograms {
-            estimated_size += fill_metric(snapshot, &handle);
-        }
+        entry.data.update(value);
+    }
 
-        estimated_size
+    pub(crate) fn merge(&self, snapshot: &mut Snapshot, only_compact: bool) {
+        for shard in self.shards.iter() {
+            self.merge_registries::<GlobalScope>(shard, snapshot, only_compact);
+            self.merge_registries::<GroupScope>(shard, snapshot, only_compact);
+            self.merge_registries::<ActorScope>(shard, snapshot, only_compact);
+        }
+    }
+
+    fn merge_registries<S: ScopeKind>(
+        &self,
+        shard: &Shard,
+        snapshot: &mut Snapshot,
+        only_compact: bool,
+    ) {
+        let registries = S::registries(shard);
+
+        if !only_compact {
+            self.merge_registry::<S, Counter>(registries, snapshot);
+            self.merge_registry::<S, Gauge>(registries, snapshot);
+        }
+        self.merge_registry::<S, Histogram>(registries, snapshot);
+    }
+
+    fn merge_registry<S: ScopeKind, M: Storable>(
+        &self,
+        registries: &Registries<S>,
+        snapshot: &mut Snapshot,
+    ) {
+        let registry = M::registry(registries);
+
+        let registry = {
+            // Allocate a new empty registry with enough capacity.
+            // It improves tail latency, what's important for near RT actors.
+            let len = registry.lock().len();
+            let empty = Registry::with_capacity_and_hasher(len, <_>::default());
+
+            let mut registry = registry.lock();
+            mem::replace(&mut *registry, empty)
+        };
+
+        // TODO: stats
+        // elfo_metrics_usage_bytes{object="Storage|Snapshot"}
+        // elfo_metrics_storage_shards{status="Inactive|Active"} GAUGE
+        // elfo_metrics{kind="Counter|Gauge|Histogram"} GAUGE
+
+        for (_, entry) in registry.into_iter() {
+            let metrics = S::snapshot(snapshot, &entry.meta);
+            let out = M::snapshot(metrics, &entry.key);
+            entry.data.merge(out);
+        }
     }
 }
 
-fn fill_metric(snapshot: &mut Snapshot, handle: &ExtHandle) -> usize {
-    let m = get_metrics(snapshot, handle);
-    let h = &handle.handle;
-
-    let estimated_size = match h {
-        Handle::Counter(_) => {
-            m.counters.insert(handle.key.clone(), h.read_counter());
-            8
-        }
-        Handle::Gauge(_) => {
-            m.gauges.insert(handle.key.clone(), h.read_gauge());
-            8
-        }
-        Handle::Histogram(_) => {
-            let mut bucket_len = 0;
-            let d = m.distributions.entry(handle.key.clone()).or_default();
-            h.read_histogram_with_clear(|samples| {
-                bucket_len += samples.len();
-                d.record_samples(samples);
-            });
-            d.estimated_size() + 8 * bucket_len
-        }
-    };
-
-    mem::size_of::<ExtKey>() + mem::size_of::<ExtHandle>() + estimated_size
+pub(crate) trait Storable: MetricKind {
+    fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>>;
+    fn shared<S: ScopeKind>(storage: &Storage, key: S::Key) -> Self::Shared;
+    fn snapshot<'s>(metrics: &'s mut Metrics, key: &Key) -> &'s mut Self::Output;
 }
 
-fn get_metrics<'a>(snapshot: &'a mut Snapshot, handle: &ExtHandle) -> &'a mut Metrics {
-    // If meta is known, it's a per-actor or per-group metric.
-    if let Some(meta) = &handle.meta {
-        if handle.with_actor_key {
-            snapshot.per_actor.entry(meta.clone()).or_default()
-        } else if snapshot.per_group.contains_key(&meta.group) {
-            snapshot.per_group.get_mut(&meta.group).unwrap()
-        } else {
-            snapshot.per_group.entry(meta.group.clone()).or_default()
-        }
-    } else {
-        // Otherwise, it's a global metric.
-        &mut snapshot.global
+impl Storable for Counter {
+    fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>> {
+        &registries.counters
+    }
+
+    fn shared<S: ScopeKind>(_: &Storage, _: S::Key) -> Self::Shared {}
+
+    fn snapshot<'s>(metrics: &'s mut Metrics, key: &Key) -> &'s mut Self::Output {
+        // TODO: hashbrown `entry_ref` (extra crate) or `contains_key` (double lookup).
+        metrics.counters.entry(key.clone()).or_default()
+    }
+}
+
+impl Storable for Gauge {
+    fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>> {
+        &registries.gauges
+    }
+
+    fn shared<S: ScopeKind>(storage: &Storage, key: S::Key) -> Self::Shared {
+        let mut shared = S::gauge_shared(storage).lock();
+        shared.entry(key).or_default().clone()
+    }
+
+    fn snapshot<'s>(metrics: &'s mut Metrics, key: &Key) -> &'s mut Self::Output {
+        // TODO: hashbrown `entry_ref` (extra crate) or `contains_key` (double lookup).
+        metrics.gauges.entry(key.clone()).or_default()
+    }
+}
+
+impl Storable for Histogram {
+    fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>> {
+        &registries.histograms
+    }
+
+    fn shared<S: ScopeKind>(_: &Storage, _: S::Key) -> Self::Shared {}
+
+    fn snapshot<'s>(metrics: &'s mut Metrics, key: &Key) -> &'s mut Self::Output {
+        // TODO: hashbrown `entry_ref` (extra crate) or `contains_key` (double lookup).
+        metrics.histograms.entry(key.clone()).or_default()
     }
 }

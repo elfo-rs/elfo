@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use fxhash::FxHashMap;
 use metrics::Key;
-use metrics_util::Summary;
+use metrics_util::Summary; // TODO: avoid this dependency
 
 use elfo_core::{message, ActorMeta, Local};
 
@@ -21,7 +21,9 @@ pub(crate) struct ServerFailed(pub(crate) String);
 /// The response is restricted to be local only for now.
 #[message(ret = Local<Arc<Snapshot>>)]
 #[non_exhaustive]
-pub struct GetSnapshot;
+pub(crate) struct GetSnapshot;
+
+pub(crate) type GaugeEpoch = u64;
 
 /// Actual values of all metrics.
 #[derive(Default, Clone)]
@@ -29,24 +31,24 @@ pub struct Snapshot {
     /// Metrics ouside the actor system.
     pub global: Metrics,
     /// Metrics aggregated per group.
-    pub per_group: FxHashMap<String, Metrics>,
+    pub groupwise: FxHashMap<String, Metrics>,
     /// Metrics aggregated per actor.
-    pub per_actor: FxHashMap<Arc<ActorMeta>, Metrics>,
+    pub actorwise: FxHashMap<Arc<ActorMeta>, Metrics>,
 }
 
 impl Snapshot {
-    pub(crate) fn distributions_mut(&mut self) -> impl Iterator<Item = &mut Distribution> {
-        let global = self.global.distributions.values_mut();
+    pub(crate) fn histograms_mut(&mut self) -> impl Iterator<Item = &mut Distribution> {
+        let global = self.global.histograms.values_mut();
 
         let per_group = self
-            .per_group
+            .groupwise
             .values_mut()
-            .flat_map(|m| m.distributions.values_mut());
+            .flat_map(|m| m.histograms.values_mut());
 
         let per_actor = self
-            .per_actor
+            .actorwise
             .values_mut()
-            .flat_map(|m| m.distributions.values_mut());
+            .flat_map(|m| m.histograms.values_mut());
 
         global.chain(per_group).chain(per_actor)
     }
@@ -58,9 +60,9 @@ pub struct Metrics {
     /// Monotonically increasing counters.
     pub counters: FxHashMap<Key, u64>,
     /// Numerical values that can arbitrarily go up and down.
-    pub gauges: FxHashMap<Key, f64>,
+    pub gauges: FxHashMap<Key, (f64, GaugeEpoch)>,
     /// Summaries of samples, used to calculate of quantiles.
-    pub distributions: FxHashMap<Key, Distribution>,
+    pub histograms: FxHashMap<Key, Distribution>,
 }
 
 /// Summaries of samples, used to calculate of quantiles.

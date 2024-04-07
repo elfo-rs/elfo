@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use metrics::gauge;
 use tracing::{error, info};
 
 use elfo_core::{
@@ -84,14 +83,14 @@ impl Telemeter {
                     // Rendering includes compaction, skip extra compaction tick.
                     self.interval.start(self.ctx.config().compaction_interval);
 
-                    self.fill_snapshot(/* only_histograms = */ false);
+                    self.update_snapshot(/* only_compact = */ false);
                     self.ctx.respond(token, self.snapshot.clone().into());
                 }
                 (Render, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
                     self.interval.start(self.ctx.config().compaction_interval);
 
-                    self.fill_snapshot(/* only_histograms = */ false);
+                    self.update_snapshot(/* only_compact = */ false);
                     let descriptions = self.storage.descriptions();
                     let output = self.renderer.render(&self.snapshot, &descriptions);
                     drop(descriptions);
@@ -103,7 +102,7 @@ impl Telemeter {
                     }
                 }
                 CompactionTick => {
-                    self.fill_snapshot(/* only_histograms = */ true);
+                    self.update_snapshot(/* only_compact = */ true);
                 }
                 ServerFailed(err) => {
                     error!(error = %err, "server failed");
@@ -113,20 +112,16 @@ impl Telemeter {
         }
     }
 
-    fn fill_snapshot(&mut self, only_histograms: bool) {
+    fn update_snapshot(&mut self, only_compact: bool) {
         // Reuse the latest snapshot if possible.
         let snapshot = Arc::make_mut(&mut self.snapshot);
-        let size = self.storage.fill_snapshot(snapshot, only_histograms);
-
-        if !only_histograms {
-            gauge!("elfo_metrics_usage_bytes", size as f64);
-        }
+        self.storage.merge(snapshot, only_compact);
     }
 
     fn reset_distributions(&mut self) {
         // Reuse the latest snapshot if possible.
         let snapshot = Arc::make_mut(&mut self.snapshot);
-        snapshot.distributions_mut().for_each(|d| d.reset());
+        snapshot.histograms_mut().for_each(|d| d.reset());
     }
 
     fn start_server(&mut self) {

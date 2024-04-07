@@ -26,6 +26,7 @@ pub mod protocol;
 mod actor;
 mod config;
 mod hyper;
+mod metrics;
 mod recorder;
 mod render;
 mod storage;
@@ -38,11 +39,11 @@ pub use allocator::AllocatorStats;
 
 /// Installs a global metric recorder and returns a group to handle metrics.
 pub fn init() -> Blueprint {
-    let storage = Arc::new(Storage::new());
+    let storage = Arc::new(Storage::default());
     let recorder = Recorder::new(storage.clone());
     let blueprint = actor::new(storage);
 
-    if let Err(err) = metrics::set_boxed_recorder(Box::new(recorder)) {
+    if let Err(err) = ::metrics::set_boxed_recorder(Box::new(recorder)) {
         error!(error = %err, "failed to set a metric recorder");
     }
 

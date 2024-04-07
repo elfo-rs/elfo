@@ -136,7 +136,7 @@ fn group_by_name(snapshot: &Snapshot) -> GroupedData<'_> {
         );
     }
 
-    for (group, per_group) in &snapshot.per_group {
+    for (group, per_group) in &snapshot.groupwise {
         for (key, value, kind) in iter_metrics(per_group) {
             data.entry((kind, key.name())).or_default().insert(
                 MetricMeta {
@@ -149,7 +149,7 @@ fn group_by_name(snapshot: &Snapshot) -> GroupedData<'_> {
         }
     }
 
-    for (actor_meta, per_actor) in &snapshot.per_actor {
+    for (actor_meta, per_actor) in &snapshot.actorwise {
         for (key, value, kind) in iter_metrics(per_actor) {
             data.entry((kind, key.name())).or_default().insert(
                 MetricMeta {
@@ -173,9 +173,9 @@ fn iter_metrics(metrics: &Metrics) -> impl Iterator<Item = (&Key, MetricValue<'_
     let g = metrics
         .gauges
         .iter()
-        .map(|(k, v)| (k, MetricValue::Gauge(*v), MetricKind::Gauge));
+        .map(|(k, v)| (k, MetricValue::Gauge(v.0), MetricKind::Gauge));
     let d = metrics
-        .distributions
+        .histograms
         .iter()
         .map(|(k, v)| (k, MetricValue::Distribution(v), MetricKind::Histogram));
 

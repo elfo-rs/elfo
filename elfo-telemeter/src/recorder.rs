@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use metrics::{GaugeValue, Key, Unit};
 
-use elfo_core::scope::{self, Scope};
+use elfo_core::scope;
 
-use crate::storage::Storage;
+use crate::{
+    metrics::{Counter, Gauge, Histogram},
+    storage::{ActorScope, GlobalScope, GroupScope, Storable, Storage},
+};
 
 pub(crate) struct Recorder {
     storage: Arc<Storage>,
@@ -15,66 +18,55 @@ impl Recorder {
         Self { storage }
     }
 
-    fn with_params(&self, f: impl Fn(&Storage, Option<&Scope>, bool)) {
-        let is_global = scope::try_with(|scope| {
+    fn record<M>(&self, key: &Key, value: M::Value)
+    where
+        M: Storable,
+        M::Value: Clone,
+    {
+        scope::try_with(|scope| {
             let perm = scope.permissions();
+
             if perm.is_telemetry_per_actor_group_enabled() {
-                f(&self.storage, Some(scope), false);
+                self.storage
+                    .upsert::<GroupScope, M>(scope, key, value.clone())
             }
-            if perm.is_telemetry_per_actor_key_enabled() && !scope.telemetry_meta().key.is_empty() {
-                f(&self.storage, Some(scope), true);
+
+            if perm.is_telemetry_per_actor_key_enabled() {
+                // TODO: get rid of this check.
+                if scope.telemetry_meta().key.is_empty() {
+                    return;
+                }
+
+                self.storage
+                    .upsert::<ActorScope, M>(scope, key, value.clone())
             }
         })
-        .is_none();
-
-        if is_global {
-            f(&self.storage, None, false);
-        }
+        .unwrap_or_else(|| self.storage.upsert::<GlobalScope, M>(&(), key, value))
     }
 }
 
 impl metrics::Recorder for Recorder {
-    fn register_counter(&self, key: &Key, _unit: Option<Unit>, description: Option<&'static str>) {
-        self.storage.add_description_if_missing(key, description);
-        self.with_params(|storage, scope, with_actor_key| {
-            storage.touch_counter(scope, key, with_actor_key)
-        });
+    fn register_counter(&self, key: &Key, unit: Option<Unit>, description: Option<&'static str>) {
+        self.storage.describe(key, unit, description);
     }
 
-    fn register_gauge(&self, key: &Key, _unit: Option<Unit>, description: Option<&'static str>) {
-        self.storage.add_description_if_missing(key, description);
-        self.with_params(|storage, scope, with_actor_key| {
-            storage.touch_gauge(scope, key, with_actor_key)
-        });
+    fn register_gauge(&self, key: &Key, unit: Option<Unit>, description: Option<&'static str>) {
+        self.storage.describe(key, unit, description);
     }
 
-    fn register_histogram(
-        &self,
-        key: &Key,
-        _unit: Option<Unit>,
-        description: Option<&'static str>,
-    ) {
-        self.storage.add_description_if_missing(key, description);
-        self.with_params(|storage, scope, with_actor_key| {
-            storage.touch_histogram(scope, key, with_actor_key)
-        });
+    fn register_histogram(&self, key: &Key, unit: Option<Unit>, description: Option<&'static str>) {
+        self.storage.describe(key, unit, description);
     }
 
     fn increment_counter(&self, key: &Key, value: u64) {
-        self.with_params(|storage, scope, with_actor_key| {
-            storage.increment_counter(scope, key, value, with_actor_key)
-        });
+        self.record::<Counter>(key, value)
     }
 
     fn update_gauge(&self, key: &Key, value: GaugeValue) {
-        self.with_params(|storage, scope, with_actor_key| {
-            storage.update_gauge(scope, key, value.clone(), with_actor_key)
-        });
+        self.record::<Gauge>(key, value)
     }
 
     fn record_histogram(&self, key: &Key, value: f64) {
-        self.with_params(|storage, scope, with_actor_key| {
-            storage.record_histogram(scope, key, value, with_actor_key)
-        });
+        self.record::<Histogram>(key, value)
     }
 }

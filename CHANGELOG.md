@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - proxy: add `Proxy::try_send_to()` and `Proxy::request_to()`.
 - telemeter: support gzip.
 
+### Changed
+- telemeter: a new sharded-by-threads storage, it increases perf and dramatically reduces contention.
+
 ### Fixed
 - telemetry: now `elfo_message_handling_time_seconds` doesn't include the time of task switching if an actor is preempted due to elfo's budget system.
 
