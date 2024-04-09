@@ -29,6 +29,7 @@ mod hyper;
 mod metrics;
 mod recorder;
 mod render;
+mod stats;
 mod storage;
 
 #[cfg(feature = "unstable")]
@@ -43,8 +44,9 @@ pub fn init() -> Blueprint {
     let recorder = Recorder::new(storage.clone());
     let blueprint = actor::new(storage);
 
-    if let Err(err) = ::metrics::set_boxed_recorder(Box::new(recorder)) {
-        error!(error = %err, "failed to set a metric recorder");
+    match ::metrics::set_boxed_recorder(Box::new(recorder)) {
+        Ok(_) => stats::register(),
+        Err(err) => error!(error = %err, "failed to set a metric recorder"),
     }
 
     blueprint

@@ -65,7 +65,7 @@ impl MetricKind for Gauge {
     // are still available for updates, the same as the shared state (origin).
     //
     // However, all shards are merged consecutively.
-    fn merge(self, (out_value, out_epoch): &mut Self::Output) {
+    fn merge(self, (out_value, out_epoch): &mut Self::Output) -> usize {
         let (last_absolute, current_epoch) = self.origin.get();
 
         // The epoch is always monotonically increasing.
@@ -80,6 +80,9 @@ impl MetricKind for Gauge {
         if current_epoch == self.epoch {
             *out_value += self.delta;
         }
+
+        // It's inaccurate because the same origin can be accounted multiple times.
+        std::mem::size_of::<GaugeOrigin>()
     }
 }
 

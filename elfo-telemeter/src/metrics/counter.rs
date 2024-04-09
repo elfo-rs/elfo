@@ -15,7 +15,8 @@ impl MetricKind for Counter {
         self.0 += value;
     }
 
-    fn merge(self, out: &mut Self::Output) {
+    fn merge(self, out: &mut Self::Output) -> usize {
         *out += self.0;
+        0
     }
 }

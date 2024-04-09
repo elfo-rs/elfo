@@ -12,6 +12,7 @@ use elfo_core::{coop, scope::Scope, ActorMeta, Addr};
 use crate::{
     metrics::{Counter, Gauge, GaugeOrigin, Histogram, MetricKind},
     protocol::{Description, Metrics, Snapshot},
+    stats::{ShardStats, StorageStats},
 };
 
 // === Scopes ===
@@ -237,13 +238,27 @@ impl Storage {
     }
 
     pub(crate) async fn merge(&self, snapshot: &mut Snapshot, only_compact: bool) {
+        let mut storage_stats = StorageStats::new::<Self>();
+
+        if !only_compact {
+            storage_stats.add_descriptions(&*self.descriptions.lock());
+        }
+
         for shard in self.shards.iter() {
-            self.merge_registries::<GlobalScope>(shard, snapshot, only_compact)
+            let mut stats = ShardStats::new::<Shard>();
+
+            self.merge_registries::<GlobalScope>(shard, snapshot, only_compact, &mut stats)
                 .await;
-            self.merge_registries::<GroupScope>(shard, snapshot, only_compact)
+            self.merge_registries::<GroupScope>(shard, snapshot, only_compact, &mut stats)
                 .await;
-            self.merge_registries::<ActorScope>(shard, snapshot, only_compact)
+            self.merge_registries::<ActorScope>(shard, snapshot, only_compact, &mut stats)
                 .await;
+
+            storage_stats.add_shard(&stats);
+        }
+
+        if !only_compact {
+            storage_stats.emit();
         }
     }
 
@@ -252,15 +267,17 @@ impl Storage {
         shard: &Shard,
         snapshot: &mut Snapshot,
         only_compact: bool,
+        stats: &mut ShardStats,
     ) {
         let registries = S::registries(shard);
 
         if !only_compact {
-            self.merge_registry::<S, Counter>(registries, snapshot)
+            self.merge_registry::<S, Counter>(registries, snapshot, stats)
                 .await;
-            self.merge_registry::<S, Gauge>(registries, snapshot).await;
+            self.merge_registry::<S, Gauge>(registries, snapshot, stats)
+                .await;
         }
-        self.merge_registry::<S, Histogram>(registries, snapshot)
+        self.merge_registry::<S, Histogram>(registries, snapshot, stats)
             .await;
     }
 
@@ -268,6 +285,7 @@ impl Storage {
         &self,
         registries: &Registries<S>,
         snapshot: &mut Snapshot,
+        stats: &mut ShardStats,
     ) {
         let registry = M::registry(registries);
 
@@ -281,21 +299,21 @@ impl Storage {
             mem::replace(&mut *registry, empty)
         };
 
-        // TODO: stats
-        // elfo_metrics_usage_bytes{object="Storage|Snapshot"}
-        // elfo_metrics_storage_shards{status="Inactive|Active"} GAUGE
-        // elfo_metrics{kind="Counter|Gauge|Histogram"} GAUGE
+        stats.add_registry(&registry);
 
         for (_, entry) in registry.into_iter() {
             let metrics = S::snapshot(snapshot, &entry.meta);
             let out = M::snapshot(metrics, &entry.key);
-            entry.data.merge(out);
+            let additional_size = entry.data.merge(out);
+            stats.add_additional_size(additional_size);
         }
 
         // The merge process can be quite long, so we should be preemptive.
         coop::consume_budget().await;
     }
 }
+
+// === Storable ===
 
 pub(crate) trait Storable: MetricKind {
     fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>>;

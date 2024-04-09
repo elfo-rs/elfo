@@ -19,10 +19,16 @@ impl MetricKind for Histogram {
         self.0.push(value);
     }
 
-    fn merge(self, out: &mut Self::Output) {
-        for segment in self.0.into_segments() {
+    fn merge(self, out: &mut Self::Output) -> usize {
+        let segments = self.0.into_segments();
+        let mut additional_size = segments.capacity() * mem::size_of::<Vec<f64>>();
+
+        for segment in segments {
             out.add(&segment);
+            additional_size += segment.capacity() * mem::size_of::<f64>();
         }
+
+        additional_size
     }
 }
 

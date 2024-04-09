@@ -15,5 +15,7 @@ pub(crate) trait MetricKind: Sized {
 
     fn new(shared: Self::Shared) -> Self;
     fn update(&mut self, value: Self::Value);
-    fn merge(self, out: &mut Self::Output);
+
+    /// Returns additional size to add to metrics.
+    fn merge(self, out: &mut Self::Output) -> usize;
 }
