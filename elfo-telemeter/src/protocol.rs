@@ -75,7 +75,7 @@ pub struct Distribution {
 
 impl Default for Distribution {
     fn default() -> Self {
-        let summary = Summary::with_defaults();
+        let summary = Summary::new(0.001, 32768, 1e-9);
         Self {
             summary: Arc::new(summary),
             sum: 0.0,
