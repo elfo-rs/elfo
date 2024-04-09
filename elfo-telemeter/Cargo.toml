@@ -28,6 +28,7 @@ http-body-util = "0.1"
 serde = { version = "1.0.120", features = ["derive"] }
 metrics = "0.17"
 metrics-util = "0.10"
+sketches-ddsketch = "0.2.2"
 seqlock = "0.2"
 thread_local = "1.1.8"
 tracing = "0.1.25"

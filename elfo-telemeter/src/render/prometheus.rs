@@ -85,7 +85,10 @@ fn render(
                     let (sum, count) = if known_counters.insert(fxhash::hash64(&meta)) {
                         (0., 0)
                     } else {
-                        (distribution.sum(), distribution.count())
+                        (
+                            distribution.cumulative_sum(),
+                            distribution.cumulative_count(),
+                        )
                     };
 
                     // TODO: should we write types for these values? Check the spec.

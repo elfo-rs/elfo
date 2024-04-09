@@ -21,7 +21,7 @@ impl MetricKind for Histogram {
 
     fn merge(self, out: &mut Self::Output) {
         for segment in self.0.into_segments() {
-            out.record_samples(&segment);
+            out.add(&segment);
         }
     }
 }
