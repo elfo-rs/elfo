@@ -7,7 +7,7 @@ use metrics::{Key, Unit};
 use parking_lot::{Mutex, MutexGuard};
 use thread_local::ThreadLocal;
 
-use elfo_core::{scope::Scope, ActorMeta, Addr};
+use elfo_core::{coop, scope::Scope, ActorMeta, Addr};
 
 use crate::{
     metrics::{Counter, Gauge, GaugeOrigin, Histogram, MetricKind},
@@ -242,15 +242,18 @@ impl Storage {
         entry.data.update(value);
     }
 
-    pub(crate) fn merge(&self, snapshot: &mut Snapshot, only_compact: bool) {
+    pub(crate) async fn merge(&self, snapshot: &mut Snapshot, only_compact: bool) {
         for shard in self.shards.iter() {
-            self.merge_registries::<GlobalScope>(shard, snapshot, only_compact);
-            self.merge_registries::<GroupScope>(shard, snapshot, only_compact);
-            self.merge_registries::<ActorScope>(shard, snapshot, only_compact);
+            self.merge_registries::<GlobalScope>(shard, snapshot, only_compact)
+                .await;
+            self.merge_registries::<GroupScope>(shard, snapshot, only_compact)
+                .await;
+            self.merge_registries::<ActorScope>(shard, snapshot, only_compact)
+                .await;
         }
     }
 
-    fn merge_registries<S: ScopeKind>(
+    async fn merge_registries<S: ScopeKind>(
         &self,
         shard: &Shard,
         snapshot: &mut Snapshot,
@@ -259,13 +262,15 @@ impl Storage {
         let registries = S::registries(shard);
 
         if !only_compact {
-            self.merge_registry::<S, Counter>(registries, snapshot);
-            self.merge_registry::<S, Gauge>(registries, snapshot);
+            self.merge_registry::<S, Counter>(registries, snapshot)
+                .await;
+            self.merge_registry::<S, Gauge>(registries, snapshot).await;
         }
-        self.merge_registry::<S, Histogram>(registries, snapshot);
+        self.merge_registry::<S, Histogram>(registries, snapshot)
+            .await;
     }
 
-    fn merge_registry<S: ScopeKind, M: Storable>(
+    async fn merge_registry<S: ScopeKind, M: Storable>(
         &self,
         registries: &Registries<S>,
         snapshot: &mut Snapshot,
@@ -292,6 +297,9 @@ impl Storage {
             let out = M::snapshot(metrics, &entry.key);
             entry.data.merge(out);
         }
+
+        // The merge process can be quite long, so we should be preemptive.
+        coop::consume_budget().await;
     }
 }
 

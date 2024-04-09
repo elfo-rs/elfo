@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - telemeter: a new sharded-by-threads storage, it increases perf and dramatically reduces contention.
 - telemeter: revise default DDSketch parameters. It improves stability for some cases.
 - telemeter: rename the `Prometheus` sink to `OpenMetrics` with aliasing.
+- telemeter: make preemption points to the merge process.
 
 ### Fixed
 - telemetry: now `elfo_message_handling_time_seconds` doesn't include the time of task switching if an actor is preempted due to elfo's budget system.

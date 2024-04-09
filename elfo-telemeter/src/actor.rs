@@ -83,14 +83,14 @@ impl Telemeter {
                     // Rendering includes compaction, skip extra compaction tick.
                     self.interval.start(self.ctx.config().compaction_interval);
 
-                    self.update_snapshot(/* only_compact = */ false);
+                    self.update_snapshot(/* only_compact = */ false).await;
                     self.ctx.respond(token, self.snapshot.clone().into());
                 }
                 (Render, token) => {
                     // Rendering includes compaction, skip extra compaction tick.
                     self.interval.start(self.ctx.config().compaction_interval);
 
-                    self.update_snapshot(/* only_compact = */ false);
+                    self.update_snapshot(/* only_compact = */ false).await;
                     let descriptions = self.storage.descriptions();
                     let output = self.renderer.render(&self.snapshot, &descriptions);
                     drop(descriptions);
@@ -102,7 +102,7 @@ impl Telemeter {
                     }
                 }
                 CompactionTick => {
-                    self.update_snapshot(/* only_compact = */ true);
+                    self.update_snapshot(/* only_compact = */ true).await;
                 }
                 ServerFailed(err) => {
                     error!(error = %err, "server failed");
@@ -112,10 +112,12 @@ impl Telemeter {
         }
     }
 
-    fn update_snapshot(&mut self, only_compact: bool) {
+    async fn update_snapshot(&mut self, only_compact: bool) {
         // Reuse the latest snapshot if possible.
         let snapshot = Arc::make_mut(&mut self.snapshot);
-        self.storage.merge(snapshot, only_compact);
+
+        // Run the preemtive merge process.
+        self.storage.merge(snapshot, only_compact).await;
     }
 
     fn reset_distributions(&mut self) {
