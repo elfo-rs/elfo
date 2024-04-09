@@ -54,11 +54,7 @@ impl<F: Future> Future for MeasurePoll<F> {
             let res = this.inner.poll(cx);
             let elapsed = Instant::now().secs_f64_since(start_time);
             recorder.record_histogram(&BUSY_TIME_SECONDS, elapsed);
-            crate::scope::with(|scope| {
-                recorder.increment_counter(&ALLOCATED_BYTES, scope.take_allocated_bytes() as u64);
-                recorder
-                    .increment_counter(&DEALLOCATED_BYTES, scope.take_deallocated_bytes() as u64);
-            });
+            publish_alloc_metrics(recorder);
             res
         } else {
             crate::coop::reset(None);
@@ -71,4 +67,18 @@ impl<F: Future> Future for MeasurePoll<F> {
         #[allow(clippy::let_and_return)]
         result
     }
+}
+
+fn publish_alloc_metrics(recorder: &dyn metrics::Recorder) {
+    crate::scope::with(|scope| {
+        let allocated = scope.take_allocated_bytes();
+        let deallocated = scope.take_deallocated_bytes();
+
+        if allocated > 0 {
+            recorder.increment_counter(&ALLOCATED_BYTES, allocated as u64);
+        }
+        if deallocated > 0 {
+            recorder.increment_counter(&DEALLOCATED_BYTES, deallocated as u64);
+        }
+    });
 }

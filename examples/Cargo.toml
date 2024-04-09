@@ -9,8 +9,12 @@ license.workspace = true
 edition.workspace = true
 readme.workspace = true
 
+[features]
+unstable = ["elfo/unstable", "elfo-telemeter/unstable"]
+
 [dev-dependencies]
 elfo = { path = "../elfo", features = ["full", "network", "test-util"] }
+elfo-telemeter = { path = "../elfo-telemeter" } # for `AllocatorStats`
 
 anyhow = "1.0.40"
 futures = "0.3.12"

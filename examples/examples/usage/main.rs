@@ -311,6 +311,12 @@ fn topology() -> elfo::Topology {
 //                setup
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+// Optionally, the allocation statistics can be also enabled.
+#[cfg(feature = "unstable")] // TODO: stabilize it
+#[global_allocator]
+static ALLOCATOR: elfo_telemeter::AllocatorStats<std::alloc::System> =
+    elfo_telemeter::AllocatorStats::new(std::alloc::System);
+
 #[tokio::main]
 async fn main() {
     elfo::init::start(topology()).await;
