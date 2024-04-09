@@ -1,8 +1,10 @@
 use fxhash::FxHashMap;
 use metrics::Label;
-use metrics_util::{parse_quantiles, Quantile};
 
-use crate::{config::Config, protocol::Snapshot};
+use crate::{
+    config::{Config, Quantile},
+    protocol::Snapshot,
+};
 
 use self::openmetrics::OpenMetricsRenderer;
 
@@ -23,10 +25,11 @@ struct RenderOptions<'a> {
 
 impl Renderer {
     pub(crate) fn configure(&mut self, config: &Config) {
-        self.quantiles = parse_quantiles(&config.quantiles)
-            .into_iter()
-            .map(|q| {
-                let label = Label::new("quantile", q.value().to_string());
+        self.quantiles = config
+            .quantiles
+            .iter()
+            .map(|&q| {
+                let label = Label::new("quantile", (*q).to_string());
                 (q, label)
             })
             .collect();

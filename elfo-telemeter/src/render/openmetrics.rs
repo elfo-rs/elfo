@@ -9,7 +9,6 @@ use std::{
 use cow_utils::CowUtils;
 use fxhash::FxHashSet;
 use metrics::{Key, Label};
-use metrics_util::MetricKind;
 
 use super::RenderOptions;
 use crate::protocol::{Distribution, Metrics, Snapshot};
@@ -30,6 +29,13 @@ impl OpenMetricsRenderer {
         self.prev_size = output.len();
         output
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum MetricKind {
+    Counter,
+    Gauge,
+    Summary,
 }
 
 fn render(
@@ -76,7 +82,7 @@ fn render(
                 }
                 MetricValue::Distribution(distribution) => {
                     for (quantile, label) in options.quantiles {
-                        if let Some(value) = distribution.quantile(quantile.value()) {
+                        if let Some(value) = distribution.quantile(**quantile) {
                             let all_labels = labels.clone().chain(iter::once(label));
                             write_metric_line(buffer, name, None, all_labels, value);
                         }
@@ -180,7 +186,7 @@ fn iter_metrics(metrics: &Metrics) -> impl Iterator<Item = (&Key, MetricValue<'_
     let d = metrics
         .histograms
         .iter()
-        .map(|(k, v)| (k, MetricValue::Distribution(v), MetricKind::Histogram));
+        .map(|(k, v)| (k, MetricValue::Distribution(v), MetricKind::Summary));
 
     c.chain(g).chain(d)
 }
@@ -200,7 +206,7 @@ fn write_type_line(buffer: &mut String, name: &str, kind: MetricKind) {
     buffer.push_str(match kind {
         MetricKind::Counter => "counter",
         MetricKind::Gauge => "gauge",
-        MetricKind::Histogram => "summary",
+        MetricKind::Summary => "summary",
     });
     buffer.push('\n');
 }
