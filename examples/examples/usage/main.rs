@@ -187,7 +187,7 @@ mod reporter {
         prelude::*,
         time::Interval,
     };
-    use metrics::increment_counter;
+    use metrics::{increment_counter, register_counter, Unit};
     use serde::{Deserialize, Serialize};
 
     use crate::protocol::*;
@@ -203,6 +203,10 @@ mod reporter {
     struct SummarizeTick;
 
     pub fn new() -> Blueprint {
+        // Optionally, register metrics to provide additional information.
+        // It's not required, unregistered metrics are published anyway.
+        register_counter!("ticks_total", Unit::Count, "Total number of ticks");
+
         ActorGroup::new().config::<Config>().exec(reporter)
     }
 

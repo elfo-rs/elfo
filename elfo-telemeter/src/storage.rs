@@ -11,7 +11,7 @@ use elfo_core::{coop, scope::Scope, ActorMeta, Addr};
 
 use crate::{
     metrics::{Counter, Gauge, GaugeOrigin, Histogram, MetricKind},
-    protocol::{Metrics, Snapshot},
+    protocol::{Description, Metrics, Snapshot},
 };
 
 // === Scopes ===
@@ -137,7 +137,7 @@ pub(crate) struct Storage {
     shards: ThreadLocal<Shard>,
     // Shared gauge origins between shards. See `Gauge` for more details.
     gauge_shared: GaugeShared,
-    descriptions: Mutex<FxHashMap<String, &'static str>>,
+    descriptions: Mutex<FxHashMap<String, Description>>,
 }
 
 #[derive(Default)]
@@ -205,23 +205,17 @@ impl Default for Storage {
 }
 
 impl Storage {
-    pub(crate) fn descriptions(&self) -> MutexGuard<'_, FxHashMap<String, &'static str>> {
+    pub(crate) fn descriptions(&self) -> MutexGuard<'_, FxHashMap<String, Description>> {
         self.descriptions.lock()
     }
 
-    // TODO: use `unit`
-    pub(crate) fn describe(
-        &self,
-        key: &Key,
-        _unit: Option<Unit>,
-        description: Option<&'static str>,
-    ) {
-        if let Some(description) = description {
-            let mut descriptions = self.descriptions.lock();
-            if !descriptions.contains_key(key.name().to_string().as_str()) {
-                descriptions.insert(key.name().to_string(), description);
-            }
+    pub(crate) fn describe(&self, key: &Key, unit: Option<Unit>, details: Option<&'static str>) {
+        if unit.is_none() && details.is_none() {
+            return;
         }
+
+        let mut descriptions = self.descriptions.lock();
+        descriptions.insert(key.name().to_string(), Description { details, unit });
     }
 
     pub(crate) fn upsert<S, M>(&self, scope: &S::Scope, key: &Key, value: M::Value)

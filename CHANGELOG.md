@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - coop: prefer a time-based budgeting if the telemetry is enabled.
 - proxy: add `Proxy::try_send_to()` and `Proxy::request_to()`.
 - telemeter: support gzip.
+- telemeter/openmetrics: expose units of registered metrics.
 
 ### Changed
 - telemeter: a new sharded-by-threads storage, it increases perf and dramatically reduces contention.

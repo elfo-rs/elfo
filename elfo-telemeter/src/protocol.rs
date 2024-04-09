@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use fxhash::FxHashMap;
-use metrics::Key;
+use metrics::{Key, Unit};
 use sketches_ddsketch::{Config as DDSketchConfig, DDSketch};
 use tracing::warn;
 
@@ -25,6 +25,11 @@ pub(crate) struct ServerFailed(pub(crate) String);
 pub(crate) struct GetSnapshot;
 
 pub(crate) type GaugeEpoch = u64;
+
+pub(crate) struct Description {
+    pub(crate) details: Option<&'static str>,
+    pub(crate) unit: Option<Unit>,
+}
 
 /// Actual values of all metrics.
 #[derive(Default, Clone)]

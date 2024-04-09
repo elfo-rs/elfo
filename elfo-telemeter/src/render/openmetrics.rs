@@ -11,7 +11,7 @@ use fxhash::FxHashSet;
 use metrics::{Key, Label};
 
 use super::RenderOptions;
-use crate::protocol::{Distribution, Metrics, Snapshot};
+use crate::protocol::{Description, Distribution, Metrics, Snapshot};
 
 #[derive(Default)]
 pub(super) struct OpenMetricsRenderer {
@@ -47,11 +47,11 @@ fn render(
     for ((kind, original_name), by_labels) in group_by_name(snapshot) {
         let name = &*sanitize_name(original_name);
 
+        write_type_line(buffer, name, kind);
+
         if let Some(desc) = options.descriptions.get(original_name) {
             write_help_line(buffer, name, desc);
         }
-
-        write_type_line(buffer, name, kind);
 
         for (meta, value) in by_labels {
             let actor_group_label = meta
@@ -114,6 +114,8 @@ fn render(
 
         buffer.push('\n');
     }
+
+    buffer.push_str("# EOF\n");
 }
 
 type GroupedData<'a> = BTreeMap<(MetricKind, &'a str), BTreeMap<MetricMeta<'a>, MetricValue<'a>>>;
@@ -145,8 +147,8 @@ fn group_by_name(snapshot: &Snapshot) -> GroupedData<'_> {
         );
     }
 
-    for (group, per_group) in &snapshot.groupwise {
-        for (key, value, kind) in iter_metrics(per_group) {
+    for (group, groupwise) in &snapshot.groupwise {
+        for (key, value, kind) in iter_metrics(groupwise) {
             data.entry((kind, key.name())).or_default().insert(
                 MetricMeta {
                     actor_group: Some(group),
@@ -158,8 +160,8 @@ fn group_by_name(snapshot: &Snapshot) -> GroupedData<'_> {
         }
     }
 
-    for (actor_meta, per_actor) in &snapshot.actorwise {
-        for (key, value, kind) in iter_metrics(per_actor) {
+    for (actor_meta, actorwise) in &snapshot.actorwise {
+        for (key, value, kind) in iter_metrics(actorwise) {
             data.entry((kind, key.name())).or_default().insert(
                 MetricMeta {
                     actor_group: Some(&actor_meta.group),
@@ -191,14 +193,6 @@ fn iter_metrics(metrics: &Metrics) -> impl Iterator<Item = (&Key, MetricValue<'_
     c.chain(g).chain(d)
 }
 
-fn write_help_line(buffer: &mut String, name: &str, desc: &str) {
-    buffer.push_str("# HELP ");
-    buffer.push_str(name);
-    buffer.push(' ');
-    buffer.push_str(desc);
-    buffer.push('\n');
-}
-
 fn write_type_line(buffer: &mut String, name: &str, kind: MetricKind) {
     buffer.push_str("# TYPE ");
     buffer.push_str(name);
@@ -209,6 +203,24 @@ fn write_type_line(buffer: &mut String, name: &str, kind: MetricKind) {
         MetricKind::Summary => "summary",
     });
     buffer.push('\n');
+}
+
+fn write_help_line(buffer: &mut String, name: &str, desc: &Description) {
+    if let Some(unit) = &desc.unit {
+        buffer.push_str("# UNIT ");
+        buffer.push_str(name);
+        buffer.push(' ');
+        buffer.push_str(unit.as_str());
+        buffer.push('\n');
+    }
+
+    if let Some(details) = &desc.details {
+        buffer.push_str("# HELP ");
+        buffer.push_str(name);
+        buffer.push(' ');
+        buffer.push_str(details); // TODO: escape
+        buffer.push('\n');
+    }
 }
 
 fn write_metric_line<'a, V: Display>(
