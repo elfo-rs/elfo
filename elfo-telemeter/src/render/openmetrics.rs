@@ -15,7 +15,7 @@ use super::RenderOptions;
 use crate::protocol::{Distribution, Metrics, Snapshot};
 
 #[derive(Default)]
-pub(super) struct PrometheusRenderer {
+pub(super) struct OpenMetricsRenderer {
     prev_size: usize,
     // The renderer renders new counters with `0` for the first time.
     // See https://www.section.io/blog/beware-prometheus-counters-that-do-not-begin-at-zero/.
@@ -23,7 +23,7 @@ pub(super) struct PrometheusRenderer {
     known_counters: FxHashSet<u64>,
 }
 
-impl PrometheusRenderer {
+impl OpenMetricsRenderer {
     pub(super) fn render(&mut self, snapshot: &Snapshot, options: RenderOptions<'_>) -> String {
         let mut output = String::with_capacity(self.prev_size * 5 / 4);
         render(&mut output, snapshot, options, &mut self.known_counters);

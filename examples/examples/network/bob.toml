@@ -1,5 +1,5 @@
 [system.telemeters]
-sink = "Prometheus"
+sink = "OpenMetrics"
 address = "0.0.0.0:9101"
 
 [system.dumpers]

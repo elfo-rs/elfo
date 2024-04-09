@@ -4,15 +4,15 @@ use metrics_util::{parse_quantiles, Quantile};
 
 use crate::{config::Config, protocol::Snapshot};
 
-use self::prometheus::PrometheusRenderer;
+use self::openmetrics::OpenMetricsRenderer;
 
-mod prometheus;
+mod openmetrics;
 
 #[derive(Default)]
 pub(crate) struct Renderer {
     quantiles: Vec<(Quantile, Label)>,
     global_labels: Vec<Label>,
-    prometheus: PrometheusRenderer,
+    openmetrics: OpenMetricsRenderer,
 }
 
 struct RenderOptions<'a> {
@@ -50,6 +50,6 @@ impl Renderer {
             global_labels: &self.global_labels,
         };
 
-        self.prometheus.render(snapshot, options)
+        self.openmetrics.render(snapshot, options)
     }
 }

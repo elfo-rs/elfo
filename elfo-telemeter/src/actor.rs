@@ -54,8 +54,8 @@ impl Telemeter {
     }
 
     async fn main(mut self) {
-        // Now only prometheus is supported.
-        assert_eq!(self.ctx.config().sink, Sink::Prometheus);
+        // Now only OpenMetrics is supported.
+        assert_eq!(self.ctx.config().sink, Sink::OpenMetrics);
 
         let mut listen = self.ctx.config().listen;
         self.start_server();

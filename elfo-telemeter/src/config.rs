@@ -25,7 +25,8 @@ pub(crate) struct Config {
 
 #[derive(Debug, PartialEq, Deserialize)]
 pub(crate) enum Sink {
-    Prometheus,
+    #[serde(alias = "Prometheus")]
+    OpenMetrics,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]

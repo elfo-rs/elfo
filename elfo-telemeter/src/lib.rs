@@ -1,5 +1,5 @@
 //! Interaction with the `metrics` crate.
-//! Records metrics in the Prometheus exposition format.
+//! Records metrics in the OpenMetrics exposition format.
 //!
 //! A lot of code here is highly inspired by `metrics-exporter-prometheus`, and
 //! even copy-pasted from it with removing some useful features. Firstly, push

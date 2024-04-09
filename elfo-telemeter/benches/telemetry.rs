@@ -84,7 +84,7 @@ fn setup() -> mpsc::UnboundedSender<(Bench, oneshot::Sender<Duration>)> {
         &topology,
         toml! {
             [system.telemeters]
-            sink = "Prometheus"
+            sink = "OpenMetrics"
             listen = "127.0.0.1:9042"
         },
     ));
