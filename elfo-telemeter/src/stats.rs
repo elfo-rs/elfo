@@ -16,6 +16,8 @@ pub(crate) fn register() {
     );
 }
 
+// === Storage ===
+
 // The total size estimator.
 pub(crate) struct StorageStats {
     shards_total: u32,
@@ -72,6 +74,34 @@ impl ShardStats {
         self.size += size;
     }
 }
+
+// === Snapshot ===
+
+pub(crate) struct SnapshotStats {
+    total_size: usize,
+}
+
+impl SnapshotStats {
+    pub(crate) fn new<T>() -> Self {
+        Self {
+            total_size: mem::size_of::<T>(),
+        }
+    }
+
+    pub(crate) fn add_registry<K, V>(&mut self, registry: &FxHashMap<K, V>) {
+        self.total_size += estimate_hashbrown_size::<(K, V)>(registry.capacity());
+    }
+
+    pub(crate) fn add_additional_size(&mut self, size: usize) {
+        self.total_size += size;
+    }
+
+    pub(crate) fn emit(&self) {
+        gauge!("elfo_metrics_usage_bytes", self.total_size as f64, "object" => "Snapshot");
+    }
+}
+
+// === Helpers ===
 
 // From the `datasize` crate.
 fn estimate_hashbrown_size<T>(capacity: usize) -> usize {

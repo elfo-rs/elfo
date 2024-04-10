@@ -118,12 +118,17 @@ impl Telemeter {
 
         // Run the preemtive merge process.
         self.storage.merge(snapshot, only_compact).await;
+
+        if !only_compact {
+            snapshot.emit_stats();
+        }
     }
 
     fn reset_distributions(&mut self) {
         // Reuse the latest snapshot if possible.
         let snapshot = Arc::make_mut(&mut self.snapshot);
-        snapshot.histograms_mut().for_each(|d| d.reset());
+
+        snapshot.reset_distributions();
     }
 
     fn start_server(&mut self) {

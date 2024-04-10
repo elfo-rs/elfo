@@ -129,7 +129,6 @@ mod tests {
     }
 
     fn action_strategy() -> impl Strategy<Value = Action> {
-        // Use integers here to avoid floating point errors.
         prop_oneof![
             1 => (1..=SHARDS).prop_map(Action::Merge),
             10 => update_strategy().prop_map(Action::Update),
@@ -174,7 +173,7 @@ mod tests {
                             assert_eq!(shards.len(), SHARDS);
                         }
 
-                        // Check eventually consistency.
+                        // Check eventual consistency.
                         if limit == SHARDS {
                             prop_assert_eq!(actual.0, expected);
                         }
@@ -182,7 +181,7 @@ mod tests {
                 }
             }
 
-            // Check eventually consistency.
+            // Check eventual consistency.
             for shard in shards {
                 shard.merge(&mut actual);
             }

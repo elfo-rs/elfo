@@ -3,7 +3,6 @@ use std::mem;
 use super::MetricKind;
 use crate::protocol::Distribution;
 
-// TODO: *lazy* reservior sampling to improve memory usage?
 pub(crate) struct Histogram(SegVec<f64>);
 
 impl MetricKind for Histogram {

@@ -9,6 +9,8 @@ use tracing::warn;
 
 use elfo_core::{message, ActorMeta, Local};
 
+use crate::stats::SnapshotStats;
+
 #[message(ret = Rendered)]
 pub(crate) struct Render;
 
@@ -43,20 +45,44 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub(crate) fn histograms_mut(&mut self) -> impl Iterator<Item = &mut Distribution> {
+    pub(crate) fn reset_distributions(&mut self) {
         let global = self.global.histograms.values_mut();
 
-        let per_group = self
+        let groupwise = self
             .groupwise
             .values_mut()
             .flat_map(|m| m.histograms.values_mut());
 
-        let per_actor = self
+        let actorwise = self
             .actorwise
             .values_mut()
             .flat_map(|m| m.histograms.values_mut());
 
-        global.chain(per_group).chain(per_actor)
+        for d in global.chain(groupwise).chain(actorwise) {
+            d.reset();
+        }
+    }
+
+    pub(crate) fn emit_stats(&self) {
+        let mut stats = SnapshotStats::new::<Self>();
+
+        stats.add_registry(&self.groupwise);
+        stats.add_registry(&self.actorwise);
+
+        std::iter::once(&self.global)
+            .chain(self.groupwise.values())
+            .chain(self.actorwise.values())
+            .for_each(|metrics| {
+                stats.add_registry(&metrics.counters);
+                stats.add_registry(&metrics.gauges);
+                stats.add_registry(&metrics.histograms);
+
+                metrics.histograms.values().for_each(|d| {
+                    stats.add_additional_size(d.sketch_size());
+                });
+            });
+
+        stats.emit();
     }
 }
 
@@ -135,14 +161,6 @@ impl Distribution {
         self.cumulative_sum + self.sketch.sum().unwrap_or_default()
     }
 
-    /// Resets the distribution. It doesn't reset cumulative values.
-    pub(crate) fn reset(&mut self) {
-        self.cumulative_sum += self.sketch.sum().unwrap_or_default();
-        self.cumulative_count += self.sketch.count();
-
-        self.sketch = make_ddsketch();
-    }
-
     /// Adds samples to the distribution. Ignores all non-finite samples.
     pub(crate) fn add(&mut self, samples: &[f64]) {
         let sketch = Arc::make_mut(&mut self.sketch);
@@ -154,6 +172,19 @@ impl Distribution {
             .iter()
             .filter(|v| f64::is_finite(**v))
             .for_each(|v| sketch.add(*v));
+    }
+
+    /// Resets the distribution. It doesn't reset cumulative values.
+    fn reset(&mut self) {
+        self.cumulative_sum += self.sketch.sum().unwrap_or_default();
+        self.cumulative_count += self.sketch.count();
+
+        self.sketch = make_ddsketch();
+    }
+
+    fn sketch_size(&self) -> usize {
+        // `DDSketch::length()` returns the number of u64 buckets.
+        std::mem::size_of::<DDSketch>() + 8 * self.sketch.length()
     }
 }
 
