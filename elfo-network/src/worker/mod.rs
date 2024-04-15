@@ -7,7 +7,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
     message, Local, Message,
-    _priv::{EnvelopeOwned, GroupVisitor, MessageKind, NodeNo, Object, ObjectArc},
+    _priv::{EbrGuard, EnvelopeOwned, GroupVisitor, MessageKind, NodeNo, Object, OwnedObject},
     errors::{RequestError, SendError, TrySendError},
     messages::{ConfigUpdated, Impossible},
     msg, remote, scope,
@@ -439,10 +439,11 @@ impl SocketReader {
         self.send_back(update);
 
         if details.kind == KIND_REQUEST_ALL || details.kind == KIND_REQUEST_ANY {
+            let guard = EbrGuard::new();
             let sender = self
                 .ctx
                 .book()
-                .get(self.handle_addr)
+                .get(self.handle_addr, &guard)
                 .expect("bug: remote group is missing in the address book");
 
             let token = ResponseToken::new(
@@ -535,7 +536,8 @@ impl SocketReader {
                     return None;
                 };
 
-                let Some(object) = self.ctx.book().get(recipient) else {
+                let guard = EbrGuard::new();
+                let Some(object) = self.ctx.book().get(recipient, &guard) else {
                     debug!(
                         message = "received response, but requester has gone",
                         recipient = %recipient,
@@ -591,7 +593,8 @@ impl SocketReader {
         let book = self.ctx.book();
         let mut flows = self.rx_flows.lock();
 
-        let Some(object) = book.get(recipient) else {
+        let guard = EbrGuard::new();
+        let Some(object) = book.get(recipient, &guard) else {
             let (close, update) = flows.close(recipient);
             self.send_back(close);
             self.send_back(update);
@@ -614,13 +617,13 @@ impl SocketReader {
                 // TODO: maybe emit some metric?
             }
 
-            fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
+            fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
                 let envelope = envelope.duplicate();
                 self.this
                     .do_handle_message(self.flows, object, envelope, true);
             }
 
-            fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+            fn visit_last(&mut self, object: &OwnedObject, envelope: Envelope) {
                 self.this
                     .do_handle_message(self.flows, object, envelope, true);
             }
@@ -634,10 +637,11 @@ impl SocketReader {
             flows: &mut flows,
         };
 
+        let guard = EbrGuard::new();
         let group = self
             .ctx
             .book()
-            .get(self.group_addr)
+            .get(self.group_addr, &guard)
             .expect("invalid local group addr");
         group.visit_group(envelope, &mut visitor);
 
@@ -761,11 +765,13 @@ impl Pusher {
     }
 
     async fn push(&self, envelope: Envelope, routed: bool) -> bool {
-        let Some(object) = self.ctx.book().get_owned(self.actor_addr) else {
-            return false;
+        let fut = {
+            let guard = EbrGuard::new();
+            let object = ward!(self.ctx.book().get(self.actor_addr, &guard), return false);
+            Object::send(object, Addr::NULL, envelope)
         };
 
-        if object.send(&self.ctx, Addr::NULL, envelope).await.is_ok() {
+        if fut.await.is_ok() {
             let mut flows = self.rx_flows.lock();
 
             let Some(mut flow) = flows.get_flow(self.actor_addr) else {

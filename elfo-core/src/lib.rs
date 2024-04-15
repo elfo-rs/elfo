@@ -92,11 +92,12 @@ pub mod _priv {
         },
         init::do_start,
         message::*,
-        object::{GroupVisitor, Object, ObjectArc},
+        object::{GroupVisitor, Object, OwnedObject},
         permissions::{AtomicPermissions, Permissions},
         request_table::RequestId,
     };
     pub use erased_serde;
+    pub use idr_ebr::Guard as EbrGuard;
     pub use linkme;
     pub use metrics;
     #[cfg(feature = "network")]

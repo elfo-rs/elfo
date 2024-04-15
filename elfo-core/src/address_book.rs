@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
-use sharded_slab::{self as slab, Slab};
+use idr_ebr::{Guard as EbrGuard, Idr};
 
 use crate::{
-    addr::{Addr, GroupNo, NodeLaunchId, NodeNo, SlabConfig},
-    object::{Object, ObjectArc, ObjectRef},
+    addr::{Addr, GroupNo, IdrConfig, NodeLaunchId, NodeNo},
+    object::{BorrowedObject, Object, OwnedObject},
 };
 
 // Reexported in `_priv`.
 #[derive(Clone)]
 pub struct AddressBook {
     launch_id: NodeLaunchId,
-    local: Arc<Slab<Object, SlabConfig>>,
+    local: Arc<Idr<Object, IdrConfig>>,
     #[cfg(feature = "network")]
     remote: Arc<RemoteToHandleMap>, // TODO: use `arc_swap::cache::Cache` in TLS?
 }
@@ -20,7 +20,7 @@ assert_impl_all!(AddressBook: Sync);
 
 impl AddressBook {
     pub(crate) fn new(launch_id: NodeLaunchId) -> Self {
-        let local = Arc::new(Slab::new_with_config::<SlabConfig>());
+        let local = Arc::new(Idr::new());
 
         #[cfg(feature = "network")]
         return Self {
@@ -57,22 +57,23 @@ impl AddressBook {
             .remove(network_actor_addr, local_group, remote_group, handle_addr);
     }
 
-    pub fn get(&self, addr: Addr) -> Option<ObjectRef<'_>> {
+    pub fn get<'g>(&self, addr: Addr, guard: &'g EbrGuard) -> Option<BorrowedObject<'g>> {
         let addr = self.prepare_addr(addr)?;
+
         self.local
-            .get(addr.slot_key(self.launch_id))
-            // sharded-slab doesn't check top bits, so we need to check them manually.
+            .get(addr.slot_key(self.launch_id)?, guard)
+            // idr-ebr doesn't check top bits, so we need to check them manually.
             // It equals to checking the group number, but without extra operations.
             .filter(|object| object.addr() == addr)
     }
 
-    pub fn get_owned(&self, addr: Addr) -> Option<ObjectArc> {
+    pub fn get_owned(&self, addr: Addr) -> Option<OwnedObject> {
         let addr = self.prepare_addr(addr)?;
 
         self.local
             .clone()
-            .get_owned(addr.slot_key(self.launch_id))
-            // sharded-slab doesn't check top bits, so we need to check them manually.
+            .get_owned(addr.slot_key(self.launch_id)?)
+            // idr-ebr doesn't check top bits, so we need to check them manually.
             // It equals to checking the group number, but without extra operations.
             .filter(|object| object.addr() == addr)
     }
@@ -89,7 +90,7 @@ impl AddressBook {
     }
 
     pub(crate) fn remove(&self, addr: Addr) {
-        self.local.remove(addr.slot_key(self.launch_id));
+        self.local.remove(ward!(addr.slot_key(self.launch_id)));
     }
 
     #[inline(always)]
@@ -110,13 +111,13 @@ impl AddressBook {
     }
 }
 
-pub(crate) struct VacantEntry<'b> {
+pub(crate) struct VacantEntry<'g> {
     launch_id: NodeLaunchId,
-    entry: slab::VacantEntry<'b, Object, SlabConfig>,
+    entry: idr_ebr::VacantEntry<'g, Object, IdrConfig>,
     group_no: GroupNo,
 }
 
-impl<'b> VacantEntry<'b> {
+impl<'g> VacantEntry<'g> {
     pub(crate) fn insert(self, object: Object) {
         self.entry.insert(object)
     }

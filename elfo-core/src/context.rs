@@ -1,6 +1,7 @@
 use std::{future::poll_fn, marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
 
 use futures::{pin_mut, Stream};
+use idr_ebr::Guard as EbrGuard;
 use once_cell::sync::Lazy;
 use tracing::{info, trace};
 
@@ -19,7 +20,7 @@ use crate::{
     mailbox::RecvResult,
     message::{Message, Request},
     messages, msg,
-    object::ObjectArc,
+    object::{Object, OwnedObject},
     request_table::ResponseToken,
     restarting::RestartPolicy,
     routers::Singleton,
@@ -36,7 +37,7 @@ static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
 /// An actor execution context.
 pub struct Context<C = (), K = Singleton> {
     book: AddressBook,
-    actor: Option<ObjectArc>, // `None` for group's and pruned context.
+    actor: Option<OwnedObject>, // `None` for group's and pruned context.
     actor_addr: Addr,
     actor_start_info: Option<ActorStartInfo>, // `None` for group's context,
     group_addr: Addr,
@@ -192,8 +193,10 @@ impl<C, K> Context<C, K> {
             return Err(TrySendError::Closed(e2m(envelope)));
         }
 
+        let guard = EbrGuard::new();
+
         if addrs.len() == 1 {
-            return match self.book.get(addrs[0]) {
+            return match self.book.get(addrs[0], &guard) {
                 Some(object) => object
                     .try_send(Addr::NULL, envelope)
                     .map_err(|err| err.map(e2m)),
@@ -206,7 +209,7 @@ impl<C, K> Context<C, K> {
         let mut success = false;
 
         for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
-            match self.book.get(addr) {
+            match self.book.get(addr, &guard) {
                 Some(object) => match object.try_send(Addr::NULL, envelope) {
                     Ok(()) => success = true,
                     Err(err) => {
@@ -283,34 +286,38 @@ impl<C, K> Context<C, K> {
 
         if addrs.len() == 1 {
             let recipient = addrs[0];
-            return match self.book.get_owned(recipient) {
-                Some(object) => object
-                    .send(self, Addr::NULL, envelope)
-                    .await
-                    .map_err(|err| SendError(e2m(err.0))),
-                None => Err(SendError(e2m(envelope))),
-            };
+            return {
+                let guard = EbrGuard::new();
+                let entry = self.book.get(recipient, &guard);
+                let object = ward!(entry, return Err(SendError(e2m(envelope))));
+                Object::send(object, Addr::NULL, envelope)
+            }
+            .await
+            .map_err(|err| SendError(e2m(err.0)));
         }
 
         let mut unused = None;
         let mut success = false;
 
         // TODO: send concurrently.
-        for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
-            match self.book.get_owned(addr) {
-                Some(object) => {
-                    let returned_envelope = object
-                        .send(self, Addr::NULL, envelope)
-                        .await
-                        .err()
-                        .map(|err| err.0);
-                    forget_and_replace(&mut unused, returned_envelope);
-                    if unused.is_none() {
-                        success = true;
-                    }
-                }
-                None => forget_and_replace(&mut unused, Some(envelope)),
-            };
+        for (recipient, envelope) in addrs_with_envelope(envelope, &addrs) {
+            let returned_envelope = {
+                let guard = EbrGuard::new();
+                let entry = self.book.get(recipient, &guard);
+                let object = ward!(entry, {
+                    forget_and_replace(&mut unused, Some(envelope));
+                    continue;
+                });
+                Object::send(object, Addr::NULL, envelope)
+            }
+            .await
+            .err()
+            .map(|err| err.0);
+
+            forget_and_replace(&mut unused, returned_envelope);
+            if unused.is_none() {
+                success = true;
+            }
         }
 
         if success {
@@ -362,12 +369,15 @@ impl<C, K> Context<C, K> {
             permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
-        let entry = self.book.get_owned(recipient);
-        let object = ward!(entry, return Err(SendError(message)));
-        let envelope = Envelope::new(message, kind);
-        let fut = object.send(self, recipient, envelope.upcast());
-        let result = fut.await;
-        result.map_err(|err| SendError(e2m(err.0)))
+        {
+            let guard = EbrGuard::new();
+            let entry = self.book.get(recipient, &guard);
+            let object = ward!(entry, return Err(SendError(message)));
+            let envelope = Envelope::new(message, kind);
+            Object::send(object, recipient, envelope.upcast())
+        }
+        .await
+        .map_err(|err| SendError(e2m(err.0)))
     }
 
     /// Tries to send a message to the specified recipient.
@@ -403,7 +413,8 @@ impl<C, K> Context<C, K> {
             permit.record(Dump::message(&message, &kind, Direction::Out));
         }
 
-        let entry = self.book.get(recipient);
+        let guard = EbrGuard::new();
+        let entry = self.book.get(recipient, &guard);
         let object = ward!(entry, return Err(TrySendError::Closed(message)));
         let envelope = Envelope::new(message, kind);
 
@@ -444,7 +455,8 @@ impl<C, K> Context<C, K> {
         }
 
         let envelope = Envelope::new(message, kind).upcast();
-        let object = ward!(self.book.get(recipient));
+        let guard = EbrGuard::new();
+        let object = ward!(self.book.get(recipient, &guard));
         object.respond(token, Ok(envelope));
     }
 
@@ -940,7 +952,7 @@ impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
 impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     /// Waits for the response.
     pub async fn resolve(self) -> Result<R::Response, RequestError> {
-        // TODO: cache `OwnedEntry`?
+        // TODO: use `context.actor` after removing pruned contexts.
         let this = self.context.actor_addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
@@ -971,7 +983,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
 impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
     /// Waits for the responses.
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError>> {
-        // TODO: cache `OwnedEntry`?
+        // TODO: use `context.actor` after removing pruned contexts.
         let this = self.context.actor_addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");

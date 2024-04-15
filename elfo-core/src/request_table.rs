@@ -1,6 +1,7 @@
 use std::{fmt, marker::PhantomData, sync::Arc};
 
 use futures_intrusive::sync::ManualResetEvent;
+use idr_ebr::Guard as EbrGuard;
 use parking_lot::Mutex;
 use slotmap::{new_key_type, Key, SlotMap};
 use smallvec::SmallVec;
@@ -271,7 +272,8 @@ impl ResponseToken {
         let data = self.data.as_ref()?;
 
         if data.sender.is_local() {
-            let object = data.book.get(data.sender)?;
+            let guard = EbrGuard::new();
+            let object = data.book.get(data.sender, &guard)?;
             let actor = object.as_actor()?;
             let mut requests = actor.request_table().requests.lock();
             requests.get_mut(data.request_id)?.remainder += 1;
@@ -311,7 +313,8 @@ impl<T> Drop for ResponseToken<T> {
         // Do nothing for forgotten tokens.
         let data = ward!(self.data.take());
         let book = data.book.clone();
-        let object = ward!(book.get(data.sender));
+        let guard = EbrGuard::new();
+        let object = ward!(book.get(data.sender, &guard));
         let this = ResponseToken {
             data: Some(data),
             received: self.received,

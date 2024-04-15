@@ -21,7 +21,7 @@ use crate::{
     group::TerminationPolicy,
     message::Request,
     messages, msg,
-    object::{GroupVisitor, Object, ObjectArc},
+    object::{GroupVisitor, Object, OwnedObject},
     restarting::{RestartBackoff, RestartPolicy},
     routers::{Outcome, Router},
     runtime::RuntimeManager,
@@ -40,7 +40,7 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     termination_policy: TerminationPolicy,
     span: Span,
     context: Context,
-    objects: DashMap<R::Key, ObjectArc, FxBuildHasher>,
+    objects: DashMap<R::Key, OwnedObject, FxBuildHasher>,
     router: R,
     exec: X,
     control: CachePadded<RwLock<ControlBlock<C>>>,
@@ -249,7 +249,7 @@ where
         &self,
         envelope: Envelope,
         visitor: &mut dyn GroupVisitor,
-        iter: impl Iterator<Item = impl Deref<Target = ObjectArc>>,
+        iter: impl Iterator<Item = impl Deref<Target = OwnedObject>>,
     ) {
         let mut iter = iter.peekable();
 
@@ -272,7 +272,7 @@ where
         key: R::Key,
         start_info: ActorStartInfo,
         mut backoff: RestartBackoff,
-    ) -> Option<ObjectArc> {
+    ) -> Option<OwnedObject> {
         let control = self.control.read();
         if control.stop_spawning {
             return None;
@@ -360,7 +360,7 @@ where
                     .flatten()
             };
 
-            if let Some(after) = restart_after {
+            let _ = if let Some(after) = restart_after {
                 if after == Duration::ZERO {
                     debug!("actor will be restarted immediately");
                 } else {
