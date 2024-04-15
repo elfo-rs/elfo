@@ -21,7 +21,7 @@ elfo-macros = { version = "0.2.0-alpha.14", path = "../elfo-macros" }
 elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
 tokio = { version = "1.16", features = ["rt", "sync", "time", "signal", "macros"] }
-sharded-slab = "0.1.7"
+idr-ebr = "0.1.1"
 futures-intrusive = "0.5"
 parking_lot = "0.12"
 smallbox = "0.8.0"

@@ -1,14 +1,21 @@
+use std::{
+    future::Future,
+    mem,
+    pin::Pin,
+    task::{self, Poll},
+};
+
 use derive_more::From;
 use futures::future::{join_all, BoxFuture};
+use idr_ebr::{BorrowedEntry, OwnedEntry};
+use pin_project::pin_project;
 use smallvec::SmallVec;
 
 #[cfg(feature = "network")]
 use crate::remote::{self, RemoteHandle};
 use crate::{
     actor::Actor,
-    addr::{Addr, SlabConfig},
-    address_book::AddressBook,
-    context::Context,
+    addr::Addr,
     envelope::Envelope,
     errors::{RequestError, SendError, TrySendError},
     request_table::ResponseToken,
@@ -25,9 +32,9 @@ assert_impl_all!(Object: Sync);
 // assert_eq_size!(Object, [u8; 256]);
 
 // TODO: move to `address_book` and wrap to avoid calling the `key()` method.
-pub(crate) type ObjectRef<'a> = sharded_slab::Entry<'a, Object, SlabConfig>;
+pub(crate) type BorrowedObject<'g> = BorrowedEntry<'g, Object>;
 // Reexported in `_priv`.
-pub type ObjectArc = sharded_slab::OwnedEntry<Object, SlabConfig>;
+pub type OwnedObject = OwnedEntry<Object>;
 
 #[derive(From)]
 pub(crate) enum ObjectKind {
@@ -51,35 +58,54 @@ impl Object {
         self.addr
     }
 
-    // TODO: pass `&mut Option<(Addr, Envelope)>` to avoid extra moves.
+    // Tries to send an envelope to the object synchronously.
+    // Only if the object is full, it gets an owned link to the object
+    // (because an EBR guard cannot be hold over the async boundary)
+    // and sends the envelope asynchronously.
     #[stability::unstable]
-    pub async fn send<C, K>(
-        &self,
-        ctx: &Context<C, K>,
+    pub fn send(
+        this: BorrowedObject<'_>,
         recipient: Addr,
         envelope: Envelope,
-    ) -> Result<(), SendError<Envelope>> {
-        match &self.kind {
-            ObjectKind::Actor(handle) => handle.send(envelope).await,
+    ) -> impl Future<Output = SendResult> + 'static {
+        match &this.kind {
+            ObjectKind::Actor(handle) => match handle.try_send(envelope) {
+                Ok(()) => SendFut::Ready(Ok(())),
+                Err(TrySendError::Closed(envelope)) => SendFut::Ready(Err(SendError(envelope))),
+                Err(TrySendError::Full(envelope)) => {
+                    let this = this.to_owned();
+                    SendFut::WaitActor(async move {
+                        let actor = this.as_actor().unwrap();
+                        actor.send(envelope).await
+                    })
+                }
+            },
             ObjectKind::Group(handle) => {
-                let mut visitor = SendGroupVisitor::new(ctx.book());
+                let mut visitor = SendGroupVisitor::default();
                 handle.handle(envelope, &mut visitor);
-                visitor.finish().await
+                SendFut::WaitGroup(visitor.finish())
             }
             #[cfg(feature = "network")]
-            ObjectKind::Remote(handle) => {
-                let mut envelope = envelope;
-                loop {
-                    match handle.send(recipient, envelope) {
-                        remote::SendResult::Ok => break Ok(()),
-                        remote::SendResult::Err(err) => break Err(err),
-                        remote::SendResult::Wait(notified, e) => {
-                            envelope = e;
-                            notified.await;
+            ObjectKind::Remote(handle) => match handle.try_send(recipient, envelope) {
+                Ok(()) => SendFut::Ready(Ok(())),
+                Err(TrySendError::Closed(envelope)) => SendFut::Ready(Err(SendError(envelope))),
+                Err(TrySendError::Full(mut envelope)) => {
+                    let this = this.to_owned();
+                    SendFut::WaitRemote(async move {
+                        let handle = this.as_remote().unwrap();
+                        loop {
+                            match handle.send(recipient, envelope) {
+                                remote::SendResult::Ok => break Ok(()),
+                                remote::SendResult::Err(err) => break Err(err),
+                                remote::SendResult::Wait(notified, e) => {
+                                    envelope = e;
+                                    notified.await;
+                                }
+                            }
                         }
-                    }
+                    })
                 }
-            }
+            },
         }
     }
 
@@ -122,10 +148,17 @@ impl Object {
 
     pub(crate) fn as_actor(&self) -> Option<&Actor> {
         match &self.kind {
-            ObjectKind::Actor(actor) => Some(actor),
-            ObjectKind::Group(_) => None,
-            #[cfg(feature = "network")]
-            ObjectKind::Remote(_) => None,
+            ObjectKind::Actor(handle) => Some(handle),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "network")]
+    #[allow(clippy::borrowed_box)]
+    fn as_remote(&self) -> Option<&Box<dyn RemoteHandle>> {
+        match &self.kind {
+            ObjectKind::Remote(handle) => Some(handle),
+            _ => None,
         }
     }
 
@@ -135,6 +168,38 @@ impl Object {
             ObjectKind::Group(group) => group.finished().await,
             #[cfg(feature = "network")]
             ObjectKind::Remote(_) => todo!(),
+        }
+    }
+}
+
+// === SendFut ===
+
+#[pin_project(project = SendFutProj)]
+enum SendFut<A, G, R> {
+    Ready(SendResult),
+    WaitActor(#[pin] A),
+    WaitGroup(#[pin] G),
+    #[cfg(feature = "network")]
+    WaitRemote(#[pin] R),
+}
+
+type SendResult = Result<(), SendError<Envelope>>;
+
+impl<A, G, R> Future for SendFut<A, G, R>
+where
+    A: Future<Output = SendResult>,
+    G: Future<Output = SendResult>,
+    R: Future<Output = SendResult>,
+{
+    type Output = SendResult;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match self.project() {
+            SendFutProj::Ready(result) => Poll::Ready(mem::replace(result, Ok(()))),
+            SendFutProj::WaitActor(fut) => fut.poll(cx),
+            SendFutProj::WaitGroup(fut) => fut.poll(cx),
+            #[cfg(feature = "network")]
+            SendFutProj::WaitRemote(fut) => fut.poll(cx),
         }
     }
 }
@@ -153,37 +218,28 @@ pub(crate) trait GroupHandle: Send + Sync + 'static {
 pub trait GroupVisitor {
     fn done(&mut self);
     fn empty(&mut self, envelope: Envelope);
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope);
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope);
+    fn visit(&mut self, object: &OwnedObject, envelope: &Envelope);
+    fn visit_last(&mut self, object: &OwnedObject, envelope: Envelope);
 }
 
 // === SendGroupVisitor ===
 
-struct SendGroupVisitor<'a> {
-    book: &'a AddressBook,
-    full: SmallVec<[(Addr, Envelope); 1]>,
+#[derive(Default)]
+struct SendGroupVisitor {
     extra: Option<Envelope>,
+    full: SmallVec<[(OwnedObject, Envelope); 1]>,
     has_ok: bool,
 }
 
-impl<'a> SendGroupVisitor<'a> {
-    fn new(book: &'a AddressBook) -> Self {
-        Self {
-            book,
-            full: Default::default(),
-            extra: None,
-            has_ok: false,
-        }
-    }
-
+impl SendGroupVisitor {
     // We must send while visiting to ensure that a message starting a new actor
     // is actually the first message that the actor receives.
-    fn try_send(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn try_send(&mut self, object: &OwnedObject, envelope: Envelope) {
         let actor = object.as_actor().expect("group stores only actors");
         match actor.try_send(envelope) {
             Ok(()) => self.has_ok = true,
             Err(TrySendError::Full(envelope)) => {
-                self.full.push((object.addr(), envelope));
+                self.full.push((object.clone(), envelope));
             }
             Err(TrySendError::Closed(envelope)) => {
                 self.extra = Some(envelope);
@@ -192,41 +248,31 @@ impl<'a> SendGroupVisitor<'a> {
     }
 
     #[inline]
-    async fn finish(mut self) -> Result<(), SendError<Envelope>> {
+    async fn finish(mut self) -> SendResult {
         // Wait until messages reach all full actors.
         #[allow(clippy::comparison_chain)]
         if self.full.len() == 1 {
-            let (addr, envelope) = self.full.pop().unwrap();
+            let (object, envelope) = self.full.pop().unwrap();
 
-            if let Some(object) = self.book.get_owned(addr) {
-                let actor = object.as_actor().expect("group stores only actors");
-                match actor.send(envelope).await {
-                    Ok(()) => self.has_ok = true,
-                    Err(SendError(envelope)) => {
-                        if !self.has_ok {
-                            self.extra = Some(envelope);
-                        }
+            let actor = object.as_actor().expect("group stores only actors");
+            match actor.send(envelope).await {
+                Ok(()) => self.has_ok = true,
+                Err(SendError(envelope)) => {
+                    if !self.has_ok {
+                        self.extra = Some(envelope);
                     }
                 }
-            } else if !self.has_ok {
-                self.extra = Some(envelope);
             }
         } else if self.full.len() > 1 {
             let mut futures = Vec::new();
 
-            for (addr, envelope) in self.full.drain(..) {
-                let object = self.book.get_owned(addr);
+            for (object, envelope) in self.full.drain(..) {
                 futures.push(async move {
-                    match object {
-                        Some(object) => {
-                            object
-                                .as_actor()
-                                .expect("group stores only actors")
-                                .send(envelope)
-                                .await
-                        }
-                        None => Err(SendError(envelope)),
-                    }
+                    object
+                        .as_actor()
+                        .expect("group stores only actors")
+                        .send(envelope)
+                        .await
                 });
             }
 
@@ -252,7 +298,7 @@ impl<'a> SendGroupVisitor<'a> {
     }
 }
 
-impl GroupVisitor for SendGroupVisitor<'_> {
+impl GroupVisitor for SendGroupVisitor {
     fn done(&mut self) {
         debug_assert!(self.full.is_empty());
         debug_assert!(self.extra.is_none());
@@ -267,12 +313,12 @@ impl GroupVisitor for SendGroupVisitor<'_> {
         self.extra = Some(envelope);
     }
 
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
+    fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
         let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
         self.try_send(object, envelope);
     }
 
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn visit_last(&mut self, object: &OwnedObject, envelope: Envelope) {
         self.try_send(object, envelope);
     }
 }
@@ -289,7 +335,7 @@ struct TrySendGroupVisitor {
 impl TrySendGroupVisitor {
     // We must send while visiting to ensure that a message starting a new actor
     // is actually the first message that the actor receives.
-    fn try_send(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn try_send(&mut self, object: &OwnedObject, envelope: Envelope) {
         let actor = object.as_actor().expect("group stores only actors");
         match actor.try_send(envelope) {
             Ok(()) => self.has_ok = true,
@@ -329,12 +375,12 @@ impl GroupVisitor for TrySendGroupVisitor {
         self.extra = Some(envelope);
     }
 
-    fn visit(&mut self, object: &ObjectArc, envelope: &Envelope) {
+    fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
         let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
         self.try_send(object, envelope);
     }
 
-    fn visit_last(&mut self, object: &ObjectArc, envelope: Envelope) {
+    fn visit_last(&mut self, object: &OwnedObject, envelope: Envelope) {
         self.try_send(object, envelope);
     }
 }
