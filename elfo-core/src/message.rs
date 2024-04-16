@@ -9,7 +9,7 @@ use serde::{
     ser::{SerializeStruct as _, SerializeTuple as _},
     Deserialize, Deserializer, Serialize,
 };
-use smallbox::{smallbox, SmallBox};
+use smallbox::smallbox;
 
 use elfo_utils::unlikely;
 
@@ -44,7 +44,7 @@ pub trait Message: fmt::Debug + Clone + Any + Send + Serialize + for<'de> Deseri
         self._touch();
         AnyMessage {
             vtable: self._vtable(),
-            data: smallbox!(self),
+            data: Box::new(self),
         }
     }
 
@@ -77,7 +77,7 @@ pub trait Request: Message {
 // Reexported in `elfo::_priv`.
 pub struct AnyMessage {
     vtable: &'static MessageVTable,
-    data: SmallBox<dyn Any + Send, [usize; 24]>,
+    data: Box<dyn Any + Send>,
 }
 
 impl AnyMessage {
@@ -105,11 +105,7 @@ impl AnyMessage {
             return Err(self);
         }
 
-        let message = self
-            .data
-            .downcast::<M>()
-            .expect("cannot downcast")
-            .into_inner();
+        let message = *self.data.downcast::<M>().expect("cannot downcast");
 
         message._touch();
         Ok(message)
