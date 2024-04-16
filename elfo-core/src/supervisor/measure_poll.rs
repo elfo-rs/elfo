@@ -4,6 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use idr_ebr::Guard as EbrGuard;
 use metrics::Key;
 use pin_project::pin_project;
 
@@ -44,6 +45,12 @@ impl<F: Future> Future for MeasurePoll<F> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
+
+        // A controversial decision.
+        // On the one hand, it make all internal guards more cheaper.
+        // On the other hand, if some actor is stuck, garbage collection stop working.
+        // TODO: introduce a feature flag to disable this.
+        let _ebr_guard = EbrGuard::new();
 
         #[cfg(feature = "unstable-stuck-detection")]
         this.stuck_detector.enter();

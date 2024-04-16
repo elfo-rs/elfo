@@ -4,6 +4,7 @@ use std::{
 };
 
 use derive_more::Display;
+use idr_ebr::Key;
 use serde::{Deserialize, Serialize};
 
 // === NodeNo ===
@@ -117,7 +118,7 @@ impl GroupNo {
 ///
 /// # Uniqueness
 ///
-/// An address is based on a sharded slab to make it a simple sendable number
+/// An address is based on an [IDR] to make it a simple sendable number
 /// (as opposed to reference counting) and provide better performance of lookups
 /// than hashmaps. However, it means deletions and insertions to the same
 /// underlying slot multiple times can lead to reusing the address for a
@@ -127,7 +128,7 @@ impl GroupNo {
 /// * Alive actors on the same node always have different addresses.
 /// * Actors in different nodes have different address spaces.
 /// * Actors in different groups have different address spaces.
-/// * An address includes the version number to guard against the ABA problem.
+/// * An address includes the version number to guard against the [ABA] problem.
 /// * An address is randomized between restarts of the same node if the
 ///   `network` feature is enabled.
 ///
@@ -139,29 +140,24 @@ impl GroupNo {
 /// The only way to get an address of remote actor is `envelope.sender()`.
 /// If sending `Addr` inside a message is unavoidable, use `Local<Addr>`,
 /// however it won't be possible to send such message to a remote actor.
+///
+/// [IDR]: https://crates.io/crates/idr-ebr
+/// [ABA]: https://en.wikipedia.org/wiki/ABA_problem
 // ~
-// Structure (64b platform):
-//  64           48         40           30      21                0
-//  +------------+----------+------------+-------+-----------------+
-//  |   node_no  | group_no | generation |  TID  |  page + offset  |
-//  |     16b    |    8b    |     10b    |   9b  |       21b       |
-//  +------------+----------+------------+-------+-----------------+
-//   (0 if local)           ^----------- slot key (40b) -----------^
+// The structure:
+//  64           48         40           25                       0
+//  ┌────────────┬──────────┬────────────┬────────────────────────┐
+//  │   node_no  │ group_no │ generation │    page_no + slot_no   │
+//  │     16b    │    8b    │     15b    │           25b          │
+//  └────────────┴──────────┴────────────┴────────────────────────┘
+//   (0 if local)           └─────────── IDR key (40b) ───────────┘
 //
-// Structure (32b platform):
-//  64           48         40     32       25     18              0
-//  +------------+----------+------+--------+------+---------------+
-//  |   node_no  | group_no | rand | genera | TID  | page + offset |
-//  |     16b    |    8b    |  8b  |   7b   |  7b  |      18b      |
-//  +------------+----------+------+--------+------+---------------+
-//   (0 if local)                   ^------- slot key (32b) -------^
 //
-// Limits:                                         64b       32b
-// - max nodes in a cluster                      65535     65535 (1)
-// - max groups in a node                          255       255 (2, 3)
-// - max active actors spawned by one thread   1048544    131040
-// - slot generations to prevent ABA              1024       128
-// - max threads spawning actors                   256        64
+// Limits:
+// - max nodes in a cluster                        65'535  (1)
+// - max groups in a node                             255  (2, 3)
+// - max active actors                         33'554'400
+// - slot generations to prevent ABA               32'768
 //
 // 1. `0` is reserved to represent the local node.
 // 2. `0` is reserved to represent `Addr::NULL` unambiguously.
@@ -172,7 +168,7 @@ impl GroupNo {
 // node will have different addresses. The original address is never printed or even represented
 // and the slot key part is restored only by calling private `Addr::slot_key(launch_no)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Addr(u64); // TODO: make it `NonZeroU64` instead of `Addr::NULL`?
+pub struct Addr(u64); // TODO: make it `NonZeroU64` instead of `Addr::NULL`
 
 const NODE_NO_SHIFT: u32 = 48;
 const GROUP_NO_SHIFT: u32 = 40;
@@ -203,14 +199,16 @@ impl Addr {
     pub const NULL: Addr = Addr(0);
 
     #[cfg(feature = "network")]
-    pub(crate) fn new_local(slot_key: usize, group_no: GroupNo, launch_id: NodeLaunchId) -> Self {
+    pub(crate) fn new_local(slot_key: Key, group_no: GroupNo, launch_id: NodeLaunchId) -> Self {
+        let slot_key = u64::from(slot_key);
         debug_assert!(slot_key < (1 << GROUP_NO_SHIFT));
-        let slot_key = ((slot_key as u64) ^ launch_id.into_bits()) & ((1 << GROUP_NO_SHIFT) - 1);
+        let slot_key = (slot_key ^ launch_id.into_bits()) & ((1 << GROUP_NO_SHIFT) - 1);
         Self::new_local_inner(slot_key, group_no)
     }
 
     #[cfg(not(feature = "network"))]
-    pub(crate) fn new_local(slot_key: usize, group_no: GroupNo, _launch_id: NodeLaunchId) -> Self {
+    pub(crate) fn new_local(slot_key: Key, group_no: GroupNo, _launch_id: NodeLaunchId) -> Self {
+        let slot_key = u64::from(slot_key);
         debug_assert!(slot_key < (1 << GROUP_NO_SHIFT));
         Self::new_local_inner(slot_key as u64, group_no)
     }
@@ -265,14 +263,14 @@ impl Addr {
     }
 
     #[cfg(feature = "network")]
-    pub(crate) fn slot_key(self, launch_id: NodeLaunchId) -> usize {
-        // sharded-slab uses the lower bits only, so we can xor the whole address.
-        (self.0 ^ launch_id.into_bits()) as usize
+    pub(crate) fn slot_key(self, launch_id: NodeLaunchId) -> Option<Key> {
+        // IDR uses the lower bits only, so we can xor the whole address.
+        (self.0 ^ launch_id.into_bits()).try_into().ok()
     }
 
     #[cfg(not(feature = "network"))]
-    pub(crate) fn slot_key(self, _launch_id: NodeLaunchId) -> usize {
-        self.0 as usize
+    pub(crate) fn slot_key(self, _launch_id: NodeLaunchId) -> Option<Key> {
+        self.0.try_into().ok()
     }
 
     #[cfg(feature = "network")]
@@ -293,34 +291,20 @@ impl Addr {
     }
 }
 
-// === SlabConfig ===
+// === IdrConfig ===
 
-// Actually, it doesn't reexported.
-pub struct SlabConfig;
+// Actually, it doesn't reexported. TODO: remove comment?
+pub(crate) struct IdrConfig;
 
-#[cfg(target_pointer_width = "64")]
-impl sharded_slab::Config for SlabConfig {
-    const INITIAL_PAGE_SIZE: usize = 32;
-    const MAX_PAGES: usize = 15;
-    const MAX_THREADS: usize = 256;
-    const RESERVED_BITS: usize = 24;
+impl idr_ebr::Config for IdrConfig {
+    const INITIAL_PAGE_SIZE: u32 = 32;
+    const MAX_PAGES: u32 = 20;
+    const RESERVED_BITS: u32 = 24;
 }
-#[cfg(target_pointer_width = "64")]
 const_assert_eq!(
-    sharded_slab::Slab::<crate::object::Object, SlabConfig>::USED_BITS,
-    GROUP_NO_SHIFT as usize
+    idr_ebr::Idr::<crate::object::Object, IdrConfig>::USED_BITS,
+    GROUP_NO_SHIFT
 );
-
-#[cfg(target_pointer_width = "32")]
-impl sharded_slab::Config for SlabConfig {
-    const INITIAL_PAGE_SIZE: usize = 32;
-    const MAX_PAGES: usize = 12;
-    const MAX_THREADS: usize = 64;
-    const RESERVED_BITS: usize = 0;
-}
-
-#[cfg(target_pointer_width = "32")]
-const_assert_eq!(Slab::<Object, SlabConfig>::USED_BITS, 32);
 
 #[cfg(test)]
 mod tests {
@@ -360,7 +344,7 @@ mod tests {
     proptest! {
         #[test]
         fn addr(
-            slot_keys in prop::collection::hash_set(0u64..(1 << GROUP_NO_SHIFT), 10),
+            slot_keys in prop::collection::hash_set(1u64..(1 << GROUP_NO_SHIFT), 10),
             group_nos in prop::collection::hash_set(1..=u8::MAX, 10),
             launch_ids in prop::collection::hash_set(prop::num::u64::ANY, 10),
         ) {
@@ -374,7 +358,7 @@ mod tests {
             for slot_key in &slot_keys {
                 for group_no in &group_nos {
                     for launch_id in &launch_ids {
-                        let slot_key = *slot_key as usize;
+                        let slot_key = Key::try_from(*slot_key).unwrap();
                         let launch_id = NodeLaunchId::from_bits(*launch_id);
                         let group_no = GroupNo::new(*group_no, launch_id).unwrap();
                         let addr = Addr::new_local(slot_key, group_no, launch_id);
@@ -384,7 +368,9 @@ mod tests {
                         prop_assert!(addr.is_local());
                         prop_assert_eq!(addr.group_no(), Some(group_no));
                         prop_assert_eq!(addr.node_no(), None);
-                        prop_assert_eq!(addr.slot_key(launch_id) & ((1 << GROUP_NO_SHIFT) - 1), slot_key);
+
+                        let actual_slot_key = u64::from(addr.slot_key(launch_id).unwrap());
+                        prop_assert_eq!(actual_slot_key & ((1 << GROUP_NO_SHIFT) - 1), u64::from(slot_key));
                         prop_assert_eq!(addr.into_local(), addr);
                         prop_assert_eq!(Addr::from_bits(addr.into_bits()), Some(addr));
                         prop_assert_eq!(addr.to_string().split('/').count(), 2);

@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - telemeter: the `elfo_metrics_storage_shards` gauge metric.
 
 ### Changed
+- core: replace sharded-slab with idr-ebr to reduce contention on messaging.
+- macros/msg: replace a chain of `is()` with type id to improve codegen.
 - telemeter: a new sharded-by-threads storage, it increases perf and dramatically reduces contention.
 - telemeter: revise default DDSketch parameters. It improves stability for some cases.
 - telemeter: rename the `Prometheus` sink to `OpenMetrics` with aliasing.
