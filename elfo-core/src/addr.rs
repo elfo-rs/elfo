@@ -293,7 +293,6 @@ impl Addr {
 
 // === IdrConfig ===
 
-// Actually, it doesn't reexported. TODO: remove comment?
 pub(crate) struct IdrConfig;
 
 impl idr_ebr::Config for IdrConfig {

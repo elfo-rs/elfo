@@ -57,6 +57,7 @@ impl AddressBook {
             .remove(network_actor_addr, local_group, remote_group, handle_addr);
     }
 
+    #[inline]
     pub fn get<'g>(&self, addr: Addr, guard: &'g EbrGuard) -> Option<BorrowedObject<'g>> {
         let addr = self.prepare_addr(addr)?;
 
@@ -67,6 +68,7 @@ impl AddressBook {
             .filter(|object| object.addr() == addr)
     }
 
+    #[inline]
     pub fn get_owned(&self, addr: Addr) -> Option<OwnedObject> {
         let addr = self.prepare_addr(addr)?;
 
