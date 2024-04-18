@@ -174,17 +174,43 @@ impl Object {
 
 // === SendFut ===
 
+type SendResult = Result<(), SendError<Envelope>>;
+
+#[cfg(not(feature = "network"))]
+#[pin_project(project = SendFutProj)]
+enum SendFut<A, G> {
+    Ready(SendResult),
+    WaitActor(#[pin] A),
+    WaitGroup(#[pin] G),
+}
+
+#[cfg(not(feature = "network"))]
+impl<A, G> Future for SendFut<A, G>
+where
+    A: Future<Output = SendResult>,
+    G: Future<Output = SendResult>,
+{
+    type Output = SendResult;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match self.project() {
+            SendFutProj::Ready(result) => Poll::Ready(mem::replace(result, Ok(()))),
+            SendFutProj::WaitActor(fut) => fut.poll(cx),
+            SendFutProj::WaitGroup(fut) => fut.poll(cx),
+        }
+    }
+}
+
+#[cfg(feature = "network")]
 #[pin_project(project = SendFutProj)]
 enum SendFut<A, G, R> {
     Ready(SendResult),
     WaitActor(#[pin] A),
     WaitGroup(#[pin] G),
-    #[cfg(feature = "network")]
     WaitRemote(#[pin] R),
 }
 
-type SendResult = Result<(), SendError<Envelope>>;
-
+#[cfg(feature = "network")]
 impl<A, G, R> Future for SendFut<A, G, R>
 where
     A: Future<Output = SendResult>,
@@ -198,7 +224,6 @@ where
             SendFutProj::Ready(result) => Poll::Ready(mem::replace(result, Ok(()))),
             SendFutProj::WaitActor(fut) => fut.poll(cx),
             SendFutProj::WaitGroup(fut) => fut.poll(cx),
-            #[cfg(feature = "network")]
             SendFutProj::WaitRemote(fut) => fut.poll(cx),
         }
     }
