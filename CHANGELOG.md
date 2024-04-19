@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - telemetry: now `elfo_message_handling_time_seconds` doesn't include the time of task switching if an actor is preempted due to elfo's budget system.
 - telemetry: don't produce allocator metrics if not enabled.
 - telemeter: validate quantiles (0.0..=1.0) in the config.
+- core: get rid of a dirty hack preventing high CPU usage in case of the large number of responses.
 
 ## [0.2.0-alpha.14] - 2024-02-27
 ### Fixed
