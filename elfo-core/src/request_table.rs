@@ -1,9 +1,9 @@
 use std::{fmt, marker::PhantomData, sync::Arc};
 
-use futures_intrusive::sync::ManualResetEvent;
 use parking_lot::Mutex;
 use slotmap::{new_key_type, Key, SlotMap};
 use smallvec::SmallVec;
+use tokio::sync::Notify;
 
 use crate::{
     address_book::AddressBook, envelope::Envelope, errors::RequestError, message::AnyMessage,
@@ -40,7 +40,7 @@ impl RequestId {
 
 pub(crate) struct RequestTable {
     owner: Addr,
-    notifier: ManualResetEvent,
+    notifier: Notify,
     requests: Mutex<SlotMap<RequestId, RequestData>>,
 }
 
@@ -97,7 +97,7 @@ impl RequestTable {
     pub(crate) fn new(owner: Addr) -> Self {
         Self {
             owner,
-            notifier: ManualResetEvent::new(false),
+            notifier: Notify::new(),
             requests: Mutex::new(SlotMap::default()),
         }
     }
@@ -123,10 +123,8 @@ impl RequestTable {
     }
 
     pub(crate) async fn wait(&self, request_id: RequestId) -> Responses {
-        let mut n = 0;
-
         loop {
-            self.notifier.wait().await;
+            let waiting = self.notifier.notified();
 
             {
                 let mut requests = self.requests.lock();
@@ -134,23 +132,11 @@ impl RequestTable {
 
                 if request.remainder == 0 {
                     let data = requests.remove(request_id).expect("under lock");
-
-                    // TODO: use another approach.
-                    if requests.values().all(|data| data.remainder != 0) {
-                        self.notifier.reset();
-                    }
-
                     break data.responses;
                 }
             }
 
-            // XXX: dirty fix to avoid high CPU usage.
-            n += 1;
-            if n % 10 == 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            } else {
-                tokio::task::yield_now().await;
-            }
+            waiting.await;
         }
     }
 
@@ -168,7 +154,9 @@ impl RequestTable {
         let request = ward!(requests.get_mut(data.request_id));
 
         if request.push(response) {
-            self.notifier.set();
+            // Actors can perform multiple requests in parallel using different
+            // wakers, so we should wake all possible wakers up.
+            self.notifier.notify_waiters();
         }
     }
 }
