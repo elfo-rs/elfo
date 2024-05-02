@@ -132,7 +132,7 @@ impl RequestTable {
                 let request = requests.get(request_id).expect("unknown request");
 
                 if request.remainder == 0 {
-                    break requests.remove(request_id).expect("under lock");
+                    break requests.remove(request_id).expect("under lock").responses;
                 }
             }
 
