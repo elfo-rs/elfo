@@ -24,10 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - telemeter: make preemption points to the merge process.
 
 ### Fixed
+- core/init: stuck on startup if a config's deserialization fails ([#125]).
 - telemetry: now `elfo_message_handling_time_seconds` doesn't include the time of task switching if an actor is preempted due to elfo's budget system.
 - telemetry: don't produce allocator metrics if not enabled.
 - telemeter: validate quantiles (0.0..=1.0) in the config.
 - core: get rid of a dirty hack preventing high CPU usage in case of the large number of responses.
+
+[#125]: https://github.com/elfo-rs/elfo/issues/125
 
 ## [0.2.0-alpha.14] - 2024-02-27
 ### Fixed
