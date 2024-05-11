@@ -53,8 +53,7 @@ async fn start_entrypoints(ctx: &Context, topology: &Topology, is_check_only: bo
             match response {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(e)) => Err(StartError::single(group.name.clone(), e.reason)),
-                Err(RequestError::Ignored) => Ok(()),
-                Err(RequestError::Failed) => Err(StartError::single(
+                Err(RequestError::Ignored) | Err(RequestError::Failed) => Err(StartError::single(
                     group.name.clone(),
                     "config cannot be delivered to the entrypoint".into(),
                 )),
@@ -77,8 +76,7 @@ async fn start_entrypoints(ctx: &Context, topology: &Topology, is_check_only: bo
                         .collect();
                     Err(StartError::multiple(group_errors))
                 }
-                Err(RequestError::Ignored) => Ok(()),
-                Err(RequestError::Failed) => Err(StartError::single(
+                Err(RequestError::Ignored) | Err(RequestError::Failed) => Err(StartError::single(
                     group.name,
                     "starting message cannot be delivered to the entrypoint".into(),
                 )),
