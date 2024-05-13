@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.15] - 2024-05-13
 ### Added
 - coop: expose `coop::consume_budget()` to call in long computations. See documentation of the `coop` module for details.
 - coop: prefer a time-based budgeting if the telemetry is enabled.
@@ -611,7 +613,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.14...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.15...HEAD
+[0.2.0-alpha.15]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.14...elfo-v0.2.0-alpha.15
 [0.2.0-alpha.14]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.13...elfo-v0.2.0-alpha.14
 [0.2.0-alpha.13]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.12...elfo-v0.2.0-alpha.13
 [0.2.0-alpha.12]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.11...elfo-v0.2.0-alpha.12
