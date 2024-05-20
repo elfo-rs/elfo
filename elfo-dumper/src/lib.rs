@@ -5,7 +5,6 @@
 //! For more details about dumping see [The Actoromicon](https://actoromicon.rs/ch05-03-dumping.html).
 //!
 //! Configuration can be found in [`config::Config`].
-#![warn(rust_2018_idioms, unreachable_pub, missing_docs)]
 
 use std::sync::Arc;
 

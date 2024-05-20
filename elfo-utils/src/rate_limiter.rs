@@ -19,10 +19,14 @@ impl Default for RateLimiter {
     }
 }
 
+/// A rate limit configuration.
 #[derive(Clone, Copy)]
 pub enum RateLimit {
+    /// Unlimited rate.
     Unlimited,
+    /// Requests per second.
     Rps(u64),
+    /// Requests per a custom period.
     Custom(u64, Duration),
 }
 

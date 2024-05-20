@@ -1,6 +1,4 @@
-//! TODO
-
-#![warn(rust_2018_idioms, unreachable_pub, missing_docs)]
+//! Implements the network layer of the distributed elfo system.
 
 #[macro_use]
 extern crate static_assertions;

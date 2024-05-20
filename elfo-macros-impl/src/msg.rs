@@ -215,6 +215,7 @@ fn add_groups(groups: &mut Vec<MessageGroup>, mut arm: Arm) {
     }
 }
 
+/// Implements the `msg!` macro.
 pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as ExprMatch);
     let mut groups = Vec::<MessageGroup>::with_capacity(input.arms.len());

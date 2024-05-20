@@ -23,6 +23,7 @@ impl<A> AllocatorStats<A> {
     }
 }
 
+// SAFETY: it augmentes the logic of an inner allocator, but does not change it.
 unsafe impl<A> GlobalAlloc for AllocatorStats<A>
 where
     A: GlobalAlloc,

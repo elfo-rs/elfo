@@ -2,7 +2,6 @@
 //!
 //! See [The Actoromicon](https://actoromicon.rs/) for more information.
 
-#![warn(rust_2018_idioms, unreachable_pub, missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub use elfo_core::*;

@@ -14,10 +14,7 @@ use serde_json::value::RawValue;
 pub struct Raw<T>(pub T);
 
 impl<T: AsRef<str>> Serialize for Raw<T> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let s = self.0.as_ref();
         let r = replace_newline(s);
 

@@ -1,4 +1,4 @@
-#![warn(rust_2018_idioms, unreachable_pub)]
+//! Registers `tracing` subscriber and logs events.
 
 #[macro_use]
 extern crate elfo_utils;
@@ -68,6 +68,20 @@ fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
     (printing_layer, filtering_layer, blueprint)
 }
 
+/// Initializes `tracing` subscriber and returns a blueprint.
+///
+/// # Example
+/// ```
+/// # use elfo_core as elfo;
+///
+/// // Usually, it's `elfo::batteries::logger::init`.
+/// let logger = elfo_logger::init();
+///
+/// let topology = elfo::Topology::empty();
+/// let loggers = topology.local("loggers");
+///
+/// loggers.mount(logger);
+/// ```
 pub fn init() -> Blueprint {
     // TODO: log instead of panicking.
     let (printer, filter, blueprint) = new();

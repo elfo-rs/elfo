@@ -145,8 +145,12 @@ impl Logger {
 
         // Add ancestors' fields.
         let mut span_id = event.span_id;
-        while let Some(data) = span_id.and_then(|span_id| self.shared.spans.get(&span_id)) {
-            span_id = data.parent_id.clone();
+        while let Some(data) = span_id
+            .as_ref()
+            .and_then(|span_id| self.shared.spans.get(span_id))
+        {
+            span_id.clone_from(&data.parent_id);
+
             let payload = self
                 .shared
                 .pool

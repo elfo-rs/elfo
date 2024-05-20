@@ -1,4 +1,5 @@
-#![warn(rust_2018_idioms, unreachable_pub)]
+//! Loads and validates configs from a file or a fixture.
+//! Usually, it's used as an entrypoint in the topology.
 
 use std::{
     future::Future,
@@ -33,12 +34,41 @@ mod protocol;
 // How often warn if a group is updating a config too long.
 const WARN_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Creates a blueprint for a configurer that uses the provided fixture.
+///
+/// # Example
+/// ```
+/// # use elfo_core as elfo;
+/// use toml::toml;
+///
+/// let topology = elfo::Topology::empty();
+/// let configurers = topology.local("configurers");
+/// let examples = topology.local("examples");
+///
+/// // Usually, it's `elfo::batteries::configurer::fixture`.
+/// configurers.mount(elfo_configurer::fixture(&topology, toml! {
+///     [examples]
+///     a = 42
+/// }));
+/// ```
 pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Blueprint {
     let config = Value::deserialize(config).map_err(|err| err.to_string());
     let source = ConfigSource::Fixture(config);
     blueprint(topology, source)
 }
 
+/// Creates a blueprint for a configurer that reads the provided TOML file.
+///
+/// # Example
+/// ```
+/// # use elfo_core as elfo;
+/// let topology = elfo::Topology::empty();
+/// let configurers = topology.local("configurers");
+/// let examples = topology.local("examples");
+///
+/// // Usually, it's `elfo::batteries::configurer::from_path`.
+/// configurers.mount(elfo_configurer::from_path(&topology, "config.toml"));
+/// ```
 pub fn from_path(topology: &Topology, path_to_config: impl AsRef<Path>) -> Blueprint {
     let source = ConfigSource::File(path_to_config.as_ref().to_path_buf());
     blueprint(topology, source)

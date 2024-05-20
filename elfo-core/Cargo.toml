@@ -10,6 +10,9 @@ license.workspace = true
 edition.workspace = true
 readme.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 test-util = ["tokio/test-util"]
 network = ["rmp-serde", "elfo-macros/network"]

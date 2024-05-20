@@ -32,6 +32,7 @@ use elfo_core::{
 
 const SYNC_YIELD_COUNT: usize = 32;
 
+/// A proxy for testing actors.
 pub struct Proxy {
     context: ProxyContext,
     scope: Scope,
@@ -42,10 +43,12 @@ pub struct Proxy {
 type ProxyContext = Context<(), usize>;
 
 impl Proxy {
+    /// Returns an address of the proxy.
     pub fn addr(&self) -> Addr {
         self.context.addr()
     }
 
+    /// See [`Context::send()`] for details.
     #[track_caller]
     pub fn send<M: Message>(&self, message: M) -> impl Future<Output = ()> + '_ {
         let location = Location::caller();
@@ -57,6 +60,7 @@ impl Proxy {
         })
     }
 
+    /// See [`Context::send_to()`] for details.
     #[track_caller]
     pub fn send_to<M: Message>(
         &self,
@@ -72,6 +76,7 @@ impl Proxy {
         })
     }
 
+    /// See [`Context::try_send()`] for details.
     #[track_caller]
     pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
         self.scope
@@ -79,6 +84,7 @@ impl Proxy {
             .sync_within(|| self.context.try_send(message))
     }
 
+    /// See [`Context::try_send_to()`] for details.
     #[track_caller]
     pub fn try_send_to<M: Message>(
         &self,
@@ -90,6 +96,7 @@ impl Proxy {
             .sync_within(|| self.context.try_send_to(recipient, message))
     }
 
+    /// See [`Context::request()`] for details.
     #[track_caller]
     pub fn request<R: Request>(&self, request: R) -> impl Future<Output = R::Response> + '_ {
         let location = Location::caller();
@@ -102,6 +109,7 @@ impl Proxy {
         })
     }
 
+    /// See [`Context::request_to()`] for details.
     #[track_caller]
     pub fn request_to<R: Request>(
         &self,
@@ -118,12 +126,14 @@ impl Proxy {
         })
     }
 
+    /// See [`Context::respond()`] for details.
     pub fn respond<R: Request>(&self, token: ResponseToken<R>, response: R::Response) {
         self.scope
             .clone()
             .sync_within(|| self.context.respond(token, response))
     }
 
+    /// See [`Context::recv()`] for details.
     #[track_caller]
     pub fn recv(&mut self) -> impl Future<Output = Envelope> + '_ {
         // We use a separate timer here to avoid interaction with the tokio's timer.
@@ -156,6 +166,7 @@ impl Proxy {
         })
     }
 
+    /// See [`Context::try_recv()`] for details.
     pub async fn try_recv(&mut self) -> Option<Envelope> {
         self.scope
             .clone()
@@ -308,6 +319,8 @@ where
     }
 }
 
+/// Creates a proxy for testing actors.
+/// See examples in the repository for more details how to use it.
 pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>) -> Proxy {
     proxy_with_route(blueprint, |_| true, config).await
 }

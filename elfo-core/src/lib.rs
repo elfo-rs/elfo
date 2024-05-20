@@ -1,4 +1,4 @@
-#![warn(rust_2018_idioms, unreachable_pub)] // TODO: add `missing_docs`.
+#![allow(missing_docs)] // TODO
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[macro_use]

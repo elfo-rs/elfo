@@ -10,6 +10,9 @@ license.workspace = true
 edition.workspace = true
 readme.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.15", path = "../elfo-core", features = ["unstable"] }
 

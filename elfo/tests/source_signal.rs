@@ -82,6 +82,7 @@ async fn terminate() {
 
 #[cfg(unix)]
 fn send_signal(signum: libc::c_int) {
+    // SAFETY: `kill` is safe to call with a valid PID.
     unsafe {
         assert_eq!(libc::kill(libc::getpid(), signum), 0);
     }

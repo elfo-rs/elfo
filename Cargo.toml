@@ -25,5 +25,14 @@ license = "MIT"
 edition = "2021"
 readme = "README.md"
 
+[workspace.lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+missing_docs = "warn"
+unexpected_cfgs = "allow" # for `docsrs`
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+
 [profile.release]
 debug = 1

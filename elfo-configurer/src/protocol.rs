@@ -29,6 +29,8 @@ pub struct ReloadConfigsRejected {
 #[message(part)]
 #[non_exhaustive]
 pub struct ReloadConfigsError {
+    /// The actor group that rejects the config.
     pub group: String,
+    /// The reason why the config is rejected.
     pub reason: String,
 }

@@ -1,13 +1,17 @@
+//! Contains `msg!` and `message!` proc-macros.
+
 use proc_macro::TokenStream;
 use syn::parse_quote;
 
 use elfo_macros_impl::{message_impl, msg_impl};
 
+/// Matches a message based on the provided envelope.
 #[proc_macro]
 pub fn msg(input: TokenStream) -> TokenStream {
     msg_impl(input, parse_quote!(::elfo))
 }
 
+#[doc(hidden)]
 #[proc_macro]
 pub fn msg_core(input: TokenStream) -> TokenStream {
     msg_impl(input, parse_quote!(::elfo_core))
@@ -27,6 +31,7 @@ pub fn message(attr: TokenStream, input: TokenStream) -> TokenStream {
     message_impl(attr, input, parse_quote!(::elfo))
 }
 
+#[doc(hidden)]
 #[proc_macro_attribute]
 pub fn message_core(attr: TokenStream, input: TokenStream) -> TokenStream {
     message_impl(attr, input, parse_quote!(::elfo_core))

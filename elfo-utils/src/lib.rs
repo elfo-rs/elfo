@@ -1,4 +1,4 @@
-#![warn(rust_2018_idioms, unreachable_pub)]
+//! A collection of utilities to share among elfo-* crates.
 
 use derive_more::Deref;
 
@@ -11,13 +11,14 @@ mod likely;
 mod rate_limiter;
 pub mod time;
 
-#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Deref)]
+/// A wrapper type that aligns the inner value to the cache line size.
 // Spatial prefetcher is now pulling two lines at a time, so we use `align(128)`.
 #[cfg_attr(any(target_arch = "x86_64", target_arch = "aarch64"), repr(align(128)))]
 #[cfg_attr(
     not(any(target_arch = "x86_64", target_arch = "aarch64")),
     repr(align(64))
 )]
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Deref)]
 pub struct CachePadded<T>(pub T);
 
 /// Returns the contents of a `Option<T>`'s `Some(T)`, otherwise it returns
@@ -47,6 +48,7 @@ macro_rules! ward {
     };
 }
 
+/// A simple macro to check if a cooldown period has passed since the last time.
 #[macro_export]
 macro_rules! cooldown {
     ($period:expr) => {{

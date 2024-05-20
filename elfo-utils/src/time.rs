@@ -24,25 +24,25 @@ impl Instant {
         Self::now().duration_since(*self)
     }
 
-    // Returns the amount of time elapsed from another instant to this one.
-    //
-    // This method saturates to zero.
+    /// Returns the amount of time elapsed from another instant to this one.
+    ///
+    /// This method saturates to zero.
     #[inline]
     pub fn duration_since(&self, earlier: Self) -> Duration {
         with_clock(|c| c.delta(earlier.0, self.0))
     }
 
-    // Returns the number of seconds elapsed from another instant to this one.
-    //
-    // This method saturates to zero.
+    /// Returns the number of seconds elapsed from another instant to this one.
+    ///
+    /// This method saturates to zero.
     #[inline]
     pub fn secs_f64_since(&self, earlier: Self) -> f64 {
         self.nanos_since(earlier) as f64 * 1e-9
     }
 
-    // Returns the number of nanoseconds elapsed from another instant to this one.
-    //
-    // This method saturates to zero.
+    /// Returns the number of nanosecs elapsed from another instant to this one.
+    ///
+    /// This method saturates to zero.
     #[inline]
     pub fn nanos_since(&self, earlier: Self) -> u64 {
         with_clock(|c| c.delta_as_nanos(earlier.0, self.0))

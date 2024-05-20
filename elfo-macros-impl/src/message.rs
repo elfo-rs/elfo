@@ -155,6 +155,7 @@ fn gen_impl_debug(input: &DeriveInput) -> TokenStream {
     }
 }
 
+/// Implementation of the `#[message]` macro.
 pub fn message_impl(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,

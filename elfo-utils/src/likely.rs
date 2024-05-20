@@ -6,6 +6,7 @@
 #[cold]
 fn cold() {}
 
+/// Hints the compiler that this branch is likely to be taken.
 #[inline(always)]
 pub fn likely(b: bool) -> bool {
     if !b {
@@ -14,6 +15,7 @@ pub fn likely(b: bool) -> bool {
     b
 }
 
+/// Hints the compiler that this branch is unlikely to be taken.
 #[inline(always)]
 pub fn unlikely(b: bool) -> bool {
     if b {

@@ -212,7 +212,7 @@ impl<S: ?Sized> StreamWithWaker<S> {
         // But we use it anyway to get benefits in the future.
         if !self.waker.will_wake(new_waker) {
             // SAFETY: `waker` is not pinned.
-            unsafe { self.get_unchecked_mut().waker = new_waker.clone() }
+            unsafe { self.get_unchecked_mut().waker.clone_from(new_waker) }
         }
     }
 
@@ -223,19 +223,20 @@ impl<S: ?Sized> StreamWithWaker<S> {
     fn stream(self: Pin<&mut Self>) -> Pin<&mut S> {
         assert_ne!(self.status, StreamStatus::Terminated);
 
-        // SAFETY (`Pin`): `stream` is pinned when `Self` is.
-        // SAFETY (`ManuallyDrop`): `Terminated` prevents double dropping.
+        // SAFETY: `Pin`: `stream` is pinned when `Self` is.
+        // SAFETY: `ManuallyDrop`: `Terminated` prevents double dropping.
         unsafe { self.map_unchecked_mut(|s| &mut *s.stream) }
     }
 
     fn terminate(self: Pin<&mut Self>) {
         assert_ne!(self.status, StreamStatus::Terminated);
 
+        // SAFETY: we don't move the stream, only drop it in place.
         let this = unsafe { self.get_unchecked_mut() };
         this.status = StreamStatus::Terminated;
 
-        // SAFETY (`Pin`): the destructor is called in-place without moving the stream.
-        // SAFETY (`ManuallyDrop`): `Terminated` prevents double dropping.
+        // SAFETY: `Pin`: the destructor is called in-place without moving the stream.
+        // SAFETY: `ManuallyDrop`: `Terminated` prevents double dropping.
         unsafe { ManuallyDrop::drop(&mut this.stream) };
     }
 }

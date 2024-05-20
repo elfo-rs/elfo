@@ -36,23 +36,23 @@ mod one {
     set_protocol!("one");
 
     #[message]
-    pub struct SimpleMessage {}
+    pub(crate) struct SimpleMessage {}
 
     #[message(ret = ())]
-    pub struct SimpleRequest {}
+    pub(crate) struct SimpleRequest {}
 
-    pub mod two {
+    pub(crate) mod two {
         use super::*;
 
         #[message]
-        pub struct SimpleMessage2 {}
+        pub(crate) struct SimpleMessage2 {}
     }
 
-    pub mod three {
+    pub(crate) mod three {
         elfo::set_protocol!("three");
 
         #[elfo::message]
-        pub struct SimpleMessage {}
+        pub(crate) struct SimpleMessage {}
     }
 }
 
