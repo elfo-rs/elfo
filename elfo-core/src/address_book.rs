@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use idr_ebr::{Guard as EbrGuard, Idr};
+use idr_ebr::{EbrGuard, Idr};
 
 use crate::{
     addr::{Addr, GroupNo, IdrConfig, NodeLaunchId, NodeNo},

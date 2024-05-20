@@ -97,7 +97,7 @@ pub mod _priv {
         request_table::RequestId,
     };
     pub use erased_serde;
-    pub use idr_ebr::Guard as EbrGuard;
+    pub use idr_ebr::EbrGuard;
     pub use linkme;
     pub use metrics;
     #[cfg(feature = "network")]

@@ -1,7 +1,7 @@
 use std::{future::poll_fn, marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
 
 use futures::{pin_mut, Stream};
-use idr_ebr::Guard as EbrGuard;
+use idr_ebr::EbrGuard;
 use once_cell::sync::Lazy;
 use tracing::{info, trace};
 

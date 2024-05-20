@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use idr_ebr::Guard as EbrGuard;
+use idr_ebr::EbrGuard;
 use metrics::Key;
 use pin_project::pin_project;
 

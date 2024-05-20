@@ -1,6 +1,6 @@
 use std::{fmt, marker::PhantomData, sync::Arc};
 
-use idr_ebr::Guard as EbrGuard;
+use idr_ebr::EbrGuard;
 use parking_lot::Mutex;
 use slotmap::{new_key_type, Key, SlotMap};
 use smallvec::SmallVec;
