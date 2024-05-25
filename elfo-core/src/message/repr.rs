@@ -89,36 +89,39 @@ impl MessageRepr {
 // Reexported in `elfo::_priv`.
 /// Message Virtual Table.
 pub struct MessageVTable {
-    pub repr_layout: alloc::Layout, // of `MessageRepr<M>`
-    pub name: &'static str,
-    pub protocol: &'static str,
-    pub labels: &'static [Label],
-    pub dumping_allowed: bool, // TODO: introduce `DumpingMode`.
+    pub(super) repr_layout: alloc::Layout, // of `MessageRepr<M>`
+    pub(super) name: &'static str,
+    pub(super) protocol: &'static str,
+    pub(super) labels: [Label; 2],
+    pub(super) dumping_allowed: bool, // TODO: introduce `DumpingMode`.
     // TODO: field ordering (better for cache)
     // TODO:
-    // pub deserialize_any: fn(&mut dyn erased_serde::Deserializer<'_>) -> Result<AnyMessage,
-    // erased_serde::Error>,
+    // pub(super) deserialize_any: fn(&mut dyn erased_serde::Deserializer<'_>) ->
+    // Result<AnyMessage, erased_serde::Error>,
     #[cfg(feature = "network")]
-    pub read_msgpack: unsafe fn(&[u8], NonNull<MessageRepr>) -> Result<(), decode::Error>,
+    pub(super) read_msgpack: unsafe fn(&[u8], NonNull<MessageRepr>) -> Result<(), decode::Error>,
     #[cfg(feature = "network")]
     #[allow(clippy::type_complexity)]
-    pub write_msgpack:
+    pub(super) write_msgpack:
         unsafe fn(NonNull<MessageRepr>, &mut Vec<u8>, usize) -> Result<(), encode::Error>,
-    pub debug: unsafe fn(NonNull<MessageRepr>, &mut fmt::Formatter<'_>) -> fmt::Result,
-    pub clone: unsafe fn(NonNull<MessageRepr>, NonNull<MessageRepr>),
-    pub erase: unsafe fn(NonNull<MessageRepr>) -> dumping::ErasedMessage,
-    pub deserialize_any: unsafe fn(
+    pub(super) debug: unsafe fn(NonNull<MessageRepr>, &mut fmt::Formatter<'_>) -> fmt::Result,
+    pub(super) clone: unsafe fn(NonNull<MessageRepr>, NonNull<MessageRepr>),
+    pub(super) erase: unsafe fn(NonNull<MessageRepr>) -> dumping::ErasedMessage,
+    pub(super) deserialize_any: unsafe fn(
         deserializer: &mut dyn erased_serde::Deserializer<'_>,
         out_ptr: NonNull<MessageRepr>,
     ) -> Result<(), erased_serde::Error>,
-    pub drop: unsafe fn(NonNull<MessageRepr>),
+    pub(super) drop: unsafe fn(NonNull<MessageRepr>),
 }
 
 static VTABLE_ANY: &MessageVTable = &MessageVTable {
     repr_layout: alloc::Layout::new::<()>(),
     name: "",
     protocol: "",
-    labels: &[],
+    labels: [
+        Label::from_static_parts("", ""),
+        Label::from_static_parts("", ""),
+    ],
     dumping_allowed: false,
     #[cfg(feature = "network")]
     read_msgpack: |_, _| unreachable!(),
@@ -131,23 +134,51 @@ static VTABLE_ANY: &MessageVTable = &MessageVTable {
     drop: |_| unreachable!(),
 };
 
-// For monomorphization in the `#[message]` macro.
-// Reeexported in `elfo::_priv`.
-pub mod vtablefns {
+impl MessageVTable {
+    // Reexported in `elfo::_priv`.
+    #[doc(hidden)]
+    pub const fn new<M: Message>(
+        name: &'static str,
+        protocol: &'static str,
+        dumping_allowed: bool,
+    ) -> Self {
+        Self {
+            repr_layout: alloc::Layout::new::<MessageRepr<M>>(),
+            name,
+            protocol,
+            labels: [
+                Label::from_static_parts("message", name),
+                Label::from_static_parts("protocol", protocol),
+            ],
+            dumping_allowed,
+            debug: vtablefns::debug::<M>,
+            clone: vtablefns::clone::<M>,
+            erase: vtablefns::erase::<M>,
+            deserialize_any: vtablefns::deserialize_any::<M>,
+            drop: vtablefns::drop::<M>,
+            #[cfg(feature = "network")]
+            read_msgpack: vtablefns::read_msgpack::<M>,
+            #[cfg(feature = "network")]
+            write_msgpack: vtablefns::write_msgpack::<M>,
+        }
+    }
+}
+
+mod vtablefns {
     use super::*;
 
-    pub unsafe fn drop<M>(ptr: NonNull<MessageRepr>) {
+    pub(super) unsafe fn drop<M>(ptr: NonNull<MessageRepr>) {
         ptr::drop_in_place(ptr.cast::<MessageRepr<M>>().as_ptr());
     }
 
-    pub unsafe fn clone<M: Clone>(ptr: NonNull<MessageRepr>, out_ptr: NonNull<MessageRepr>) {
+    pub(super) unsafe fn clone<M: Clone>(ptr: NonNull<MessageRepr>, out_ptr: NonNull<MessageRepr>) {
         ptr::write(
             out_ptr.cast::<MessageRepr<M>>().as_ptr(),
             ptr.cast::<MessageRepr<M>>().as_ref().clone(),
         );
     }
 
-    pub unsafe fn debug<M: fmt::Debug>(
+    pub(super) unsafe fn debug<M: fmt::Debug>(
         ptr: NonNull<MessageRepr>,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
@@ -155,12 +186,12 @@ pub mod vtablefns {
         fmt::Debug::fmt(data, f)
     }
 
-    pub unsafe fn erase<M: Message>(ptr: NonNull<MessageRepr>) -> dumping::ErasedMessage {
+    pub(super) unsafe fn erase<M: Message>(ptr: NonNull<MessageRepr>) -> dumping::ErasedMessage {
         let data = ptr.cast::<MessageRepr<M>>().as_ref().data.clone();
         smallbox!(data)
     }
 
-    pub unsafe fn deserialize_any<M: Message>(
+    pub(super) unsafe fn deserialize_any<M: Message>(
         deserializer: &mut dyn erased_serde::Deserializer<'_>,
         out_ptr: NonNull<MessageRepr>,
     ) -> Result<(), erased_serde::Error> {
@@ -173,7 +204,7 @@ pub mod vtablefns {
     }
 
     cfg_network!({
-        pub unsafe fn read_msgpack<M: Message>(
+        pub(super) unsafe fn read_msgpack<M: Message>(
             buffer: &[u8],
             out_ptr: NonNull<MessageRepr>,
         ) -> Result<(), decode::Error> {
@@ -185,7 +216,7 @@ pub mod vtablefns {
             Ok(())
         }
 
-        pub unsafe fn write_msgpack<M: Message>(
+        pub(super) unsafe fn write_msgpack<M: Message>(
             ptr: NonNull<MessageRepr>,
             out: &mut Vec<u8>,
             limit: usize,

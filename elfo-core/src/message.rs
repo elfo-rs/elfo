@@ -33,7 +33,7 @@ pub trait Message:
     #[doc(hidden)]
     #[inline(always)]
     fn labels(&self) -> &'static [Label] {
-        self._vtable().labels
+        &self._vtable().labels
     }
 
     #[doc(hidden)]

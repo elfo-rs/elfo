@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - logger: log truncation up to the `max_line_size` configuration parameter ([#128]).
 
 ### Changed
+- **BREAKING** macros: remove the `network` feature.
 - tracing: improve performance of `TraceId::generate()`.
 - dumping: remove unstable `Timestamp`.
 

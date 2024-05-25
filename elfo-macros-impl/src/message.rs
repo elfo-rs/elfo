@@ -197,13 +197,6 @@ pub fn message_impl(
     // TODO: pass to `_elfo_Wrapper`.
     let dumping_allowed = args.dumping_allowed.unwrap_or(true);
 
-    let network_fns = cfg!(feature = "network").then(|| {
-        quote! {
-            read_msgpack: #internal::vtablefns::read_msgpack::<#name>,
-            write_msgpack: #internal::vtablefns::write_msgpack::<#name>,
-        }
-    });
-
     let protocol = if let Some(protocol) = &args.protocol {
         quote! { #protocol }
     } else {
@@ -227,24 +220,13 @@ pub fn message_impl(
                 fn _touch(&self) {}
             }
 
-            #[linkme::distributed_slice(MESSAGE_VTABLES_LIST)]
-            #[linkme(crate = linkme)]
-            static VTABLE: &#internal::MessageVTable = &#internal::MessageVTable {
-                repr_layout: ::std::alloc::Layout::new::<#internal::MessageRepr<#name>>(),
-                name: #name_str,
-                protocol: #protocol,
-                labels: &[
-                    #internal::metrics::Label::from_static_parts("message", #name_str),
-                    #internal::metrics::Label::from_static_parts("protocol", #protocol),
-                ],
-                dumping_allowed: #dumping_allowed,
-                debug: #internal::vtablefns::debug::<#name>,
-                clone: #internal::vtablefns::clone::<#name>,
-                erase: #internal::vtablefns::erase::<#name>,
-                deserialize_any: #internal::vtablefns::deserialize_any::<#name>,
-                drop: #internal::vtablefns::drop::<#name>,
-                #network_fns
-            };
+            #[#internal::linkme::distributed_slice(#internal::MESSAGE_VTABLES_LIST)]
+            #[linkme(crate = #internal::linkme)]
+            static VTABLE: &#internal::MessageVTable = &#internal::MessageVTable::new::<#name>(
+                #name_str,
+                #protocol,
+                #dumping_allowed
+            );
         }
     });
 
@@ -287,6 +269,7 @@ pub fn message_impl(
     let impl_debug =
         (args.transparent && args.not.iter().all(|x| x != "Debug")).then(|| gen_impl_debug(&input));
 
+    // Don't add `use` statements here to avoid possible collisions with user code.
     let expanded = quote! {
         #derive_debug
         #derive_clone
@@ -300,10 +283,6 @@ pub fn message_impl(
         #[allow(non_snake_case)]
         #[allow(unreachable_code)] // for `enum Impossible {}`
         const _: () = {
-            // Keep this list as minimal as possible to avoid possible collisions with `#name`.
-            // Especially avoid `PascalCase`.
-            use #internal::{MESSAGE_VTABLES_LIST, linkme}; // TODO: remove
-
             #impl_message
             #impl_request
             #impl_debug

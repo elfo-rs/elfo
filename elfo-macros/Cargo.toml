@@ -17,9 +17,6 @@ workspace = true
 [lib]
 proc-macro = true
 
-[features]
-network = ["elfo-macros-impl/network"]
-
 [dependencies]
 elfo-macros-impl = { version = "0.2.0-alpha.15", path = "../elfo-macros-impl" }
 
