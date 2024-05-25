@@ -16,7 +16,7 @@ workspace = true
 
 [features]
 test-util = ["tokio/test-util"]
-network = ["rmp-serde", "elfo-macros/network"]
+network = ["rmp-serde"]
 unstable = []
 unstable-stuck-detection = ["dep:thread_local"]
 
