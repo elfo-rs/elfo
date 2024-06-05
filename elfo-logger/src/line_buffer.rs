@@ -5,7 +5,7 @@ use std::{mem, num::NonZeroUsize};
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
 /// Max size of the log line, cannot be zero
-pub struct MaxLineSize(pub NonZeroUsize);
+pub(crate) struct MaxLineSize(pub(crate) NonZeroUsize);
 
 // CurrentLine
 
@@ -93,6 +93,7 @@ impl<'a> CurrentLine<'a> {
 impl<'a> Drop for CurrentLine<'a> {
     fn drop(&mut self) {
         // It is guaranteed by contract that this drop will be called only when
+        // line is unfinished, since [`CurrentLine::finish`] leaks [`CurrentLine`]
         self.buffer.buffer.truncate(self.pre_start_buffer_size);
     }
 }
