@@ -2,9 +2,9 @@ use std::{mem, num::NonZeroUsize};
 
 // MaxLineSize
 
+/// Max size of the log line, cannot be zero.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
-/// Max size of the log line, cannot be zero
 pub(crate) struct MaxLineSize(pub(crate) NonZeroUsize);
 
 // CurrentLine
