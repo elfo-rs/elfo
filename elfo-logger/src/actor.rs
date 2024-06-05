@@ -19,6 +19,7 @@ use crate::{
     config::{Config, Sink},
     filtering_layer::FilteringLayer,
     formatters::Formatter,
+    line_buffer::LineBuffer,
     theme, PreparedEvent, Shared,
 };
 
@@ -26,7 +27,7 @@ pub(crate) struct Logger {
     ctx: Context<Config>,
     shared: Arc<Shared>,
     filtering_layer: FilteringLayer,
-    buffer: String,
+    buffer: LineBuffer,
 }
 
 /// Reload a log file, usually after rotation.
@@ -52,11 +53,13 @@ impl Logger {
 
     fn new(ctx: Context<Config>, shared: Arc<Shared>, filtering_layer: FilteringLayer) -> Self {
         filtering_layer.configure(&ctx.config().targets);
+        let buffer = LineBuffer::new(ctx.config().max_line_size);
+
         Self {
             ctx,
             shared,
             filtering_layer,
-            buffer: String::with_capacity(1024),
+            buffer,
         }
     }
 
@@ -75,7 +78,6 @@ impl Logger {
             tokio::select! {
                 event = self.shared.channel.receive() => {
                     let event = ward!(event, break);
-
                     self.buffer.clear();
 
                     if use_colors {
@@ -83,12 +85,11 @@ impl Logger {
                     } else {
                         self.format_event::<theme::PlainTheme>(event);
                     }
-
                     if let Some(file) = file.as_mut() {
                         // TODO: what about performance here?
-                        file.write_all(self.buffer.as_ref()).await.expect("cannot write to the config file");
+                        file.write_all(self.buffer.buffer.as_bytes()).await.expect("cannot write to the config file");
                     } else {
-                        print!("{}", self.buffer);
+                        print!("{}", self.buffer.buffer);
                     }
 
                     increment_counter!("elfo_written_events_total");
@@ -121,7 +122,7 @@ impl Logger {
     }
 
     pub(super) fn format_event<T: theme::Theme>(&mut self, event: PreparedEvent) {
-        let out = &mut self.buffer;
+        let mut line = self.buffer.new_line();
         let config = self.ctx.config();
 
         let payload = self
@@ -133,48 +134,54 @@ impl Logger {
 
         // <timestamp> <level> [<trace_id>] <object> - <message>\t<fields>
 
-        T::Timestamp::fmt(out, &event.timestamp);
-        out.push(' ');
-        T::Level::fmt(out, event.metadata.level());
-        out.push_str(" [");
-        T::TraceId::fmt(out, &event.trace_id);
-        out.push_str("] ");
-        T::ActorMeta::fmt(out, &event.object);
-        out.push_str(" - ");
-        T::Payload::fmt(out, &payload);
+        T::Timestamp::fmt(line.buffer_mut(), &event.timestamp);
+        line.buffer_mut().push(' ');
+        T::Level::fmt(line.buffer_mut(), event.metadata.level());
+        line.buffer_mut().push_str(" [");
+        T::TraceId::fmt(line.buffer_mut(), &event.trace_id);
+        line.buffer_mut().push_str("] ");
+        T::ActorMeta::fmt(line.payload_mut(), &event.object);
+        line.payload_mut().push_str(" - ");
+        T::Payload::fmt(line.payload_mut(), &payload);
 
         // Add ancestors' fields.
         let mut span_id = event.span_id;
-        while let Some(data) = span_id
-            .as_ref()
-            .and_then(|span_id| self.shared.spans.get(span_id))
+
         {
-            span_id.clone_from(&data.parent_id);
+            let payload_buffer = line.payload_mut();
+            while let Some(data) = span_id
+                .as_ref()
+                .and_then(|span_id| self.shared.spans.get(span_id))
+            {
+                span_id.clone_from(&data.parent_id);
 
-            let payload = self
-                .shared
-                .pool
-                .get(data.payload_id)
-                .expect("unknown string");
+                let payload = self
+                    .shared
+                    .pool
+                    .get(data.payload_id)
+                    .expect("unknown string");
 
-            T::Payload::fmt(out, &payload);
+                T::Payload::fmt(payload_buffer, &payload);
+            }
         }
 
         if config.format.with_location {
             if let Some(location) = extract_location(event.metadata) {
-                out.push('\t');
-                T::Location::fmt(out, &location);
+                let fields_buffer = line.fields_mut();
+                fields_buffer.push('\t');
+                T::Location::fmt(line.fields_mut(), &location);
             }
         }
 
         if config.format.with_module {
             if let Some(module) = event.metadata.module_path() {
-                out.push('\t');
-                T::Module::fmt(out, module);
+                let fields_buffer = line.fields_mut();
+                fields_buffer.push('\t');
+                T::Module::fmt(fields_buffer, module);
             }
         }
 
-        out.push('\n');
+        line.finish();
     }
 }
 

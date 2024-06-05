@@ -14,6 +14,7 @@ pub(crate) trait Theme {
     type Payload: Formatter<str>;
     type Location: Formatter<(&'static str, u32)>;
     type Module: Formatter<str>;
+    type ResetColors: Formatter<()>;
 }
 
 pub(crate) struct PlainTheme;
@@ -24,6 +25,7 @@ impl Theme for PlainTheme {
     type Location = Location;
     type Module = Module;
     type Payload = Payload;
+    type ResetColors = DoNothing;
     type Timestamp = Rfc3339Weak;
     type TraceId = EmptyIfNone<TraceId>;
 }
@@ -36,6 +38,7 @@ impl Theme for ColoredTheme {
     type Location = ColoredLocation;
     type Module = ColoredModule;
     type Payload = ColoredPayload;
+    type ResetColors = ResetColors;
     type Timestamp = Rfc3339Weak;
     type TraceId = EmptyIfNone<ColoredByHash<TraceId>>;
 }

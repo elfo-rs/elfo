@@ -4,6 +4,8 @@ use fxhash::FxHashMap;
 use serde::{Deserialize, Deserializer};
 use tracing::metadata::LevelFilter;
 
+use crate::line_buffer::MaxLineSize;
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct Config {
     #[serde(default)]
@@ -11,6 +13,9 @@ pub(crate) struct Config {
     pub(crate) path: Option<PathBuf>,
     #[serde(default)]
     pub(crate) format: Format,
+
+    #[serde(default)]
+    pub(crate) max_line_size: Option<MaxLineSize>,
 
     #[serde(default)]
     pub(crate) targets: FxHashMap<String, LoggingTargetConfig>,

@@ -8,6 +8,26 @@ pub(crate) trait Formatter<T: ?Sized> {
     fn fmt(dest: &mut String, v: &T);
 }
 
+// DoNothing
+
+pub(crate) struct DoNothing;
+
+impl<T> Formatter<T> for DoNothing {
+    fn fmt(_dest: &mut String, _v: &T) {
+        // Apparentely does nothing
+    }
+}
+
+// ResetColors
+
+pub(crate) struct ResetColors;
+
+impl Formatter<()> for ResetColors {
+    fn fmt(dest: &mut String, _v: &()) {
+        dest.push_str("\x1b[0m");
+    }
+}
+
 // Rfc3339Weak
 
 pub(crate) struct Rfc3339Weak;

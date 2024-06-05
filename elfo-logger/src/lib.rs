@@ -24,6 +24,7 @@ mod actor;
 mod config;
 mod filtering_layer;
 mod formatters;
+mod line_buffer;
 mod printing_layer;
 mod stats;
 mod theme;
