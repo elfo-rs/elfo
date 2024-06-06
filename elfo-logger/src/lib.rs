@@ -18,16 +18,21 @@ use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
 
 use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::PrintingLayer};
 
+#[cfg(feature = "docsrs")]
+pub use crate::config::Config;
+
 pub use crate::actor::ReopenLogFile;
 
 mod actor;
 mod config;
 mod filtering_layer;
 mod formatters;
-mod line_buffer;
 mod printing_layer;
 mod stats;
 mod theme;
+
+mod line_buffer;
+mod line_transaction;
 
 const CHANNEL_CAPACITY: usize = 128 * 1024;
 

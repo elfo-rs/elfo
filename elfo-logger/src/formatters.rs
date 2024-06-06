@@ -14,15 +14,15 @@ pub(crate) struct DoNothing;
 
 impl<T> Formatter<T> for DoNothing {
     fn fmt(_dest: &mut String, _v: &T) {
-        // Apparentely does nothing
+        // Apparently does nothing
     }
 }
 
-// ResetColors
+// ResetStyle
 
-pub(crate) struct ResetColors;
+pub(crate) struct ResetStyle;
 
-impl Formatter<()> for ResetColors {
+impl Formatter<()> for ResetStyle {
     fn fmt(dest: &mut String, _v: &()) {
         dest.push_str("\x1b[0m");
     }

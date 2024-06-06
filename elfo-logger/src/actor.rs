@@ -20,6 +20,7 @@ use crate::{
     filtering_layer::FilteringLayer,
     formatters::Formatter,
     line_buffer::LineBuffer,
+    line_transaction::{Line as _, LineFactory, TryDirectWrite, UseSlowPath},
     theme, PreparedEvent, Shared,
 };
 
@@ -53,7 +54,7 @@ impl Logger {
 
     fn new(ctx: Context<Config>, shared: Arc<Shared>, filtering_layer: FilteringLayer) -> Self {
         filtering_layer.configure(&ctx.config().targets);
-        let buffer = LineBuffer::new(ctx.config().max_line_size);
+        let buffer = LineBuffer::with_buffer_capacity(1024, ctx.config().max_line_size.0 as _);
 
         Self {
             ctx,
@@ -81,10 +82,11 @@ impl Logger {
                     self.buffer.clear();
 
                     if use_colors {
-                        self.format_event::<theme::ColoredTheme>(event);
+                        self.format_event::<theme::ColoredTheme, TryDirectWrite>(event)
                     } else {
-                        self.format_event::<theme::PlainTheme>(event);
+                        self.format_event::<theme::PlainTheme, TryDirectWrite>(event)
                     }
+
                     if let Some(file) = file.as_mut() {
                         // TODO: what about performance here?
                         file.write_all(self.buffer.buffer.as_bytes()).await.expect("cannot write to the config file");
@@ -105,6 +107,7 @@ impl Logger {
                             file = open_file(self.ctx.config()).await;
                             use_colors = can_use_colors(self.ctx.config());
                             self.filtering_layer.configure(&self.ctx.config().targets);
+                            self.buffer.max_line_size = self.ctx.config().max_line_size.0 as _;
                         },
                         Terminate => {
                             // Close the channel and wait for the rest of the events.
@@ -121,67 +124,79 @@ impl Logger {
         }
     }
 
-    pub(super) fn format_event<T: theme::Theme>(&mut self, event: PreparedEvent) {
-        let mut line = self.buffer.new_line();
+    pub(super) fn format_event<T: theme::Theme, F: LineFactory>(&mut self, event: PreparedEvent) {
         let config = self.ctx.config();
+        let try_slow_path = {
+            let mut line = F::create_line(&mut self.buffer);
 
-        let payload = self
-            .shared
-            .pool
-            .get(event.payload_id)
-            .expect("unknown string");
-        self.shared.pool.clear(event.payload_id);
+            let payload = self
+                .shared
+                .pool
+                .get(event.payload_id)
+                .expect("unknown string");
 
-        // <timestamp> <level> [<trace_id>] <object> - <message>\t<fields>
+            // <timestamp> <level> [<trace_id>] <object> - <message>\t<fields>
 
-        T::Timestamp::fmt(line.buffer_mut(), &event.timestamp);
-        line.buffer_mut().push(' ');
-        T::Level::fmt(line.buffer_mut(), event.metadata.level());
-        line.buffer_mut().push_str(" [");
-        T::TraceId::fmt(line.buffer_mut(), &event.trace_id);
-        line.buffer_mut().push_str("] ");
-        T::ActorMeta::fmt(line.payload_mut(), &event.object);
-        line.payload_mut().push_str(" - ");
-        T::Payload::fmt(line.payload_mut(), &payload);
+            T::Timestamp::fmt(line.meta_mut(), &event.timestamp);
+            line.meta_mut().push(' ');
+            T::Level::fmt(line.meta_mut(), event.metadata.level());
+            line.meta_mut().push_str(" [");
+            T::TraceId::fmt(line.meta_mut(), &event.trace_id);
+            line.meta_mut().push_str("] ");
+            T::ActorMeta::fmt(line.payload_mut(), &event.object);
+            line.payload_mut().push_str(" - ");
+            T::Payload::fmt(line.payload_mut(), &payload);
 
-        // Add ancestors' fields.
-        let mut span_id = event.span_id;
+            // Add ancestors' fields.
+            let mut span_id = event.span_id.clone();
 
-        {
-            let payload_buffer = line.payload_mut();
-            while let Some(data) = span_id
-                .as_ref()
-                .and_then(|span_id| self.shared.spans.get(span_id))
             {
-                span_id.clone_from(&data.parent_id);
+                let payload_buffer = line.payload_mut();
+                while let Some(data) = span_id
+                    .as_ref()
+                    .and_then(|span_id| self.shared.spans.get(span_id))
+                {
+                    span_id.clone_from(&data.parent_id);
 
-                let payload = self
-                    .shared
-                    .pool
-                    .get(data.payload_id)
-                    .expect("unknown string");
+                    let payload = self
+                        .shared
+                        .pool
+                        .get(data.payload_id)
+                        .expect("unknown string");
 
-                T::Payload::fmt(payload_buffer, &payload);
+                    T::Payload::fmt(payload_buffer, &payload);
+                }
             }
-        }
 
-        if config.format.with_location {
-            if let Some(location) = extract_location(event.metadata) {
-                let fields_buffer = line.fields_mut();
-                fields_buffer.push('\t');
-                T::Location::fmt(line.fields_mut(), &location);
+            if config.format.with_location {
+                if let Some(location) = extract_location(event.metadata) {
+                    let fields_buffer = line.fields_mut();
+                    fields_buffer.push('\t');
+                    T::Location::fmt(line.fields_mut(), &location);
+                }
             }
-        }
 
-        if config.format.with_module {
-            if let Some(module) = event.metadata.module_path() {
-                let fields_buffer = line.fields_mut();
-                fields_buffer.push('\t');
-                T::Module::fmt(fields_buffer, module);
+            if config.format.with_module {
+                if let Some(module) = event.metadata.module_path() {
+                    let fields_buffer = line.fields_mut();
+                    fields_buffer.push('\t');
+                    T::Module::fmt(fields_buffer, module);
+                }
             }
-        }
 
-        line.finish();
+            let try_slow_path =
+                !F::STOP && (line.total_wrote() > self.ctx.config().max_line_size.0 as _);
+            if try_slow_path {
+                line.discard();
+            } else {
+                self.shared.pool.clear(event.payload_id);
+            }
+            try_slow_path
+        };
+
+        if try_slow_path {
+            self.format_event::<T, UseSlowPath>(event);
+        }
     }
 }
 

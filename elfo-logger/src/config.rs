@@ -4,7 +4,7 @@ use fxhash::FxHashMap;
 use serde::{Deserialize, Deserializer};
 use tracing::metadata::LevelFilter;
 
-use crate::line_buffer::MaxLineSize;
+use bytesize::ByteSize;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Config {
@@ -14,8 +14,14 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) format: Format,
 
-    #[serde(default)]
-    pub(crate) max_line_size: Option<MaxLineSize>,
+    /// Size limit for each line wrote in the log. The limit is applied in the
+    /// following order:
+    ///
+    /// 1. Message (logged message)
+    /// 2. Fields (location and module)
+    /// 3. Meta-info (timestamp, log level, trace id)
+    #[serde(default = "default_max_line_size")]
+    pub(crate) max_line_size: ByteSize,
 
     #[serde(default)]
     pub(crate) targets: FxHashMap<String, LoggingTargetConfig>,
@@ -42,6 +48,10 @@ pub(crate) struct Format {
     #[serde(default)]
     pub(crate) with_module: bool,
     // TODO: colors
+}
+
+fn default_max_line_size() -> ByteSize {
+    ByteSize(u64::MAX)
 }
 
 // TODO: deduplicate with core
