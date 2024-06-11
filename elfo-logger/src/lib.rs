@@ -18,13 +18,14 @@ use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
 
 use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::PrintingLayer};
 
-#[cfg(feature = "docsrs")]
-pub use crate::config::Config;
-
 pub use crate::actor::ReopenLogFile;
 
-mod actor;
+#[cfg(not(docsrs))]
 mod config;
+#[cfg(docsrs)]
+pub mod config;
+
+mod actor;
 mod filtering_layer;
 mod formatters;
 mod printing_layer;

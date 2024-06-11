@@ -25,6 +25,9 @@ license = "MIT"
 edition = "2021"
 readme = "README.md"
 
+[workspace.dependencies]
+bytesize = { version = "1.2.0", features = ["serde"] }
+
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }
 unreachable_pub = "warn"

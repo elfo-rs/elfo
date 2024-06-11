@@ -23,8 +23,8 @@
 #format.with_location = false
 #format.with_module = false
 ## Max size of each line, in bytes, when actual line size exceedes, its contents will be
-## truncated in the following order: payload, meta-info (level, timestamp, ...), fields (location, module)
-#max_line_size = 12345
+## truncated in the following order: message with custom fields, meta-info (level, timestamp, ...), meta-fields (location, module)
+#max_line_size = "1KiB"
 #
 # It's possible to set `max_level` for a specific target:
 #targets.hyper.max_level = "Trace"
