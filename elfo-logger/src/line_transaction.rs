@@ -21,27 +21,22 @@ use super::line_buffer::LineBuffer;
 // This is silly fix
 pub(crate) trait LineFactory {
     type Line<'a>: Line + 'a;
-    const STOP: bool;
 
     fn create_line(buf: &mut LineBuffer) -> Self::Line<'_>;
 }
 
-pub(crate) struct TryDirectWrite;
-pub(crate) struct UseSlowPath;
+pub(crate) struct FailOnUnfit;
+pub(crate) struct TruncateOnUnfit;
 
-impl LineFactory for TryDirectWrite {
+impl LineFactory for FailOnUnfit {
     type Line<'a> = DirectWrite<'a>;
-
-    const STOP: bool = false;
 
     fn create_line(buf: &mut LineBuffer) -> Self::Line<'_> {
         buf.direct_write()
     }
 }
-impl LineFactory for UseSlowPath {
+impl LineFactory for TruncateOnUnfit {
     type Line<'a> = CurrentLine<'a>;
-
-    const STOP: bool = true;
 
     fn create_line(buf: &mut LineBuffer) -> Self::Line<'_> {
         buf.new_line()
@@ -53,6 +48,6 @@ pub(crate) trait Line {
     fn payload_mut(&mut self) -> &mut String;
     fn fields_mut(&mut self) -> &mut String;
 
-    fn total_wrote(&self) -> usize;
-    fn discard(self);
+    fn total_bytes(&self) -> usize;
+    fn try_commit(self) -> bool;
 }
