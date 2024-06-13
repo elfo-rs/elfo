@@ -16,6 +16,12 @@ pub struct Config {
     #[serde(default)]
     pub format: Format,
 
+    /// Size limit for each written log-line, in bytes.
+    /// If size exceeds the limit, it will be truncated in the following order:
+    ///
+    /// 1. Message with custom fields
+    /// 2. Meta-info (level, timestamp, ...)
+    /// 3. Meta-fields (location, module)
     #[serde(default = "default_max_line_size")]
     pub max_line_size: ByteSize,
 
