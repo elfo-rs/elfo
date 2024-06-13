@@ -2,20 +2,7 @@ use std::mem;
 
 use crate::line_transaction::Line;
 
-// BufferConfiguration
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BufferConfig {
-    pub(crate) max_line_size: usize,
-}
-
-impl Default for BufferConfig {
-    fn default() -> Self {
-        Self {
-            max_line_size: usize::MAX,
-        }
-    }
-}
+pub(super) const TRUNCATED_MARKER: &str = " TRUNCATED";
 
 // Repr
 
@@ -36,10 +23,6 @@ pub(crate) struct CurrentLine<'a>(Repr<'a>);
 impl<'a> Line for CurrentLine<'a> {
     fn try_commit(self) -> bool {
         true
-    }
-
-    fn total_bytes(&self) -> usize {
-        self.len()
     }
 
     fn meta_mut(&mut self) -> &mut String {
@@ -66,12 +49,12 @@ impl<'a> CurrentLine<'a> {
 }
 
 impl<'a> CurrentLine<'a> {
-    fn probe_size_limit(&mut self) {
+    fn probe_size_limit(&mut self) -> bool {
         let len = self.len();
-        let mut need_to_erase = if len > self.0.buf.cfg.max_line_size {
-            len - self.0.buf.cfg.max_line_size
+        let mut need_to_erase = if len > self.0.buf.max_line_size {
+            len - self.0.buf.max_line_size + TRUNCATED_MARKER.len()
         } else {
-            return;
+            return len + TRUNCATED_MARKER.len() <= self.0.buf.max_line_size;
         };
 
         let payload_len = self.0.buf.payload.len();
@@ -80,27 +63,37 @@ impl<'a> CurrentLine<'a> {
 
         let payload_part = payload_len.min(need_to_erase);
         need_to_erase -= payload_part;
+        need_to_erase = need_to_erase.saturating_sub(safe_truncate(
+            &mut self.0.buf.payload,
+            payload_len - payload_part,
+        ));
+
         let fields_part = fields_len.min(need_to_erase);
         need_to_erase -= fields_part;
-        let meta_part = meta_len.min(need_to_erase);
+        need_to_erase = need_to_erase.saturating_sub(safe_truncate(
+            &mut self.0.buf.fields,
+            fields_len - fields_part,
+        ));
 
-        self.0.buf.payload.truncate(payload_len - payload_part);
-        self.0.buf.fields.truncate(fields_len - fields_part);
-        self.0
-            .buf
-            .buffer
-            .truncate(self.0.buf.buffer.len() - meta_part);
+        let meta_part = meta_len.min(need_to_erase);
+        let truncate_meta_to = self.0.buf.buffer.len() - meta_part;
+
+        safe_truncate(&mut self.0.buf.buffer, truncate_meta_to);
+        self.len() + TRUNCATED_MARKER.len() <= self.0.buf.max_line_size
     }
 }
 
 impl<'a> Drop for CurrentLine<'a> {
     fn drop(&mut self) {
-        self.probe_size_limit();
+        let add_truncated_marker = self.probe_size_limit();
 
         {
             let buffer = &mut self.0.buf.buffer;
             buffer.push_str(&self.0.buf.payload);
             buffer.push_str(&self.0.buf.fields);
+            if add_truncated_marker {
+                buffer.push_str(TRUNCATED_MARKER);
+            }
             buffer.push('\n');
         }
     }
@@ -111,6 +104,12 @@ impl<'a> Drop for CurrentLine<'a> {
 #[derive(Debug)]
 pub(crate) struct DirectWrite<'a>(Repr<'a>);
 
+impl<'a> DirectWrite<'a> {
+    fn total_bytes(&self) -> usize {
+        self.0.buf.buffer.len() - self.0.pre_start_buffer_size
+    }
+}
+
 impl<'a> Drop for DirectWrite<'a> {
     fn drop(&mut self) {
         self.0.buf.buffer.push('\n');
@@ -119,7 +118,7 @@ impl<'a> Drop for DirectWrite<'a> {
 
 impl Line for DirectWrite<'_> {
     fn try_commit(self) -> bool {
-        if self.total_bytes() > self.0.buf.cfg.max_line_size {
+        if self.total_bytes() > self.0.buf.max_line_size {
             self.0.buf.buffer.truncate(self.0.pre_start_buffer_size);
             // It's okay to leak the `DirectWrite`, since it does not own any resources
             mem::forget(self);
@@ -128,10 +127,6 @@ impl Line for DirectWrite<'_> {
         } else {
             true
         }
-    }
-
-    fn total_bytes(&self) -> usize {
-        self.0.buf.buffer.len() - self.0.pre_start_buffer_size
     }
 
     // Nope, clippy, this is how it is supposed to work
@@ -163,12 +158,12 @@ pub(crate) struct LineBuffer {
     payload: String,
     fields: String,
 
-    cfg: BufferConfig,
+    max_line_size: usize,
 }
 
 impl LineBuffer {
-    pub(crate) fn configure<O>(&mut self, f: impl FnOnce(&mut BufferConfig) -> O) -> O {
-        f(&mut self.cfg)
+    pub(crate) fn configure(&mut self, max_line_size: usize) {
+        self.max_line_size = max_line_size;
     }
 
     /// Discards current buffers
@@ -198,19 +193,29 @@ impl LineBuffer {
         CurrentLine(self.create_repr())
     }
 
-    pub(crate) fn with_capacity(capacity: usize, cfg: BufferConfig) -> Self {
+    pub(crate) fn with_capacity(capacity: usize, max_line_size: usize) -> Self {
         Self {
             buffer: String::with_capacity(capacity),
             payload: String::new(),
             fields: String::new(),
-            cfg,
+            max_line_size,
         }
     }
 }
 
+fn safe_truncate(text: &mut String, to: usize) -> usize {
+    let mut boundary = to;
+    while !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+
+    text.truncate(boundary);
+    to - boundary
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BufferConfig, CurrentLine, LineBuffer};
+    use super::{safe_truncate, CurrentLine, LineBuffer, TRUNCATED_MARKER};
     use crate::line_transaction::Line as _;
 
     fn put_msg(mut line: CurrentLine<'_>, meta: &str, payload: &str, fields: &str) {
@@ -220,12 +225,7 @@ mod tests {
     }
 
     fn truncation_parametrized(limit: usize, cases: &[(&str, &str, &str, &str)]) {
-        let mut buffer = LineBuffer::with_capacity(
-            100,
-            BufferConfig {
-                max_line_size: limit,
-            },
-        );
+        let mut buffer = LineBuffer::with_capacity(100, limit);
         for (meta, payload, fields, expected) in cases {
             let line = buffer.new_line();
             let before = line.0.pre_start_buffer_size;
@@ -238,20 +238,34 @@ mod tests {
     }
 
     #[test]
-    fn test_truncation() {
+    fn test_safe_truncate_util() {
+        for (original, truncate_to, expected) in [
+            ("Hello 🫱🏻‍🫲🏿", 7, "Hello "),
+            ("Hello 🫱 World 🫱", 7, "Hello "),
+            ("Русский язык", 5, "Ру"),
+            ("Русский язык", 23, "Русский язык"),
+        ] {
+            let mut original = original.to_owned();
+            safe_truncate(&mut original, truncate_to);
+            assert_eq!(original, expected);
+        }
+    }
+
+    #[test]
+    fn test_log_truncation() {
         truncation_parametrized(
-            5,
+            5 + TRUNCATED_MARKER.len(),
             &[
-                ("caffee ", "latte ", "ji ", "caffe\n"),
+                ("caffee ", "latte ", "ji ", "caffe TRUNCATED\n"),
                 // payload space dropped
-                ("l ", "a ", "ke", "l ake\n"),
+                ("l ", "a ", "kekekekekekekekekeke", "l kek TRUNCATED\n"),
             ],
         );
         truncation_parametrized(
-            10,
+            10 + TRUNCATED_MARKER.len(),
             &[
                 // payload dropped
-                ("hello ", "world ", "module=1234", "hello modu\n"),
+                ("hello ", "world ", "module=1234", "hello modu TRUNCATED\n"),
             ],
         );
     }
@@ -259,7 +273,7 @@ mod tests {
     // When using 0 as line size limit, buffer must contain only newlines
     #[test]
     fn test_always_empty_string() {
-        let mut buffer = LineBuffer::with_capacity(100, BufferConfig { max_line_size: 0 });
+        let mut buffer = LineBuffer::with_capacity(100, 0);
         put_msg(buffer.new_line(), "Hello", "World", "!!!!");
         put_msg(
             buffer.new_line(),

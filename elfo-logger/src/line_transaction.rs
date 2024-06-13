@@ -48,6 +48,5 @@ pub(crate) trait Line {
     fn payload_mut(&mut self) -> &mut String;
     fn fields_mut(&mut self) -> &mut String;
 
-    fn total_bytes(&self) -> usize;
     fn try_commit(self) -> bool;
 }

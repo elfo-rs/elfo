@@ -19,7 +19,7 @@ use crate::{
     config::{Config, Sink},
     filtering_layer::FilteringLayer,
     formatters::Formatter,
-    line_buffer::{BufferConfig, LineBuffer},
+    line_buffer::LineBuffer,
     line_transaction::{FailOnUnfit, Line as _, LineFactory, TruncateOnUnfit},
     theme, PreparedEvent, Shared,
 };
@@ -57,9 +57,7 @@ impl Logger {
         filtering_layer.configure(&ctx.config().targets);
         let buffer = LineBuffer::with_capacity(1024, {
             let cfg = ctx.config();
-            BufferConfig {
-                max_line_size: cfg.max_line_size.0 as _,
-            }
+            cfg.max_line_size.0 as _
         });
 
         Self {
@@ -109,10 +107,7 @@ impl Logger {
                             file = open_file(self.ctx.config()).await;
                             use_colors = can_use_colors(self.ctx.config());
                             self.filtering_layer.configure(&self.ctx.config().targets);
-                            self.buffer.configure(|cfg| {
-                                let actor_cfg = self.ctx.config();
-                                cfg.max_line_size = actor_cfg.max_line_size.0 as _;
-                            });
+                            self.buffer.configure(self.ctx.config().max_line_size.0 as _);
                         },
                         Terminate => {
                             // Close the channel and wait for the rest of the events.
