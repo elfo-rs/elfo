@@ -1,4 +1,4 @@
-use crate::line_buffer::{CurrentLine, DirectWrite};
+use crate::line_buffer::{DirectWrite, TruncatingWrite};
 
 use super::line_buffer::LineBuffer;
 
@@ -36,10 +36,10 @@ impl LineFactory for FailOnUnfit {
     }
 }
 impl LineFactory for TruncateOnUnfit {
-    type Line<'a> = CurrentLine<'a>;
+    type Line<'a> = TruncatingWrite<'a>;
 
     fn create_line(buf: &mut LineBuffer) -> Self::Line<'_> {
-        buf.new_line()
+        buf.truncating_write()
     }
 }
 

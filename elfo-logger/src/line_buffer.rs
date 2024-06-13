@@ -11,17 +11,30 @@ struct Repr<'a> {
     buf: &'a mut LineBuffer,
 
     // We don't wanna write unfinished data, so there must be a way to
-    // revert changes made by `CurrentLine`
+    // revert changes
     pre_start_buffer_size: usize,
 }
 
-// CurrentLine
+// TruncatingWrite
 
 #[derive(Debug)]
-pub(crate) struct CurrentLine<'a>(Repr<'a>);
+pub(crate) struct TruncatingWrite<'a>(Repr<'a>);
 
-impl<'a> Line for CurrentLine<'a> {
-    fn try_commit(self) -> bool {
+impl<'a> Line for TruncatingWrite<'a> {
+    fn try_commit(mut self) -> bool {
+        let add_truncated_marker = self.probe_size_limit();
+
+        {
+            let buffer = &mut self.0.buf.buffer;
+            buffer.push_str(&self.0.buf.payload);
+            buffer.push_str(&self.0.buf.fields);
+            if add_truncated_marker {
+                buffer.push_str(TRUNCATED_MARKER);
+            }
+            buffer.push('\n');
+        }
+
+        mem::forget(self);
         true
     }
 
@@ -38,7 +51,7 @@ impl<'a> Line for CurrentLine<'a> {
     }
 }
 
-impl<'a> CurrentLine<'a> {
+impl<'a> TruncatingWrite<'a> {
     fn meta_len(&self) -> usize {
         self.0.buf.buffer.len() - self.0.pre_start_buffer_size
     }
@@ -48,7 +61,7 @@ impl<'a> CurrentLine<'a> {
     }
 }
 
-impl<'a> CurrentLine<'a> {
+impl<'a> TruncatingWrite<'a> {
     fn probe_size_limit(&mut self) -> bool {
         let len = self.len();
         let mut need_to_erase = if len > self.0.buf.max_line_size {
@@ -83,19 +96,9 @@ impl<'a> CurrentLine<'a> {
     }
 }
 
-impl<'a> Drop for CurrentLine<'a> {
+impl<'a> Drop for TruncatingWrite<'a> {
     fn drop(&mut self) {
-        let add_truncated_marker = self.probe_size_limit();
-
-        {
-            let buffer = &mut self.0.buf.buffer;
-            buffer.push_str(&self.0.buf.payload);
-            buffer.push_str(&self.0.buf.fields);
-            if add_truncated_marker {
-                buffer.push_str(TRUNCATED_MARKER);
-            }
-            buffer.push('\n');
-        }
+        self.0.buf.buffer.truncate(self.0.pre_start_buffer_size);
     }
 }
 
@@ -105,26 +108,20 @@ impl<'a> Drop for CurrentLine<'a> {
 pub(crate) struct DirectWrite<'a>(Repr<'a>);
 
 impl<'a> DirectWrite<'a> {
-    fn total_bytes(&self) -> usize {
+    fn len(&self) -> usize {
         self.0.buf.buffer.len() - self.0.pre_start_buffer_size
-    }
-}
-
-impl<'a> Drop for DirectWrite<'a> {
-    fn drop(&mut self) {
-        self.0.buf.buffer.push('\n');
     }
 }
 
 impl Line for DirectWrite<'_> {
     fn try_commit(self) -> bool {
-        if self.total_bytes() > self.0.buf.max_line_size {
-            self.0.buf.buffer.truncate(self.0.pre_start_buffer_size);
+        if self.len() > self.0.buf.max_line_size {
+            false
+        } else {
+            self.0.buf.buffer.push('\n');
             // It's okay to leak the `DirectWrite`, since it does not own any resources
             mem::forget(self);
 
-            false
-        } else {
             true
         }
     }
@@ -144,6 +141,12 @@ impl Line for DirectWrite<'_> {
     #[allow(clippy::misnamed_getters)]
     fn fields_mut(&mut self) -> &mut String {
         &mut self.0.buf.buffer
+    }
+}
+
+impl<'a> Drop for DirectWrite<'a> {
+    fn drop(&mut self) {
+        self.0.buf.buffer.truncate(self.0.pre_start_buffer_size);
     }
 }
 
@@ -189,8 +192,8 @@ impl LineBuffer {
         DirectWrite(self.create_repr())
     }
 
-    pub(crate) fn new_line(&mut self) -> CurrentLine<'_> {
-        CurrentLine(self.create_repr())
+    pub(crate) fn truncating_write(&mut self) -> TruncatingWrite<'_> {
+        TruncatingWrite(self.create_repr())
     }
 
     pub(crate) fn with_capacity(capacity: usize, max_line_size: usize) -> Self {
@@ -215,19 +218,20 @@ fn safe_truncate(text: &mut String, to: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{safe_truncate, CurrentLine, LineBuffer, TRUNCATED_MARKER};
+    use super::{safe_truncate, LineBuffer, TruncatingWrite, TRUNCATED_MARKER};
     use crate::line_transaction::Line as _;
 
-    fn put_msg(mut line: CurrentLine<'_>, meta: &str, payload: &str, fields: &str) {
+    fn put_msg(mut line: TruncatingWrite<'_>, meta: &str, payload: &str, fields: &str) {
         line.meta_mut().push_str(meta);
         line.payload_mut().push_str(payload);
         line.fields_mut().push_str(fields);
+        line.try_commit();
     }
 
     fn truncation_parametrized(limit: usize, cases: &[(&str, &str, &str, &str)]) {
         let mut buffer = LineBuffer::with_capacity(100, limit);
         for (meta, payload, fields, expected) in cases {
-            let line = buffer.new_line();
+            let line = buffer.truncating_write();
             let before = line.0.pre_start_buffer_size;
             put_msg(line, meta, payload, fields);
 
@@ -257,7 +261,7 @@ mod tests {
             5 + TRUNCATED_MARKER.len(),
             &[
                 ("caffee ", "latte ", "ji ", "caffe TRUNCATED\n"),
-                // payload space dropped
+                // part of payload is dropped
                 ("l ", "a ", "kekekekekekekekekeke", "l kek TRUNCATED\n"),
             ],
         );
@@ -270,18 +274,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_rollback_on_drop() {
+        let mut buffer = LineBuffer::with_capacity(100, 1000);
+        {
+            let mut line = buffer.direct_write();
+            line.meta_mut().push_str("Hello world");
+            line.try_commit();
+        }
+
+        buffer.direct_write().meta_mut().push_str("First");
+        assert_eq!(buffer.as_str(), "Hello world\n");
+
+        buffer.truncating_write().meta_mut().push_str("Second");
+        assert_eq!(buffer.as_str(), "Hello world\n");
+    }
+
     // When using 0 as line size limit, buffer must contain only newlines
     #[test]
     fn test_always_empty_string() {
         let mut buffer = LineBuffer::with_capacity(100, 0);
-        put_msg(buffer.new_line(), "Hello", "World", "!!!!");
+        put_msg(buffer.truncating_write(), "Hello", "World", "!!!!");
         put_msg(
-            buffer.new_line(),
+            buffer.truncating_write(),
             "12345",
             "I can count to 5!",
             "mood = good",
         );
-        put_msg(buffer.new_line(), ":D", "Smiling face", "");
+        put_msg(buffer.truncating_write(), ":D", "Smiling face", "");
 
         assert_eq!(buffer.buffer, "\n\n\n");
     }
