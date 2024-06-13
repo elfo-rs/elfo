@@ -134,7 +134,9 @@ impl Logger {
                 || self.do_format_event::<theme::PlainTheme, TruncateOnUnfit>(&event)
         };
 
-        if !successful {
+        if successful {
+            self.shared.pool.clear(event.payload_id);
+        } else {
             unreachable!("truncation must succeed")
         }
     }
