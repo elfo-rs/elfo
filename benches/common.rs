@@ -1,8 +1,9 @@
-use std::{env, str::FromStr, thread::available_parallelism};
+#![allow(dead_code)] // typical for common test/bench modules :(
+
+use std::{env, str::FromStr, thread::available_parallelism, time::Duration};
 
 use tokio::runtime::{Builder, Runtime};
 
-#[allow(dead_code)]
 pub(crate) fn tokio_worker_threads() -> u32 {
     env::var("TOKIO_WORKER_THREADS")
         .ok()
@@ -12,7 +13,6 @@ pub(crate) fn tokio_worker_threads() -> u32 {
         })
 }
 
-#[allow(dead_code)]
 pub(crate) fn max_parallelism() -> u32 {
     env::var("ELFO_BENCH_MAX_PARALLELISM")
         .ok()
@@ -22,7 +22,6 @@ pub(crate) fn max_parallelism() -> u32 {
         })
 }
 
-#[allow(dead_code)]
 pub(crate) fn make_mt_runtime(worker_threads: u32) -> Runtime {
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -43,4 +42,58 @@ pub(crate) fn make_mt_runtime(worker_threads: u32) -> Runtime {
         })
         .build()
         .unwrap()
+}
+
+pub(crate) fn make_st_runtime() -> Runtime {
+    Builder::new_current_thread().enable_all().build().unwrap()
+}
+
+pub(crate) fn bench_singleton<R>(
+    iter_count: u64,
+    f: impl FnOnce(elfo::Context, u64) -> R + Send + 'static,
+) -> Duration
+where
+    R: std::future::Future<Output = Duration> + Send,
+{
+    use elfo::{config::AnyConfig, prelude::*, MoveOwnership, Topology};
+
+    #[message(ret = Duration)]
+    struct Start;
+
+    let topology = Topology::empty();
+    let testee = topology.local("testee");
+    let configurers = topology.local("system.configurers").entrypoint();
+
+    let testee_addr = testee.addr();
+
+    let body = MoveOwnership::from(f);
+    let blueprint = ActorGroup::new().exec(move |mut ctx| {
+        let body = body.clone();
+
+        async move {
+            msg!(match ctx.recv().await.unwrap() {
+                (Start, token) => {
+                    let body = body.take().unwrap();
+                    let pruned_ctx = ctx.pruned();
+                    let spent = body(ctx, iter_count).await;
+                    pruned_ctx.respond(token, spent);
+                }
+                _ => unreachable!(),
+            });
+        }
+    });
+    testee.mount(blueprint);
+
+    configurers.mount(elfo::batteries::configurer::fixture(
+        &topology,
+        AnyConfig::default(),
+    ));
+
+    let rt = make_st_runtime();
+    rt.block_on(elfo::_priv::do_start(
+        topology,
+        false,
+        |ctx, _| async move { ctx.request_to(testee_addr, Start).resolve().await.unwrap() },
+    ))
+    .unwrap()
 }

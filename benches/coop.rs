@@ -1,61 +1,62 @@
-use std::time::{Duration, Instant};
+use std::{
+    future::{poll_fn, Future},
+    pin::pin,
+    time::Duration,
+};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use elfo::{config::AnyConfig, prelude::*, topology::Topology};
+use elfo::Context;
+use elfo_utils::time::Instant;
 
 mod common;
 
-#[message(ret = Duration)]
-struct Summarize;
+async fn testee(_ctx: Context, iter_count: u64) -> Duration {
+    // Avoid measuring the time spent in `yield_now()` by accumulating the time
+    // elapsed between `Poll::Pending` in order to measure only elfo's overhead.
+    let mut elapsed = Duration::from_secs(0);
+    let mut origin = None;
 
-fn make_yielder(iter_count: u32) -> Blueprint {
-    ActorGroup::new().exec(move |mut ctx| async move {
-        let token = msg!(match ctx.recv().await.unwrap() {
-            (Summarize, token) => token,
-            _ => unreachable!(),
-        });
-
-        let start = Instant::now();
-        for _ in 0..iter_count {
-            elfo::coop::consume_budget().await;
+    for _ in 0..iter_count {
+        if origin.is_none() {
+            origin = Some(Instant::now());
         }
 
-        ctx.respond(token, start.elapsed());
-    })
-}
+        poll_fn(|cx| {
+            let mut fut = pin!(elfo::coop::consume_budget());
+            let res = fut.as_mut().poll(cx);
 
-async fn run(iter_count: u32) -> Duration {
-    let topology = Topology::empty();
-    let yielder = topology.local("yielder");
-    let configurers = topology.local("system.configurers").entrypoint();
+            if res.is_pending() {
+                elapsed += origin.unwrap().elapsed();
+                origin = None;
+            }
 
-    let yielder_addr = yielder.addr();
+            res
+        })
+        .await;
+    }
 
-    yielder.mount(make_yielder(iter_count));
-    configurers.mount(elfo::batteries::configurer::fixture(
-        &topology,
-        AnyConfig::default(),
-    ));
+    // If `iter_count` is too small to trigger `yield_now()`.
+    if let Some(origin) = origin {
+        elapsed += origin.elapsed();
+    }
 
-    elfo::_priv::do_start(topology, false, |ctx, _| async move {
-        ctx.request_to(yielder_addr, Summarize)
-            .resolve()
-            .await
-            .unwrap()
-    })
-    .await
-    .unwrap()
+    elapsed
 }
 
 fn by_count(c: &mut Criterion) {
-    c.bench_function("count", |b| {
-        b.iter_custom(|iter_count| {
-            let rt = common::make_mt_runtime(common::tokio_worker_threads());
-            rt.block_on(run(iter_count as u32))
-        })
+    c.bench_function("by_count", |b| {
+        assert!(metrics::try_recorder().is_none());
+        b.iter_custom(|iter_count| common::bench_singleton(iter_count, testee))
     });
 }
 
-criterion_group!(cases, by_count);
+fn by_time(c: &mut Criterion) {
+    c.bench_function("by_time", |b| {
+        let _ = metrics::set_recorder(&metrics::NoopRecorder);
+        b.iter_custom(|iter_count| common::bench_singleton(iter_count, testee))
+    });
+}
+
+criterion_group!(cases, by_count, by_time);
 criterion_main!(cases);
