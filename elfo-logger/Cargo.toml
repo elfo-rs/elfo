@@ -37,6 +37,7 @@ metrics = "0.17"
 dashmap = "5"
 fxhash = "0.2.1"
 humantime = "2.1.0"
+bytesize.workspace = true
 
 [dev-dependencies]
 elfo-core = { version = "0.2.0-alpha.15", path = "../elfo-core", features = ["test-util"] }

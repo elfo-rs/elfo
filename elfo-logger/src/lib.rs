@@ -20,13 +20,20 @@ use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::Prin
 
 pub use crate::actor::ReopenLogFile;
 
-mod actor;
+#[cfg(not(docsrs))]
 mod config;
+#[cfg(docsrs)]
+pub mod config;
+
+mod actor;
 mod filtering_layer;
 mod formatters;
 mod printing_layer;
 mod stats;
 mod theme;
+
+mod line_buffer;
+mod line_transaction;
 
 const CHANNEL_CAPACITY: usize = 128 * 1024;
 
