@@ -51,3 +51,8 @@ harness = false
 name = "stream"
 path = "stream.rs"
 harness = false
+
+[[bench]]
+name = "trace_id"
+path = "trace_id.rs"
+harness = false
