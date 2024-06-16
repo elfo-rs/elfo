@@ -1,6 +1,8 @@
 //! Provides the [`Instant`] type.
 //!
 //! The main purpose of this module is to abstract over quanta/minstant/etc.
+//!
+//! Another purpose is to provide a way to mock instant time in tests.
 
 use std::time::Duration;
 
@@ -8,10 +10,10 @@ use quanta::Clock;
 
 /// A measurement of a monotonically nondecreasing clock.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Instant(u64); // TODO: make it `NonZeroU64`?
+pub struct Instant(u64 /* raw TSC value */); // TODO: make it `NonZeroU64`?
 
 impl Instant {
-    /// Returns the current time.
+    /// Returns the current monotonic time.
     #[inline]
     pub fn now() -> Self {
         Self(with_clock(|c| c.raw()))
@@ -69,7 +71,7 @@ fn with_clock<R>(f: impl FnOnce(&Clock) -> R) -> R {
 }
 
 #[cfg(any(test, feature = "test-util"))]
-pub use mock::*;
+pub use mock::{with_instant_mock, InstantMock};
 
 #[cfg(any(test, feature = "test-util"))]
 mod mock {
@@ -87,6 +89,7 @@ mod mock {
         let mock = InstantMock(mock);
         CLOCK.with(|c| *c.borrow_mut() = Some(clock));
         f(mock);
+        CLOCK.with(|c| *c.borrow_mut() = None);
     }
 
     /// Controllable time source for use in tests.
