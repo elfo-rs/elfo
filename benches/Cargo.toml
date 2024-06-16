@@ -56,3 +56,8 @@ harness = false
 name = "trace_id"
 path = "trace_id.rs"
 harness = false
+
+[[bench]]
+name = "yield"
+path = "yield.rs"
+harness = false
