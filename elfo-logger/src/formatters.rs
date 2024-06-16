@@ -1,8 +1,9 @@
-use std::{fmt::Write, hash::Hash, marker::PhantomData, sync::Arc, time::SystemTime};
+use std::{fmt::Write, hash::Hash, marker::PhantomData, sync::Arc};
 
 use tracing::Level;
 
 use elfo_core::{tracing::TraceId, ActorMeta};
+use elfo_utils::time::SystemTime;
 
 pub(crate) trait Formatter<T: ?Sized> {
     fn fmt(dest: &mut String, v: &T);
@@ -35,7 +36,7 @@ pub(crate) struct Rfc3339Weak;
 impl Formatter<SystemTime> for Rfc3339Weak {
     fn fmt(out: &mut String, v: &SystemTime) {
         let t_idx = out.len() + 10;
-        let _ = write!(out, "{}", humantime::format_rfc3339_nanos(*v));
+        let _ = write!(out, "{}", humantime::format_rfc3339_nanos((*v).into()));
         // Replace "T" with " ".
         out.replace_range(t_idx..t_idx + 1, " ");
         // Remove trailing "Z".

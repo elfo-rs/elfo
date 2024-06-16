@@ -1,9 +1,10 @@
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use tracing::{span, Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 use elfo_core::scope;
+use elfo_utils::time::SystemTime;
 
 use self::visitor::Visitor;
 use crate::{stats, PreparedEvent, Shared, SpanData, StringId};
@@ -73,7 +74,7 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
         };
 
         let event = PreparedEvent {
-            timestamp: now(),
+            timestamp: SystemTime::now(),
             trace_id,
             metadata: event.metadata(),
             object,
@@ -95,14 +96,4 @@ impl<S: Subscriber> Layer<S> for PrintingLayer {
             self.shared.pool.clear(data.payload_id);
         }
     }
-}
-
-#[cfg(not(test))]
-fn now() -> SystemTime {
-    SystemTime::now()
-}
-
-#[cfg(test)]
-fn now() -> SystemTime {
-    humantime::parse_rfc3339("2021-05-17T20:20:20.123456789Z").unwrap()
 }

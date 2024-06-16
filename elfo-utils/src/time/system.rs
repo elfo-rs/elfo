@@ -2,7 +2,7 @@
 //!
 //! The main purpose is to provide a way to mock system time in tests.
 
-use std::time::SystemTime as StdSystemTime;
+use std::time::{Duration, SystemTime as StdSystemTime};
 
 /// A measurement of a system clock.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -47,12 +47,20 @@ impl From<StdSystemTime> for SystemTime {
     }
 }
 
+impl From<SystemTime> for StdSystemTime {
+    fn from(sys_time: SystemTime) -> Self {
+        StdSystemTime::UNIX_EPOCH + Duration::from_nanos(sys_time.0)
+    }
+}
+
 #[cfg(any(test, feature = "test-util"))]
 pub use mock::{with_system_time_mock, SystemTimeMock};
 
 #[cfg(any(test, feature = "test-util"))]
 mod mock {
-    use std::{cell::Cell, time::Duration};
+    use std::cell::Cell;
+
+    use super::*;
 
     thread_local! {
         pub(super) static NOW_NS: Cell<Option<u64>> = const { Cell::new(None) };

@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate elfo_utils;
 
-use std::{env, sync::Arc, time::SystemTime};
+use std::{env, sync::Arc};
 
 use dashmap::DashMap;
 use derive_more::Constructor;
@@ -15,6 +15,7 @@ use tracing::{span::Id as SpanId, Metadata, Subscriber};
 use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 
 use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
+use elfo_utils::time::SystemTime;
 
 use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::PrintingLayer};
 

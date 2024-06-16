@@ -1,8 +1,9 @@
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use tracing::Level;
 
 use elfo_core::{tracing::TraceId, ActorMeta};
+use elfo_utils::time::SystemTime;
 
 use crate::formatters::*;
 
