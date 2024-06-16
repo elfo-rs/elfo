@@ -13,9 +13,9 @@ readme.workspace = true
 elfo = { path = "../elfo" }
 elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
+metrics.workspace = true
 criterion = "0.5.1"
 tokio = { version = "1.36.0", features = ["rt-multi-thread"] }
-metrics = "0.17"
 futures = "0.3"
 derive_more = "0.99.17"
 mimalloc = { version = "0.1.39", default-features = false }

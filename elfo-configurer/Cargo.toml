@@ -16,7 +16,7 @@ workspace = true
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.15", path = "../elfo-core", features = ["unstable"] }
 
-toml = "0.7"
+toml.workspace = true
 tokio = { version = "1", features = ["fs"] }
 serde = { version = "1.0.120", features = ["derive", "rc"] }
 serde-value = "0.7.0"

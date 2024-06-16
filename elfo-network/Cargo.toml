@@ -17,6 +17,7 @@ workspace = true
 elfo-core = { version = "0.2.0-alpha.15", path = "../elfo-core", features = ["unstable", "network"] }
 elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
+metrics.workspace = true
 serde = { version = "1.0.120", features = ["derive"] }
 static_assertions = "1.1.0"
 eyre = "0.6.8"
@@ -31,7 +32,6 @@ humantime-serde = "1"
 kanal = "0.1.0-pre8"
 dashmap = "5"
 futures-intrusive = "0.5"
-metrics = "0.17"
 bitflags = "2.3.2"
 lz4_flex = "0.11.1"
 byteorder = "1.4.3"
