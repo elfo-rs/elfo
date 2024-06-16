@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - logger: log truncation up to the `max_line_size` configuration parameter ([#128]).
 
 ### Changed
-- core/tracing: improve performance of `TraceId::generate()`.
+- tracing: improve performance of `TraceId::generate()`.
+- dumping: remove unstable `Timestamp`.
 
 [#128]: https://github.com/elfo-rs/elfo/pull/128
 

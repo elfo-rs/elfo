@@ -23,6 +23,12 @@ impl SystemTime {
         StdSystemTime::now().into()
     }
 
+    /// Creates an instance based on nanoseconds since the unix epoch.
+    #[inline]
+    pub fn from_unix_time_nanos(nanos: u64) -> Self {
+        Self(nanos)
+    }
+
     /// Returns the number of seconds since the unix epoch.
     #[inline]
     pub fn to_unix_time_secs(&self) -> u64 {

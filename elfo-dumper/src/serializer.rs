@@ -194,7 +194,7 @@ impl<'a> serde::Serialize for CompactDump<'a> {
         let mut s = serializer.serialize_struct("Dump", field_count)?;
 
         // Dump `ts` firstly to make it possible to use `sort`.
-        s.serialize_field("ts", &self.dump.timestamp)?;
+        s.serialize_field("ts", &self.dump.timestamp.to_unix_time_nanos())?;
         s.serialize_field("g", &self.dump.meta.group)?;
 
         if !self.dump.meta.key.is_empty() {
@@ -275,7 +275,8 @@ mod tests {
     use fxhash::FxHashMap;
     use tracing::{level_filters::LevelFilter, Level};
 
-    use elfo_core::{dumping::Timestamp, scope::Scope, tracing::TraceId, ActorMeta, Addr};
+    use elfo_core::{scope::Scope, tracing::TraceId, ActorMeta, Addr};
+    use elfo_utils::time::SystemTime;
 
     use super::*;
     use crate::reporter::OverflowDumpInfo;
@@ -300,7 +301,7 @@ mod tests {
         scope.set_trace_id(TraceId::try_from(1).unwrap());
         let mut dump = scope.sync_within(|| {
             let mut builder = Dump::builder();
-            builder.timestamp(Timestamp::from_nanos(2));
+            builder.timestamp(SystemTime::from_unix_time_nanos(2));
             builder.message_protocol("some");
 
             if is_good {

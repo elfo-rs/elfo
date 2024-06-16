@@ -1,13 +1,13 @@
-use std::{borrow::Cow, fmt, sync::Arc, time::SystemTime};
+use std::{borrow::Cow, fmt, sync::Arc};
 
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Serialize;
 use smallbox::{smallbox, SmallBox};
 
+use elfo_utils::time::SystemTime;
+
 use super::{extract_name::extract_name, sequence_no::SequenceNo};
-use crate::{
-    actor::ActorMeta, envelope, message, scope, thread::ThreadId, tracing::TraceId, Message,
-};
+use crate::{actor::ActorMeta, envelope, scope, thread::ThreadId, tracing::TraceId, Message};
 
 // === Dump ===
 
@@ -16,7 +16,7 @@ use crate::{
 pub struct Dump {
     pub meta: Arc<ActorMeta>,
     pub sequence_no: SequenceNo,
-    pub timestamp: Timestamp,
+    pub timestamp: SystemTime,
     pub trace_id: TraceId,
     pub thread_id: ThreadId,
     pub direction: Direction,
@@ -63,7 +63,7 @@ impl Dump {
 
 #[stability::unstable]
 pub struct DumpBuilder {
-    timestamp: Option<Timestamp>,
+    timestamp: Option<SystemTime>,
     direction: Direction,
     message_name: Option<MessageName>,
     message_protocol: &'static str,
@@ -72,7 +72,7 @@ pub struct DumpBuilder {
 
 impl DumpBuilder {
     #[stability::unstable]
-    pub fn timestamp(&mut self, timestamp: impl Into<Timestamp>) -> &mut Self {
+    pub fn timestamp(&mut self, timestamp: impl Into<SystemTime>) -> &mut Self {
         self.timestamp = Some(timestamp.into());
         self
     }
@@ -126,7 +126,7 @@ impl DumpBuilder {
         Dump {
             meta,
             sequence_no,
-            timestamp: self.timestamp.unwrap_or_else(Timestamp::now),
+            timestamp: self.timestamp.unwrap_or_else(SystemTime::now),
             trace_id,
             thread_id: crate::thread::id(),
             direction: self.direction,
@@ -135,45 +135,6 @@ impl DumpBuilder {
             message_kind: self.message_kind,
             message,
         }
-    }
-}
-
-// === Timestamp ===
-
-// TODO: move to `time`.
-/// Timestamp in nanos since Unix epoch.
-#[message(part)]
-#[derive(Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[stability::unstable]
-pub struct Timestamp(u64);
-
-impl Timestamp {
-    #[cfg(not(test))]
-    #[inline]
-    #[stability::unstable]
-    pub fn now() -> Self {
-        SystemTime::now().into()
-    }
-
-    #[cfg(test)]
-    pub fn now() -> Self {
-        Self(42)
-    }
-
-    #[inline]
-    pub fn from_nanos(ns: u64) -> Self {
-        Self(ns)
-    }
-}
-
-impl From<SystemTime> for Timestamp {
-    fn from(sys_time: SystemTime) -> Self {
-        let ns = sys_time
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64;
-
-        Self(ns)
     }
 }
 
