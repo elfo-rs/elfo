@@ -21,8 +21,8 @@ harness = false
 test-util = []
 
 [dependencies]
-derive_more = "0.99.11"
 quanta = "0.12"
+crossbeam-utils = "0.8"
 
 [dev-dependencies]
 criterion = "0.5.1"

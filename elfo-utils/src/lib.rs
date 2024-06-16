@@ -1,7 +1,5 @@
 //! A collection of utilities to share among elfo-* crates.
 
-use derive_more::Deref;
-
 pub use self::{
     likely::*,
     rate_limiter::{RateLimit, RateLimiter},
@@ -11,15 +9,7 @@ mod likely;
 mod rate_limiter;
 pub mod time;
 
-/// A wrapper type that aligns the inner value to the cache line size.
-// Spatial prefetcher is now pulling two lines at a time, so we use `align(128)`.
-#[cfg_attr(any(target_arch = "x86_64", target_arch = "aarch64"), repr(align(128)))]
-#[cfg_attr(
-    not(any(target_arch = "x86_64", target_arch = "aarch64")),
-    repr(align(64))
-)]
-#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Deref)]
-pub struct CachePadded<T>(pub T);
+pub use crossbeam_utils::CachePadded;
 
 /// Returns the contents of a `Option<T>`'s `Some(T)`, otherwise it returns
 /// early from the function. Can alternatively have an `else` branch, or an

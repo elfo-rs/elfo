@@ -108,7 +108,7 @@ where
             objects: DashMap::default(),
             router,
             exec,
-            control: CachePadded(RwLock::new(control)),
+            control: CachePadded::new(RwLock::new(control)),
             scope_shared: Arc::new(ScopeGroupShared::new(ctx.group())),
             status_subscription: Arc::new(status_subscription),
             context: ctx,

@@ -126,7 +126,7 @@ impl DumpRegistry {
         let shard_no = fund.add_shard();
         Shard {
             shard_no,
-            active_part: CachePadded(Mutex::new(fund.get_empty_part())),
+            active_part: CachePadded::new(Mutex::new(fund.get_empty_part())),
         }
     }
 
