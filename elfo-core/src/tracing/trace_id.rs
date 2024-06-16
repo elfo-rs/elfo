@@ -1,11 +1,12 @@
 use std::{
     convert::TryFrom,
     num::{NonZeroU64, TryFromIntError},
-    time::SystemTime,
 };
 
 use derive_more::{Deref, Display, From, Into};
 use serde::{Deserialize, Serialize};
+
+use elfo_utils::time::SystemTime;
 
 use crate::addr::NodeNo;
 
@@ -66,21 +67,15 @@ pub(crate) struct TraceIdLayout {
 pub(crate) struct TruncatedTime(u32);
 
 impl TruncatedTime {
+    pub(crate) fn now() -> Self {
+        let nanos = SystemTime::now().to_unix_time_secs();
+        Self(nanos as u32 & 0x1ff_ffff)
+    }
+
     pub(crate) fn abs_delta(self, other: TruncatedTime) -> u32 {
         let a = self.0.wrapping_sub(other.0) & 0x1ff_ffff;
         let b = other.0.wrapping_sub(self.0) & 0x1ff_ffff;
         a.min(b)
-    }
-}
-
-impl From<SystemTime> for TruncatedTime {
-    fn from(time: SystemTime) -> Self {
-        let unixtime = time
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("invalid system time")
-            .as_secs();
-
-        Self(unixtime as u32 & 0x1ff_ffff)
     }
 }
 

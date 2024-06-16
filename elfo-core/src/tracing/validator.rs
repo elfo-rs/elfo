@@ -1,7 +1,7 @@
 use std::{convert::TryFrom, time::Duration};
 
 use super::trace_id::{TraceId, TruncatedTime};
-use crate::{node, time};
+use crate::node;
 
 /// A [`TraceId`] validator.
 ///
@@ -50,7 +50,7 @@ impl TraceIdValidator {
         }
 
         if let Some(time_lag) = self.max_time_difference {
-            let truncated_now = TruncatedTime::from(time::now());
+            let truncated_now = TruncatedTime::now();
             let delta = truncated_now.abs_delta(layout.timestamp);
 
             if i64::from(delta) > time_lag.as_secs() as i64 {
@@ -62,14 +62,11 @@ impl TraceIdValidator {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[test]
+fn it_works() {
+    node::set_node_no(65535);
 
-    #[test]
-    fn it_works() {
-        crate::node::set_node_no(65535);
-
+    elfo_utils::time::with_mock(|mock| {
         let validator = TraceIdValidator::default().max_time_difference(Duration::from_secs(5));
 
         assert_eq!(validator.validate(0), Err(CANNOT_BE_ZERO));
@@ -87,8 +84,8 @@ mod tests {
             Err(INVALID_TIMESTAMP)
         );
 
-        time::advance(Duration::from_secs(10));
+        mock.advance(Duration::from_secs(10));
         assert_eq!(validator.validate(16 << 38), Err(INVALID_TIMESTAMP));
         assert_eq!(validator.validate(4 << 38), Err(INVALID_TIMESTAMP));
-    }
+    });
 }

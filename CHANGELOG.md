@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - logger: log truncation up to the `max_line_size` configuration parameter ([#128]).
 
+### Changed
+- core/tracing: improve performance of `TraceId::generate()`.
+
 [#128]: https://github.com/elfo-rs/elfo/pull/128
 
 ## [0.2.0-alpha.15] - 2024-05-13
