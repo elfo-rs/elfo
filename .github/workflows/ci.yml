@@ -11,6 +11,7 @@ env:
   RUSTFLAGS: -Dwarnings
   RUST_BACKTRACE: 1
   RUST_LOG: elfo
+  MSRV: 1.76.0
 
 jobs:
   build:
@@ -19,6 +20,18 @@ jobs:
     - uses: actions/checkout@v4
     - run: rustup show active-toolchain -v
     - run: cargo build --all-targets --all-features
+
+  msrv:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "" # remove -Dwarnings
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install ${{ env.MSRV }} --profile minimal
+      - run: rustup override set ${{ env.MSRV }}
+      - run: rustup show active-toolchain -v
+      - run: cargo build
+      - run: cargo build --all-features
 
   rustfmt:
     runs-on: ubuntu-latest

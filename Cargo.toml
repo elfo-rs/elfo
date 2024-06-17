@@ -24,6 +24,7 @@ authors = ["Paul Loyd <pavelko95@gmail.com>"]
 license = "MIT"
 edition = "2021"
 readme = "README.md"
+rust-version = "1.76.0" # update CI if changed
 
 [workspace.dependencies]
 stability = "0.2.0"

@@ -8,6 +8,7 @@ authors.workspace = true
 license.workspace = true
 edition.workspace = true
 readme.workspace = true
+rust-version.workspace = true
 
 [dev-dependencies]
 elfo = { path = "../elfo" }
