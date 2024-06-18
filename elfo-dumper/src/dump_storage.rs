@@ -33,7 +33,7 @@ impl DumpStorage {
             registry_config: DumpRegistryConfig {
                 // At startup we doesn't limit dumping at all.
                 // The dumper reconfigure the storage at startup.
-                max_part_count: usize::max_value(),
+                max_part_count: usize::MAX,
             },
             registries: Default::default(),
             classes: Default::default(),

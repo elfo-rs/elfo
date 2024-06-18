@@ -374,8 +374,8 @@ fn lookup_vtable(protocol: &str, name: &str) -> Option<&'static MessageVTable> {
     // SAFETY: this pair doesn't overlive the function.
     let (protocol, name) = unsafe {
         (
-            std::mem::transmute::<_, &'static str>(protocol),
-            std::mem::transmute::<_, &'static str>(name),
+            std::mem::transmute::<&str, &'static str>(protocol),
+            std::mem::transmute::<&str, &'static str>(name),
         )
     };
 
