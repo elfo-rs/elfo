@@ -59,7 +59,7 @@ impl Mailbox {
         Self {
             queue: MpscQueue::new_with_stub(Envelope::stub()),
             tx_semaphore: Semaphore::new(LIMIT),
-            rx_notify: CachePadded(Notify::new()),
+            rx_notify: CachePadded::new(Notify::new()),
             closed_trace_id: Mutex::new(None),
         }
     }
