@@ -1,5 +1,5 @@
 use std::{
-    fmt,
+    alloc, fmt,
     marker::PhantomData,
     mem::{self, ManuallyDrop},
     ops::Deref,
@@ -17,69 +17,139 @@ use crate::{dumping, scope::SerdeMode};
 
 // === AnyMessage ===
 
+/// Heap-allocated message that can be downcasted to a concrete message type.
+///
+/// It can be thought as a working version of `Box<dyn Message>`.
+///
+/// [`AnyMessage`] implements [`Message`], thus it can be used in any context
+/// where a message is expected, e.g. sending in [`Context`].
+///
+/// [`AnyMessage`] doesn't implement [`Request`], so it's useful only
+/// for regular messages. However, requests are also messages and can
+/// be converted to [`AnyMessage`], but usage is limited in this case.
+///
+/// [`Context`]: crate::Context
+/// [`Request`]: crate::Request
 pub struct AnyMessage(NonNull<MessageRepr>);
 
+// Messages aren't required to be `Sync`.
 assert_not_impl_any!(AnyMessage: Sync);
 
+// SAFETY: `AnyMessage` can point to `M: Message` only, which is `Send`.
 unsafe impl Send for AnyMessage {}
 
 // TODO: Pin/Unpin?
-// TODO: miri strict sptr
 
 impl AnyMessage {
+    /// Converts a message into [`AnyMessage`].
+    #[inline]
     pub fn new<M: Message>(message: M) -> Self {
+        // If `M != AnyMessage` then `from_real()` is called.
+        // Otherwise, the message is returned as is.
         message._into_any()
     }
 
     pub(super) fn from_real<M: Message>(message: M) -> Self {
-        let ptr = unsafe { MessageRepr::alloc(message._vtable()) };
+        debug_assert_ne!(M::_type_id(), Self::_type_id());
+
+        let ptr = alloc_repr(message._vtable());
+        // SAFETY: allocation is done for `M`.
         unsafe { message._write(ptr) };
         Self(ptr)
     }
 
-    #[inline]
-    pub fn type_id(&self) -> MessageTypeId {
-        MessageTypeId::new(self._vtable())
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    pub(super) unsafe fn into_real<M: Message>(self) -> M {
+        debug_assert_ne!(M::_type_id(), Self::_type_id());
+
+        let data = M::_read(self.0);
+        dealloc_repr(self.0);
+        mem::forget(self);
+        data
     }
 
-    #[inline]
-    pub fn is<M: Message>(&self) -> bool {
-        M::_can_get_from(self.type_id())
-    }
-
-    #[inline]
-    pub fn downcast_ref<M: Message>(&self) -> Option<&M> {
-        self.is::<M>()
-            .then(|| unsafe { self.downcast_ref_unchecked() })
-    }
-
-    pub(crate) unsafe fn downcast_ref_unchecked<M: Message>(&self) -> &M {
-        // TODO: support `AnyMessage`
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    pub(super) unsafe fn as_real_ref<M: Message>(&self) -> &M {
         debug_assert_ne!(M::_type_id(), Self::_type_id());
 
         &self.0.cast::<MessageRepr<M>>().as_ref().data
     }
 
+    /// Returns [`AnyMessageRef`] that borrows the message.
+    pub fn as_ref(&self) -> AnyMessageRef<'_> {
+        // SAFETY: `self` is valid for reads.
+        unsafe { AnyMessageRef::new(self.0) }
+    }
+
+    pub(crate) fn type_id(&self) -> MessageTypeId {
+        MessageTypeId::new(self._vtable())
+    }
+
+    /// Checks if the message is of a specific type.
+    ///
+    /// Note: it returns `true` if `M` is [`AnyMessage`].
+    #[inline]
+    pub fn is<M: Message>(&self) -> bool {
+        // If `M != AnyMessage`, it checks that type ids are equal.
+        // Otherwise, it returns `true`.
+        M::_can_get_from(self.type_id())
+    }
+
+    /// Tries to downcast the message to a reference to the concrete type.
+    ///
+    /// Note: it returns `Some(&self)` if `M` is [`AnyMessage`].
+    #[inline]
+    pub fn downcast_ref<M: Message>(&self) -> Option<&M> {
+        self.is::<M>()
+            // SAFETY: `self` is of type `M`, checked above.
+            .then(|| unsafe { self.downcast_ref_unchecked() })
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    pub(crate) unsafe fn downcast_ref_unchecked<M: Message>(&self) -> &M {
+        // If `M != AnyMessage` then `as_real_ref()` is called.
+        // Otherwise, the message is returned as is.
+        M::_from_any_ref(self)
+    }
+
+    /// Tries to downcast the message to a concrete type.
     #[inline]
     pub fn downcast<M: Message>(self) -> Result<M, AnyMessage> {
         if !self.is::<M>() {
             return Err(self);
         }
 
-        let data = unsafe { M::_read(self.0) };
-
-        unsafe { MessageRepr::dealloc(self.0) };
-
-        mem::forget(self);
-
-        Ok(data)
+        // SAFETY: `self` is of type `M`, checked above.
+        Ok(unsafe { self.downcast_unchecked() })
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    unsafe fn downcast_unchecked<M: Message>(self) -> M {
+        // If `M != AnyMessage` then `into_real()` is called.
+        // Otherwise, the message is returned as is.
+        M::_from_any(self)
+    }
+
+    /// # Safety
+    ///
+    /// `out_ptr` must be valid pointer to `MessageRepr<M>`,
+    /// where `M` is the same type that is hold by `self`.
     pub(crate) unsafe fn clone_into(&self, out_ptr: NonNull<MessageRepr>) {
         let vtable = self._vtable();
         (vtable.clone)(self.0, out_ptr);
     }
 
+    /// # Safety
+    ///
+    /// Data behind `self` cannot be accessed after this call.
     pub(crate) unsafe fn drop_in_place(&self) {
         let vtable = self._vtable();
         (vtable.drop)(self.0);
@@ -88,16 +158,19 @@ impl AnyMessage {
 
 impl Drop for AnyMessage {
     fn drop(&mut self) {
+        // SAFETY: only a vtable will be accessed below.
         unsafe { self.drop_in_place() };
 
-        unsafe { MessageRepr::dealloc(self.0) };
+        // SAFETY: memory allocated by `alloc_repr()`.
+        unsafe { dealloc_repr(self.0) };
     }
 }
 
 impl Clone for AnyMessage {
     fn clone(&self) -> Self {
-        let out_ptr = unsafe { MessageRepr::alloc(self._vtable()) };
+        let out_ptr = alloc_repr(self._vtable());
 
+        // SAFETY: `out_ptr` is based on the same message as `self`.
         unsafe { self.clone_into(out_ptr) };
 
         Self(out_ptr)
@@ -106,8 +179,32 @@ impl Clone for AnyMessage {
 
 impl fmt::Debug for AnyMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // SAFETY: the vtable belongs to `self`.
         unsafe { (self._vtable().debug)(self.0, f) }
     }
+}
+
+fn alloc_repr(vtable: &'static MessageVTable) -> NonNull<MessageRepr> {
+    // SAFETY:
+    // * `vtable` is valid (can be created only by `MessageVTable::new()`).
+    // * `vtable.repr_layout` is non-zero.
+    let ptr = unsafe { alloc::alloc(vtable.repr_layout) };
+
+    let Some(ptr) = NonNull::new(ptr) else {
+        alloc::handle_alloc_error(vtable.repr_layout);
+    };
+
+    ptr.cast()
+}
+
+/// # Safety
+///
+/// `ptr` must denote a block of memory allocated by [`alloc_repr()`].
+unsafe fn dealloc_repr(ptr: NonNull<MessageRepr>) {
+    let ptr = ptr.as_ptr();
+    let vtable = (*ptr).vtable;
+
+    alloc::dealloc(ptr.cast(), vtable.repr_layout);
 }
 
 impl Message for AnyMessage {
@@ -118,6 +215,7 @@ impl Message for AnyMessage {
 
     #[inline(always)]
     fn _vtable(&self) -> &'static MessageVTable {
+        // SAFETY: `self` refers to the valid object.
         unsafe { (*self.0.as_ptr()).vtable }
     }
 
@@ -135,38 +233,41 @@ impl Message for AnyMessage {
     }
 
     #[inline(always)]
+    unsafe fn _from_any_ref(any: &AnyMessage) -> &Self {
+        any
+    }
+
+    #[inline(always)]
     fn _erase(&self) -> dumping::ErasedMessage {
         let vtable = self._vtable();
+
+        // SAFETY: the vtable belongs to `self`.
         unsafe { (vtable.erase)(self.0) }
     }
 
     #[inline(always)]
     unsafe fn _read(ptr: NonNull<MessageRepr>) -> Self {
         let vtable = (*ptr.as_ptr()).vtable;
-        let this = unsafe { MessageRepr::alloc(vtable) };
+        let this = alloc_repr(vtable);
 
-        unsafe {
-            ptr::copy_nonoverlapping(
-                ptr.cast::<u8>().as_ptr(),
-                this.cast::<u8>().as_ptr(),
-                vtable.repr_layout.size(),
-            )
-        };
+        ptr::copy_nonoverlapping(
+            ptr.cast::<u8>().as_ptr(),
+            this.cast::<u8>().as_ptr(),
+            vtable.repr_layout.size(),
+        );
 
         Self(this)
     }
 
     #[inline(always)]
     unsafe fn _write(self, out_ptr: NonNull<MessageRepr>) {
-        unsafe {
-            ptr::copy_nonoverlapping(
-                self.0.cast::<u8>().as_ptr(),
-                out_ptr.cast::<u8>().as_ptr(),
-                self._vtable().repr_layout.size(),
-            )
-        };
+        ptr::copy_nonoverlapping(
+            self.0.cast::<u8>().as_ptr(),
+            out_ptr.cast::<u8>().as_ptr(),
+            self._vtable().repr_layout.size(),
+        );
 
-        unsafe { MessageRepr::dealloc(self.0) };
+        dealloc_repr(self.0);
 
         mem::forget(self);
     }
@@ -254,9 +355,10 @@ impl<'de, 'tag> de::DeserializeSeed<'de> for MessageTag<'tag> {
         let vtable = MessageVTable::lookup(protocol, name)
             .ok_or_else(|| de::Error::custom(format_args!("unknown message: {protocol}/{name}")))?;
 
-        let out_ptr = unsafe { MessageRepr::alloc(vtable) };
+        let out_ptr = alloc_repr(vtable);
 
         let mut deserializer = <dyn erased_serde::Deserializer<'_>>::erase(deserializer);
+        // SAFETY: `out_ptr` belongs to the same object as the vtable.
         unsafe { (vtable.deserialize_any)(&mut deserializer, out_ptr) }
             .map_err(de::Error::custom)?;
 
@@ -279,8 +381,9 @@ cfg_network!({
                 return Ok(None);
             };
 
-            let out_ptr = unsafe { MessageRepr::alloc(vtable) };
+            let out_ptr = alloc_repr(vtable);
 
+            // SAFETY: `out_ptr` belongs to the same object as the vtable.
             unsafe { (vtable.read_msgpack)(buffer, out_ptr) }?;
 
             Ok(Some(Self(out_ptr)))
@@ -290,6 +393,7 @@ cfg_network!({
         #[inline]
         pub fn write_msgpack(&self, out: &mut Vec<u8>, limit: usize) -> Result<(), encode::Error> {
             let vtable = self._vtable();
+            // SAFETY: the vtable belongs to `self`.
             unsafe { (vtable.write_msgpack)(self.0, out, limit) }
         }
     }
@@ -297,14 +401,18 @@ cfg_network!({
 
 // === AnyMessageRef ===
 
-// TODO: method to get AnyMessageRef from AnyMessage
-
+/// A reference to the message inside [`Envelope`] or [`AnyMessage`].
+///
+/// [`Envelope`]: crate::Envelope
 pub struct AnyMessageRef<'a> {
     inner: ManuallyDrop<AnyMessage>, // never drop, borrows memory
     marker: PhantomData<&'a AnyMessage>,
 }
 
 impl<'a> AnyMessageRef<'a> {
+    /// # Safety
+    ///
+    /// `ptr` must be a valid pointer for reads.
     pub(crate) unsafe fn new(ptr: NonNull<MessageRepr>) -> Self {
         Self {
             inner: ManuallyDrop::new(AnyMessage(ptr)),
@@ -314,12 +422,19 @@ impl<'a> AnyMessageRef<'a> {
 
     #[inline]
     pub fn downcast_ref<M: Message>(&self) -> Option<&'a M> {
-        self.is::<M>()
-            .then(|| unsafe { self.downcast_ref_unchecked() })
+        let ret = self.inner.downcast_ref();
+
+        // SAFETY: we produce lifetime bound to the original one.
+        // Note: semantically it's shortening not extending.
+        unsafe { mem::transmute::<Option<&M>, Option<&'a M>>(ret) }
     }
 
     pub(crate) unsafe fn downcast_ref_unchecked<M: Message>(&self) -> &'a M {
-        &self.inner.0.cast::<MessageRepr<M>>().as_ref().data
+        let ret = self.inner.downcast_ref_unchecked();
+
+        // SAFETY: we produce lifetime bound to the original one.
+        // Note: semantically it's shortening not extending.
+        unsafe { mem::transmute::<&M, &'a M>(ret) }
     }
 }
 
@@ -347,6 +462,7 @@ impl Serialize for AnyMessageRef<'_> {
 }
 
 // TODO: add tests for `AnyMessageRef`
+// TODO: miri strict sptr
 
 #[cfg(test)]
 mod tests {

@@ -4,7 +4,6 @@ use std::{
 };
 
 use fxhash::{FxHashMap, FxHashSet};
-use linkme::distributed_slice;
 use metrics::Label;
 use once_cell::sync::Lazy;
 use smallbox::smallbox;
@@ -17,10 +16,22 @@ use rmp_serde::{decode, encode};
 
 // === MessageTypeId ===
 
+/// A unique (inside a compilation target) identifier of a message type.
+// Internally, it's simply an address of corresponding vtable.
+// ~
+// However, we cannot cast it into integer in the const context,
+// so we're forced to use a raw pointer and `ptr::eq()`.
+//
+// `NULL` is used for `AnyMessage`.
+//
+// Reexported in `elfo::_priv`.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug)]
 pub struct MessageTypeId(*const ());
 
+/// SAFETY: used only for comparison, safe to send across threads.
 unsafe impl Send for MessageTypeId {}
+/// SAFETY: used only for comparison, safe to sync across threads.
 unsafe impl Sync for MessageTypeId {}
 
 impl MessageTypeId {
@@ -29,9 +40,8 @@ impl MessageTypeId {
         Self(vtable as *const _ as *const ())
     }
 
-    // Cannot be `const ANY` until rust#119618.
-    pub(super) fn any() -> Self {
-        Self::new(VTABLE_ANY)
+    pub(super) const fn any() -> Self {
+        Self(ptr::null())
     }
 }
 
@@ -44,17 +54,30 @@ impl PartialEq for MessageTypeId {
 
 // === MessageRepr ===
 
-#[derive(Clone)]
+/// A message representation as a cpp-style object.
+///
+/// Initially, it's created from a typed message as [`MessageRepr<M>`], then
+/// * for [`AnyMessage`]: moved directly to heap
+/// * for [`Envelope`]: becomes a part and whole envelope is moved to heap
+///
+/// All subsequent accesses are done via `NonNull<MessageRepr>` and require
+/// using the virtual table ([`MessageVTable`]) for all operations.
+///
+/// [`AnyMessage`]: crate::AnyMessage
+/// [`Envelope`]: crate::Envelope
+// `vtable` must be first
 #[repr(C)]
+// It's `pub` only because used in private methods of `AnyMessage`.
+// Actually, it's not reexported at all.
+#[doc(hidden)]
 pub struct MessageRepr<M = ()> {
     pub(crate) vtable: &'static MessageVTable,
     pub(crate) data: M,
 }
 
-impl<M> MessageRepr<M>
-where
-    M: Message,
-{
+impl<M: Message> MessageRepr<M> {
+    /// Creates a new typed `MessageRepr` on stack.
+    /// Cannot be created for `AnyMessage` (which also implements `Message`).
     pub(crate) fn new(message: M) -> Self {
         debug_assert_ne!(M::_type_id(), MessageTypeId::any());
 
@@ -65,39 +88,33 @@ where
     }
 }
 
-impl MessageRepr {
-    pub(super) unsafe fn alloc(vtable: &'static MessageVTable) -> NonNull<Self> {
-        let ptr = alloc::alloc(vtable.repr_layout);
+// Protection against footgun.
+assert_not_impl_any!(MessageRepr: Clone);
 
-        let Some(ptr) = NonNull::new(ptr) else {
-            alloc::handle_alloc_error(vtable.repr_layout);
-        };
-
-        ptr.cast()
-    }
-
-    pub(super) unsafe fn dealloc(ptr: NonNull<Self>) {
-        let ptr = ptr.as_ptr();
-        let vtable = (*ptr).vtable;
-
-        alloc::dealloc(ptr.cast(), vtable.repr_layout);
+impl<M: Message> Clone for MessageRepr<M> {
+    fn clone(&self) -> Self {
+        Self {
+            vtable: self.vtable,
+            data: self.data.clone(),
+        }
     }
 }
 
 // === MessageVTable ===
 
-// Reexported in `elfo::_priv`.
 /// Message Virtual Table.
+// ~
+// TODO: this struct is big enough and takes several cache lines.
+//       add `repr(C)` and reorder by frequency of access for better locality.
+// Reexported in `elfo::_priv`.
+#[doc(hidden)]
+#[non_exhaustive] // must be created only via `MessageVTable::new()`
 pub struct MessageVTable {
     pub(super) repr_layout: alloc::Layout, // of `MessageRepr<M>`
     pub(super) name: &'static str,
     pub(super) protocol: &'static str,
-    pub(super) labels: [Label; 2],
+    pub(super) labels: [Label; 2],    // protocol + name for `metrics`
     pub(super) dumping_allowed: bool, // TODO: introduce `DumpingMode`.
-    // TODO: field ordering (better for cache)
-    // TODO:
-    // pub(super) deserialize_any: fn(&mut dyn erased_serde::Deserializer<'_>) ->
-    // Result<AnyMessage, erased_serde::Error>,
     #[cfg(feature = "network")]
     pub(super) read_msgpack: unsafe fn(&[u8], NonNull<MessageRepr>) -> Result<(), decode::Error>,
     #[cfg(feature = "network")]
@@ -114,27 +131,9 @@ pub struct MessageVTable {
     pub(super) drop: unsafe fn(NonNull<MessageRepr>),
 }
 
-static VTABLE_ANY: &MessageVTable = &MessageVTable {
-    repr_layout: alloc::Layout::new::<()>(),
-    name: "",
-    protocol: "",
-    labels: [
-        Label::from_static_parts("", ""),
-        Label::from_static_parts("", ""),
-    ],
-    dumping_allowed: false,
-    #[cfg(feature = "network")]
-    read_msgpack: |_, _| unreachable!(),
-    #[cfg(feature = "network")]
-    write_msgpack: |_, _, _| unreachable!(),
-    debug: |_, _| unreachable!(),
-    clone: |_, _| unreachable!(),
-    erase: |_| unreachable!(),
-    deserialize_any: |_, _| unreachable!(),
-    drop: |_| unreachable!(),
-};
-
 impl MessageVTable {
+    /// Creates a new vtable for the provided message type.
+    /// This is the only way to create a vtable.
     // Reexported in `elfo::_priv`.
     #[doc(hidden)]
     pub const fn new<M: Message>(
@@ -164,14 +163,32 @@ impl MessageVTable {
     }
 }
 
+/// Generic vtable's functions for monomorphization in [`MessageVTable::new()`].
+///
+/// All functions are `unsafe` because they work with raw pointers.
+///
+/// # Safety
+///
+/// Common safety requirements for all functions:
+/// * input pointers (`ptr`) must be [valid] for reading `MessageRepr<M>`.
+/// * output pointers (`out_ptr`) must be [valid] for writing `MessageRepr<M>`.
+///
+/// [valid]: https://doc.rust-lang.org/stable/std/ptr/index.html#safety
 mod vtablefns {
     use super::*;
 
+    /// # Safety
+    ///
+    /// Data behind `ptr` cannot be accessed after this call.
+    /// Note that vtable is still can be accessed.
     pub(super) unsafe fn drop<M>(ptr: NonNull<MessageRepr>) {
         ptr::drop_in_place(ptr.cast::<MessageRepr<M>>().as_ptr());
     }
 
-    pub(super) unsafe fn clone<M: Clone>(ptr: NonNull<MessageRepr>, out_ptr: NonNull<MessageRepr>) {
+    pub(super) unsafe fn clone<M: Message>(
+        ptr: NonNull<MessageRepr>,
+        out_ptr: NonNull<MessageRepr>,
+    ) {
         ptr::write(
             out_ptr.cast::<MessageRepr<M>>().as_ptr(),
             ptr.cast::<MessageRepr<M>>().as_ref().clone(),
@@ -230,9 +247,11 @@ mod vtablefns {
 
 // === VTable registration & lookup ===
 
+/// A list of all registered message vtables via the `linkme` crate.
+/// Used only for collecting, all lookups are done via a hashmap.
 // Reexported in `elfo::_priv`.
 #[doc(hidden)]
-#[distributed_slice]
+#[linkme::distributed_slice]
 pub static MESSAGE_VTABLES_LIST: [&'static MessageVTable] = [..];
 
 static MESSAGE_VTABLES_MAP: Lazy<FxHashMap<(&'static str, &'static str), &'static MessageVTable>> =
@@ -244,6 +263,8 @@ static MESSAGE_VTABLES_MAP: Lazy<FxHashMap<(&'static str, &'static str), &'stati
     });
 
 impl MessageVTable {
+    /// Finds a vtable by protocol and name.
+    /// Used for deserialization of `AnyMessage` and in networking.
     pub(crate) fn lookup(protocol: &str, name: &str) -> Option<&'static Self> {
         // Extend lifetimes to static in order to get `(&'static str, &'static str)`.
         // SAFETY: this pair doesn't overlive the function.
@@ -258,6 +279,8 @@ impl MessageVTable {
     }
 }
 
+/// Checks that all registered message have different protocol and name.
+/// Returns a list of duplicates if it's violated.
 pub(crate) fn check_uniqueness() -> Result<(), Vec<(String, String)>> {
     if MESSAGE_VTABLES_MAP.len() == MESSAGE_VTABLES_LIST.len() {
         return Ok(());
@@ -280,7 +303,6 @@ pub(crate) fn check_uniqueness() -> Result<(), Vec<(String, String)>> {
 cfg_network!({
     use std::io;
 
-    // The compiler requires all arguments to be visible.
     struct LimitedWrite<W>(W, usize);
 
     impl<W: io::Write> io::Write for LimitedWrite<W> {
