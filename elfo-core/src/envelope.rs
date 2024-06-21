@@ -10,35 +10,41 @@ use crate::{
     Addr,
 };
 
-pub struct Envelope(NonNull<EnvelopeHeader>);
+/// An envelope is a wrapper around message with additional metadata,
+/// involved in message passing between actors.
+///
+/// Envelopes aren't created directly in code, but are produced internally
+/// by [`Context`]'s methods.
+///
+/// Converting an envelope to a message is usually done by calling the [`msg!`]
+/// macro, which supports both owned and borrowed usages.
+///
+/// [`Context`]: crate::Context
+/// [`msg!`]: crate::msg
+pub struct Envelope(NonNull<EnvelopeHeader>); // TODO: Pin<NonNull<_>>?
 
-assert_impl_all!(Envelope: Send);
+// Messages aren't required to be `Sync`.
 assert_not_impl_any!(Envelope: Sync);
+assert_impl_all!(Envelope: Send);
 assert_eq_size!(Envelope, usize);
 
-// TODO: describe following:
-// + add comment to network about kanal
-// link: 8
-// created_time: 8
-// trace_id: 8 -> 16
-// kind: 24 -> 32
-// offset: 4
-// ---
-// 8+8+8+24+4^=56
-//          ^ padding (can be removed)
-//
-// 48 -> 64
+// TODO: the current size (on x86-64) is 64 bytes, but it can be reduced.
+// And... it should be reduced once `TraceId` is extended to 16 bytes.
 pub(crate) struct EnvelopeHeader {
+    /// See [`mailbox.rs`] for more details.
     pub(crate) link: mailbox::Link,
     created_time: Instant, // Now used also as a sent time.
     trace_id: TraceId,
     kind: MessageKind,
+    /// Offset from the beginning of the envelope to the `MessageRepr`.
     message_offset: u32,
 }
 
+assert_impl_all!(EnvelopeHeader: Send);
+
+// SAFETY: `Envelope` can point to `M: Message` only, which is `Send`.
+// `EnvelopeHeader` is checked statically above to be `Send`.
 unsafe impl Send for Envelope {}
-// TODO: Sync??
-// TODO: Pin?
 
 // Reexported in `elfo::_priv`.
 pub enum MessageKind {
@@ -48,6 +54,9 @@ pub enum MessageKind {
     Response { sender: Addr, request_id: RequestId },
 }
 
+// Called if the envelope hasn't been unpacked at all.
+// For instance, if an actor dies with a non-empty mailbox.
+// Usually, an envelope goes to `std::mem:forget()` in `unpack_*` methods.
 impl Drop for Envelope {
     fn drop(&mut self) {
         let message = self.message();
@@ -55,8 +64,16 @@ impl Drop for Envelope {
         let (layout, message_offset) = envelope_repr_layout(message_layout);
         debug_assert_eq!(message_offset, self.header().message_offset);
 
+        // Drop the message.
+        // SAFETY: the message is not accessed anymore below.
         unsafe { message.drop_in_place() };
+
+        // Drop the header.
+        // SAFETY: the header is not accessed anymore below.
         unsafe { ptr::drop_in_place(self.0.as_ptr()) }
+
+        // Deallocate the whole envelope.
+        // SAFETY: memory was allocated by `alloc::alloc` with the same layout.
         unsafe { alloc::dealloc(self.0.as_ptr().cast(), layout) };
     }
 }
@@ -84,17 +101,20 @@ impl Envelope {
             message_offset,
         };
 
+        // SAFETY: `layout` is correct and non-zero.
         let ptr = unsafe { alloc::alloc(layout) };
 
         let Some(ptr) = NonNull::new(ptr) else {
             alloc::handle_alloc_error(layout);
         };
 
+        // SAFETY: `ptr` is valid to write the header.
         unsafe { ptr::write(ptr.cast().as_ptr(), header) };
 
         let this = Self(ptr.cast());
-
         let message_ptr = this.message_repr_ptr();
+
+        // SAFETY: `message_ptr` is valid to write the message.
         unsafe { message._write(message_ptr) };
 
         this
@@ -109,6 +129,7 @@ impl Envelope {
     }
 
     fn header(&self) -> &EnvelopeHeader {
+        // SAFETY: `self.0` is properly initialized.
         unsafe { self.0.as_ref() }
     }
 
@@ -117,9 +138,13 @@ impl Envelope {
         self.header().trace_id
     }
 
+    /// Returns a reference to the untyped message inside the envelope.
     #[inline]
     pub fn message(&self) -> AnyMessageRef<'_> {
+        // TODO: rename to `message_ref`?
         let message_repr = self.message_repr_ptr();
+
+        // SAFETY: `message_repr` is valid pointer for read.
         unsafe { AnyMessageRef::new(message_repr) }
     }
 
@@ -143,6 +168,7 @@ impl Envelope {
         }
     }
 
+    #[doc(hidden)]
     #[inline]
     pub fn type_id(&self) -> MessageTypeId {
         self.message().type_id()
@@ -177,17 +203,20 @@ impl Envelope {
             message_offset,
         };
 
+        // SAFETY: `layout` is correct and non-zero.
         let out_ptr = unsafe { alloc::alloc(layout) };
 
         let Some(out_ptr) = NonNull::new(out_ptr) else {
             alloc::handle_alloc_error(layout);
         };
 
+        // SAFETY: `out_ptr` is valid to write the header.
         unsafe { ptr::write(out_ptr.cast().as_ptr(), out_header) };
 
         let out = Self(out_ptr.cast());
-
         let out_message_ptr = out.message_repr_ptr();
+
+        // SAFETY: `out_message_ptr` is valid and has the same layout as `message`.
         unsafe { message.clone_into(out_message_ptr) };
 
         out
@@ -197,23 +226,34 @@ impl Envelope {
     pub(crate) fn set_message<M: Message>(&mut self, message: M) {
         assert!(self.is::<M>() && M::_type_id() != crate::message::AnyMessage::_type_id());
 
-        // TODO: rewrite without `MessageRepr`?
+        // TODO: rewrite without `MessageRepr`.
         let repr_ptr = self.message_repr_ptr().cast::<MessageRepr<M>>().as_ptr();
+
+        // SAFETY: `repr_ptr` is valid to write the message.
         unsafe { ptr::replace(repr_ptr, MessageRepr::new(message)) };
     }
 
     fn message_repr_ptr(&self) -> NonNull<MessageRepr> {
         let message_offset = self.header().message_offset;
+
+        // SAFETY: `message_offset` refers to the same allocation object.
         let ptr = unsafe { self.0.as_ptr().cast::<u8>().add(message_offset as usize) };
+
+        // SAFETY: `envelope_repr_layout()` guarantees that `ptr` is valid.
         unsafe { NonNull::new_unchecked(ptr.cast()) }
     }
 
     #[doc(hidden)]
     #[inline]
     pub fn unpack<M: Message>(self) -> Option<(M, MessageKind)> {
-        self.is::<M>().then(|| unsafe { self.unpack_unchecked() })
+        self.is::<M>()
+            // SAFETY: `self` contains a message of type `M`, checked above.
+            .then(|| unsafe { self.unpack_unchecked() })
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
     unsafe fn unpack_unchecked<M: Message>(self) -> (M, MessageKind) {
         let message_layout = self.message()._repr_layout();
         let (layout, message_offset) = envelope_repr_layout(message_layout);
@@ -228,10 +268,12 @@ impl Envelope {
     }
 
     pub(crate) fn drop_as_unused(mut self) {
+        // SAFETY: `self` is properly initialized.
         let header = unsafe { self.0.as_mut() };
 
         if let MessageKind::RequestAny(token) | MessageKind::RequestAll(token) = &mut header.kind {
-            // TODO FIXME: invalid for ALL requests, need to decrement remainder.
+            // FIXME: probably invalid for ALL requests, need to decrement remainder.
+            // REVIEW: DO NOT forget check & fix it before merging.
             token.forget();
         }
     }
@@ -292,11 +334,21 @@ impl fmt::Debug for Envelope {
 // Extra traits to support both owned and borrowed usages of `msg!(..)`.
 
 pub trait EnvelopeOwned {
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
     unsafe fn unpack_regular_unchecked<M: Message>(self) -> M;
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the request is of the correct type.
     unsafe fn unpack_request_unchecked<R: Request>(self) -> (R, ResponseToken<R>);
 }
 
 pub trait EnvelopeBorrowed {
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
     unsafe fn unpack_regular_unchecked<M: Message>(&self) -> &M;
 }
 
