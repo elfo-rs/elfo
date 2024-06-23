@@ -16,7 +16,7 @@ pub use self::{
 #[cfg(not(feature = "unstable"))] // TODO: patch `stability`, again.
 pub(crate) use self::{
     control::{CheckResult, DumpingControl},
-    dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName, Timestamp},
+    dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName},
     dumper::Dumper,
     extract_name::{extract_name, extract_name_by_type},
     raw::Raw,
