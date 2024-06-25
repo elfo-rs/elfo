@@ -49,9 +49,12 @@ assert_not_impl_any!(EnvelopeHeader: Unpin);
 // SAFETY:
 // * `EnvelopeHeader` is pinned in memory while it is in the queue, the only way
 //   to access inserted `EnvelopeHeader` is by using the `dequeue()` method.
-// * `EnvelopeHeader` cannot be deallocated without prunning the queue.
-// * `EnvelopeHeader` doesn't implement `Unpin` (checked statically).
-unsafe impl Linked<Links<EnvelopeHeader>> for EnvelopeHeader {
+// * `EnvelopeHeader` cannot be deallocated without prunning the queue, which is
+//   done also by calling `dequeue()` method multiple times.
+// * `EnvelopeHeader` doesn't implement `Unpin` (checked statically above).
+unsafe impl Linked<Link> for EnvelopeHeader {
+    // It would be nice to enforce pinning here by using `Pin<Envelope>`.
+    // However, it's not possible because `Pin` requires `Deref` impl.
     type Handle = Envelope;
 
     fn into_ptr(handle: Self::Handle) -> NonNull<Self> {
@@ -62,7 +65,7 @@ unsafe impl Linked<Links<EnvelopeHeader>> for EnvelopeHeader {
         Self::Handle::from_header_ptr(ptr)
     }
 
-    unsafe fn links(ptr: NonNull<Self>) -> NonNull<Links<Self>> {
+    unsafe fn links(ptr: NonNull<Self>) -> NonNull<Link> {
         // Using `ptr::addr_of_mut!` permits us to avoid creating a temporary
         // reference without using layout-dependent casts.
         let links = ptr::addr_of_mut!((*ptr.as_ptr()).link);
