@@ -38,8 +38,6 @@ assert_not_impl_any!(AnyMessage: Sync);
 // SAFETY: `AnyMessage` can point to `M: Message` only, which is `Send`.
 unsafe impl Send for AnyMessage {}
 
-// TODO: Pin/Unpin?
-
 impl AnyMessage {
     /// Converts a message into [`AnyMessage`].
     #[inline]

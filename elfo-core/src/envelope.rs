@@ -21,7 +21,7 @@ use crate::{
 ///
 /// [`Context`]: crate::Context
 /// [`msg!`]: crate::msg
-pub struct Envelope(NonNull<EnvelopeHeader>); // TODO: Pin<NonNull<_>>?
+pub struct Envelope(NonNull<EnvelopeHeader>);
 
 // Messages aren't required to be `Sync`.
 assert_not_impl_any!(Envelope: Sync);
