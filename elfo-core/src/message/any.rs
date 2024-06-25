@@ -94,7 +94,7 @@ impl AnyMessage {
     pub fn is<M: Message>(&self) -> bool {
         // If `M != AnyMessage`, it checks that type ids are equal.
         // Otherwise, it returns `true`.
-        M::_can_get_from(self.type_id())
+        M::_is_supertype_of(self.type_id())
     }
 
     /// Tries to downcast the message to a reference to the concrete type.
@@ -218,7 +218,7 @@ impl Message for AnyMessage {
     }
 
     #[inline(always)]
-    fn _can_get_from(_: MessageTypeId) -> bool {
+    fn _is_supertype_of(_: MessageTypeId) -> bool {
         true
     }
 
@@ -228,6 +228,11 @@ impl Message for AnyMessage {
     #[inline(always)]
     fn _into_any(self) -> AnyMessage {
         self
+    }
+
+    #[inline(always)]
+    unsafe fn _from_any(any: AnyMessage) -> Self {
+        any
     }
 
     #[inline(always)]

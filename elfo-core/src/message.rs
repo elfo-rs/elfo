@@ -62,7 +62,15 @@ pub trait Message:
 
     #[doc(hidden)]
     #[inline(always)]
-    fn _can_get_from(type_id: MessageTypeId) -> bool {
+    fn _repr_layout(&self) -> alloc::Layout {
+        self._vtable().repr_layout
+    }
+
+    // NOTE: All methods below MUST be overriden for `AnyMessage`.
+
+    #[doc(hidden)]
+    #[inline(always)]
+    fn _is_supertype_of(type_id: MessageTypeId) -> bool {
         Self::_type_id() == type_id
     }
 
@@ -100,12 +108,6 @@ pub trait Message:
     #[inline(always)]
     fn _erase(&self) -> dumping::ErasedMessage {
         smallbox!(self.clone())
-    }
-
-    #[doc(hidden)]
-    #[inline(always)]
-    fn _repr_layout(&self) -> alloc::Layout {
-        self._vtable().repr_layout
     }
 
     /// # Safety
