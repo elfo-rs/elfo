@@ -93,6 +93,10 @@ impl<R, C> ActorGroup<R, C> {
     }
 
     /// Builds the group with the specified executor function.
+    ///
+    /// The provided closure must return a future resolving to
+    /// `()`, `!` or `Result<(), E>`, where `E` should be convertible to
+    /// `Box<dyn Error>`, so it works with `anyhow::Error`, `eyre::Report` etc.
     pub fn exec<X, O, ER>(self, exec: X) -> Blueprint
     where
         R: Router<C>,

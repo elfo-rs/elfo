@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Specify MSRV as 1.76.
 - logger: log truncation up to the `max_line_size` configuration parameter ([#128]).
+- core: directly accept never returning functions in `ActorGroup::exec()`.
 
 ### Changed
 - **BREAKING** macros: remove the `network` feature.
