@@ -464,9 +464,6 @@ impl Serialize for AnyMessageRef<'_> {
     }
 }
 
-// TODO: add tests for `AnyMessageRef`
-// TODO: miri strict sptr
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -499,16 +496,30 @@ mod tests {
 
         // Debug
         assert_eq!(format!("{:?}", message_box), format!("{:?}", message));
+        assert_eq!(
+            format!("{:?}", message_box.as_ref()),
+            format!("{:?}", message)
+        );
 
         // Clone
         let message_box_2 = message_box.clone();
         assert_eq!(message_box_2.downcast::<M>().unwrap(), message);
+        let message_box_3 = message_box.as_ref().clone();
+        assert_eq!(message_box_3.downcast_ref::<M>().unwrap(), &message);
+
+        // AnyMessage -> AnyMessage
+        let message_box_2 = AnyMessage::new(message_box_3);
+        assert_eq!(message_box_2.downcast::<M>().unwrap(), message);
 
         // Downcast
         assert!(message_box.is::<M>());
+        assert!(message_box.as_ref().is::<M>());
         assert!(!message_box.is::<Unused>());
+        assert!(!message_box.as_ref().is::<Unused>());
         assert_eq!(message_box.downcast_ref::<M>(), Some(&message));
+        assert_eq!(message_box.as_ref().downcast_ref::<M>(), Some(&message));
         assert_eq!(message_box.downcast_ref::<Unused>(), None);
+        assert_eq!(message_box.as_ref().downcast_ref::<Unused>(), None);
 
         let message_box = message_box.downcast::<Unused>().unwrap_err();
         assert_eq!(message_box.downcast::<M>().unwrap(), message);
@@ -562,6 +573,8 @@ mod tests {
             }
         }
     }
+
+    // TODO: run under miri after https://github.com/andylokandy/smallbox/issues/21
 
     #[test]
     fn any_message_deserialize() {
