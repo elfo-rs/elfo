@@ -65,11 +65,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     env:
-      MIRIFLAGS: -Zmiri-disable-stacked-borrows -Zmiri-ignore-leaks
+      MIRIFLAGS: -Zmiri-strict-provenance
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install nightly --component miri
       - run: rustup override set nightly
       - run: rustup show active-toolchain -v
       - run: cargo miri setup
-      - run: cargo miri test -- miri_
+      - run: cargo miri test -p elfo-core --all-features -- miri_
