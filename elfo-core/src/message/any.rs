@@ -152,6 +152,13 @@ impl AnyMessage {
         let vtable = self._vtable();
         (vtable.drop)(self.0);
     }
+
+    fn as_serialize(&self) -> &(impl Serialize + ?Sized) {
+        let vtable = self._vtable();
+
+        // SAFETY: the resulting reference is bound to the lifetime of `self`.
+        unsafe { (vtable.as_serialize_any)(self.0).as_ref() }
+    }
 }
 
 impl Drop for AnyMessage {
@@ -286,21 +293,18 @@ impl Serialize for AnyMessage {
     where
         S: ser::Serializer,
     {
-        // TODO: avoid allocation here (add `_erase_ref`)
-        let erased_msg = self._erase();
-
         // TODO: use compact form only for network?
         if crate::scope::serde_mode() == SerdeMode::Dumping {
             let mut fields = serializer.serialize_struct("AnyMessage", 3)?;
             fields.serialize_field("protocol", self.protocol())?;
             fields.serialize_field("name", self.name())?;
-            fields.serialize_field("payload", &*erased_msg)?;
+            fields.serialize_field("payload", self.as_serialize())?;
             fields.end()
         } else {
             let mut tuple = serializer.serialize_tuple(3)?;
             tuple.serialize_element(self.protocol())?;
             tuple.serialize_element(self.name())?;
-            tuple.serialize_element(&*erased_msg)?;
+            tuple.serialize_element(self.as_serialize())?;
             tuple.end()
         }
     }
@@ -491,7 +495,7 @@ mod tests {
     #[derive(PartialEq)]
     struct P16(u128);
 
-    fn check_ops<M: Message + PartialEq>(message: M) {
+    fn check_basic_ops<M: Message + PartialEq>(message: M) {
         let message_box = AnyMessage::new(message.clone());
 
         // Debug
@@ -526,18 +530,18 @@ mod tests {
     }
 
     #[test]
-    fn miri_ops() {
-        check_ops(P0);
-        check_ops(P1(42));
-        check_ops(P8(424242));
-        check_ops(P16(424242424242));
+    fn basic_ops_miri() {
+        check_basic_ops(P0);
+        check_basic_ops(P1(42));
+        check_basic_ops(P8(424242));
+        check_basic_ops(P16(424242424242));
     }
 
     #[message]
     struct WithImplicitDrop(Arc<()>);
 
     #[test]
-    fn miri_drop() {
+    fn drop_miri() {
         let counter = Arc::new(());
         let message = WithImplicitDrop(counter.clone());
 
@@ -574,22 +578,8 @@ mod tests {
         }
     }
 
-    // TODO: run under miri after https://github.com/andylokandy/smallbox/issues/21
-
     #[test]
-    fn any_message_deserialize() {
-        let msg = MyCoolMessage::example();
-        let any_msg = AnyMessage::new(msg.clone());
-        let serialized = serde_json::to_string(&any_msg).unwrap();
-
-        let deserialized_any_msg: AnyMessage = serde_json::from_str(&serialized).unwrap();
-        let deserialized_msg: MyCoolMessage = deserialized_any_msg.downcast().unwrap();
-
-        assert_eq!(msg, deserialized_msg);
-    }
-
-    #[test]
-    fn any_message_serialize() {
+    fn serialize_miri() {
         let any_msg = AnyMessage::new(MyCoolMessage::example());
         for mode in [SerdeMode::Normal, SerdeMode::Network] {
             let dump =
@@ -599,11 +589,7 @@ mod tests {
                 r#"["elfo-core","MyCoolMessage",{"field_a":123,"field_b":"Hello world","field_c":0.5}]"#
             );
         }
-    }
 
-    #[test]
-    fn any_message_dump() {
-        let any_msg = AnyMessage::new(MyCoolMessage::example());
         let dump = crate::scope::with_serde_mode(SerdeMode::Dumping, || {
             serde_json::to_string(&any_msg).unwrap()
         });
@@ -611,5 +597,17 @@ mod tests {
             dump,
             r#"{"protocol":"elfo-core","name":"MyCoolMessage","payload":{"field_a":123,"field_b":"Hello world","field_c":0.5}}"#
         );
+    }
+
+    #[test]
+    fn serde_roundtrip() {
+        let msg = MyCoolMessage::example();
+        let any_msg = AnyMessage::new(msg.clone());
+        let serialized = serde_json::to_string(&any_msg).unwrap();
+
+        let deserialized_any_msg: AnyMessage = serde_json::from_str(&serialized).unwrap();
+        let deserialized_msg: MyCoolMessage = deserialized_any_msg.downcast().unwrap();
+
+        assert_eq!(msg, deserialized_msg);
     }
 }
