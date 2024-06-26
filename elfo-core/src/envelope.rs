@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn miri_duplicate() {
+    fn duplicate_miri() {
         let (counter, message) = Sample::new(42);
 
         // Miri doesn't support asm, so mock the time.

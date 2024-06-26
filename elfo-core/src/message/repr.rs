@@ -123,10 +123,13 @@ pub struct MessageVTable {
         unsafe fn(NonNull<MessageRepr>, &mut Vec<u8>, usize) -> Result<(), encode::Error>,
     pub(super) debug: unsafe fn(NonNull<MessageRepr>, &mut fmt::Formatter<'_>) -> fmt::Result,
     pub(super) clone: unsafe fn(NonNull<MessageRepr>, NonNull<MessageRepr>),
+    // TODO: remove and use `as_serialize_any` in the dumper after benchmarking.
     pub(super) erase: unsafe fn(NonNull<MessageRepr>) -> dumping::ErasedMessage,
+    pub(super) as_serialize_any:
+        unsafe fn(NonNull<MessageRepr>) -> NonNull<dyn erased_serde::Serialize>,
     pub(super) deserialize_any: unsafe fn(
-        deserializer: &mut dyn erased_serde::Deserializer<'_>,
-        out_ptr: NonNull<MessageRepr>,
+        &mut dyn erased_serde::Deserializer<'_>,
+        NonNull<MessageRepr>,
     ) -> Result<(), erased_serde::Error>,
     pub(super) drop: unsafe fn(NonNull<MessageRepr>),
 }
@@ -153,6 +156,7 @@ impl MessageVTable {
             debug: vtablefns::debug::<M>,
             clone: vtablefns::clone::<M>,
             erase: vtablefns::erase::<M>,
+            as_serialize_any: vtablefns::as_serialize_any::<M>,
             deserialize_any: vtablefns::deserialize_any::<M>,
             drop: vtablefns::drop::<M>,
             #[cfg(feature = "network")]
@@ -206,6 +210,17 @@ mod vtablefns {
     pub(super) unsafe fn erase<M: Message>(ptr: NonNull<MessageRepr>) -> dumping::ErasedMessage {
         let data = ptr.cast::<MessageRepr<M>>().as_ref().data.clone();
         smallbox!(data)
+    }
+
+    /// # Safety
+    ///
+    /// The result pointer is valid only during the lifetime of `ptr`.
+    pub(super) unsafe fn as_serialize_any<M: Message>(
+        ptr: NonNull<MessageRepr>,
+    ) -> NonNull<dyn erased_serde::Serialize> {
+        let data = &ptr.cast::<MessageRepr<M>>().as_ref().data;
+        let ser = data as &dyn erased_serde::Serialize;
+        NonNull::new_unchecked(ser as *const _ as *mut _)
     }
 
     pub(super) unsafe fn deserialize_any<M: Message>(
