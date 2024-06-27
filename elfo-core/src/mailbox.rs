@@ -136,7 +136,7 @@ impl Mailbox {
     pub(crate) async fn recv(&self) -> RecvResult {
         loop {
             // TODO: it should be possible to use `dequeue_unchecked()` here.
-            // Preliminarily, we should guarantee that `recv()` can be called only
+            // Preliminarily, we should guarantee that it can be called only
             // by one consumer. However, it's not enough to create a dedicated
             // `MailboxConsumer` because users can steal `Context` to another
             // task/thread and create a race with the `drop_all()` method.

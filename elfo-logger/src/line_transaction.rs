@@ -5,7 +5,7 @@ use super::line_buffer::LineBuffer;
 /// This is needed due to rust's closure lifetimes binding limitation. Consider,
 /// for example, the following implementation:
 /// ```no_compile
-/// triat LineFactory<'a>: FnOnce(&'a LineBuffer) -> Self::Line {
+/// trait LineFactory<'a>: FnOnce(&'a LineBuffer) -> Self::Line {
 ///     type Line: Line + 'a;
 /// }
 /// ```

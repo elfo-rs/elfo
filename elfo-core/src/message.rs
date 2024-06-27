@@ -74,12 +74,6 @@ pub trait Message:
         Self::_type_id() == type_id
     }
 
-    // Called in `_read()` and `_write()` to avoid
-    // * [rust#47384](https://github.com/rust-lang/rust/issues/47384)
-    // * [rust#99721](https://github.com/rust-lang/rust/issues/99721)
-    #[doc(hidden)]
-    fn _touch(&self);
-
     #[doc(hidden)]
     #[inline(always)]
     fn _into_any(self) -> AnyMessage {
@@ -114,17 +108,15 @@ pub trait Message:
     ///
     /// Behavior is undefined if any of the following conditions are violated:
     /// * `ptr` must be [valid] for reads.
-    /// * `ptr` must be properly aligned.
     /// * `ptr` must point to a properly initialized value of type `Self`.
+    /// * Data behind `ptr` must not be used after this function is called.
     ///
     /// [valid]: https://doc.rust-lang.org/stable/std/ptr/index.html#safety
     #[doc(hidden)]
     #[inline(always)]
     unsafe fn _read(ptr: NonNull<MessageRepr>) -> Self {
         let data_ref = &ptr.cast::<MessageRepr<Self>>().as_ref().data;
-        let data = ptr::read(data_ref);
-        data._touch();
-        data
+        ptr::read(data_ref)
     }
 
     /// # Safety
@@ -137,7 +129,6 @@ pub trait Message:
     #[doc(hidden)]
     #[inline(always)]
     unsafe fn _write(self, ptr: NonNull<MessageRepr>) {
-        self._touch();
         let repr = MessageRepr::new(self);
         ptr::write(ptr.cast::<MessageRepr<Self>>().as_ptr(), repr);
     }

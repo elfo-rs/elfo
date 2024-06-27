@@ -300,7 +300,7 @@ fn make_network_envelope(
             (sender, trace_id, payload, token)
         }
         // Response
-        (Ok(envelope), Some(mut token)) => {
+        (Ok(envelope), Some(token)) => {
             let sender = envelope.sender();
             let trace_id = envelope.trace_id();
             let (message, kind) = envelope.unpack::<AnyMessage>().expect("impossible");
@@ -323,7 +323,7 @@ fn make_network_envelope(
             (sender, trace_id, payload, None)
         }
         // Failed/Ignored Response
-        (Err(err), Some(mut token)) => {
+        (Err(err), Some(token)) => {
             let sender = Addr::NULL;
             let trace_id = token.trace_id();
 

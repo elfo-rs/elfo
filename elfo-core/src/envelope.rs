@@ -31,7 +31,7 @@ assert_eq_size!(Envelope, usize);
 // TODO: the current size (on x86-64) is 64 bytes, but it can be reduced.
 // And... it should be reduced once `TraceId` is extended to 16 bytes.
 pub(crate) struct EnvelopeHeader {
-    /// See [`mailbox.rs`] for more details.
+    /// See `mailbox.rs` for more details.
     pub(crate) link: mailbox::Link,
     created_time: Instant, // Now used also as a sent time.
     trace_id: TraceId,
@@ -237,7 +237,7 @@ impl Envelope {
         let message_offset = self.header().message_offset;
 
         // SAFETY: `message_offset` refers to the same allocation object.
-        let ptr = unsafe { self.0.as_ptr().cast::<u8>().add(message_offset as usize) };
+        let ptr = unsafe { self.0.as_ptr().byte_add(message_offset as usize) };
 
         // SAFETY: `envelope_repr_layout()` guarantees that `ptr` is valid.
         unsafe { NonNull::new_unchecked(ptr.cast()) }
@@ -271,7 +271,10 @@ impl Envelope {
         // SAFETY: `self` is properly initialized.
         let header = unsafe { self.0.as_mut() };
 
-        if let MessageKind::RequestAny(token) | MessageKind::RequestAll(token) = &mut header.kind {
+        let fake_kind = MessageKind::Regular { sender: Addr::NULL };
+        let kind = mem::replace(&mut header.kind, fake_kind);
+
+        if let MessageKind::RequestAny(token) | MessageKind::RequestAll(token) = kind {
             // FIXME: probably invalid for ALL requests, need to decrement remainder.
             // REVIEW: DO NOT forget check & fix it before merging.
             token.forget();

@@ -40,7 +40,7 @@ impl ExecResult for () {
 impl ExecResult for never::Never {
     #[allow(private_interfaces)]
     fn unify(self) -> Result<(), BoxedError> {
-        unreachable!()
+        self
     }
 }
 
