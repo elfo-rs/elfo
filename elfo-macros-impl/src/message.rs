@@ -215,9 +215,6 @@ pub fn message_impl(
                 fn _vtable(&self) -> &'static #internal::MessageVTable {
                     VTABLE
                 }
-
-                #[inline(never)]
-                fn _touch(&self) {}
             }
 
             #[#internal::linkme::distributed_slice(#internal::MESSAGE_VTABLES_LIST)]

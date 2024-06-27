@@ -1,5 +1,7 @@
 use std::{
-    alloc, fmt,
+    alloc,
+    borrow::Borrow,
+    fmt,
     ptr::{self, NonNull},
 };
 
@@ -69,8 +71,9 @@ impl PartialEq for MessageTypeId {
 #[repr(C)]
 // It's `pub` only because used in private methods of `AnyMessage`.
 // Actually, it's not reexported at all.
+#[derive(Clone)]
 #[doc(hidden)]
-pub struct MessageRepr<M = ()> {
+pub struct MessageRepr<M = Erased> {
     pub(crate) vtable: &'static MessageVTable,
     pub(crate) data: M,
 }
@@ -88,17 +91,12 @@ impl<M: Message> MessageRepr<M> {
     }
 }
 
+// Actually, it's not reexported at all.
+#[doc(hidden)]
+pub struct Erased;
+
 // Protection against footgun.
 assert_not_impl_any!(MessageRepr: Clone);
-
-impl<M: Message> Clone for MessageRepr<M> {
-    fn clone(&self) -> Self {
-        Self {
-            vtable: self.vtable,
-            data: self.data.clone(),
-        }
-    }
-}
 
 // === MessageVTable ===
 
@@ -116,22 +114,27 @@ pub struct MessageVTable {
     pub(super) labels: [Label; 2],    // protocol + name for `metrics`
     pub(super) dumping_allowed: bool, // TODO: introduce `DumpingMode`.
     #[cfg(feature = "network")]
-    pub(super) read_msgpack: unsafe fn(&[u8], NonNull<MessageRepr>) -> Result<(), decode::Error>,
+    pub(super) read_msgpack:
+        unsafe fn(buffer: &[u8], out_ptr: NonNull<MessageRepr>) -> Result<(), decode::Error>,
     #[cfg(feature = "network")]
     #[allow(clippy::type_complexity)]
-    pub(super) write_msgpack:
-        unsafe fn(NonNull<MessageRepr>, &mut Vec<u8>, usize) -> Result<(), encode::Error>,
-    pub(super) debug: unsafe fn(NonNull<MessageRepr>, &mut fmt::Formatter<'_>) -> fmt::Result,
-    pub(super) clone: unsafe fn(NonNull<MessageRepr>, NonNull<MessageRepr>),
+    pub(super) write_msgpack: unsafe fn(
+        ptr: NonNull<MessageRepr>,
+        out: &mut Vec<u8>,
+        limit: usize,
+    ) -> Result<(), encode::Error>,
+    pub(super) debug:
+        unsafe fn(ptr: NonNull<MessageRepr>, f: &mut fmt::Formatter<'_>) -> fmt::Result,
+    pub(super) clone: unsafe fn(ptr: NonNull<MessageRepr>, out_ptr: NonNull<MessageRepr>),
     // TODO: remove and use `as_serialize_any` in the dumper after benchmarking.
-    pub(super) erase: unsafe fn(NonNull<MessageRepr>) -> dumping::ErasedMessage,
+    pub(super) erase: unsafe fn(ptr: NonNull<MessageRepr>) -> dumping::ErasedMessage,
     pub(super) as_serialize_any:
-        unsafe fn(NonNull<MessageRepr>) -> NonNull<dyn erased_serde::Serialize>,
+        unsafe fn(ptr: NonNull<MessageRepr>) -> NonNull<dyn erased_serde::Serialize>,
     pub(super) deserialize_any: unsafe fn(
-        &mut dyn erased_serde::Deserializer<'_>,
-        NonNull<MessageRepr>,
+        deserializer: &mut dyn erased_serde::Deserializer<'_>,
+        out_ptr: NonNull<MessageRepr>,
     ) -> Result<(), erased_serde::Error>,
-    pub(super) drop: unsafe fn(NonNull<MessageRepr>),
+    pub(super) drop_data: unsafe fn(ptr: NonNull<MessageRepr>),
 }
 
 impl MessageVTable {
@@ -158,7 +161,7 @@ impl MessageVTable {
             erase: vtablefns::erase::<M>,
             as_serialize_any: vtablefns::as_serialize_any::<M>,
             deserialize_any: vtablefns::deserialize_any::<M>,
-            drop: vtablefns::drop::<M>,
+            drop_data: vtablefns::drop_data::<M>,
             #[cfg(feature = "network")]
             read_msgpack: vtablefns::read_msgpack::<M>,
             #[cfg(feature = "network")]
@@ -185,8 +188,8 @@ mod vtablefns {
     ///
     /// Data behind `ptr` cannot be accessed after this call.
     /// Note that vtable is still can be accessed.
-    pub(super) unsafe fn drop<M>(ptr: NonNull<MessageRepr>) {
-        ptr::drop_in_place(ptr.cast::<MessageRepr<M>>().as_ptr());
+    pub(super) unsafe fn drop_data<M>(ptr: NonNull<MessageRepr>) {
+        ptr::drop_in_place(&mut ptr.cast::<MessageRepr<M>>().as_mut().data);
     }
 
     pub(super) unsafe fn clone<M: Message>(
@@ -269,28 +272,27 @@ mod vtablefns {
 #[linkme::distributed_slice]
 pub static MESSAGE_VTABLES_LIST: [&'static MessageVTable] = [..];
 
-static MESSAGE_VTABLES_MAP: Lazy<FxHashMap<(&'static str, &'static str), &'static MessageVTable>> =
-    Lazy::new(|| {
-        MESSAGE_VTABLES_LIST
-            .iter()
-            .map(|vtable| ((vtable.protocol, vtable.name), *vtable))
-            .collect()
-    });
+#[derive(PartialEq, Eq, Hash)]
+pub struct Signature([&'static str; 2]); // [protocol, name]
+
+impl<'a> Borrow<[&'a str; 2]> for Signature {
+    fn borrow(&self) -> &[&'a str; 2] {
+        &self.0
+    }
+}
+
+static MESSAGE_VTABLES_MAP: Lazy<FxHashMap<Signature, &'static MessageVTable>> = Lazy::new(|| {
+    MESSAGE_VTABLES_LIST
+        .iter()
+        .map(|vtable| (Signature([vtable.protocol, vtable.name]), *vtable))
+        .collect()
+});
 
 impl MessageVTable {
     /// Finds a vtable by protocol and name.
     /// Used for deserialization of `AnyMessage` and in networking.
     pub(crate) fn lookup(protocol: &str, name: &str) -> Option<&'static Self> {
-        // Extend lifetimes to static in order to get `(&'static str, &'static str)`.
-        // SAFETY: this pair doesn't overlive the function.
-        let (protocol, name) = unsafe {
-            (
-                std::mem::transmute::<&str, &'static str>(protocol),
-                std::mem::transmute::<&str, &'static str>(name),
-            )
-        };
-
-        MESSAGE_VTABLES_MAP.get(&(protocol, name)).copied()
+        MESSAGE_VTABLES_MAP.get(&[protocol, name]).copied()
     }
 }
 

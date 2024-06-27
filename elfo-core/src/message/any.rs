@@ -51,7 +51,7 @@ impl AnyMessage {
         debug_assert_ne!(M::_type_id(), Self::_type_id());
 
         let ptr = alloc_repr(message._vtable());
-        // SAFETY: allocation is done for `M`.
+        // SAFETY: allocation is done for `MessageRepr<M>`.
         unsafe { message._write(ptr) };
         Self(ptr)
     }
@@ -150,7 +150,7 @@ impl AnyMessage {
     /// Data behind `self` cannot be accessed after this call.
     pub(crate) unsafe fn drop_in_place(&self) {
         let vtable = self._vtable();
-        (vtable.drop)(self.0);
+        (vtable.drop_data)(self.0);
     }
 
     fn as_serialize(&self) -> &(impl Serialize + ?Sized) {
@@ -163,10 +163,10 @@ impl AnyMessage {
 
 impl Drop for AnyMessage {
     fn drop(&mut self) {
-        // SAFETY: only a vtable will be accessed below.
+        // SAFETY: only a vtable is accessed below.
         unsafe { self.drop_in_place() };
 
-        // SAFETY: memory allocated by `alloc_repr()`.
+        // SAFETY: memory was allocated by `alloc_repr()`.
         unsafe { dealloc_repr(self.0) };
     }
 }
@@ -228,9 +228,6 @@ impl Message for AnyMessage {
     fn _is_supertype_of(_: MessageTypeId) -> bool {
         true
     }
-
-    #[inline(always)]
-    fn _touch(&self) {}
 
     #[inline(always)]
     fn _into_any(self) -> AnyMessage {
@@ -431,16 +428,14 @@ impl<'a> AnyMessageRef<'a> {
     pub fn downcast_ref<M: Message>(&self) -> Option<&'a M> {
         let ret = self.inner.downcast_ref();
 
-        // SAFETY: we produce lifetime bound to the original one.
-        // Note: semantically it's shortening not extending.
+        // SAFETY: we produce lifetime bound to the original `AnyMessage` or `Envelope`.
         unsafe { mem::transmute::<Option<&M>, Option<&'a M>>(ret) }
     }
 
     pub(crate) unsafe fn downcast_ref_unchecked<M: Message>(&self) -> &'a M {
         let ret = self.inner.downcast_ref_unchecked();
 
-        // SAFETY: we produce lifetime bound to the original one.
-        // Note: semantically it's shortening not extending.
+        // SAFETY: we produce lifetime bound to the original `AnyMessage` or `Envelope`.
         unsafe { mem::transmute::<&M, &'a M>(ret) }
     }
 }
