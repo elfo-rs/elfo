@@ -141,7 +141,6 @@ impl Envelope {
     /// Returns a reference to the untyped message inside the envelope.
     #[inline]
     pub fn message(&self) -> AnyMessageRef<'_> {
-        // TODO: rename to `message_ref`?
         let message_repr = self.message_repr_ptr();
 
         // SAFETY: `message_repr` is valid pointer for read.
@@ -226,7 +225,6 @@ impl Envelope {
     pub(crate) fn set_message<M: Message>(&mut self, message: M) {
         assert!(self.is::<M>() && M::_type_id() != crate::message::AnyMessage::_type_id());
 
-        // TODO: rewrite without `MessageRepr`.
         let repr_ptr = self.message_repr_ptr().cast::<MessageRepr<M>>().as_ptr();
 
         // SAFETY: `repr_ptr` is valid to write the message.
@@ -355,7 +353,6 @@ pub trait EnvelopeBorrowed {
     unsafe fn unpack_regular_unchecked<M: Message>(&self) -> &M;
 }
 
-// TODO: AnyMessage
 impl EnvelopeOwned for Envelope {
     #[inline]
     unsafe fn unpack_regular_unchecked<M: Message>(self) -> M {
@@ -407,39 +404,75 @@ mod tests_miri {
     use elfo_utils::time;
 
     use super::*;
-    use crate::message;
-
-    #[message]
-    #[derive(PartialEq)]
-    struct Sample {
-        value: u128,
-        counter: Arc<()>,
-    }
-
-    impl Sample {
-        fn new(value: u128) -> (Arc<()>, Self) {
-            let this = Self {
-                value,
-                counter: Arc::new(()),
-            };
-
-            (this.counter.clone(), this)
-        }
-    }
+    use crate::{message, AnyMessage};
 
     fn make_regular_envelope(message: impl Message) -> Envelope {
         // Miri doesn't support asm, so mock the time.
+        // TODO: support miri in `elfo_utils::time`.
         time::with_instant_mock(|_mock| {
-            Envelope::with_trace_id(
-                message,
-                MessageKind::Regular { sender: Addr::NULL },
-                TraceId::try_from(1).unwrap(),
-            )
+            let addr = Addr::NULL;
+            let trace_id = TraceId::try_from(1).unwrap();
+            Envelope::with_trace_id(message, MessageKind::Regular { sender: addr }, trace_id)
         })
+    }
+
+    #[message]
+    #[derive(PartialEq)]
+    struct P8(u64);
+
+    #[test]
+    fn basic_ops() {
+        let message = P8(42);
+        let envelope = make_regular_envelope(message.clone());
+
+        assert_eq!(envelope.trace_id(), TraceId::try_from(1).unwrap());
+        assert_eq!(envelope.sender(), Addr::NULL);
+
+        assert_eq!(envelope.type_id(), P8::_type_id());
+        assert!(envelope.is::<P8>());
+        assert!(envelope.is::<AnyMessage>());
+        assert!(!envelope.is::<crate::messages::Ping>());
+
+        let (actual_message, _) = envelope.unpack::<P8>().unwrap();
+        assert_eq!(actual_message, message);
+
+        // Unpack to `AnyMessage`
+        let envelope = make_regular_envelope(message.clone());
+
+        let (actual_message, _) = envelope.unpack::<AnyMessage>().unwrap();
+        assert_eq!(format!("{:?}", actual_message), format!("{:?}", message));
+    }
+
+    #[test]
+    fn set_message() {
+        let message = P8(42);
+        let mut envelope = make_regular_envelope(message.clone());
+        envelope.set_message(P8(43));
+
+        let (actual_message, _) = envelope.unpack::<P8>().unwrap();
+        assert_eq!(actual_message, P8(43));
     }
 
     #[test]
     fn duplicate() {
+        #[message]
+        #[derive(PartialEq)]
+        struct Sample {
+            value: u128,
+            counter: Arc<()>,
+        }
+
+        impl Sample {
+            fn new(value: u128) -> (Arc<()>, Self) {
+                let this = Self {
+                    value,
+                    counter: Arc::new(()),
+                };
+
+                (this.counter.clone(), this)
+            }
+        }
+
         let (counter, message) = Sample::new(42);
         let envelope = make_regular_envelope(message);
 
@@ -454,14 +487,14 @@ mod tests_miri {
         drop(envelope2);
         assert_eq!(Arc::strong_count(&counter), 3);
 
-        drop(envelope3);
+        envelope3.drop_as_unused();
         assert_eq!(Arc::strong_count(&counter), 2);
 
         let envelope4 = envelope.duplicate();
         assert_eq!(Arc::strong_count(&counter), 3);
         assert!(envelope4.is::<Sample>());
 
-        drop(envelope);
+        envelope.drop_as_unused();
         assert_eq!(Arc::strong_count(&counter), 2);
 
         drop(envelope4);
