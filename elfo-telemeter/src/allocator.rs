@@ -32,6 +32,7 @@ where
         let ptr = self.inner.alloc(layout);
         if !ptr.is_null() {
             elfo_core::scope::try_with(|scope| {
+                // TODO: a separate counter for messaging.
                 scope.increment_allocated_bytes(layout.size());
             });
         }
@@ -41,6 +42,7 @@ where
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.inner.dealloc(ptr, layout);
         elfo_core::scope::try_with(|scope| {
+            // TODO: a separate counter for messaging.
             scope.increment_deallocated_bytes(layout.size());
         });
     }
