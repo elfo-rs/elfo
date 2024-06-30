@@ -575,10 +575,11 @@ mod tests_miri {
 
     #[test]
     fn json_serialize() {
-        let any_msg = AnyMessage::new(MyCoolMessage::example());
+        let any_message = AnyMessage::new(MyCoolMessage::example());
         for mode in [SerdeMode::Normal, SerdeMode::Network] {
-            let dump =
-                crate::scope::with_serde_mode(mode, || serde_json::to_string(&any_msg).unwrap());
+            let dump = crate::scope::with_serde_mode(mode, || {
+                serde_json::to_string(&any_message).unwrap()
+            });
             assert_eq!(
                 dump,
                 r#"["elfo-core","MyCoolMessage",{"field_a":123,"field_b":"Hello world","field_c":0.5}]"#
@@ -586,7 +587,7 @@ mod tests_miri {
         }
 
         let dump = crate::scope::with_serde_mode(SerdeMode::Dumping, || {
-            serde_json::to_string(&any_msg).unwrap()
+            serde_json::to_string(&any_message).unwrap()
         });
         assert_eq!(
             dump,
@@ -596,13 +597,58 @@ mod tests_miri {
 
     #[test]
     fn json_roundtrip() {
-        let msg = MyCoolMessage::example();
-        let any_msg = AnyMessage::new(msg.clone());
-        let serialized = serde_json::to_string(&any_msg).unwrap();
+        let message = MyCoolMessage::example();
+        let any_message = AnyMessage::new(message.clone());
+        let serialized = serde_json::to_string(&any_message).unwrap();
 
-        let deserialized_any_msg: AnyMessage = serde_json::from_str(&serialized).unwrap();
-        let deserialized_msg: MyCoolMessage = deserialized_any_msg.downcast().unwrap();
+        let deserialized_any_message: AnyMessage = serde_json::from_str(&serialized).unwrap();
+        let deserialized_message: MyCoolMessage = deserialized_any_message.downcast().unwrap();
 
-        assert_eq!(msg, deserialized_msg);
+        assert_eq!(deserialized_message, message);
+    }
+
+    #[test]
+    fn json_nonexist() {
+        let text = r#"["nonexist","NonExist",{}]"#;
+        let err = serde_json::from_str::<AnyMessage>(text).unwrap_err();
+        assert!(err
+            .to_string()
+            .starts_with("unknown message: nonexist/NonExist"));
+    }
+
+    #[test]
+    fn msgpack_roundtrip() {
+        let message = MyCoolMessage::example();
+        let any_message = AnyMessage::new(message.clone());
+
+        let mut buffer = Vec::new();
+        any_message.write_msgpack(&mut buffer, 1024).unwrap();
+
+        let deserialized_any_message =
+            AnyMessage::read_msgpack(&buffer, "elfo-core", "MyCoolMessage")
+                .unwrap()
+                .unwrap();
+        let deserialized_message: MyCoolMessage = deserialized_any_message.downcast().unwrap();
+
+        assert_eq!(deserialized_message, message);
+    }
+
+    #[test]
+    fn msgpack_nonexist() {
+        let maybe = AnyMessage::read_msgpack(&[], "nonexist", "NonExist").unwrap();
+        assert!(maybe.is_none());
+    }
+
+    #[test]
+    fn msgpack_limited() {
+        let message = MyCoolMessage::example();
+        let any_message = AnyMessage::new(message.clone());
+
+        let mut buffer = Vec::new();
+
+        for limit in 0..=20 {
+            let err = any_message.write_msgpack(&mut buffer, limit).unwrap_err();
+            assert!(format!("{:?}", err).contains("failed to write whole buffer"));
+        }
     }
 }
