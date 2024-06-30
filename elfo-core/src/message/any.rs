@@ -17,12 +17,12 @@ use crate::{dumping, scope::SerdeMode};
 
 // === AnyMessage ===
 
-/// Heap-allocated message that can be downcasted to a concrete message type.
+/// A heap-allocated message that can be downcasted to a concrete message type.
 ///
 /// It can be thought as a working version of `Box<dyn Message>`.
 ///
 /// [`AnyMessage`] implements [`Message`], thus it can be used in any context
-/// where a message is expected, e.g. sending in [`Context`].
+/// where a message is expected, e.g. sending via [`Context`]'s methods.
 ///
 /// [`AnyMessage`] doesn't implement [`Request`], so it's useful only
 /// for regular messages. However, requests are also messages and can
