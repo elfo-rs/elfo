@@ -9,9 +9,10 @@ use smallbox::smallbox;
 
 use crate::dumping;
 
-pub use self::{any::*, protocol::*, repr::*};
+pub use self::{any::*, lookup::*, protocol::*, repr::*};
 
 mod any;
+mod lookup;
 mod protocol;
 mod repr;
 

@@ -464,7 +464,7 @@ impl Serialize for AnyMessageRef<'_> {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_miri {
     use std::sync::Arc;
 
     use super::*;
@@ -525,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_ops_miri() {
+    fn basic_ops() {
         check_basic_ops(P0);
         check_basic_ops(P1(42));
         check_basic_ops(P8(424242));
@@ -536,7 +536,7 @@ mod tests {
     struct WithImplicitDrop(Arc<()>);
 
     #[test]
-    fn drop_miri() {
+    fn drop_impl() {
         let counter = Arc::new(());
         let message = WithImplicitDrop(counter.clone());
 
@@ -574,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn serialize_miri() {
+    fn json_serialize() {
         let any_msg = AnyMessage::new(MyCoolMessage::example());
         for mode in [SerdeMode::Normal, SerdeMode::Network] {
             let dump =
@@ -595,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn serde_roundtrip() {
+    fn json_roundtrip() {
         let msg = MyCoolMessage::example();
         let any_msg = AnyMessage::new(msg.clone());
         let serialized = serde_json::to_string(&any_msg).unwrap();

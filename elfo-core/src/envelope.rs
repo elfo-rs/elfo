@@ -401,7 +401,7 @@ impl EnvelopeBorrowed for Envelope {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_miri {
     use std::sync::Arc;
 
     use elfo_utils::time;
@@ -427,18 +427,21 @@ mod tests {
         }
     }
 
-    #[test]
-    fn duplicate_miri() {
-        let (counter, message) = Sample::new(42);
-
+    fn make_regular_envelope(message: impl Message) -> Envelope {
         // Miri doesn't support asm, so mock the time.
-        let envelope = time::with_instant_mock(|_mock| {
+        time::with_instant_mock(|_mock| {
             Envelope::with_trace_id(
                 message,
                 MessageKind::Regular { sender: Addr::NULL },
                 TraceId::try_from(1).unwrap(),
             )
-        });
+        })
+    }
+
+    #[test]
+    fn duplicate() {
+        let (counter, message) = Sample::new(42);
+        let envelope = make_regular_envelope(message);
 
         assert_eq!(Arc::strong_count(&counter), 2);
         let envelope2 = envelope.duplicate();
