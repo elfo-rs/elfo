@@ -333,7 +333,9 @@ impl fmt::Debug for Envelope {
 }
 
 // Extra traits to support both owned and borrowed usages of `msg!(..)`.
+// Both traits are private and reexported in `elfo::_priv` only
 
+#[doc(hidden)]
 pub trait EnvelopeOwned {
     /// # Safety
     ///
@@ -346,6 +348,7 @@ pub trait EnvelopeOwned {
     unsafe fn unpack_request_unchecked<R: Request>(self) -> (R, ResponseToken<R>);
 }
 
+#[doc(hidden)]
 pub trait EnvelopeBorrowed {
     /// # Safety
     ///
@@ -365,7 +368,8 @@ impl EnvelopeOwned for Envelope {
             let _ = token.into_received::<()>();
         }
 
-        // TODO: about assert in `msg!`
+        // This check is debug-only because it's already checked in `msg!` in
+        // compile-time, which should be the only way to call this consuming method.
         #[cfg(not(feature = "network"))]
         debug_assert!(!matches!(
             kind,
