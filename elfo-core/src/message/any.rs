@@ -508,9 +508,10 @@ mod tests_miri {
 
         // AnyMessage -> AnyMessage
         let message_box_2 = AnyMessage::new(message_box_3);
-        assert_eq!(message_box_2.downcast::<M>().unwrap(), message);
+        let message_box_3 = message_box_2.clone();
+        assert_eq!(message_box_3.downcast::<M>().unwrap(), message);
 
-        // Downcast
+        // Downcast to real messages
         assert!(message_box.is::<M>());
         assert!(message_box.as_ref().is::<M>());
         assert!(!message_box.is::<Unused>());
@@ -522,6 +523,17 @@ mod tests_miri {
 
         let message_box = message_box.downcast::<Unused>().unwrap_err();
         assert_eq!(message_box.downcast::<M>().unwrap(), message);
+
+        // Downcast to `AnyMessage`
+        let message_box = message_box_2.downcast::<AnyMessage>().unwrap();
+        let any_message = message_box.downcast_ref::<AnyMessage>().unwrap();
+        assert!(message_box.is::<AnyMessage>());
+        assert_eq!(format!("{:?}", any_message), format!("{:?}", message));
+
+        // `AnyMessageRef::clone()`
+        let message_box_2: AnyMessage = message_box.as_ref().clone();
+        assert!(message_box_2.is::<AnyMessage>());
+        assert_eq!(format!("{:?}", message_box_2), format!("{:?}", message));
     }
 
     #[test]
