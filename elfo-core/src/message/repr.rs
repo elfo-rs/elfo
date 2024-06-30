@@ -1,13 +1,9 @@
 use std::{
-    alloc,
-    borrow::Borrow,
-    fmt,
+    alloc, fmt,
     ptr::{self, NonNull},
 };
 
-use fxhash::{FxHashMap, FxHashSet};
 use metrics::Label;
-use once_cell::sync::Lazy;
 use smallbox::smallbox;
 
 use super::Message;
@@ -83,6 +79,12 @@ impl<M: Message> MessageRepr<M> {
     /// Cannot be created for `AnyMessage` (which also implements `Message`).
     pub(crate) fn new(message: M) -> Self {
         debug_assert_ne!(M::_type_id(), MessageTypeId::any());
+
+        // Miri doesn't support extern statics required for the default `linkme`-based
+        // registration, so we need to register them manually. This constructor is most
+        // likely called during tests with `lookup`, so this is the best place to do it.
+        #[cfg(miri)]
+        message._vtable().register_for_miri();
 
         Self {
             vtable: message._vtable(),
@@ -261,58 +263,6 @@ mod vtablefns {
             encode::write_named(&mut out, data)
         }
     });
-}
-
-// === VTable registration & lookup ===
-
-/// A list of all registered message vtables via the `linkme` crate.
-/// Used only for collecting, all lookups are done via a hashmap.
-// Reexported in `elfo::_priv`.
-#[doc(hidden)]
-#[linkme::distributed_slice]
-pub static MESSAGE_VTABLES_LIST: [&'static MessageVTable] = [..];
-
-#[derive(PartialEq, Eq, Hash)]
-pub struct Signature([&'static str; 2]); // [protocol, name]
-
-impl<'a> Borrow<[&'a str; 2]> for Signature {
-    fn borrow(&self) -> &[&'a str; 2] {
-        &self.0
-    }
-}
-
-static MESSAGE_VTABLES_MAP: Lazy<FxHashMap<Signature, &'static MessageVTable>> = Lazy::new(|| {
-    MESSAGE_VTABLES_LIST
-        .iter()
-        .map(|vtable| (Signature([vtable.protocol, vtable.name]), *vtable))
-        .collect()
-});
-
-impl MessageVTable {
-    /// Finds a vtable by protocol and name.
-    /// Used for deserialization of `AnyMessage` and in networking.
-    pub(crate) fn lookup(protocol: &str, name: &str) -> Option<&'static Self> {
-        MESSAGE_VTABLES_MAP.get(&[protocol, name]).copied()
-    }
-}
-
-/// Checks that all registered message have different protocol and name.
-/// Returns a list of duplicates if it's violated.
-pub(crate) fn check_uniqueness() -> Result<(), Vec<(String, String)>> {
-    if MESSAGE_VTABLES_MAP.len() == MESSAGE_VTABLES_LIST.len() {
-        return Ok(());
-    }
-
-    Err(MESSAGE_VTABLES_LIST
-        .iter()
-        .filter(|vtable| {
-            let stored = MessageVTable::lookup(vtable.protocol, vtable.name).unwrap();
-            MessageTypeId::new(stored) != MessageTypeId::new(vtable)
-        })
-        .map(|vtable| (vtable.protocol.to_string(), vtable.name.to_string()))
-        .collect::<FxHashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>())
 }
 
 // === LimitedWrite ===
