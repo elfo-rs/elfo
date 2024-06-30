@@ -46,13 +46,6 @@ pub trait Message:
         self._vtable().dumping_allowed
     }
 
-    #[deprecated(note = "use `AnyMessage::new` instead")]
-    #[doc(hidden)]
-    #[inline(always)]
-    fn upcast(self) -> AnyMessage {
-        self._into_any()
-    }
-
     // Private API.
 
     #[doc(hidden)]
