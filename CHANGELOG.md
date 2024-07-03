@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0-alpha.15] - 2024-05-13
 ### Added
 - coop: expose `coop::consume_budget()` to call in long computations. See documentation of the `coop` module for details.
-- coop: prefer a time-based budgeting if the telemetry is enabled.
+- coop: prefer a time-based budgeting if the telemetry is enabled ([#13]).
 - proxy: add `Proxy::try_send_to()` and `Proxy::request_to()`.
 - telemeter: support gzip.
 - telemeter/openmetrics: expose units of registered metrics.
@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - telemeter: validate quantiles (0.0..=1.0) in the config.
 - core: get rid of a dirty hack preventing high CPU usage in case of the large number of responses ([#41]).
 
+[#13]: https://github.com/elfo-rs/elfo/issues/13
 [#41]: https://github.com/elfo-rs/elfo/issues/41
 [#125]: https://github.com/elfo-rs/elfo/issues/125
 
