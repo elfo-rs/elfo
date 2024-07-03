@@ -10,19 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Specify MSRV as 1.76.
 - logger: log truncation up to the `max_line_size` configuration parameter ([#128]).
-- core: directly accept never returning functions in `ActorGroup::exec()`.
+- core: directly accept never returning functions in `ActorGroup::exec()` ([#127]).
 
 ### Changed
-- **BREAKING** macros: remove the `network` feature.
-- **BREAKING** core/message: remove `AnyMessage::upcast()` in favor of `AnyMessage::new()`.
-- **BREAKING** core/envelope: `Envelope::message()` returns `AnyMessageRef`.
-- core/mailbox: move to an intrusive MPSC queue greatly improving performance.
-- core/message: allow `AnyMessage` to be downcasted to `AnyMessage`.
-- core/message: stabilize `AnyMessage` and `AnyMessageRef`.
-- core/message: faster `AnyMessage` serialization.
+- **BREAKING** macros: remove the `network` feature ([#127]).
+- **BREAKING** core/message: remove `AnyMessage::upcast()` in favor of `AnyMessage::new()` ([#127]).
+- **BREAKING** core/envelope: `Envelope::message()` returns `AnyMessageRef` ([#127]).
+- core/mailbox: move to an intrusive MPSC queue greatly improving performance ([#52]).
+- core/message: allow `AnyMessage` to be downcasted to `AnyMessage` ([#127]).
+- core/message: stabilize `AnyMessage` and `AnyMessageRef` ([#127]).
+- core/message: faster `AnyMessage` serialization ([#127]).
 - tracing: improve performance of `TraceId::generate()`.
 - dumping: remove unstable `Timestamp`.
 
+[#52]: https://github.com/elfo-rs/elfo/issues/52
+[#127]: https://github.com/elfo-rs/elfo/pull/127
 [#128]: https://github.com/elfo-rs/elfo/pull/128
 
 ## [0.2.0-alpha.15] - 2024-05-13
