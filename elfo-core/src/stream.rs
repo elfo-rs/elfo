@@ -243,7 +243,7 @@ where
         let scope = this.scope.clone();
 
         scope.sync_within(|| match this.inner.poll_next(cx) {
-            Poll::Ready(Some(msg)) => {
+            Poll::Ready(Some(message)) => {
                 let trace_id = scope::trace_id();
 
                 this.scope.set_trace_id(if *this.rewrite_trace_id {
@@ -252,11 +252,7 @@ where
                     trace_id
                 });
 
-                let msg = msg.to_any_message();
-                let kind = MessageKind::Regular { sender: Addr::NULL };
-                let envelope = Envelope::with_trace_id(msg, kind, trace_id);
-
-                Poll::Ready(Some(envelope))
+                Poll::Ready(Some(message.pack(trace_id)))
             }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => {
@@ -286,16 +282,16 @@ impl Emitter {
 pub trait StreamItem: 'static {
     /// This method is private.
     #[doc(hidden)]
-    fn to_any_message(self) -> AnyMessage;
+    fn pack(self, trace_id: TraceId) -> Envelope;
 }
 
 #[sealed]
 impl<M: Message> StreamItem for M {
     /// This method is private.
     #[doc(hidden)]
-    fn to_any_message(self) -> AnyMessage {
-        // TODO: create `Envelope` to avoid extra allocation.
-        AnyMessage::new(self)
+    fn pack(self, trace_id: TraceId) -> Envelope {
+        let kind = MessageKind::Regular { sender: Addr::NULL };
+        Envelope::with_trace_id(self, kind, trace_id)
     }
 }
 
@@ -303,10 +299,10 @@ impl<M: Message> StreamItem for M {
 impl<M1: Message, M2: Message> StreamItem for Result<M1, M2> {
     /// This method is private.
     #[doc(hidden)]
-    fn to_any_message(self) -> AnyMessage {
+    fn pack(self, trace_id: TraceId) -> Envelope {
         match self {
-            Ok(msg) => msg.to_any_message(),
-            Err(msg) => msg.to_any_message(),
+            Ok(msg) => msg.pack(trace_id),
+            Err(msg) => msg.pack(trace_id),
         }
     }
 }
