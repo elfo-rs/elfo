@@ -265,20 +265,6 @@ impl Envelope {
         (message, kind)
     }
 
-    pub(crate) fn drop_as_unused(mut self) {
-        // SAFETY: `self` is properly initialized.
-        let header = unsafe { self.0.as_mut() };
-
-        let fake_kind = MessageKind::Regular { sender: Addr::NULL };
-        let kind = mem::replace(&mut header.kind, fake_kind);
-
-        if let MessageKind::RequestAny(token) | MessageKind::RequestAll(token) = kind {
-            // FIXME: probably invalid for ALL requests, need to decrement remainder.
-            // REVIEW: DO NOT forget check & fix it before merging.
-            token.forget();
-        }
-    }
-
     pub(crate) fn into_header_ptr(self) -> NonNull<EnvelopeHeader> {
         let ptr = self.0;
         mem::forget(self);
@@ -491,14 +477,14 @@ mod tests_miri {
         drop(envelope2);
         assert_eq!(Arc::strong_count(&counter), 3);
 
-        envelope3.drop_as_unused();
+        drop(envelope3);
         assert_eq!(Arc::strong_count(&counter), 2);
 
         let envelope4 = envelope.duplicate();
         assert_eq!(Arc::strong_count(&counter), 3);
         assert!(envelope4.is::<Sample>());
 
-        envelope.drop_as_unused();
+        drop(envelope);
         assert_eq!(Arc::strong_count(&counter), 2);
 
         drop(envelope4);

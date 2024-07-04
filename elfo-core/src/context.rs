@@ -214,15 +214,14 @@ impl<C, K> Context<C, K> {
                     Ok(()) => success = true,
                     Err(err) => {
                         has_full |= err.is_full();
-                        replace_unused(&mut unused, Some(err.into_inner()));
+                        unused = Some(err.into_inner());
                     }
                 },
-                None => replace_unused(&mut unused, Some(envelope)),
+                None => unused = Some(envelope),
             };
         }
 
         if success {
-            replace_unused(&mut unused, None);
             Ok(())
         } else if has_full {
             Err(TrySendError::Full(e2m(unused.unwrap())))
@@ -305,7 +304,7 @@ impl<C, K> Context<C, K> {
                 let guard = EbrGuard::new();
                 let entry = self.book.get(recipient, &guard);
                 let object = ward!(entry, {
-                    replace_unused(&mut unused, Some(envelope));
+                    unused = Some(envelope);
                     continue;
                 });
                 Object::send(object, Addr::NULL, envelope)
@@ -314,14 +313,13 @@ impl<C, K> Context<C, K> {
             .err()
             .map(|err| err.0);
 
-            replace_unused(&mut unused, returned_envelope);
+            unused = returned_envelope;
             if unused.is_none() {
                 success = true;
             }
         }
 
         if success {
-            replace_unused(&mut unused, None);
             Ok(())
         } else {
             Err(SendError(e2m(unused.unwrap())))
@@ -858,13 +856,6 @@ fn addrs_with_envelope(
             },
         )
     })
-}
-
-fn replace_unused(dest: &mut Option<Envelope>, value: Option<Envelope>) {
-    if let Some(old) = dest.take() {
-        old.drop_as_unused();
-    }
-    *dest = value;
 }
 
 impl Context {
