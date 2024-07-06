@@ -37,6 +37,14 @@ impl ExecResult for () {
 }
 
 #[sealed]
+impl ExecResult for never::Never {
+    #[allow(private_interfaces)]
+    fn unify(self) -> Result<(), BoxedError> {
+        self
+    }
+}
+
+#[sealed]
 impl<E> ExecResult for Result<(), E>
 where
     E: Into<BoxedError>,
@@ -44,4 +52,20 @@ where
     fn unify(self) -> Result<(), BoxedError> {
         self.map_err(Into::into)
     }
+}
+
+// === Never (!) ===
+
+mod never {
+    pub(super) type Never = <F as HasOutput>::Output;
+
+    pub(super) trait HasOutput {
+        type Output;
+    }
+
+    impl<O> HasOutput for fn() -> O {
+        type Output = O;
+    }
+
+    type F = fn() -> !;
 }

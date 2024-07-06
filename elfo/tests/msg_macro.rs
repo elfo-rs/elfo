@@ -42,11 +42,19 @@ enum Type {
 fn sample() -> Blueprint {
     ActorGroup::new().exec(|mut ctx| async move {
         while let Some(envelope) = ctx.recv().await {
-            msg!(match &envelope {
+            // Borrowed usage.
+            let _flag = msg!(match &envelope {
                 Unit | Tuple | Struct | ReqStruct => true,
                 _ => false,
             });
 
+            // Regression for "borrowed value does not live long enough".
+            let _a = msg!(match &envelope {
+                Struct { a } => Some(a),
+                _ => None,
+            });
+
+            // Owned usage.
             msg!(match envelope {
                 // Unit.
                 Unit => ctx.send(Type::Unit(0)).await.unwrap(),

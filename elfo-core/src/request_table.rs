@@ -77,15 +77,20 @@ impl RequestData {
         debug_assert!(self.responses.len() <= 1);
 
         let is_ok = response.is_ok();
+
         if self.responses.is_empty() {
             self.responses.push(response);
         }
         // Priority: `Ok(_)` > `Err(Ignored)` > `Err(Failed)`
-        else if !matches!(&self.responses[0], Err(RequestError::Failed)) {
+        else if response.is_ok() {
+            debug_assert!(self.responses[0].is_err());
+            self.responses[0] = response;
+        } else if let Err(RequestError::Ignored) = response {
             debug_assert!(self.responses[0].is_err());
             self.responses[0] = response;
         }
 
+        // Received `Ok`, so prevent further responses.
         if is_ok {
             self.remainder = 0;
         }

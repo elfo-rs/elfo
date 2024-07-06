@@ -1,26 +1,52 @@
+use std::{alloc, fmt, mem, ptr, ptr::NonNull};
+
 use elfo_utils::time::Instant;
 
 use crate::{
-    message::{AnyMessage, Message},
+    mailbox,
+    message::{AnyMessageRef, Message, MessageRepr, MessageTypeId, Request},
     request_table::{RequestId, ResponseToken},
     tracing::TraceId,
     Addr,
 };
 
-// TODO: use granular messages instead of `SmallBox`.
-#[derive(Debug)]
-pub struct Envelope<M = AnyMessage> {
+/// An envelope is a wrapper around message with additional metadata,
+/// involved in message passing between actors.
+///
+/// Envelopes aren't created directly in code, but are produced internally
+/// by [`Context`]'s methods.
+///
+/// Converting an envelope to a message is usually done by calling the [`msg!`]
+/// macro, which supports both owned and borrowed usages.
+///
+/// [`Context`]: crate::Context
+/// [`msg!`]: crate::msg
+pub struct Envelope(NonNull<EnvelopeHeader>);
+
+// Messages aren't required to be `Sync`.
+assert_not_impl_any!(Envelope: Sync);
+assert_impl_all!(Envelope: Send);
+assert_eq_size!(Envelope, usize);
+
+// TODO: the current size (on x86-64) is 64 bytes, but it can be reduced.
+// And... it should be reduced once `TraceId` is extended to 16 bytes.
+pub(crate) struct EnvelopeHeader {
+    /// See `mailbox.rs` for more details.
+    pub(crate) link: mailbox::Link,
     created_time: Instant, // Now used also as a sent time.
     trace_id: TraceId,
     kind: MessageKind,
-    message: M,
+    /// Offset from the beginning of the envelope to the `MessageRepr`.
+    message_offset: u32,
 }
 
-assert_impl_all!(Envelope: Send);
-assert_eq_size!(Envelope, [u8; 256]);
+assert_impl_all!(EnvelopeHeader: Send);
+
+// SAFETY: `Envelope` can point to `M: Message` only, which is `Send`.
+// `EnvelopeHeader` is checked statically above to be `Send`.
+unsafe impl Send for Envelope {}
 
 // Reexported in `elfo::_priv`.
-#[derive(Debug)]
 pub enum MessageKind {
     Regular { sender: Addr },
     RequestAny(ResponseToken),
@@ -28,88 +54,143 @@ pub enum MessageKind {
     Response { sender: Addr, request_id: RequestId },
 }
 
-impl<M> Envelope<M> {
+// Called if the envelope hasn't been unpacked at all.
+// For instance, if an actor dies with a non-empty mailbox.
+// Usually, an envelope goes to `std::mem:forget()` in `unpack_*` methods.
+impl Drop for Envelope {
+    fn drop(&mut self) {
+        let message = self.message();
+        let message_layout = message._repr_layout();
+        let (layout, message_offset) = envelope_repr_layout(message_layout);
+        debug_assert_eq!(message_offset, self.header().message_offset);
+
+        // Drop the message.
+        // SAFETY: the message is not accessed anymore below.
+        unsafe { message.drop_in_place() };
+
+        // Drop the header.
+        // SAFETY: the header is not accessed anymore below.
+        unsafe { ptr::drop_in_place(self.0.as_ptr()) }
+
+        // Deallocate the whole envelope.
+        // SAFETY: memory was allocated by `alloc::alloc` with the same layout.
+        unsafe { alloc::dealloc(self.0.as_ptr().cast(), layout) };
+    }
+}
+
+impl Envelope {
     // This is private API. Do not use it.
     #[doc(hidden)]
     #[inline]
-    pub fn new(message: M, kind: MessageKind) -> Self {
+    pub fn new<M: Message>(message: M, kind: MessageKind) -> Self {
         Self::with_trace_id(message, kind, crate::scope::trace_id())
     }
 
     // This is private API. Do not use it.
     #[doc(hidden)]
     #[inline]
-    pub fn with_trace_id(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
-        Self {
+    pub fn with_trace_id<M: Message>(message: M, kind: MessageKind, trace_id: TraceId) -> Self {
+        let message_layout = message._repr_layout();
+        let (layout, message_offset) = envelope_repr_layout(message_layout);
+
+        let header = EnvelopeHeader {
+            link: <_>::default(),
             created_time: Instant::now(),
             trace_id,
             kind,
-            message,
-        }
+            message_offset,
+        };
+
+        // SAFETY: `layout` is correct and non-zero.
+        let ptr = unsafe { alloc::alloc(layout) };
+
+        let Some(ptr) = NonNull::new(ptr) else {
+            alloc::handle_alloc_error(layout);
+        };
+
+        // SAFETY: `ptr` is valid to write the header.
+        unsafe { ptr::write(ptr.cast().as_ptr(), header) };
+
+        let this = Self(ptr.cast());
+        let message_ptr = this.message_repr_ptr();
+
+        // SAFETY: `message_ptr` is valid to write the message.
+        unsafe { message._write(message_ptr) };
+
+        this
+    }
+
+    pub(crate) fn stub() -> Self {
+        Self::with_trace_id(
+            crate::messages::Ping,
+            MessageKind::Regular { sender: Addr::NULL },
+            TraceId::try_from(1).unwrap(),
+        )
+    }
+
+    fn header(&self) -> &EnvelopeHeader {
+        // SAFETY: `self.0` is properly initialized.
+        unsafe { self.0.as_ref() }
     }
 
     #[inline]
     pub fn trace_id(&self) -> TraceId {
-        self.trace_id
+        self.header().trace_id
     }
 
+    /// Returns a reference to the untyped message inside the envelope.
     #[inline]
-    pub fn message(&self) -> &M {
-        &self.message
+    pub fn message(&self) -> AnyMessageRef<'_> {
+        let message_repr = self.message_repr_ptr();
+
+        // SAFETY: `message_repr` is valid pointer for read.
+        unsafe { AnyMessageRef::new(message_repr) }
     }
 
     /// Part of private API. Do not use it.
     #[doc(hidden)]
     pub fn message_kind(&self) -> &MessageKind {
-        &self.kind
+        &self.header().kind
     }
 
     pub(crate) fn created_time(&self) -> Instant {
-        self.created_time
+        self.header().created_time
     }
 
     #[inline]
     pub fn sender(&self) -> Addr {
-        match &self.kind {
+        match self.message_kind() {
             MessageKind::Regular { sender } => *sender,
             MessageKind::RequestAny(token) => token.sender(),
             MessageKind::RequestAll(token) => token.sender(),
             MessageKind::Response { sender, .. } => *sender,
         }
     }
-}
 
-impl<M: Message> Envelope<M> {
-    // This is private API. Do not use it.
     #[doc(hidden)]
-    pub fn upcast(self) -> Envelope {
-        Envelope {
-            created_time: self.created_time,
-            trace_id: self.trace_id,
-            kind: self.kind,
-            message: self.message.upcast(),
-        }
-    }
-}
-
-impl Envelope {
     #[inline]
-    pub fn is<M: Message>(&self) -> bool {
-        self.message.is::<M>()
+    pub fn type_id(&self) -> MessageTypeId {
+        self.message().type_id()
     }
 
     #[inline]
-    pub fn type_id(&self) -> std::any::TypeId {
-        self.message.type_id()
+    pub fn is<M: Message>(&self) -> bool {
+        self.message().is::<M>()
     }
 
     #[doc(hidden)]
-    #[stability::unstable]
     pub fn duplicate(&self) -> Self {
-        Self {
-            created_time: self.created_time,
-            trace_id: self.trace_id,
-            kind: match &self.kind {
+        let header = self.header();
+        let message = self.message();
+        let message_layout = message._repr_layout();
+        let (layout, message_offset) = envelope_repr_layout(message_layout);
+        debug_assert_eq!(message_offset, header.message_offset);
+
+        let out_header = EnvelopeHeader {
+            link: <_>::default(),
+            created_time: header.created_time,
+            trace_id: header.trace_id,
+            kind: match &header.kind {
                 MessageKind::Regular { sender } => MessageKind::Regular { sender: *sender },
                 MessageKind::RequestAny(token) => MessageKind::RequestAny(token.duplicate()),
                 MessageKind::RequestAll(token) => MessageKind::RequestAll(token.duplicate()),
@@ -118,90 +199,295 @@ impl Envelope {
                     request_id: *request_id,
                 },
             },
-            message: self.message.clone(),
-        }
+            message_offset,
+        };
+
+        // SAFETY: `layout` is correct and non-zero.
+        let out_ptr = unsafe { alloc::alloc(layout) };
+
+        let Some(out_ptr) = NonNull::new(out_ptr) else {
+            alloc::handle_alloc_error(layout);
+        };
+
+        // SAFETY: `out_ptr` is valid to write the header.
+        unsafe { ptr::write(out_ptr.cast().as_ptr(), out_header) };
+
+        let out = Self(out_ptr.cast());
+        let out_message_ptr = out.message_repr_ptr();
+
+        // SAFETY: `out_message_ptr` is valid and has the same layout as `message`.
+        unsafe { message.clone_into(out_message_ptr) };
+
+        out
     }
 
-    // TODO: remove the method?
+    // TODO: remove the method
     pub(crate) fn set_message<M: Message>(&mut self, message: M) {
-        self.message = message.upcast();
+        assert!(self.is::<M>() && M::_type_id() != crate::message::AnyMessage::_type_id());
+
+        let repr_ptr = self.message_repr_ptr().cast::<MessageRepr<M>>().as_ptr();
+
+        // SAFETY: `repr_ptr` is valid to write the message.
+        unsafe { ptr::replace(repr_ptr, MessageRepr::new(message)) };
+    }
+
+    fn message_repr_ptr(&self) -> NonNull<MessageRepr> {
+        let message_offset = self.header().message_offset;
+
+        // SAFETY: `message_offset` refers to the same allocation object.
+        let ptr = unsafe { self.0.as_ptr().byte_add(message_offset as usize) };
+
+        // SAFETY: `envelope_repr_layout()` guarantees that `ptr` is valid.
+        unsafe { NonNull::new_unchecked(ptr.cast()) }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn unpack<M: Message>(self) -> Option<(M, MessageKind)> {
+        self.is::<M>()
+            // SAFETY: `self` contains a message of type `M`, checked above.
+            .then(|| unsafe { self.unpack_unchecked() })
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    unsafe fn unpack_unchecked<M: Message>(self) -> (M, MessageKind) {
+        let message_layout = self.message()._repr_layout();
+        let (layout, message_offset) = envelope_repr_layout(message_layout);
+        debug_assert_eq!(message_offset, self.header().message_offset);
+
+        let message = M::_read(self.message_repr_ptr());
+        let kind = ptr::read(&self.0.as_ref().kind);
+
+        alloc::dealloc(self.0.as_ptr().cast(), layout);
+        mem::forget(self);
+        (message, kind)
+    }
+
+    pub(crate) fn into_header_ptr(self) -> NonNull<EnvelopeHeader> {
+        let ptr = self.0;
+        mem::forget(self);
+        ptr
+    }
+
+    pub(crate) unsafe fn from_header_ptr(ptr: NonNull<EnvelopeHeader>) -> Self {
+        Self(ptr)
+    }
+}
+
+fn envelope_repr_layout(message_layout: alloc::Layout) -> (alloc::Layout, u32) {
+    let (layout, message_offset) = alloc::Layout::new::<EnvelopeHeader>()
+        .extend(message_layout)
+        .expect("impossible envelope layout");
+
+    let message_offset =
+        u32::try_from(message_offset).expect("message requires too large alignment");
+
+    (layout.pad_to_align(), message_offset)
+}
+
+impl fmt::Debug for MessageKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MessageKind::Regular { sender: _ } => f.debug_struct("Regular").finish(),
+            MessageKind::RequestAny(token) => f
+                .debug_tuple("RequestAny")
+                .field(&token.request_id())
+                .finish(),
+            MessageKind::RequestAll(token) => f
+                .debug_tuple("RequestAll")
+                .field(&token.request_id())
+                .finish(),
+            MessageKind::Response {
+                sender: _,
+                request_id,
+            } => f.debug_tuple("Response").field(request_id).finish(),
+        }
+    }
+}
+
+impl fmt::Debug for Envelope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Envelope")
+            .field("trace_id", &self.trace_id())
+            .field("sender", &self.sender())
+            .field("kind", &self.message_kind())
+            .field("message", &self.message())
+            .finish()
     }
 }
 
 // Extra traits to support both owned and borrowed usages of `msg!(..)`.
+// Both traits are private and reexported in `elfo::_priv` only
 
+#[doc(hidden)]
 pub trait EnvelopeOwned {
-    fn unpack_regular(self) -> AnyMessage;
-    fn unpack_request(self) -> (AnyMessage, ResponseToken);
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    unsafe fn unpack_regular_unchecked<M: Message>(self) -> M;
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the request is of the correct type.
+    unsafe fn unpack_request_unchecked<R: Request>(self) -> (R, ResponseToken<R>);
 }
 
+#[doc(hidden)]
 pub trait EnvelopeBorrowed {
-    fn unpack_regular(&self) -> &AnyMessage;
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    unsafe fn unpack_regular_unchecked<M: Message>(&self) -> &M;
 }
 
 impl EnvelopeOwned for Envelope {
     #[inline]
-    fn unpack_regular(self) -> AnyMessage {
+    unsafe fn unpack_regular_unchecked<M: Message>(self) -> M {
+        let (message, kind) = self.unpack_unchecked();
+
         #[cfg(feature = "network")]
-        if let MessageKind::RequestAny(token) | MessageKind::RequestAll(token) = self.kind {
+        if let MessageKind::RequestAny(token) | MessageKind::RequestAll(token) = kind {
             // The sender thought this is a request, but for the current node it isn't.
             // Mark the token as received to return `RequestError::Ignored` to the sender.
             let _ = token.into_received::<()>();
         }
 
+        // This check is debug-only because it's already checked in `msg!` in
+        // compile-time, which should be the only way to call this consuming method.
         #[cfg(not(feature = "network"))]
         debug_assert!(!matches!(
-            self.kind,
+            kind,
             MessageKind::RequestAny(_) | MessageKind::RequestAll(_)
         ));
 
-        self.message
+        message
     }
 
     #[inline]
-    fn unpack_request(self) -> (AnyMessage, ResponseToken) {
-        match self.kind {
-            MessageKind::RequestAny(token) | MessageKind::RequestAll(token) => {
-                (self.message, token)
-            }
+    unsafe fn unpack_request_unchecked<R: Request>(self) -> (R, ResponseToken<R>) {
+        let (message, kind) = self.unpack_unchecked();
+
+        let token = match kind {
+            MessageKind::RequestAny(token) | MessageKind::RequestAll(token) => token,
             // A request sent by using `ctx.send()` ("fire and forget").
             // Also it's useful for the protocol evolution between remote nodes.
-            _ => (self.message, ResponseToken::forgotten()),
-        }
+            _ => ResponseToken::forgotten(),
+        };
+
+        (message, token.into_received())
     }
 }
 
 impl EnvelopeBorrowed for Envelope {
     #[inline]
-    fn unpack_regular(&self) -> &AnyMessage {
-        &self.message
+    unsafe fn unpack_regular_unchecked<M: Message>(&self) -> &M {
+        self.message().downcast_ref_unchecked()
     }
 }
 
-pub trait AnyMessageOwned {
-    fn downcast2<M: Message>(self) -> M;
-}
+#[cfg(test)]
+mod tests_miri {
+    use std::sync::Arc;
 
-pub trait AnyMessageBorrowed {
-    fn downcast2<M: Message>(&self) -> &M;
-}
+    use elfo_utils::time;
 
-impl AnyMessageOwned for AnyMessage {
-    #[inline]
-    fn downcast2<M: Message>(self) -> M {
-        match self.downcast::<M>() {
-            Ok(message) => message,
-            Err(message) => panic!("unexpected message: {message:?}"),
+    use super::*;
+    use crate::{message, AnyMessage};
+
+    fn make_regular_envelope(message: impl Message) -> Envelope {
+        // Miri doesn't support asm, so mock the time.
+        // TODO: support miri in `elfo_utils::time`.
+        time::with_instant_mock(|_mock| {
+            let addr = Addr::NULL;
+            let trace_id = TraceId::try_from(1).unwrap();
+            Envelope::with_trace_id(message, MessageKind::Regular { sender: addr }, trace_id)
+        })
+    }
+
+    #[message]
+    #[derive(PartialEq)]
+    struct P8(u64);
+
+    #[test]
+    fn basic_ops() {
+        let message = P8(42);
+        let envelope = make_regular_envelope(message.clone());
+
+        assert_eq!(envelope.trace_id(), TraceId::try_from(1).unwrap());
+        assert_eq!(envelope.sender(), Addr::NULL);
+
+        assert_eq!(envelope.type_id(), P8::_type_id());
+        assert!(envelope.is::<P8>());
+        assert!(envelope.is::<AnyMessage>());
+        assert!(!envelope.is::<crate::messages::Ping>());
+
+        let (actual_message, _) = envelope.unpack::<P8>().unwrap();
+        assert_eq!(actual_message, message);
+
+        // Unpack to `AnyMessage`
+        let envelope = make_regular_envelope(message.clone());
+
+        let (actual_message, _) = envelope.unpack::<AnyMessage>().unwrap();
+        assert_eq!(format!("{:?}", actual_message), format!("{:?}", message));
+    }
+
+    #[test]
+    fn set_message() {
+        let message = P8(42);
+        let mut envelope = make_regular_envelope(message.clone());
+        envelope.set_message(P8(43));
+
+        let (actual_message, _) = envelope.unpack::<P8>().unwrap();
+        assert_eq!(actual_message, P8(43));
+    }
+
+    #[test]
+    fn duplicate() {
+        #[message]
+        #[derive(PartialEq)]
+        struct Sample {
+            value: u128,
+            counter: Arc<()>,
         }
-    }
-}
 
-impl AnyMessageBorrowed for AnyMessage {
-    #[inline]
-    fn downcast2<M: Message>(&self) -> &M {
-        ward!(
-            self.downcast_ref::<M>(),
-            panic!("unexpected message: {self:?}")
-        )
+        impl Sample {
+            fn new(value: u128) -> (Arc<()>, Self) {
+                let this = Self {
+                    value,
+                    counter: Arc::new(()),
+                };
+
+                (this.counter.clone(), this)
+            }
+        }
+
+        let (counter, message) = Sample::new(42);
+        let envelope = make_regular_envelope(message);
+
+        assert_eq!(Arc::strong_count(&counter), 2);
+        let envelope2 = envelope.duplicate();
+        assert_eq!(Arc::strong_count(&counter), 3);
+        assert!(envelope2.is::<Sample>());
+        let envelope3 = envelope2.duplicate();
+        assert_eq!(Arc::strong_count(&counter), 4);
+        assert!(envelope3.is::<Sample>());
+
+        drop(envelope2);
+        assert_eq!(Arc::strong_count(&counter), 3);
+
+        drop(envelope3);
+        assert_eq!(Arc::strong_count(&counter), 2);
+
+        let envelope4 = envelope.duplicate();
+        assert_eq!(Arc::strong_count(&counter), 3);
+        assert!(envelope4.is::<Sample>());
+
+        drop(envelope);
+        assert_eq!(Arc::strong_count(&counter), 2);
+
+        drop(envelope4);
+        assert_eq!(Arc::strong_count(&counter), 1);
     }
 }

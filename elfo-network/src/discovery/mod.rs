@@ -6,7 +6,7 @@ use tracing::{debug, error, info, warn};
 
 use elfo_core::{
     message, msg, scope, Envelope, Message, MoveOwnership, RestartPolicy,
-    _priv::{GroupNo, MessageKind},
+    _priv::{AnyMessage, GroupNo, MessageKind},
     messages::ConfigUpdated,
     stream::Stream,
     RestartParams, Topology,
@@ -488,7 +488,7 @@ async fn send_regular<M: Message>(socket: &mut Socket, msg: M) -> Result<()> {
         recipient: NetworkAddr::NULL, // doesn't matter
         trace_id: scope::trace_id(),
         payload: NetworkEnvelopePayload::Regular {
-            message: msg.upcast(),
+            message: AnyMessage::new(msg),
         },
     };
 

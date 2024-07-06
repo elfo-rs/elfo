@@ -60,3 +60,16 @@ jobs:
     - run: rustup show active-toolchain -v
     - run: cargo test
     - run: cargo test --all-features
+
+  miri:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: -Zmiri-strict-provenance
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --component miri
+      - run: rustup override set nightly
+      - run: rustup show active-toolchain -v
+      - run: cargo miri setup
+      - run: cargo miri test -p elfo-core --all-features -- _miri

@@ -21,12 +21,14 @@ mod tests {
     #[derive(PartialEq)]
     struct BigMessage(String);
 
-    fn make_envelope(message: AnyMessage, trace_index: u64) -> NetworkEnvelope {
+    fn make_envelope(message: impl Message, trace_index: u64) -> NetworkEnvelope {
         NetworkEnvelope {
             sender: NetworkAddr::NULL,
             recipient: NetworkAddr::NULL,
             trace_id: TraceId::try_from(trace_index).unwrap(),
-            payload: NetworkEnvelopePayload::Regular { message },
+            payload: NetworkEnvelopePayload::Regular {
+                message: AnyMessage::new(message),
+            },
         }
     }
 
@@ -51,8 +53,8 @@ mod tests {
         let mut position = 0;
 
         for i in 1..5 {
-            let small_envelope = make_envelope(SmallMessage(i).upcast(), i);
-            let big_envelope = make_envelope(BigMessage("oops".repeat(100)).upcast(), i);
+            let small_envelope = make_envelope(SmallMessage(i), i);
+            let big_envelope = make_envelope(BigMessage("oops".repeat(100)), i);
 
             // Small message must fit into 100 bytes, but big message must not.
             const LIMIT: Option<usize> = Some(100);
@@ -100,7 +102,7 @@ mod tests {
     fn test_decode_skip() {
         let mut bytes = Vec::new();
 
-        let envelope = make_envelope(BigMessage("a".repeat(100)).upcast(), 1);
+        let envelope = make_envelope(BigMessage("a".repeat(100)), 1);
 
         // Encode two messages.
         encode(&envelope, &mut bytes, &mut Default::default(), None).unwrap();

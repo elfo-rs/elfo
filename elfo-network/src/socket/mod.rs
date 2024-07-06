@@ -276,7 +276,7 @@ mod tests {
     use futures::{future, stream::StreamExt};
     use tracing::debug;
 
-    use elfo_core::{message, tracing::TraceId, Message};
+    use elfo_core::{_priv::AnyMessage, message, tracing::TraceId};
 
     use crate::codec::format::{NetworkAddr, NetworkEnvelopePayload};
 
@@ -361,7 +361,7 @@ mod tests {
                 recipient: NetworkAddr::NULL,
                 trace_id: TraceId::try_from(1).unwrap(),
                 payload: NetworkEnvelopePayload::Regular {
-                    message: TestSocketMessage("a".repeat(i * 10)).upcast(),
+                    message: AnyMessage::new(TestSocketMessage("a".repeat(i * 10))),
                 },
             };
 
