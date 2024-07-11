@@ -23,8 +23,11 @@
 //! See `TxFlowControl` and `RxFlowControl` for implementations of sender's and
 //! receiver's windows respectively.
 //!
-//! If none of this makes sense, see https://en.wikipedia.org/wiki/Flow_control_(data) and
-//! https://en.wikipedia.org/wiki/Sliding_window_protocol for a more elaborate explanation.
+//! If none of this makes sense, see [flow control] and
+//! [sliding window protocol] for a more elaborate explanation.
+//!
+//! [flow control]: https://en.wikipedia.org/wiki/Flow_control_(data)
+//! [sliding window protocol]: https://en.wikipedia.org/wiki/Sliding_window_protocol
 
 use std::sync::atomic::{AtomicI32, Ordering};
 

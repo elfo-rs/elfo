@@ -31,8 +31,11 @@ use crate::{
 ///
 /// All wrapped streams and futures are fused by the implementation.
 ///
-/// Note: [`Stream::is_terminated()`] and [`Stream::terminate()`] cannot be
-/// called *inside* the stream, because it leads to a deadlock.
+/// Note: [`Stream::is_terminated()`] and [`Stream::terminate()`]
+/// cannot be called *inside* the stream, because it leads to a deadlock.
+///
+/// [`Stream::is_terminated()`]: crate::source::SourceHandle::is_terminated()
+/// [`Stream::terminate()`]: crate::source::SourceHandle::terminate()
 ///
 /// # Tracing
 ///

@@ -1,17 +1,18 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Layout:
-//
+// ```text
 //      7 6 5 4 3 2 1 0
-//     +-+-+-+-+-+-+-+-+
-//     |G|K|D|E|W|I|D|T|
-//     +-+-+-+-+-+-+-+-+
-//      | | |'---------'
-//      | | |  |
-//      | | |  +- logging levels
-//      | | +---- dumping
-//      | +------ telemetry per actor key
-//      +-------- telemetry per actor group
+//     ┌─┬─┬─┬─┬─┬─┬─┬─┐
+//     │G│K│D│E│W│I│D│T│
+//     └─┴─┴─┴─┴─┴─┴─┴─┘
+//      │ │ │└─────────┘
+//      │ │ │  │
+//      │ │ │  └─ logging levels
+//      │ │ └──── dumping
+//      │ └────── telemetry per actor key
+//      └──────── telemetry per actor group
+// ```
 //
 // Reexported in `elfo::_priv`.
 #[derive(Default)]

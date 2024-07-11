@@ -9,6 +9,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Dwarnings
+  RUSTDOCFLAGS: -Dwarnings --cfg docsrs
+  MIRIFLAGS: -Zmiri-strict-provenance
   RUST_BACKTRACE: 1
   RUST_LOG: elfo
   MSRV: 1.76.0
@@ -64,8 +66,6 @@ jobs:
   miri:
     needs: build
     runs-on: ubuntu-latest
-    env:
-      MIRIFLAGS: -Zmiri-strict-provenance
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install nightly --component miri
@@ -73,3 +73,13 @@ jobs:
       - run: rustup show active-toolchain -v
       - run: cargo miri setup
       - run: cargo miri test -p elfo-core --all-features -- _miri
+
+  docs:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: rustup toolchain install nightly
+    - run: rustup override set nightly
+    - run: rustup show active-toolchain -v
+    - run: cargo doc --all-features

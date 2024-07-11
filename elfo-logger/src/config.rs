@@ -1,3 +1,5 @@
+//! Configuration for the logger.
+
 #![allow(unreachable_pub)] // docsrs
 
 use std::path::PathBuf;
@@ -8,11 +10,16 @@ use tracing::metadata::LevelFilter;
 
 use bytesize::ByteSize;
 
+/// Logger configuration.
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    /// Sink for the log output.
+    /// By default logs are written to stdout.
     #[serde(default)]
     pub sink: Sink,
+    /// Path to the log file, applicable only for `Sink::File`.
     pub path: Option<PathBuf>,
+    /// Log format.
     #[serde(default)]
     pub format: Format,
 
@@ -25,28 +32,39 @@ pub struct Config {
     #[serde(default = "default_max_line_size")]
     pub max_line_size: ByteSize,
 
+    /// Override log levels for specific targets.
+    /// Useful to suppress noisy logs from dependencies.
     #[serde(default)]
     pub targets: FxHashMap<String, LoggingTargetConfig>,
 }
 
+/// Configuration for a specific logging target.
 #[derive(Debug, Deserialize)]
 pub struct LoggingTargetConfig {
+    /// Maximum log level for the target.
     #[serde(deserialize_with = "deserialize_level_filter")]
     pub max_level: LevelFilter,
 }
 
+/// Sink for the log output.
+/// By default logs are written to stdout.
 #[derive(Debug, Default, PartialEq, Deserialize)]
 pub enum Sink {
+    /// Write logs to a file, specified by `path`.
     File,
+    /// Write logs to stdout.
     #[default]
     Stdout,
     // TODO: stdout + stderr
 }
 
+/// Log format.
 #[derive(Debug, Deserialize, Default)]
 pub struct Format {
+    /// Include location info in the log output.
     #[serde(default)]
     pub with_location: bool,
+    /// Include module info in the log output.
     #[serde(default)]
     pub with_module: bool,
     // TODO: colors

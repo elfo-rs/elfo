@@ -1,30 +1,32 @@
 //! The structure of the network envelope:
+//! ```text
 //!           name           bits       presence
-//! +-----------------------+----+---------------------+
-//! | size of whole frame   | 32 |                     |
-//! +-----------------------+----+                     |
-//! | flags                 |  4 |                     | flags:
-//! +-----------------------+----+                     | - <reserved>       = 1
-//! | kind                  |  4 |                     | - <reserved>       = 2
-//! +-----------------------+----+       always        | - <reserved>       = 4
-//! | sender                | 64 |                     | - is last response = 8
-//! +-----------------------+----+                     |
-//! | recipient             | 64 |                     |
-//! +-----------------------+----+                     |
-//! | trace id              | 64 |                     | kinds:
-//! +-----------------------+----+---------------------+ - Regular           = 0
-//! | request id            | 64 | if kind != Regular  | - RequestAny        = 1
-//! +-----------------------+----+---------------------+ - RequestAll        = 2
-//! | protocol's length (P) |  8 |                     | - Response::Ok      = 3
-//! +-----------------------+----+                     | - Response::Failed  = 4
-//! | protocol              | 8P |                     | - Response::Ignored = 5
-//! +-----------------------+----+ if kind !=          |
-//! | msg name's length (N) |  8 | - Response::Failed  |
-//! +-----------------------+----+ - Response::Ignored |
-//! | msg name              | 8N |                     |
-//! +-----------------------+----+                     |
-//! | msg payload           |rest|                     |
-//! +-----------------------+----+---------------------+
+//! ┌───────────────────────┬────┬─────────────────────┐
+//! │ size of whole frame   │ 32 │                     │
+//! ├───────────────────────┼────┤                     │
+//! │ flags                 │  4 │                     │ flags:
+//! ├───────────────────────┼────┤                     │ - <reserved>       = 1
+//! │ kind                  │  4 │                     │ - <reserved>       = 2
+//! ├───────────────────────┼────┤       always        │ - <reserved>       = 4
+//! │ sender                │ 64 │                     │ - is last response = 8
+//! ├───────────────────────┼────┤                     │
+//! │ recipient             │ 64 │                     │
+//! ├───────────────────────┼────┤                     │
+//! │ trace id              │ 64 │                     │ kinds:
+//! ├───────────────────────┼────┼─────────────────────┤ - Regular           = 0
+//! │ request id            │ 64 │ if kind != Regular  │ - RequestAny        = 1
+//! ├───────────────────────┼────┼─────────────────────┤ - RequestAll        = 2
+//! │ protocol's length (P) │  8 │                     │ - Response::Ok      = 3
+//! ├───────────────────────┼────┤                     │ - Response::Failed  = 4
+//! │ protocol              │ 8P │                     │ - Response::Ignored = 5
+//! ├───────────────────────┼────┤ if kind !=          │
+//! │ msg name's length (N) │  8 │ - Response::Failed  │
+//! ├───────────────────────┼────┤ - Response::Ignored │
+//! │ msg name              │ 8N │                     │
+//! ├───────────────────────┼────┤                     │
+//! │ msg payload           │rest│                     │
+//! └───────────────────────┴────┴─────────────────────┘
+//! ```
 //!
 //! All fields are encoded using LE ordering.
 

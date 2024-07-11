@@ -1,6 +1,6 @@
 use elfo_core::{msg, Envelope, Message, Request, ResponseToken};
 
-/// Extracts message with type [`M`] from [`Envelope`], panics otherwise.
+/// Extracts message with the provided type from [`Envelope`], panics otherwise.
 #[track_caller]
 pub fn extract_message<M: Message>(envelope: Envelope) -> M {
     msg!(match envelope {
@@ -13,7 +13,7 @@ pub fn extract_message<M: Message>(envelope: Envelope) -> M {
     })
 }
 
-/// Extracts request message with type [`R`] from [`Envelope`], panics
+/// Extracts request message with the provided type from [`Envelope`], panics
 /// otherwise.
 #[track_caller]
 pub fn extract_request<R: Request>(envelope: Envelope) -> (R, ResponseToken<R>) {
