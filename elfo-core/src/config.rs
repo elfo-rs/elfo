@@ -167,6 +167,7 @@ impl<'de> Deserializer<'de> for AnyConfig {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct SystemConfig {
+    pub(crate) mailbox: crate::mailbox::MailboxConfig,
     pub(crate) logging: crate::logging::LoggingConfig,
     pub(crate) dumping: crate::dumping::DumpingConfig,
     pub(crate) telemetry: crate::telemetry::TelemetryConfig,

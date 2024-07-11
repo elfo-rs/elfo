@@ -42,13 +42,13 @@ pub(crate) struct Supervisor<R: Router<C>, C, X> {
     objects: DashMap<R::Key, OwnedObject, FxBuildHasher>,
     router: R,
     exec: X,
-    control: CachePadded<RwLock<ControlBlock<C>>>,
+    control: CachePadded<RwLock<Control<C>>>,
     scope_shared: Arc<ScopeGroupShared>,
     status_subscription: Arc<SubscriptionManager>,
     rt_manager: RuntimeManager,
 }
 
-struct ControlBlock<C> {
+struct Control<C> {
     system_config: Arc<SystemConfig>,
     user_config: Option<Arc<C>>,
     is_started: bool,
@@ -87,7 +87,7 @@ where
         termination_policy: TerminationPolicy,
         rt_manager: RuntimeManager,
     ) -> Self {
-        let control = ControlBlock {
+        let control = Control {
             system_config: Default::default(),
             user_config: None,
             is_started: false,
@@ -303,6 +303,18 @@ where
             .with_key(key.clone())
             .with_config(user_config);
 
+        let meta = Arc::new(ActorMeta {
+            group: self.meta.group.clone(),
+            key: key_str,
+        });
+        let actor = Actor::new(
+            meta.clone(),
+            addr,
+            &system_config.mailbox,
+            self.termination_policy.clone(),
+            self.status_subscription.clone(),
+        );
+
         drop(control);
 
         let sv = self.clone();
@@ -389,19 +401,8 @@ where
             sv.context.book().remove(addr);
         };
 
-        let meta = Arc::new(ActorMeta {
-            group: self.meta.group.clone(),
-            key: key_str,
-        });
-
         let rt = self.rt_manager.get(&meta);
 
-        let actor = Actor::new(
-            meta.clone(),
-            addr,
-            self.termination_policy.clone(),
-            self.status_subscription.clone(),
-        );
         entry.insert(Object::new(addr, actor));
 
         let scope = Scope::new(scope::trace_id(), addr, meta, self.scope_shared.clone())
@@ -436,16 +437,29 @@ where
         }
     }
 
-    fn update_config(&self, control: &mut ControlBlock<C>, config: &AnyConfig) {
+    fn update_config(&self, control: &mut Control<C>, config: &AnyConfig) {
         let system = config.get_system();
         self.scope_shared.configure(system);
 
+        let need_to_update_actors = control.system_config.mailbox != system.mailbox;
+
         // Update user's config.
-        control.system_config = config.get_system().clone();
+        control.system_config = system.clone();
         control.user_config = Some(config.get_user::<C>().clone());
 
         self.router
             .update(control.user_config.as_ref().expect("just saved"));
+
+        if need_to_update_actors {
+            for object in self.objects.iter() {
+                let actor = object
+                    .value()
+                    .as_actor()
+                    .expect("a supervisor stores only actors");
+
+                actor.set_mailbox_capacity_config(system.mailbox.capacity);
+            }
+        }
 
         self.in_scope(|| {
             debug!(

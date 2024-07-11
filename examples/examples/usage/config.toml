@@ -3,6 +3,9 @@
 # The primary purpose is to define default values of system settings (logging, dumping, and so on).
 
 # Parameters and their defaults
+# Mailbox
+#system.mailbox.capacity = 100
+#
 # Logging
 #system.logging.max_level = "Info" # one of: Trace, Debug, Info, Warn, Error, Off.
 #system.logging.max_rate_per_level = 1000    # per second

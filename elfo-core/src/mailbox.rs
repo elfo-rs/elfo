@@ -42,6 +42,22 @@ use crate::{
     tracing::TraceId,
 };
 
+// === MailboxConfig ===
+
+#[derive(Debug, PartialEq, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct MailboxConfig {
+    pub(crate) capacity: usize,
+}
+
+impl Default for MailboxConfig {
+    fn default() -> Self {
+        Self { capacity: 100 }
+    }
+}
+
+// === Mailbox ===
+
 pub(crate) type Link = Links<EnvelopeHeader>;
 
 assert_not_impl_any!(EnvelopeHeader: Unpin);
@@ -77,9 +93,6 @@ unsafe impl Linked<Link> for EnvelopeHeader {
     }
 }
 
-// TODO: make configurable (a config + `ctx.set_mailbox_capacity(_)`).
-const LIMIT: usize = 100_000;
-
 pub(crate) struct Mailbox {
     /// A storage for envelopes based on an intrusive linked list.
     /// Note: `cordyceps` uses terms "head" and "tail" in the opposite way.
@@ -93,18 +106,52 @@ pub(crate) struct Mailbox {
     // TODO: replace with `diatomic-waker` (3-5% faster).
     rx_notify: CachePadded<Notify>,
 
+    /// Use `Mutex` here for synchronization on close/configure.
+    control: Mutex<Control>,
+}
+
+struct Control {
     /// A trace ID that should be assigned once the mailbox is closed.
-    /// Use `Mutex` here for synchronization on close, more in `close()`.
-    closed_trace_id: Mutex<Option<TraceId>>,
+    closed_trace_id: Option<TraceId>,
+    /// A real capacity of the mailbox.
+    capacity: usize,
 }
 
 impl Mailbox {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(config: &MailboxConfig) -> Self {
+        let capacity = clamp_capacity(config.capacity);
+
         Self {
             queue: MpscQueue::new_with_stub(Envelope::stub()),
-            tx_semaphore: Semaphore::new(LIMIT),
+            tx_semaphore: Semaphore::new(capacity),
             rx_notify: CachePadded::new(Notify::new()),
-            closed_trace_id: Mutex::new(None),
+            control: Mutex::new(Control {
+                closed_trace_id: None,
+                capacity,
+            }),
+        }
+    }
+
+    pub(crate) fn set_capacity(&self, capacity: usize) {
+        let mut control = self.control.lock();
+
+        if capacity == control.capacity {
+            return;
+        }
+
+        if capacity < control.capacity {
+            let delta = control.capacity - capacity;
+            let real_delta = self.tx_semaphore.forget_permits(delta);
+
+            // Note that we cannot reduce the number of active permits
+            // (relates to messages that already stored in the queue) in tokio impl.
+            // Sadly, in such cases, we violate provided `capacity`.
+            debug_assert!(real_delta <= delta);
+            control.capacity -= real_delta;
+        } else {
+            let real_delta = clamp_capacity(capacity) - control.capacity;
+            self.tx_semaphore.add_permits(real_delta);
+            control.capacity += real_delta;
         }
     }
 
@@ -180,13 +227,13 @@ impl Mailbox {
         // channel. If we take a lock after closing the channel, data race is
         // possible when we try to `recv()` after the channel is closed, but
         // before the `closed_trace_id` is assigned.
-        let mut closed_trace_id = self.closed_trace_id.lock();
+        let mut control = self.control.lock();
 
         if self.tx_semaphore.is_closed() {
             return false;
         }
 
-        *closed_trace_id = Some(trace_id);
+        control.closed_trace_id = Some(trace_id);
 
         self.tx_semaphore.close();
         self.rx_notify.notify_one();
@@ -204,7 +251,8 @@ impl Mailbox {
         match self.queue.dequeue() {
             Some(envelope) => RecvResult::Data(envelope),
             None => {
-                let trace_id = self.closed_trace_id.lock().expect("called before close()");
+                let control = self.control.lock();
+                let trace_id = control.closed_trace_id.expect("called before close()");
                 RecvResult::Closed(trace_id)
             }
         }
@@ -214,4 +262,8 @@ impl Mailbox {
 pub(crate) enum RecvResult {
     Data(Envelope),
     Closed(TraceId),
+}
+
+fn clamp_capacity(capacity: usize) -> usize {
+    capacity.min(Semaphore::MAX_PERMITS)
 }

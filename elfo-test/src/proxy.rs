@@ -179,6 +179,7 @@ impl Proxy {
     /// Now it's implemented as multiple calls `yield_now()`,
     /// but the implementation can be changed in the future.
     pub async fn sync(&mut self) {
+        // TODO: it should probably be `request(Ping).await`.
         for _ in 0..SYNC_YIELD_COUNT {
             task::yield_now().await;
         }

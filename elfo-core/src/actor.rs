@@ -10,7 +10,7 @@ use crate::{
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
-    mailbox::{Mailbox, RecvResult},
+    mailbox::{Mailbox, MailboxConfig, RecvResult},
     messages::{ActorStatusReport, Terminate},
     msg,
     request_table::RequestTable,
@@ -182,32 +182,39 @@ pub(crate) struct Actor {
     termination_policy: TerminationPolicy,
     mailbox: Mailbox,
     request_table: RequestTable,
-    control: RwLock<ControlBlock>,
+    control: RwLock<Control>,
     finished: ManualResetEvent, // TODO: remove in favor of `status_subscription`?
     status_subscription: Arc<SubscriptionManager>,
 }
 
-struct ControlBlock {
+struct Control {
     status: ActorStatus,
     /// If `None`, a group's policy will be used.
     restart_policy: Option<RestartPolicy>,
+    /// A mailbox capacity set in the config.
+    mailbox_capacity_config: usize,
+    /// Explicitly set mailbox capacity via `Context::set_mailbox_capacity()`.
+    mailbox_capacity_override: Option<usize>,
 }
 
 impl Actor {
     pub(crate) fn new(
         meta: Arc<ActorMeta>,
         addr: Addr,
+        mailbox_config: &MailboxConfig,
         termination_policy: TerminationPolicy,
         status_subscription: Arc<SubscriptionManager>,
     ) -> Self {
         Actor {
             meta,
             termination_policy,
-            mailbox: Mailbox::new(),
+            mailbox: Mailbox::new(mailbox_config),
             request_table: RequestTable::new(addr),
-            control: RwLock::new(ControlBlock {
+            control: RwLock::new(Control {
                 status: ActorStatus::INITIALIZING,
                 restart_policy: None,
+                mailbox_capacity_config: mailbox_config.capacity,
+                mailbox_capacity_override: None,
             }),
             finished: ManualResetEvent::new(false),
             status_subscription,
@@ -269,6 +276,26 @@ impl Actor {
 
     pub(crate) fn request_table(&self) -> &RequestTable {
         &self.request_table
+    }
+
+    pub(crate) fn set_mailbox_capacity_config(&self, capacity: usize) {
+        self.control.write().mailbox_capacity_config = capacity;
+        self.update_mailbox_capacity();
+    }
+
+    pub(crate) fn set_mailbox_capacity_override(&self, capacity: Option<usize>) {
+        self.control.write().mailbox_capacity_override = capacity;
+        self.update_mailbox_capacity();
+    }
+
+    fn update_mailbox_capacity(&self) {
+        let control = self.control.read();
+
+        let capacity = control
+            .mailbox_capacity_override
+            .unwrap_or(control.mailbox_capacity_config);
+
+        self.mailbox.set_capacity(capacity);
     }
 
     pub(crate) fn restart_policy(&self) -> Option<RestartPolicy> {
@@ -348,7 +375,7 @@ impl Actor {
         })
     }
 
-    fn send_status_to_subscribers(&self, control: &ControlBlock) {
+    fn send_status_to_subscribers(&self, control: &Control) {
         self.status_subscription.send(ActorStatusReport {
             meta: self.meta.clone(),
             status: control.status.clone(),

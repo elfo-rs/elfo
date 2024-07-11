@@ -13,8 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - core: directly accept never returning functions in `ActorGroup::exec()` ([#127]).
 - core/context: add `Context::unbounded_send(_to)` methods.
 - errors: add `From<SendError> for TrySendError` and `SendError::{into_inner,map}` methods.
+- core/config: add the `system.mailbox.capacity` parameter to set the mailbox capacity.
+- core/context: add `Context::set_mailbox_capacity()`.
 
 ### Changed
+- **BREAKING** core/mailbox: default capacity is `100` now.
 - **BREAKING** macros: remove the `network` feature ([#127]).
 - **BREAKING** core/message: remove `AnyMessage::upcast()` in favor of `AnyMessage::new()` ([#127]).
 - **BREAKING** core/envelope: `Envelope::message()` returns `AnyMessageRef` ([#127]).

@@ -26,7 +26,7 @@ elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
 stability.workspace = true
 metrics.workspace = true
-tokio = { version = "1.16", features = ["rt", "sync", "time", "signal", "macros"] }
+tokio = { version = "1.37", features = ["rt", "sync", "time", "signal", "macros"] }
 idr-ebr = "0.2"
 futures-intrusive = "0.5"
 cordyceps = "0.3.2"

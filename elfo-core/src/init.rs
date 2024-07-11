@@ -174,7 +174,8 @@ pub async fn do_start<F: Future>(
     let actor = Actor::new(
         meta.clone(),
         addr,
-        Default::default(),
+        &<_>::default(),
+        <_>::default(),
         Arc::new(SubscriptionManager::new(ctx.clone())),
     );
 

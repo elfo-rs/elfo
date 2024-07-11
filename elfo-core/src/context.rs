@@ -105,7 +105,28 @@ impl<C, K> Context<C, K> {
         ward!(self.actor.as_ref().and_then(|o| o.as_actor())).set_status(status);
     }
 
-    /// Overrides the group's default restart policy.
+    /// Overrides the group's default mailbox capacity, which set in the config.
+    ///
+    /// Note: after restart the actor will be created from scratch, so this
+    /// override will be also reset to the group's default mailbox capacity.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # fn exec(ctx: elfo::Context) {
+    /// // Override the group's default mailbox capacity.
+    /// ctx.set_mailbox_capacity(42);
+    ///
+    /// // Set the group's default mailbox capacity.
+    /// ctx.set_mailbox_capacity(None);
+    /// # }
+    /// ```
+    pub fn set_mailbox_capacity(&self, capacity: impl Into<Option<usize>>) {
+        ward!(self.actor.as_ref().and_then(|o| o.as_actor()))
+            .set_mailbox_capacity_override(capacity.into());
+    }
+
+    /// Overrides the group's default restart policy, which set in the config.
     ///
     /// Note: after restart the actor will be created from scratch, so this
     /// override will be also reset to the group's default restart policy.
