@@ -9,6 +9,11 @@ use crate::{
 pub trait RemoteHandle: Send + Sync + 'static {
     fn send(&self, recipient: Addr, envelope: Envelope) -> SendResult;
     fn try_send(&self, recipient: Addr, envelope: Envelope) -> Result<(), TrySendError<Envelope>>;
+    fn unbounded_send(
+        &self,
+        recipient: Addr,
+        envelope: Envelope,
+    ) -> Result<(), SendError<Envelope>>;
     fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestError>);
 }
 

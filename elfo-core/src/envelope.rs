@@ -54,6 +54,13 @@ pub enum MessageKind {
     Response { sender: Addr, request_id: RequestId },
 }
 
+impl MessageKind {
+    #[inline]
+    pub fn regular(sender: Addr) -> Self {
+        Self::Regular { sender }
+    }
+}
+
 // Called if the envelope hasn't been unpacked at all.
 // For instance, if an actor dies with a non-empty mailbox.
 // Usually, an envelope goes to `std::mem:forget()` in `unpack_*` methods.
@@ -123,7 +130,7 @@ impl Envelope {
     pub(crate) fn stub() -> Self {
         Self::with_trace_id(
             crate::messages::Ping,
-            MessageKind::Regular { sender: Addr::NULL },
+            MessageKind::regular(Addr::NULL),
             TraceId::try_from(1).unwrap(),
         )
     }
@@ -402,7 +409,7 @@ mod tests_miri {
         time::with_instant_mock(|_mock| {
             let addr = Addr::NULL;
             let trace_id = TraceId::try_from(1).unwrap();
-            Envelope::with_trace_id(message, MessageKind::Regular { sender: addr }, trace_id)
+            Envelope::with_trace_id(message, MessageKind::regular(addr), trace_id)
         })
     }
 

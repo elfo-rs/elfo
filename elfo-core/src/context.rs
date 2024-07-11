@@ -20,7 +20,7 @@ use crate::{
     mailbox::RecvResult,
     message::{Message, Request},
     messages, msg,
-    object::{Object, OwnedObject},
+    object::{BorrowedObject, Object, OwnedObject},
     request_table::ResponseToken,
     restarting::RestartPolicy,
     routers::Singleton,
@@ -85,6 +85,9 @@ impl<C, K> Context<C, K> {
     }
 
     /// Attaches the provided source to the context.
+    ///
+    /// Messages produced by the source will be available via
+    /// [`Context::recv()`] and [`Context::try_recv()`] methods.
     pub fn attach<S1: SourceHandle>(&mut self, source: UnattachedSource<S1>) -> S1 {
         source.attach_to(&mut self.sources)
     }
@@ -130,31 +133,43 @@ impl<C, K> Context<C, K> {
         ward!(self.actor.as_ref().and_then(|o| o.as_actor()), return false).close()
     }
 
-    /// Sends a message using the routing system.
+    /// Sends a message using the [inter-group routing] system.
+    ///
+    /// It's possible to send requests if the response is not needed.
     ///
     /// Returns `Err` if the message hasn't reached any mailboxes.
     ///
+    /// # Cancel safety
+    ///
+    /// If cancelled, recipients with full mailboxes wont't receive the message.
+    ///
     /// # Example
-    /// ```ignore
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
     /// // Fire and forget.
     /// let _ = ctx.send(SomethingHappened).await;
     ///
-    /// // Fire or fail.
-    /// ctx.send(SomethingHappened).await?;
-    ///
     /// // Fire or log.
-    /// if let Ok(err) = ctx.send(SomethingHappened).await {
-    ///     warn!("...", error = err);
+    /// if let Err(error) = ctx.send(SomethingHappened).await {
+    ///     tracing::warn!(%error, "...");
     /// }
+    /// # }
     /// ```
+    ///
+    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
-        let kind = MessageKind::Regular {
-            sender: self.actor_addr,
-        };
-        self.do_send(message, kind).await
+        let kind = MessageKind::regular(self.actor_addr);
+        self.do_send_async(message, kind).await
     }
 
-    /// Tries to send a message using the routing system.
+    /// Tries to send a message using the [inter-group routing] system.
+    ///
+    /// It's possible to send requests if the response is not needed.
     ///
     /// Returns
     /// * `Ok(())` if the message has been added to any mailbox.
@@ -162,22 +177,28 @@ impl<C, K> Context<C, K> {
     /// * `Err(Closed(_))` otherwise.
     ///
     /// # Example
-    /// ```ignore
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
     /// // Fire and forget.
     /// let _ = ctx.try_send(SomethingHappened);
     ///
-    /// // Fire or fail.
-    /// ctx.try_send(SomethingHappened)?;
-    ///
     /// // Fire or log.
-    /// if let Err(err) = ctx.try_send(SomethingHappened) {
-    ///     warn!("...", error = err);
+    /// if let Err(error) = ctx.try_send(SomethingHappened) {
+    ///     tracing::warn!(%error, "...");
     /// }
+    /// # }
     /// ```
+    ///
+    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
     pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
-        let kind = MessageKind::Regular {
-            sender: self.actor_addr,
-        };
+        // XXX: avoid duplication with `unbounded_send()` and `send()`.
+
+        let kind = MessageKind::regular(self.actor_addr);
 
         self.stats.on_sent_message(&message); // TODO: only if successful?
 
@@ -230,7 +251,87 @@ impl<C, K> Context<C, K> {
         }
     }
 
-    /// Returns a request builder.
+    /// Sends a message using the [inter-group routing] system.
+    /// Ignores the capacity of the recipient's mailbox and doesn't change its
+    /// size, thus it doesn't affect other senders.
+    ///
+    /// Usually this method shouldn't be used because it can lead to high memory
+    /// usage and even OOM if the recipient works too slowly.
+    /// Prefer [`Context::try_send()`] or [`Context::send()`] instead.
+    ///
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns `Err` if the message hasn't reached mailboxes or they are full.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
+    /// // Fire and forget.
+    /// let _ = ctx.unbounded_send(SomethingHappened);
+    ///
+    /// // Fire or log.
+    /// if let Err(error) = ctx.unbounded_send(SomethingHappened) {
+    ///     tracing::warn!(%error, "...");
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
+    pub fn unbounded_send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
+        let kind = MessageKind::regular(self.actor_addr);
+
+        self.stats.on_sent_message(&message); // TODO: only if successful?
+
+        trace!("> {:?}", message);
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
+        }
+
+        let envelope = Envelope::new(message, kind);
+        let addrs = self.demux.filter(&envelope);
+
+        if addrs.is_empty() {
+            return Err(SendError(e2m(envelope)));
+        }
+
+        let guard = EbrGuard::new();
+
+        if addrs.len() == 1 {
+            return match self.book.get(addrs[0], &guard) {
+                Some(object) => object
+                    .unbounded_send(Addr::NULL, envelope)
+                    .map_err(|err| err.map(e2m)),
+                None => Err(SendError(e2m(envelope))),
+            };
+        }
+
+        let mut unused = None;
+        let mut success = false;
+
+        for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
+            match self.book.get(addr, &guard) {
+                Some(object) => match object.unbounded_send(Addr::NULL, envelope) {
+                    Ok(()) => success = true,
+                    Err(err) => unused = Some(err.into_inner()),
+                },
+                None => unused = Some(envelope),
+            };
+        }
+
+        if success {
+            Ok(())
+        } else {
+            Err(SendError(e2m(unused.unwrap())))
+        }
+    }
+
+    /// Returns a request builder to send a request (on `resolve()`) using
+    /// the [inter-group routing] system.
     ///
     /// # Example
     /// ```ignore
@@ -242,12 +343,14 @@ impl<C, K> Context<C, K> {
     ///     // ...
     /// }
     /// ```
+    ///
+    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
     #[inline]
     pub fn request<R: Request>(&self, request: R) -> RequestBuilder<'_, C, K, R, Any> {
         RequestBuilder::new(self, request)
     }
 
-    /// Returns a request builder to the specified recipient.
+    /// Returns a request builder to send a request to the specified recipient.
     ///
     /// # Example
     /// ```ignore
@@ -268,7 +371,11 @@ impl<C, K> Context<C, K> {
         RequestBuilder::new(self, request).to(recipient)
     }
 
-    async fn do_send<M: Message>(&self, message: M, kind: MessageKind) -> Result<(), SendError<M>> {
+    async fn do_send_async<M: Message>(
+        &self,
+        message: M,
+        kind: MessageKind,
+    ) -> Result<(), SendError<M>> {
         self.stats.on_sent_message(&message); // TODO: only if successful?
 
         trace!("> {:?}", message);
@@ -292,7 +399,7 @@ impl<C, K> Context<C, K> {
                 Object::send(object, Addr::NULL, envelope)
             }
             .await
-            .map_err(|err| SendError(e2m(err.0)));
+            .map_err(|err| err.map(e2m));
         }
 
         let mut unused = None;
@@ -311,7 +418,7 @@ impl<C, K> Context<C, K> {
             }
             .await
             .err()
-            .map(|err| err.0);
+            .map(|err| err.into_inner());
 
             unused = returned_envelope;
             if unused.is_none() {
@@ -327,84 +434,136 @@ impl<C, K> Context<C, K> {
     }
 
     /// Sends a message to the specified recipient.
+    /// Waits if the recipient's mailbox is full.
+    ///
+    /// It's possible to send requests if the response is not needed.
     ///
     /// Returns `Err` if the message hasn't reached any mailboxes.
     ///
+    /// # Cancel safety
+    ///
+    /// If cancelled, recipients with full mailboxes wont't receive the message.
+    ///
     /// # Example
-    /// ```ignore
-    /// // Fire and forget.
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
     /// let _ = ctx.send_to(addr, SomethingHappened).await;
     ///
-    /// // Fire or fail.
-    /// ctx.send_to(addr, SomethingHappened).await?;
-    ///
     /// // Fire or log.
-    /// if let Some(err) = ctx.send_to(addr, SomethingHappened).await {
-    ///     warn!("...", error = err);
+    /// if let Err(error) = ctx.send_to(addr, SomethingHappened).await {
+    ///     tracing::warn!(%error, "...");
     /// }
+    /// # }
     /// ```
     pub async fn send_to<M: Message>(
         &self,
         recipient: Addr,
         message: M,
     ) -> Result<(), SendError<M>> {
-        let kind = MessageKind::Regular {
-            sender: self.actor_addr,
-        };
-        self.do_send_to(recipient, message, kind).await
-    }
-
-    async fn do_send_to<M: Message>(
-        &self,
-        recipient: Addr,
-        message: M,
-        kind: MessageKind,
-    ) -> Result<(), SendError<M>> {
-        self.stats.on_sent_message(&message); // TODO: only if successful?
-
-        trace!(to = %recipient, "> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m(&message) {
-            permit.record(Dump::message(&message, &kind, Direction::Out));
-        }
-
-        {
-            let guard = EbrGuard::new();
-            let entry = self.book.get(recipient, &guard);
-            let object = ward!(entry, return Err(SendError(message)));
-            let envelope = Envelope::new(message, kind);
+        let kind = MessageKind::regular(self.actor_addr);
+        self.do_send_to(recipient, message, kind, |object, envelope| {
             Object::send(object, recipient, envelope)
-        }
+        })?
         .await
-        .map_err(|err| SendError(e2m(err.0)))
+        .map_err(|err| err.map(e2m))
     }
 
     /// Tries to send a message to the specified recipient.
+    /// Returns an error if the recipient's mailbox is full.
     ///
-    /// Returns `Err` if the message hasn't reached mailboxes or they are full.
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns
+    /// * `Ok(())` if the message has been added to any mailbox.
+    /// * `Err(Full(_))` if some mailboxes are full.
+    /// * `Err(Closed(_))` otherwise.
     ///
     /// # Example
-    /// ```ignore
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
     /// // Fire and forget.
     /// let _ = ctx.try_send_to(addr, SomethingHappened);
     ///
-    /// // Fire or fail.
-    /// ctx.try_send_to(addr, SomethingHappened)?;
-    ///
     /// // Fire or log.
-    /// if let Some(err) = ctx.try_send_to(addr, SomethingHappened) {
-    ///     warn!("...", error = err);
+    /// if let Err(error) = ctx.try_send_to(addr, SomethingHappened) {
+    ///     tracing::warn!(%error, "...");
     /// }
+    /// # }
     /// ```
     pub fn try_send_to<M: Message>(
         &self,
         recipient: Addr,
         message: M,
     ) -> Result<(), TrySendError<M>> {
-        self.stats.on_sent_message(&message); // TODO: only if successful?
+        let kind = MessageKind::regular(self.actor_addr);
+        self.do_send_to(recipient, message, kind, |object, envelope| {
+            object
+                .try_send(recipient, envelope)
+                .map_err(|err| err.map(e2m))
+        })?
+    }
 
-        let kind = MessageKind::Regular {
-            sender: self.actor_addr,
-        };
+    /// Sends a message to the specified recipient.
+    /// Ignores the capacity of the recipient's mailbox and doesn't change its
+    /// size, thus it doesn't affect other senders.
+    ///
+    /// Usually this method shouldn't be used because it can lead to high memory
+    /// usage and even OOM if the recipient works too slowly.
+    /// Prefer [`Context::try_send_to()`] or [`Context::send_to()`] instead.
+    ///
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns `Err` if the message hasn't reached mailboxes or they are full.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
+    /// // Fire and forget.
+    /// let _ = ctx.unbounded_send_to(addr, SomethingHappened);
+    ///
+    /// // Fire or log.
+    /// if let Err(error) = ctx.unbounded_send_to(addr, SomethingHappened) {
+    ///     tracing::warn!(%error, "...");
+    /// }
+    /// # }
+    /// ```
+    pub fn unbounded_send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+    ) -> Result<(), SendError<M>> {
+        let kind = MessageKind::regular(self.actor_addr);
+        self.do_send_to(recipient, message, kind, |object, envelope| {
+            object
+                .unbounded_send(recipient, envelope)
+                .map_err(|err| err.map(e2m))
+        })?
+    }
+
+    #[inline(always)]
+    fn do_send_to<M: Message, R>(
+        &self,
+        recipient: Addr,
+        message: M,
+        kind: MessageKind,
+        f: impl FnOnce(BorrowedObject<'_>, Envelope) -> R,
+    ) -> Result<R, SendError<M>> {
+        self.stats.on_sent_message(&message); // TODO: only if successful?
 
         trace!(to = %recipient, "> {:?}", message);
         if let Some(permit) = DUMPER.acquire_m(&message) {
@@ -413,12 +572,10 @@ impl<C, K> Context<C, K> {
 
         let guard = EbrGuard::new();
         let entry = self.book.get(recipient, &guard);
-        let object = ward!(entry, return Err(TrySendError::Closed(message)));
+        let object = ward!(entry, return Err(SendError(message)));
         let envelope = Envelope::new(message, kind);
 
-        object
-            .try_send(recipient, envelope)
-            .map_err(|err| err.map(e2m))
+        Ok(f(object, envelope))
     }
 
     /// Responds to the requester with the provided response.
@@ -478,7 +635,6 @@ impl<C, K> Context<C, K> {
     /// If the method is called again after `None` is returned.
     ///
     /// # Example
-    ///
     /// ```
     /// # use elfo_core as elfo;
     /// # async fn exec(mut ctx: elfo::Context) {
@@ -491,6 +647,7 @@ impl<C, K> Context<C, K> {
     ///     });
     /// }
     /// # }
+    /// ```
     pub async fn recv(&mut self) -> Option<Envelope>
     where
         C: 'static,
@@ -637,7 +794,6 @@ impl<C, K> Context<C, K> {
     /// required information is no longer available.
     ///
     /// # Example
-    ///
     /// ```
     /// # use elfo_core as elfo;
     /// # use elfo_core::{ActorStartCause, ActorStartInfo};
@@ -691,9 +847,7 @@ impl<C, K> Context<C, K> {
                 self.config = config.get_user::<C>().clone();
                 info!("config updated");
                 let message = messages::ConfigUpdated {};
-                let kind = MessageKind::Regular {
-                    sender: self.actor_addr,
-                };
+                let kind = MessageKind::regular(self.actor_addr);
                 let envelope = Envelope::new(message, kind);
                 self.respond(token, Ok(()));
                 envelope
@@ -927,12 +1081,29 @@ impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
     }
 }
 
-impl<'c, C, K, R, M> RequestBuilder<'c, C, K, R, M> {
+impl<'c, C, K, R: Request, M> RequestBuilder<'c, C, K, R, M> {
     /// Specified the recipient of the request.
     #[inline]
     fn to(mut self, addr: Addr) -> Self {
         self.to = Some(addr);
         self
+    }
+
+    async fn do_send(self, kind: MessageKind) -> bool {
+        if let Some(recipient) = self.to {
+            let res = self
+                .context
+                .do_send_to(recipient, self.request, kind, |o, e| {
+                    Object::send(o, recipient, e)
+                });
+
+            match res {
+                Ok(fut) => fut.await.is_ok(),
+                Err(_) => false,
+            }
+        } else {
+            self.context.do_send_async(self.request, kind).await.is_ok()
+        }
     }
 }
 
@@ -951,13 +1122,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
         let request_id = token.request_id();
         let kind = MessageKind::RequestAny(token);
 
-        let res = if let Some(recipient) = self.to {
-            self.context.do_send_to(recipient, self.request, kind).await
-        } else {
-            self.context.do_send(self.request, kind).await
-        };
-
-        if res.is_err() {
+        if !self.do_send(kind).await {
             actor.request_table().cancel_request(request_id);
             return Err(RequestError::Failed);
         }
@@ -982,13 +1147,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
         let request_id = token.request_id();
         let kind = MessageKind::RequestAll(token);
 
-        let res = if let Some(recipient) = self.to {
-            self.context.do_send_to(recipient, self.request, kind).await
-        } else {
-            self.context.do_send(self.request, kind).await
-        };
-
-        if res.is_err() {
+        if !self.do_send(kind).await {
             actor.request_table().cancel_request(request_id);
             return vec![Err(RequestError::Failed)];
         }

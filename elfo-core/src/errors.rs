@@ -5,6 +5,8 @@ use std::{
 
 use derive_more::{Display, Error};
 
+// === StartError ===
+
 #[derive(Error)]
 #[non_exhaustive]
 pub struct StartError {
@@ -82,9 +84,26 @@ pub struct StartGroupError {
     pub reason: String,
 }
 
+// === SendError ===
+
 #[derive(Debug, Display, Error)]
 #[display(fmt = "mailbox closed")]
 pub struct SendError<T>(#[error(not(source))] pub T);
+
+impl<T> SendError<T> {
+    #[inline]
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+
+    /// Transforms the inner message.
+    #[inline]
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> SendError<U> {
+        SendError(f(self.0))
+    }
+}
+
+// === TrySendError ===
 
 #[derive(Debug, Display, Error)]
 pub enum TrySendError<T> {
@@ -128,6 +147,15 @@ impl<T> TrySendError<T> {
     }
 }
 
+impl<T> From<SendError<T>> for TrySendError<T> {
+    #[inline]
+    fn from(err: SendError<T>) -> Self {
+        TrySendError::Closed(err.0)
+    }
+}
+
+// === RequestError ===
+
 #[derive(Debug, Display, Error)]
 pub enum RequestError {
     /// Receiver hasn't got the request.
@@ -151,6 +179,8 @@ impl RequestError {
         matches!(self, Self::Ignored)
     }
 }
+
+// === TryRecvError ===
 
 #[derive(Debug, Clone, Display, Error)]
 pub enum TryRecvError {

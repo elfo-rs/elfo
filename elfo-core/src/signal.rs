@@ -202,7 +202,7 @@ impl<M: Message> SourceStream for SignalSource<M> {
         }
 
         let message = this.message.clone();
-        let kind = MessageKind::Regular { sender: Addr::NULL };
+        let kind = MessageKind::regular(Addr::NULL);
         let trace_id = TraceId::generate();
         let envelope = Envelope::with_trace_id(message, kind, trace_id);
         Poll::Ready(Some(envelope))

@@ -223,36 +223,40 @@ impl Actor {
         self.send_status_to_subscribers(&self.control.read());
     }
 
-    pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
-        msg!(match &envelope {
-            Terminate { closing } => {
-                if *closing || self.termination_policy.close_mailbox {
-                    if self.close() {
-                        return Ok(());
-                    } else {
-                        return Err(TrySendError::Closed(envelope));
-                    }
-                }
-            }
-        });
-
-        self.mailbox.try_send(envelope)
+    pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
+        match self.handle_system(envelope) {
+            Some(envelope) => self.mailbox.send(envelope).await,
+            None => Ok(()),
+        }
     }
 
-    pub(crate) async fn send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
+    pub(crate) fn try_send(&self, envelope: Envelope) -> Result<(), TrySendError<Envelope>> {
+        match self.handle_system(envelope) {
+            Some(envelope) => self.mailbox.try_send(envelope),
+            None => Ok(()),
+        }
+    }
+
+    pub(crate) fn unbounded_send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
+        match self.handle_system(envelope) {
+            Some(envelope) => self.mailbox.unbounded_send(envelope),
+            None => Ok(()),
+        }
+    }
+
+    #[inline(always)]
+    fn handle_system(&self, envelope: Envelope) -> Option<Envelope> {
         msg!(match &envelope {
             Terminate { closing } => {
-                if *closing || self.termination_policy.close_mailbox {
-                    if self.close() {
-                        return Ok(());
-                    } else {
-                        return Err(SendError(envelope));
-                    }
+                if (*closing || self.termination_policy.close_mailbox) && self.close() {
+                    // First closing `Terminate` is considered successful.
+                    return None;
                 }
             }
         });
 
-        self.mailbox.send(envelope).await
+        // If the mailbox is closed, all following `*_send()` returns an error.
+        Some(envelope)
     }
 
     pub(crate) async fn recv(&self) -> RecvResult {
@@ -311,6 +315,8 @@ impl Actor {
         //       or use another actor to listen all statuses for this.
     }
 
+    #[cold]
+    #[inline(never)]
     pub(crate) fn close(&self) -> bool {
         self.mailbox.close(scope::trace_id())
     }

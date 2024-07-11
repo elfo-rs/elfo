@@ -520,9 +520,7 @@ async fn recv(socket: &mut Socket) -> Result<Envelope> {
 
     Ok(Envelope::new(
         message,
-        MessageKind::Regular {
-            sender: envelope.sender.into_remote(),
-        },
+        MessageKind::regular(envelope.sender.into_remote()),
     ))
 }
 

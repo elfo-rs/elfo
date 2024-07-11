@@ -128,6 +128,24 @@ impl Object {
     }
 
     #[stability::unstable]
+    pub fn unbounded_send(
+        &self,
+        recipient: Addr,
+        envelope: Envelope,
+    ) -> Result<(), SendError<Envelope>> {
+        match &self.kind {
+            ObjectKind::Actor(handle) => handle.unbounded_send(envelope),
+            ObjectKind::Group(handle) => {
+                let mut visitor = UnboundedSendGroupVisitor::default();
+                handle.handle(envelope, &mut visitor);
+                visitor.finish()
+            }
+            #[cfg(feature = "network")]
+            ObjectKind::Remote(handle) => handle.unbounded_send(recipient, envelope),
+        }
+    }
+
+    #[stability::unstable]
     pub fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestError>) {
         match &self.kind {
             ObjectKind::Actor(handle) => handle.request_table().resolve(token, response),
@@ -388,6 +406,58 @@ impl TrySendGroupVisitor {
 }
 
 impl GroupVisitor for TrySendGroupVisitor {
+    fn done(&mut self) {
+        debug_assert!(self.extra.is_none());
+        debug_assert!(!self.has_ok);
+        self.has_ok = true;
+    }
+
+    fn empty(&mut self, envelope: Envelope) {
+        debug_assert!(self.extra.is_none());
+        debug_assert!(!self.has_ok);
+        self.extra = Some(envelope);
+    }
+
+    fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
+        let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
+        self.try_send(object, envelope);
+    }
+
+    fn visit_last(&mut self, object: &OwnedObject, envelope: Envelope) {
+        self.try_send(object, envelope);
+    }
+}
+
+// === UnboundedSendGroupVisitor ===
+
+#[derive(Default)]
+struct UnboundedSendGroupVisitor {
+    extra: Option<Envelope>,
+    has_ok: bool,
+}
+
+impl UnboundedSendGroupVisitor {
+    // We must send while visiting to ensure that a message starting a new actor
+    // is actually the first message that the actor receives.
+    fn try_send(&mut self, object: &OwnedObject, envelope: Envelope) {
+        let actor = object.as_actor().expect("group stores only actors");
+        match actor.unbounded_send(envelope) {
+            Ok(()) => self.has_ok = true,
+            Err(err) => self.extra = Some(err.0),
+        }
+    }
+
+    fn finish(mut self) -> Result<(), SendError<Envelope>> {
+        if self.has_ok {
+            Ok(())
+        } else {
+            let envelope = self.extra.take().expect("missing envelope");
+            Err(SendError(envelope))
+        }
+    }
+}
+
+impl GroupVisitor for UnboundedSendGroupVisitor {
     fn done(&mut self) {
         debug_assert!(self.extra.is_none());
         debug_assert!(!self.has_ok);

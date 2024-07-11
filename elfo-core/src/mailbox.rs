@@ -133,6 +133,16 @@ impl Mailbox {
         }
     }
 
+    pub(crate) fn unbounded_send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
+        if !self.tx_semaphore.is_closed() {
+            self.queue.enqueue(envelope);
+            self.rx_notify.notify_one();
+            Ok(())
+        } else {
+            Err(SendError(envelope))
+        }
+    }
+
     pub(crate) async fn recv(&self) -> RecvResult {
         loop {
             // TODO: it should be possible to use `dequeue_unchecked()` here.

@@ -44,7 +44,7 @@ mod tests {
     #[test]
     fn extract_message_test() {
         create_scope().sync_within(|| {
-            let envelop = Envelope::new(TestMessage, MessageKind::Regular { sender: Addr::NULL });
+            let envelop = Envelope::new(TestMessage, MessageKind::regular(Addr::NULL));
             let resp = extract_message::<TestMessage>(envelop);
             assert_eq!(resp, TestMessage);
         });
@@ -54,7 +54,7 @@ mod tests {
     #[should_panic(expected = "expected TestMessage, got TestRequest")]
     fn extract_message_panic_test() {
         create_scope().sync_within(|| {
-            let envelop = Envelope::new(TestRequest, MessageKind::Regular { sender: Addr::NULL });
+            let envelop = Envelope::new(TestRequest, MessageKind::regular(Addr::NULL));
             extract_message::<TestMessage>(envelop);
         });
     }
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn extract_request_test() {
         create_scope().sync_within(|| {
-            let envelop = Envelope::new(TestRequest, MessageKind::Regular { sender: Addr::NULL });
+            let envelop = Envelope::new(TestRequest, MessageKind::regular(Addr::NULL));
             let (resp, _token) = extract_request::<TestRequest>(envelop);
             assert_eq!(resp, TestRequest);
         });

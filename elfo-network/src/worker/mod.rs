@@ -663,6 +663,7 @@ impl SocketReader {
             return;
         }
 
+        // TODO: use `unbounded_send` if the envelope has been sent unboundedly.
         let result = object.try_send(Addr::NULL, envelope);
 
         // If the recipient has gone, close the flow and return.
@@ -712,7 +713,7 @@ impl SocketReader {
 }
 
 fn make_system_envelope(message: impl Message) -> Envelope {
-    Envelope::new(message, MessageKind::Regular { sender: Addr::NULL })
+    Envelope::new(message, MessageKind::regular(Addr::NULL))
 }
 
 // === Pusher ===
@@ -756,6 +757,8 @@ impl Pusher {
         let fut = {
             let guard = EbrGuard::new();
             let object = ward!(self.ctx.book().get(self.actor_addr, &guard), return false);
+
+            // TODO: use `unbounded_send` if the envelope has been sent unboundedly.
             Object::send(object, Addr::NULL, envelope)
         };
 
@@ -849,6 +852,25 @@ impl remote::RemoteHandle for RemoteHandle {
             }
             TryAcquire::Full => Err(TrySendError::Full(envelope)),
             TryAcquire::Closed => Err(TrySendError::Closed(envelope)),
+        }
+    }
+
+    fn unbounded_send(
+        &self,
+        recipient: Addr,
+        envelope: Envelope,
+    ) -> Result<(), SendError<Envelope>> {
+        let recipient = NetworkAddr::from_remote(recipient);
+
+        if likely(self.tx_flows.do_acquire(recipient)) {
+            let mut item = Some(KanalItem::simple(recipient, envelope));
+            match self.tx.try_send_option(&mut item) {
+                Ok(true) => Ok(()),
+                Ok(false) => unreachable!(),
+                Err(_) => Err(SendError(item.take().unwrap().envelope.unwrap())),
+            }
+        } else {
+            Err(SendError(envelope))
         }
     }
 

@@ -290,7 +290,7 @@ impl<M: Message> StreamItem for M {
     /// This method is private.
     #[doc(hidden)]
     fn pack(self, trace_id: TraceId) -> Envelope {
-        let kind = MessageKind::Regular { sender: Addr::NULL };
+        let kind = MessageKind::regular(Addr::NULL);
         Envelope::with_trace_id(self, kind, trace_id)
     }
 }
