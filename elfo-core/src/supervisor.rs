@@ -1,9 +1,7 @@
-use std::{
-    any::Any, future::Future, mem, ops::Deref, panic::AssertUnwindSafe, sync::Arc, time::Duration,
-};
+use std::{future::Future, mem, ops::Deref, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use futures::{future::BoxFuture, FutureExt};
+use futures::future::BoxFuture;
 use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
@@ -22,6 +20,7 @@ use crate::{
     message::Request,
     messages, msg,
     object::{GroupVisitor, Object, OwnedObject},
+    panic,
     restarting::{RestartBackoff, RestartPolicy},
     routers::{Outcome, Router},
     runtime::RuntimeManager,
@@ -323,11 +322,11 @@ where
 
             // It must be called after `entry.insert()`.
             let ctx = ctx.with_addr(addr).with_start_info(start_info);
-            let fut = AssertUnwindSafe(async { sv.exec.exec(ctx).await.unify() }).catch_unwind();
-            let new_status = match fut.await {
+            let fut = async { sv.exec.exec(ctx).await.unify() };
+            let new_status = match panic::catch(fut).await {
                 Ok(Ok(())) => ActorStatus::TERMINATED,
                 Ok(Err(err)) => ActorStatus::FAILED.with_details(ErrorChain(&*err)),
-                Err(panic) => ActorStatus::FAILED.with_details(panic_to_string(panic)),
+                Err(panic) => ActorStatus::FAILED.with_details(panic),
             };
 
             let restart_after = {
@@ -507,14 +506,4 @@ fn extract_response_token<R: Request>(envelope: Envelope) -> ResponseToken<R> {
         (R, token) => token,
         _ => unreachable!(),
     })
-}
-
-fn panic_to_string(payload: Box<dyn Any>) -> String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        format!("panic: {message}")
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        format!("panic: {message}")
-    } else {
-        "panic: <unsupported payload>".to_string()
-    }
 }

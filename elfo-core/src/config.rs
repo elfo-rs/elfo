@@ -9,7 +9,7 @@ use derive_more::From;
 use serde::{de, de::value::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 use serde_value::{Value, ValueDeserializer};
 
-use crate::local::Local;
+use crate::{local::Local, panic};
 
 pub trait Config: for<'de> Deserialize<'de> + Send + Sync + fmt::Debug + 'static {}
 impl<C> Config for C where C: for<'de> Deserialize<'de> + Send + Sync + fmt::Debug + 'static {}
@@ -57,6 +57,14 @@ impl AnyConfig {
     }
 
     pub(crate) fn decode<C: Config>(&self) -> Result<AnyConfig, String> {
+        match panic::sync_catch(|| self.do_decode::<C>()) {
+            Ok(Ok(config)) => Ok(config),
+            Ok(Err(err)) => Err(err),
+            Err(panic) => Err(panic),
+        }
+    }
+
+    fn do_decode<C: Config>(&self) -> Result<AnyConfig, String> {
         let mut raw = (*self.raw).clone();
 
         let system_decoded = if let Value::Map(map) = &mut raw {

@@ -75,3 +75,25 @@ async fn singleton_actor_update_config() {
     ));
     assert_eq!(proxy.request(GetLimit).await, 512);
 }
+
+#[tokio::test]
+#[should_panic(expected = "subject:\n- panic: intentional panic")]
+async fn panic_in_deserialize() {
+    #[derive(Debug, Clone)]
+    struct BadConfig;
+
+    impl<'de> Deserialize<'de> for BadConfig {
+        fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::de::Deserializer<'de>,
+        {
+            panic!("intentional panic");
+        }
+    }
+
+    let blueprint = ActorGroup::new()
+        .config::<BadConfig>()
+        .exec(|_| async { unreachable!() });
+
+    let _proxy = elfo::test::proxy(blueprint, AnyConfig::default()).await;
+}

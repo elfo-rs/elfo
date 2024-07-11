@@ -61,6 +61,7 @@ mod mailbox;
 mod memory_tracker;
 mod message;
 mod object;
+mod panic;
 mod permissions;
 #[cfg(all(feature = "network", feature = "unstable"))]
 pub mod remote;

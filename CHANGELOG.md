@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - core/request: avoid all-request to multiple groups hanging in some cases ([#127]).
+- core/config: catch panics during deserialization of user configs.
 
 [#52]: https://github.com/elfo-rs/elfo/issues/52
 [#127]: https://github.com/elfo-rs/elfo/pull/127
