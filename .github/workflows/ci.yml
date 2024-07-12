@@ -9,7 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Dwarnings
-  RUSTDOCFLAGS: -Dwarnings --cfg docsrs
+  RUSTDOCFLAGS: -Dwarnings
   MIRIFLAGS: -Zmiri-strict-provenance
   RUST_BACKTRACE: 1
   RUST_LOG: elfo
@@ -77,6 +77,8 @@ jobs:
   docs:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -Dwarnings --cfg docsrs
     steps:
     - uses: actions/checkout@v4
     - run: rustup toolchain install nightly
