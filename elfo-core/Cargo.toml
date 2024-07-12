@@ -27,7 +27,7 @@ elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 stability.workspace = true
 metrics.workspace = true
 dashmap.workspace = true
-tokio = { version = "1.37", features = ["rt", "sync", "time", "signal", "macros"] }
+tokio = { workspace = true, features = ["rt", "sync", "time", "signal", "macros"] }
 idr-ebr = "0.2"
 futures-intrusive = "0.5"
 cordyceps = "0.3.2"
@@ -59,8 +59,8 @@ humantime-serde = "1"
 [dev-dependencies]
 elfo-utils = { version = "0.2.5", path = "../elfo-utils", features = ["test-util"] }
 
+tokio = { workspace = true, features = ["full"] }
 anyhow = "1.0.40"
-tokio = { version = "1", features = ["full"] }
 proptest = "1.4.0"
 
 [package.metadata.docs.rs]

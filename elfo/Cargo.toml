@@ -43,10 +43,10 @@ elfo-test = { version = "0.2.0-alpha.15", path = "../elfo-test" }
 
 metrics.workspace = true
 toml.workspace = true
+tokio = { workspace = true, features = ["full"] }
 anyhow = "1.0.38"
 futures = "0.3.12"
 derive_more = "0.99.11"
-tokio = { version = "1", features = ["full"] }
 tracing = "0.1.25"
 tracing-subscriber = "0.3"
 serde = { version = "1.0.120", features = ["derive"] }

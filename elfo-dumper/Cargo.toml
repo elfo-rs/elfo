@@ -20,7 +20,7 @@ elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
 metrics.workspace = true
 bytesize.workspace = true
-tokio = { version = "1", features = ["fs", "io-util", "sync"] }
+tokio = { workspace = true, features = ["fs", "io-util", "sync"] }
 serde = { version = "1.0.120", features = ["derive"] }
 tracing = "0.1.25"
 fxhash = "0.2.1"

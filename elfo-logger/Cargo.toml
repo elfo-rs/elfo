@@ -23,11 +23,11 @@ elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
 metrics.workspace = true
 dashmap.workspace = true
+tokio = { workspace = true, features = ["macros", "fs", "io-util"] }
 arc-swap = "1.2.0"
 once_cell = { version = "1.8.0", features = ["parking_lot"] }
 derive_more = "0.99.11"
 futures-intrusive = "0.5"
-tokio = { version = "1.5", features = ["macros", "fs", "io-util"] }
 atty = "0.2.14"
 serde = { version = "1.0.120", features = ["derive"] }
 parking_lot = "0.12"
