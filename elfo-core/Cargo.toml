@@ -60,6 +60,7 @@ humantime-serde = "1"
 elfo-utils = { version = "0.2.5", path = "../elfo-utils", features = ["test-util"] }
 
 tokio = { workspace = true, features = ["full"] }
+toml.workspace = true
 anyhow = "1.0.40"
 proptest = "1.4.0"
 

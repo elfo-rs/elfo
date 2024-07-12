@@ -1,4 +1,5 @@
-//! Interaction with the `metrics` crate.
+//! Interaction with the `metrics` crate. [Configuration].
+//!
 //! Records metrics in the OpenMetrics exposition format.
 //!
 //! Note that push gateways aren't supported, histogram buckets overrides
@@ -8,6 +9,8 @@
 //! Such information is added as labels. By default, only the `actor_group`
 //! label is added, but it's possible to provide `actor_key` on a group basis.
 //! It's useful, if a group has few actors inside.
+//!
+//! [Configuration]: config::Config
 
 use std::sync::Arc;
 
@@ -17,10 +20,10 @@ use elfo_core::Blueprint;
 
 use self::{recorder::Recorder, storage::Storage};
 
+pub mod config;
 pub mod protocol;
 
 mod actor;
-mod config;
 mod hyper;
 mod metrics;
 mod recorder;

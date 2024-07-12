@@ -1,3 +1,7 @@
+//! [Config].
+//!
+//! [Config]: TelemetryConfig
+
 use std::fmt;
 
 use regex::Regex;
@@ -6,15 +10,41 @@ use serde::{
     Deserialize,
 };
 
+/// Telemetry configuration.
+///
+/// # Example
+/// ```toml
+/// [some_group]
+/// system.telemetry.per_actor_group = false
+/// system.teleemtry.per_actor_key = true
+/// ```
 #[derive(Debug, Deserialize)]
 #[serde(default)]
-pub(crate) struct TelemetryConfig {
-    pub(crate) per_actor_group: bool,
-    pub(crate) per_actor_key: PerActorKey,
+pub struct TelemetryConfig {
+    /// Whether to enable per-actor-group telemetry.
+    ///
+    /// `true` by default.
+    pub per_actor_group: bool,
+    /// Whether to enable per-actor-key telemetry.
+    ///
+    /// Can be either `true` to produce metrics for all keys
+    /// or regex pattern to combine keys into "groups".
+    ///
+    /// `false` by default.
+    ///
+    /// # Example
+    /// ```toml
+    /// per_actor_key = true # emit metrics keywise
+    /// per_actor_key = [".*:(.*?)", "${1}"] # group keys
+    /// ```
+    pub per_actor_key: PerActorKey,
 }
 
-pub(crate) enum PerActorKey {
+/// How to produce metrics for actor keys.
+pub enum PerActorKey {
+    /// Produce metrics for all keys.
     Bool(bool),
+    /// Combine keys into "groups" by pattern.
     Replacement(Regex, String),
 }
 

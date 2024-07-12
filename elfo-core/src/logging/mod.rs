@@ -1,6 +1,5 @@
-pub(crate) use self::config::LoggingConfig;
+pub mod config;
 
-mod config;
 mod control;
 
 // TODO: use `stability` instead.

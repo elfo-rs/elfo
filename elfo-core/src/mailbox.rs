@@ -44,15 +44,35 @@ use crate::{
 
 // === MailboxConfig ===
 
-#[derive(Debug, PartialEq, serde::Deserialize)]
-#[serde(default)]
-pub(crate) struct MailboxConfig {
-    pub(crate) capacity: usize,
-}
+pub mod config {
+    //! [Config]
+    //!
+    //! [Config]: MailboxConfig
 
-impl Default for MailboxConfig {
-    fn default() -> Self {
-        Self { capacity: 100 }
+    /// Mailbox configuration.
+    ///
+    /// # Example
+    /// ```toml
+    /// [some_group]
+    /// system.mailbox.capacity = 1000
+    /// ```
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    #[serde(default)]
+    pub struct MailboxConfig {
+        /// The maximum number of messages that can be stored in the mailbox.
+        ///
+        /// Can be overriden by actor using [`Context::set_mailbox_capacity()`].
+        ///
+        /// `100` by default.
+        ///
+        /// [`Context::set_mailbox_capacity()`]: crate::Context::set_mailbox_capacity
+        pub capacity: usize,
+    }
+
+    impl Default for MailboxConfig {
+        fn default() -> Self {
+            Self { capacity: 100 }
+        }
     }
 }
 
@@ -118,7 +138,7 @@ struct Control {
 }
 
 impl Mailbox {
-    pub(crate) fn new(config: &MailboxConfig) -> Self {
+    pub(crate) fn new(config: &config::MailboxConfig) -> Self {
         let capacity = clamp_capacity(config.capacity);
 
         Self {

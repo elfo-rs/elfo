@@ -10,7 +10,7 @@ use crate::{
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
-    mailbox::{Mailbox, MailboxConfig, RecvResult},
+    mailbox::{config::MailboxConfig, Mailbox, RecvResult},
     messages::{ActorStatusReport, Terminate},
     msg,
     request_table::RequestTable,

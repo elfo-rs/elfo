@@ -1,3 +1,7 @@
+//! Contains useful utilities for working with configuration.
+//!
+//! Also contains [`system`] to describe system configuration.
+
 use std::{
     any::{Any, TypeId},
     fmt, mem,
@@ -11,6 +15,9 @@ use serde_value::{Value, ValueDeserializer};
 
 use crate::{local::Local, panic};
 
+/// Represents any user-defined config.
+///
+/// It's implemented automatically for any `Deserialize + Send + Sync + Debug`.
 pub trait Config: for<'de> Deserialize<'de> + Send + Sync + fmt::Debug + 'static {}
 impl<C> Config for C where C: for<'de> Deserialize<'de> + Send + Sync + fmt::Debug + 'static {}
 
@@ -18,6 +25,24 @@ assert_impl_all!((): Config);
 
 // === AnyConfig ===
 
+/// Holds user-defined config.
+///
+/// Usually not created directly outside tests sending [`ValidateConfig`] or
+/// [`UpdateConfig`] messages.
+///
+/// [`ValidateConfig`]: crate::messages::ValidateConfig
+/// [`UpdateConfig`]: crate::messages::UpdateConfig
+///
+/// # Example
+/// In tests it can be used in the following way:
+/// ```
+/// # use serde::Deserialize;
+/// # use toml::toml;
+/// # use elfo_core::config::AnyConfig;
+/// AnyConfig::deserialize(toml! {
+///     some_param = 10
+/// });
+/// ```
 #[derive(Clone)]
 pub struct AnyConfig {
     raw: Arc<Value>,
@@ -164,18 +189,73 @@ impl<'de> Deserializer<'de> for AnyConfig {
 
 // === SystemConfig ===
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-pub(crate) struct SystemConfig {
-    pub(crate) mailbox: crate::mailbox::MailboxConfig,
-    pub(crate) logging: crate::logging::LoggingConfig,
-    pub(crate) dumping: crate::dumping::DumpingConfig,
-    pub(crate) telemetry: crate::telemetry::TelemetryConfig,
-    pub(crate) restart_policy: crate::restarting::RestartPolicyConfig,
+pub mod system {
+    //! System (`system.*` in TOML) configuration. [Config].
+    //!
+    //! Note: all types here are exported only for documentation purposes
+    //! and are not subject to stable guarantees. However, the config
+    //! structure (usually encoded in TOML) follows stable guarantees.
+    //!
+    //! [Config]: SystemConfig
+
+    use super::*;
+
+    pub use crate::{
+        dumping::config as dumping, logging::config as logging, mailbox::config as mailbox,
+        restarting::config as restart_policy, telemetry::config as telemetry,
+    };
+
+    /// The `system.*` section in configs.
+    ///
+    /// # Example
+    /// ```toml
+    /// [some_group]
+    /// system.mailbox.capacity = 1000
+    /// system.logging.max_level = "Warn"
+    /// system.dumping.max_rate = 10_000
+    /// system.telemetry.per_actor_key = true
+    /// system.restart_policy.when = "Never"
+    /// ```
+    #[derive(Debug, Default, Deserialize)]
+    #[serde(default)]
+    pub struct SystemConfig {
+        /// Mailbox configuration.
+        pub mailbox: mailbox::MailboxConfig,
+        /// Logging configuration.
+        pub logging: logging::LoggingConfig,
+        /// Dumping configuration.
+        pub dumping: dumping::DumpingConfig,
+        /// Telemetry configuration.
+        pub telemetry: telemetry::TelemetryConfig,
+        /// Restarting configuration.
+        pub restart_policy: restart_policy::RestartPolicyConfig,
+    }
 }
+
+pub(crate) use system::SystemConfig;
 
 // === Secret ===
 
+/// A secret value that is not printed in logs or debug output.
+/// So, it's useful for storing sensitive data like credentials.
+///
+/// * `Debug` and `Display` instances prints `<secret>` instead of real value.
+/// * `Deserialize` expects a real value.
+/// * `Serialize` depends on the current [serde mode]:
+///   * In the `Network` mode it's serialized as the real value.
+///   * In the `Dumping` and `Normal` modes it's serialized as `"<secret>"`.
+///
+/// [serde mode]: crate::scope::with_serde_mode
+///
+/// # Example
+/// ```
+/// # use serde::Deserialize;
+/// # use elfo_core::config::Secret;
+/// #[derive(Deserialize)]
+/// struct MyConfig {
+///     credentials: Secret<String>,
+/// }
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Default, From)]
 pub struct Secret<T>(T);
 

@@ -1,37 +1,60 @@
+//! Configuration for the telemeter.
+//!
+//! Note: all types here are exported only for documentation purposes
+//! and are not subject to stable guarantees. However, the config
+//! structure (usually encoded in TOML) follows stable guarantees.
+
 use std::{net::SocketAddr, ops::Deref, time::Duration};
 
 use serde::Deserialize;
 
+/// Telemeter configuration.
+///
+/// # Example
+/// ```toml
+/// [system.telemeters]
+/// sink = "OpenMetrics"
+/// listen = "0.0.0.0:9042"
+/// ```
 #[derive(Debug, Deserialize)]
-pub(crate) struct Config {
+pub struct Config {
     /// The sink's type.
-    pub(crate) sink: Sink,
+    pub sink: Sink,
     /// The address to expose for scraping.
     #[serde(alias = "address")]
-    pub(crate) listen: SocketAddr,
+    pub listen: SocketAddr,
     /// How long samples should be considered in summaries.
     #[serde(default)]
-    pub(crate) retention: Retention,
+    pub retention: Retention,
     /// Quantiles to use for aggregating distribution metrics into a summary.
+    ///
+    /// The default quantiles are `[0.75, 0.9, 0.95, 0.99]`.
     #[serde(default = "default_quantiles")]
-    pub(crate) quantiles: Vec<Quantile>,
+    pub quantiles: Vec<Quantile>,
     /// Labels that will be added to all metrics.
     #[serde(default)]
-    pub(crate) global_labels: Vec<(String, String)>,
+    pub global_labels: Vec<(String, String)>,
     /// The maximum time between compaction ticks.
+    ///
+    /// `1.1s` by default.
     #[serde(with = "humantime_serde", default = "default_compaction_interval")]
-    pub(crate) compaction_interval: Duration,
+    pub compaction_interval: Duration,
 }
 
+/// Sink for the telemeter output.
 #[derive(Debug, PartialEq, Deserialize)]
-pub(crate) enum Sink {
+pub enum Sink {
+    /// Expose metrics in the OpenMetrics/Prometheus format.
     #[serde(alias = "Prometheus")]
     OpenMetrics,
 }
 
+/// Histogram/summary retention policy.
 #[derive(Debug, PartialEq, Deserialize)]
-pub(crate) enum Retention {
+pub enum Retention {
+    /// Keep all samples forever.
     Forever,
+    /// Reset all samples on each scrape.
     ResetOnScrape,
     // TODO: `SlidingWindow`
 }
@@ -42,9 +65,11 @@ impl Default for Retention {
     }
 }
 
+/// A quantile to use for aggregating distribution metrics into a summary
+/// with the `quantile` label. Must be in the range [0.0, 1.0].
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(try_from = "f64")]
-pub(crate) struct Quantile(f64);
+pub struct Quantile(f64);
 
 impl Deref for Quantile {
     type Target = f64;

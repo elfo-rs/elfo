@@ -1,10 +1,11 @@
-//! The dumper writes dumps of messages to files.
+//! Writes dumps of messages to files. [Configuration].
 //!
 //! Each line is a valid JSON. Lines can be unordered.
 //!
-//! For more details about dumping see [The Actoromicon](https://actoromicon.rs/ch05-03-dumping.html).
+//! For more details about dumping see [The Actoromicon].
 //!
-//! Configuration can be found in [`config::Config`].
+//! [Configuration]: crate::config::Config
+//! [The Actoromicon]: https://actoromicon.rs/ch05-03-dumping.html
 
 use std::sync::Arc;
 
@@ -26,9 +27,6 @@ mod reporter;
 mod rule_set;
 mod serializer;
 
-#[cfg(not(docsrs))]
-mod config;
-#[cfg(docsrs)]
 pub mod config;
 
 /// Installs a global dump recorder and returns a group to handle dumps.

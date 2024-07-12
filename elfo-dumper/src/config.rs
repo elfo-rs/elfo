@@ -1,19 +1,16 @@
 //! Configuration for the dumper.
 //!
-//! All types are exported only for documentation purposes, they cannot be
-//! created or received outside the dumper.
+//! Note: all types here are exported only for documentation purposes
+//! and are not subject to stable guarantees. However, the config
+//! structure (usually encoded in TOML) follows stable guarantees.
 //!
 //! The main structure here is [`Config`].
-#![allow(unreachable_pub)] // docsrs
 use std::time::Duration;
 
 use bytesize::ByteSize;
 use serde::Deserialize;
 
 /// The dumper's config.
-///
-/// It's exported only for documentation purposes and cannot be created or
-/// received outside the dumper.
 ///
 /// # Examples
 /// Only `path` is required. Thus, a minimal config looks like

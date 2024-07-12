@@ -1,3 +1,9 @@
+//! Configuration for the network actors.
+//!
+//! Note: all types here are exported only for documentation purposes
+//! and are not subject to stable guarantees. However, the config
+//! structure (usually encoded in TOML) follows stable guarantees.
+
 #[cfg(unix)]
 use std::path::PathBuf;
 use std::{str::FromStr, time::Duration};
@@ -9,26 +15,47 @@ use serde::{
     Deserialize, Serialize,
 };
 
+/// The network actors' config.
+///
+/// # Examples
+/// ```toml
+/// [system.network]
+/// listen = ["tcp://0.0.0.1:8150"]
+/// discovery.predefined = [
+///     "tcp://localhost:4242",
+///     "uds:///tmp/sock"
+/// ]
+/// ```
 #[derive(Debug, Deserialize)]
-pub(crate) struct Config {
-    pub(crate) listen: Vec<Transport>,
+pub struct Config {
+    /// A list of addresses to listen on.
+    pub listen: Vec<Transport>,
+    /// How often nodes should ping each other.
+    /// `5s` by default
     #[serde(with = "humantime_serde", default = "default_ping_interval")]
-    pub(crate) ping_interval: Duration,
+    pub ping_interval: Duration,
+    /// How to discover other nodes.
     #[serde(default)]
-    pub(crate) discovery: DiscoveryConfig, // TODO: optional?
+    pub discovery: DiscoveryConfig, // TODO: optional?
+    /// Compression settings.
     #[serde(default)]
-    pub(crate) compression: CompressionConfig,
+    pub compression: CompressionConfig,
 }
 
+/// Compression settings.
 #[derive(Debug, Default, Deserialize)]
-pub(crate) struct CompressionConfig {
+pub struct CompressionConfig {
+    /// Compression algorithm.
     #[serde(default)]
-    pub(crate) algorithm: CompressionAlgorithm,
+    pub algorithm: CompressionAlgorithm,
 }
 
+/// Compression algorithms.
 #[derive(Debug, Default, PartialEq, Eq, Deserialize)]
-pub(crate) enum CompressionAlgorithm {
+pub enum CompressionAlgorithm {
+    /// LZ4 with default compression level.
     Lz4,
+    /// Compression disabled.
     #[default]
     None,
 }
@@ -37,21 +64,29 @@ fn default_ping_interval() -> Duration {
     Duration::from_secs(5)
 }
 
+/// How to discover other nodes.
 #[derive(Debug, Deserialize, Default)]
-pub(crate) struct DiscoveryConfig {
-    pub(crate) predefined: Vec<Transport>,
+pub struct DiscoveryConfig {
+    /// Predefined list of transports to connect to.
+    pub predefined: Vec<Transport>,
+    /// How often to attempt to connect to other nodes.
     #[serde(with = "humantime_serde", default = "default_attempt_interval")]
-    pub(crate) attempt_interval: Duration,
+    pub attempt_interval: Duration,
 }
 
 fn default_attempt_interval() -> Duration {
     Duration::from_secs(10)
 }
 
+/// Transport used for communication between nodes.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Serialize)]
-pub(crate) enum Transport {
+pub enum Transport {
+    /// TCP transport ("tcp://host:port").
     #[display(fmt = "tcp://{}", _0)]
     Tcp(String),
+    /// Unix domain socket transport ("uds://path/to/socket").
+    ///
+    /// Used only on UNIX systems, ignored on other platforms.
     #[cfg(unix)]
     #[display(fmt = "uds://{}", "_0.display()")]
     Uds(PathBuf),

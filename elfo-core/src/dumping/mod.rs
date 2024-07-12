@@ -24,13 +24,12 @@ pub(crate) use self::{
     sequence_no::SequenceNo,
 };
 
-pub(crate) use self::config::DumpingConfig;
-
 #[cfg_attr(docsrs, doc(cfg(feature = "unstable")))]
 #[stability::unstable]
 pub const INTERNAL_CLASS: &str = "internal";
 
-mod config;
+pub mod config;
+
 mod control;
 mod dump;
 mod dumper;

@@ -1,6 +1,7 @@
+pub mod config;
+
 mod backoff;
-mod config;
 mod restart_policy;
 
-pub(crate) use self::{backoff::RestartBackoff, config::RestartPolicyConfig};
+pub(crate) use self::backoff::RestartBackoff;
 pub use restart_policy::{RestartParams, RestartPolicy};

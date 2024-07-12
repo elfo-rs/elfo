@@ -1,11 +1,15 @@
 //! Periodically pings all actors in the topology to check if they are alive.
+//! [Configuration].
+//!
+//! [Configuration]: config::Config
 
 use std::time::Duration;
 
 use elfo_core::{ActorGroup, Blueprint, RestartParams, RestartPolicy, Topology};
 
+pub mod config;
+
 mod actor;
-mod config;
 
 /// Creates a blueprint.
 ///

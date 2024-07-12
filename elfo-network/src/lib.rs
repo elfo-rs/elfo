@@ -1,4 +1,7 @@
 //! Implements the network layer of the distributed elfo system.
+//! [Configuration].
+//!
+//! [Configuration]: config::Config
 
 #[macro_use]
 extern crate static_assertions;
@@ -22,8 +25,9 @@ use crate::{
     protocol::{DataConnectionFailed, GroupInfo, HandleConnection},
 };
 
+pub mod config;
+
 mod codec;
-mod config;
 mod discovery;
 mod frame;
 mod node_map;

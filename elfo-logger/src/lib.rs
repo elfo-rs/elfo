@@ -1,4 +1,6 @@
-//! Registers `tracing` subscriber and logs events.
+//! Registers `tracing` subscriber and logs events. [Configuration].
+//!
+//! [Configuration]: config::Config
 
 #[macro_use]
 extern crate elfo_utils;
@@ -21,9 +23,6 @@ use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::Prin
 
 pub use crate::actor::ReopenLogFile;
 
-#[cfg(not(docsrs))]
-mod config;
-#[cfg(docsrs)]
 pub mod config;
 
 mod actor;

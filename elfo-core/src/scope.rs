@@ -15,7 +15,7 @@ use crate::{
     dumping::DumpingControl,
     logging::_priv::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
-    telemetry::TelemetryConfig,
+    telemetry::config::TelemetryConfig,
     tracing::TraceId,
     Addr,
 };

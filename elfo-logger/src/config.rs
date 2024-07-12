@@ -1,6 +1,8 @@
 //! Configuration for the logger.
-
-#![allow(unreachable_pub)] // docsrs
+//!
+//! Note: all types here are exported only for documentation purposes
+//! and are not subject to stable guarantees. However, the config
+//! structure (usually encoded in TOML) follows stable guarantees.
 
 use std::path::PathBuf;
 
@@ -11,6 +13,9 @@ use tracing::metadata::LevelFilter;
 use bytesize::ByteSize;
 
 /// Logger configuration.
+///
+/// It's exported only for documentation purposes and cannot be created or
+/// received outside the dumper.
 #[derive(Debug, Deserialize)]
 pub struct Config {
     /// Sink for the log output.

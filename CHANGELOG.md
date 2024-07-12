@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - errors: add `From<SendError> for TrySendError` and `SendError::{into_inner,map}` methods.
 - core/config: add the `system.mailbox.capacity` parameter to set the mailbox capacity.
 - core/context: add `Context::set_mailbox_capacity()`.
+- docs: expose all configs to the rustdoc.
 
 ### Changed
 - **BREAKING** core/mailbox: default capacity is `100` now.

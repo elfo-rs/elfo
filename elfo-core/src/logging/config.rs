@@ -1,12 +1,30 @@
+//! [Config].
+//!
+//! [Config]: LoggingConfig
+
 use serde::{Deserialize, Deserializer};
 use tracing::level_filters::LevelFilter;
 
+/// Logging configuration.
+///
+/// # Example
+/// ```toml
+/// [some_group]
+/// system.logging.max_level = "Warn"
+/// system.logging.max_rate_per_level = 1_000
+/// ```
 #[derive(Debug, Deserialize)]
 #[serde(default)]
-pub(crate) struct LoggingConfig {
+pub struct LoggingConfig {
+    /// Maximum level of logging.
+    ///
+    /// `Info` by default.
     #[serde(deserialize_with = "deserialize_level_filter")]
-    pub(crate) max_level: LevelFilter,
-    pub(crate) max_rate_per_level: u64,
+    pub max_level: LevelFilter,
+    /// Maximum rate of logging per level.
+    ///
+    /// `1_000` by default.
+    pub max_rate_per_level: u64,
 }
 
 impl Default for LoggingConfig {
