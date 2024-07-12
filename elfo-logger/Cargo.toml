@@ -22,6 +22,7 @@ elfo-core = { version = "0.2.0-alpha.15", path = "../elfo-core", features = ["un
 elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
 
 metrics.workspace = true
+dashmap.workspace = true
 arc-swap = "1.2.0"
 once_cell = { version = "1.8.0", features = ["parking_lot"] }
 derive_more = "0.99.11"
@@ -35,7 +36,6 @@ tracing = "0.1.25"
 tracing-subscriber = { version = "0.3.2", features = ["env-filter", "parking_lot"] }
 tracing-log = { version = "0.1.4", optional = true }
 log = { version = "0.4.20", optional = true }
-dashmap = "5"
 fxhash = "0.2.1"
 humantime = "2.1.0"
 bytesize.workspace = true
