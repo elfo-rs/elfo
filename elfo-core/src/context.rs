@@ -26,6 +26,7 @@ use crate::{
     routers::Singleton,
     scope,
     source::{SourceHandle, Sources, UnattachedSource},
+    ActorStatusKind,
 };
 
 use self::stats::Stats;
@@ -103,6 +104,14 @@ impl<C, K> Context<C, K> {
     /// ```
     pub fn set_status(&self, status: ActorStatus) {
         ward!(self.actor.as_ref().and_then(|o| o.as_actor())).set_status(status);
+    }
+
+    /// Gets the actor's status kind.
+    pub fn status_kind(&self) -> Option<ActorStatusKind> {
+        self.actor
+            .as_ref()
+            .and_then(|o| o.as_actor())
+            .map(|a| a.status_kind())
     }
 
     /// Overrides the group's default mailbox capacity, which set in the config.

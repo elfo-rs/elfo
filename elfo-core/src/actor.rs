@@ -306,6 +306,10 @@ impl Actor {
         self.control.write().restart_policy = policy;
     }
 
+    pub(crate) fn status_kind(&self) -> ActorStatusKind {
+        self.control.read().status.kind()
+    }
+
     // Note that this method should be called inside a right scope.
     pub(crate) fn set_status(&self, status: ActorStatus) {
         let mut control = self.control.write();
