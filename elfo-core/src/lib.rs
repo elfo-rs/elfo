@@ -76,6 +76,8 @@ mod supervisor;
 mod telemetry;
 mod thread;
 
+mod atomic_status_kind;
+
 #[doc(hidden)]
 pub mod _priv {
     pub mod node {

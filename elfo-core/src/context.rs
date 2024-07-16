@@ -107,11 +107,27 @@ impl<C, K> Context<C, K> {
     }
 
     /// Gets the actor's status kind.
-    pub fn status_kind(&self) -> Option<ActorStatusKind> {
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # fn exec(ctx: elfo::Context) {
+    /// // if actor is terminating.
+    /// assert!(ctx.status_kind().is_terminating());
+    /// // if actor is alarming.
+    /// assert!(ctx.status_kind().is_alarming());
+    /// // and so on...
+    /// # }
+    /// ```
+    /// # Panics
+    /// - Panics when called on pruned context.
+    pub fn status_kind(&self) -> ActorStatusKind {
         self.actor
             .as_ref()
-            .and_then(|o| o.as_actor())
-            .map(|a| a.status_kind())
+            .expect("called `status_kind()` on pruned context")
+            .as_actor()
+            .expect("invariant")
+            .status_kind()
     }
 
     /// Overrides the group's default mailbox capacity, which set in the config.

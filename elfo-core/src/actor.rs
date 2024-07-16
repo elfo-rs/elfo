@@ -1,4 +1,7 @@
-use std::{fmt, mem, sync::Arc};
+use std::{
+    fmt, mem,
+    sync::{atomic, Arc},
+};
 
 use futures_intrusive::sync::ManualResetEvent;
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
@@ -7,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::{
+    atomic_status_kind::AtomicActorStatusKind,
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
@@ -96,6 +100,7 @@ impl fmt::Display for ActorStatus {
 /// A list specifying statuses of actors. It's used with the [`ActorStatus`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
+#[repr(u8)]
 pub enum ActorStatusKind {
     Normal,
     Initializing,
@@ -103,6 +108,32 @@ pub enum ActorStatusKind {
     Terminated,
     Alarming,
     Failed,
+}
+
+impl ActorStatusKind {
+    pub const fn is_normal(&self) -> bool {
+        matches!(self, Self::Normal)
+    }
+
+    pub const fn is_initializing(&self) -> bool {
+        matches!(self, Self::Initializing)
+    }
+
+    pub const fn is_terminating(&self) -> bool {
+        matches!(self, Self::Terminating)
+    }
+
+    pub const fn is_terminated(&self) -> bool {
+        matches!(self, Self::Terminated)
+    }
+
+    pub const fn is_alarming(&self) -> bool {
+        matches!(self, Self::Alarming)
+    }
+
+    pub const fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed)
+    }
 }
 
 impl ActorStatusKind {
@@ -182,6 +213,7 @@ pub(crate) struct Actor {
     termination_policy: TerminationPolicy,
     mailbox: Mailbox,
     request_table: RequestTable,
+    status_kind: AtomicActorStatusKind,
     control: RwLock<Control>,
     finished: ManualResetEvent, // TODO: remove in favor of `status_subscription`?
     status_subscription: Arc<SubscriptionManager>,
@@ -206,6 +238,7 @@ impl Actor {
         status_subscription: Arc<SubscriptionManager>,
     ) -> Self {
         Actor {
+            status_kind: AtomicActorStatusKind::from(ActorStatusKind::Initializing),
             meta,
             termination_policy,
             mailbox: Mailbox::new(mailbox_config),
@@ -307,11 +340,14 @@ impl Actor {
     }
 
     pub(crate) fn status_kind(&self) -> ActorStatusKind {
-        self.control.read().status.kind()
+        self.status_kind.load(atomic::Ordering::Acquire)
     }
 
     // Note that this method should be called inside a right scope.
     pub(crate) fn set_status(&self, status: ActorStatus) {
+        self.status_kind
+            .store(status.kind(), atomic::Ordering::Release);
+
         let mut control = self.control.write();
         let prev_status = mem::replace(&mut control.status, status.clone());
 
