@@ -2,11 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use derive_more::Constructor;
 
-use crate::{
-    actor::{ActorMeta, ActorStatus},
-    config::AnyConfig,
-    message,
-};
+use crate::{actor::ActorMeta, actor_status::ActorStatus, config::AnyConfig, message};
 
 /// A helper type for using in generic code (e.g. as an associated type) to
 /// indicate a message that cannot be constructed.

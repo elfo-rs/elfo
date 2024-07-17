@@ -16,7 +16,8 @@ use crate::{
 };
 
 use crate::{
-    actor::{Actor, ActorMeta, ActorStartInfo, ActorStatus},
+    actor::{Actor, ActorMeta, ActorStartInfo},
+    actor_status::ActorStatus,
     addr::{Addr, GroupNo},
     config::SystemConfig,
     context::Context,

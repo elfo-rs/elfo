@@ -1,4 +1,7 @@
-use std::{fmt, mem, sync::Arc};
+use std::{
+    mem,
+    sync::{atomic, Arc},
+};
 
 use futures_intrusive::sync::ManualResetEvent;
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
@@ -7,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::{
+    actor_status::{ActorStatus, ActorStatusKind, AtomicActorStatusKind},
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
@@ -27,95 +31,6 @@ use crate::{
 pub struct ActorMeta {
     pub group: String,
     pub key: String,
-}
-
-// === ActorStatus ===
-
-/// Represents the current status of an actor.
-/// See [The Actoromicon](https://actoromicon.rs/ch03-01-actor-lifecycle.html) for details.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActorStatus {
-    kind: ActorStatusKind,
-    details: Option<String>,
-}
-
-impl ActorStatus {
-    pub const ALARMING: ActorStatus = ActorStatus::new(ActorStatusKind::Alarming);
-    pub(crate) const FAILED: ActorStatus = ActorStatus::new(ActorStatusKind::Failed);
-    pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
-    pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
-    pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
-    pub const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
-
-    const fn new(kind: ActorStatusKind) -> Self {
-        Self {
-            kind,
-            details: None,
-        }
-    }
-
-    /// Creates a new status with the same kind and provided details.
-    pub fn with_details(&self, details: impl fmt::Display) -> Self {
-        ActorStatus {
-            kind: self.kind,
-            details: Some(details.to_string()),
-        }
-    }
-
-    /// Returns the corresponding [`ActorStatusKind`] for this status.
-    pub fn kind(&self) -> ActorStatusKind {
-        self.kind
-    }
-
-    /// Returns details for this status, if provided.
-    pub fn details(&self) -> Option<&str> {
-        self.details.as_deref()
-    }
-
-    pub(crate) fn is_failed(&self) -> bool {
-        self.kind == ActorStatusKind::Failed
-    }
-
-    fn is_finished(&self) -> bool {
-        use ActorStatusKind::*;
-        matches!(self.kind, Failed | Terminated)
-    }
-}
-
-impl fmt::Display for ActorStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.details {
-            Some(details) => write!(f, "{:?}: {}", self.kind, details),
-            None => write!(f, "{:?}", self.kind),
-        }
-    }
-}
-
-// === ActorStatusKind ===
-
-/// A list specifying statuses of actors. It's used with the [`ActorStatus`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub enum ActorStatusKind {
-    Normal,
-    Initializing,
-    Terminating,
-    Terminated,
-    Alarming,
-    Failed,
-}
-
-impl ActorStatusKind {
-    fn as_str(&self) -> &'static str {
-        match self {
-            ActorStatusKind::Normal => "Normal",
-            ActorStatusKind::Initializing => "Initializing",
-            ActorStatusKind::Terminating => "Terminating",
-            ActorStatusKind::Terminated => "Terminated",
-            ActorStatusKind::Alarming => "Alarming",
-            ActorStatusKind::Failed => "Failed",
-        }
-    }
 }
 
 // === ActorStartInfo ===
@@ -182,6 +97,7 @@ pub(crate) struct Actor {
     termination_policy: TerminationPolicy,
     mailbox: Mailbox,
     request_table: RequestTable,
+    status_kind: AtomicActorStatusKind,
     control: RwLock<Control>,
     finished: ManualResetEvent, // TODO: remove in favor of `status_subscription`?
     status_subscription: Arc<SubscriptionManager>,
@@ -206,6 +122,7 @@ impl Actor {
         status_subscription: Arc<SubscriptionManager>,
     ) -> Self {
         Actor {
+            status_kind: AtomicActorStatusKind::from(ActorStatusKind::Initializing),
             meta,
             termination_policy,
             mailbox: Mailbox::new(mailbox_config),
@@ -306,8 +223,15 @@ impl Actor {
         self.control.write().restart_policy = policy;
     }
 
+    pub(crate) fn status_kind(&self) -> ActorStatusKind {
+        self.status_kind.load(atomic::Ordering::Acquire)
+    }
+
     // Note that this method should be called inside a right scope.
     pub(crate) fn set_status(&self, status: ActorStatus) {
+        self.status_kind
+            .store(status.kind(), atomic::Ordering::Release);
+
         let mut control = self.control.write();
         let prev_status = mem::replace(&mut control.status, status.clone());
 
@@ -318,7 +242,7 @@ impl Actor {
         self.send_status_to_subscribers(&control);
         drop(control);
 
-        if status.is_finished() {
+        if status.kind().is_finished() {
             self.close();
             // Drop all messages to release requests immediately.
             self.mailbox.drop_all();
@@ -328,10 +252,10 @@ impl Actor {
         log_status(&status);
 
         if status.kind != prev_status.kind {
-            if !prev_status.is_finished() {
+            if !prev_status.kind().is_finished() {
                 decrement_gauge!("elfo_active_actors", 1., "status" => prev_status.kind.as_str());
             }
-            if !status.is_finished() {
+            if !status.kind().is_finished() {
                 increment_gauge!("elfo_active_actors", 1., "status" => status.kind.as_str());
             }
 
@@ -346,20 +270,6 @@ impl Actor {
     #[inline(never)]
     pub(crate) fn close(&self) -> bool {
         self.mailbox.close(scope::trace_id())
-    }
-
-    pub(crate) fn is_initializing(&self) -> bool {
-        matches!(
-            self.control.read().status.kind,
-            ActorStatusKind::Initializing
-        )
-    }
-
-    pub(crate) fn is_terminating(&self) -> bool {
-        matches!(
-            self.control.read().status.kind,
-            ActorStatusKind::Terminating
-        )
     }
 
     pub(crate) async fn finished(&self) {
@@ -415,8 +325,8 @@ mod tests {
         let fut = actor.finished();
         actor.set_status(ActorStatus::TERMINATED);
         fut.await;
-        assert!(actor.control.read().status.is_finished());
+        assert!(actor.status_kind().is_finished());
         actor.finished().await;
-        assert!(actor.control.read().status.is_finished());
+        assert!(actor.status_kind().is_finished());
     }
 }

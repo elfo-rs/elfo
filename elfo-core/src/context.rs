@@ -8,7 +8,8 @@ use tracing::{info, trace};
 use elfo_utils::unlikely;
 
 use crate::{
-    actor::{Actor, ActorStartInfo, ActorStatus},
+    actor::{Actor, ActorStartInfo},
+    actor_status::ActorStatus,
     addr::Addr,
     address_book::AddressBook,
     config::AnyConfig,
@@ -26,6 +27,7 @@ use crate::{
     routers::Singleton,
     scope,
     source::{SourceHandle, Sources, UnattachedSource},
+    ActorStatusKind,
 };
 
 use self::stats::Stats;
@@ -103,6 +105,31 @@ impl<C, K> Context<C, K> {
     /// ```
     pub fn set_status(&self, status: ActorStatus) {
         ward!(self.actor.as_ref().and_then(|o| o.as_actor())).set_status(status);
+    }
+
+    /// Gets the actor's status kind.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # fn exec(ctx: elfo::Context) {
+    /// // if actor is terminating.
+    /// assert!(ctx.status_kind().is_terminating());
+    /// // if actor is alarming.
+    /// assert!(ctx.status_kind().is_alarming());
+    /// // and so on...
+    /// # }
+    /// ```
+    /// # Panics
+    ///
+    /// Panics when called on pruned context.
+    pub fn status_kind(&self) -> ActorStatusKind {
+        self.actor
+            .as_ref()
+            .expect("called `status_kind()` on pruned context")
+            .as_actor()
+            .expect("invariant")
+            .status_kind()
     }
 
     /// Overrides the group's default mailbox capacity, which set in the config.
@@ -850,7 +877,7 @@ impl<C, K> Context<C, K> {
 
         if unlikely(self.stage == Stage::PreRecv) {
             let actor = ward!(self.actor.as_ref().and_then(|o| o.as_actor()));
-            if actor.is_initializing() {
+            if actor.status_kind().is_initializing() {
                 actor.set_status(ActorStatus::NORMAL);
             }
             self.stage = Stage::Working;
@@ -1006,7 +1033,7 @@ fn e2m<M: Message>(envelope: Envelope) -> M {
 
 #[cold]
 fn on_input_closed(stage: &mut Stage, actor: &Actor) {
-    if !actor.is_terminating() {
+    if !actor.status_kind().is_terminating() {
         actor.set_status(ActorStatus::TERMINATING);
     }
     *stage = Stage::Closed;
