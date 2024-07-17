@@ -1,5 +1,5 @@
 use std::{
-    fmt, mem,
+    mem,
     sync::{atomic, Arc},
 };
 
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::{
-    atomic_status_kind::AtomicActorStatusKind,
+    actor_status::{ActorStatus, ActorStatusKind, AtomicActorStatusKind},
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
@@ -31,122 +31,6 @@ use crate::{
 pub struct ActorMeta {
     pub group: String,
     pub key: String,
-}
-
-// === ActorStatus ===
-
-/// Represents the current status of an actor.
-/// See [The Actoromicon](https://actoromicon.rs/ch03-01-actor-lifecycle.html) for details.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActorStatus {
-    kind: ActorStatusKind,
-    details: Option<String>,
-}
-
-impl ActorStatus {
-    pub const ALARMING: ActorStatus = ActorStatus::new(ActorStatusKind::Alarming);
-    pub(crate) const FAILED: ActorStatus = ActorStatus::new(ActorStatusKind::Failed);
-    pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
-    pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
-    pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
-    pub const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
-
-    const fn new(kind: ActorStatusKind) -> Self {
-        Self {
-            kind,
-            details: None,
-        }
-    }
-
-    /// Creates a new status with the same kind and provided details.
-    pub fn with_details(&self, details: impl fmt::Display) -> Self {
-        ActorStatus {
-            kind: self.kind,
-            details: Some(details.to_string()),
-        }
-    }
-
-    /// Returns the corresponding [`ActorStatusKind`] for this status.
-    pub fn kind(&self) -> ActorStatusKind {
-        self.kind
-    }
-
-    /// Returns details for this status, if provided.
-    pub fn details(&self) -> Option<&str> {
-        self.details.as_deref()
-    }
-
-    pub(crate) fn is_failed(&self) -> bool {
-        self.kind == ActorStatusKind::Failed
-    }
-
-    fn is_finished(&self) -> bool {
-        use ActorStatusKind::*;
-        matches!(self.kind, Failed | Terminated)
-    }
-}
-
-impl fmt::Display for ActorStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.details {
-            Some(details) => write!(f, "{:?}: {}", self.kind, details),
-            None => write!(f, "{:?}", self.kind),
-        }
-    }
-}
-
-// === ActorStatusKind ===
-
-/// A list specifying statuses of actors. It's used with the [`ActorStatus`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-#[repr(u8)]
-pub enum ActorStatusKind {
-    Normal,
-    Initializing,
-    Terminating,
-    Terminated,
-    Alarming,
-    Failed,
-}
-
-impl ActorStatusKind {
-    pub const fn is_normal(&self) -> bool {
-        matches!(self, Self::Normal)
-    }
-
-    pub const fn is_initializing(&self) -> bool {
-        matches!(self, Self::Initializing)
-    }
-
-    pub const fn is_terminating(&self) -> bool {
-        matches!(self, Self::Terminating)
-    }
-
-    pub const fn is_terminated(&self) -> bool {
-        matches!(self, Self::Terminated)
-    }
-
-    pub const fn is_alarming(&self) -> bool {
-        matches!(self, Self::Alarming)
-    }
-
-    pub const fn is_failed(&self) -> bool {
-        matches!(self, Self::Failed)
-    }
-}
-
-impl ActorStatusKind {
-    fn as_str(&self) -> &'static str {
-        match self {
-            ActorStatusKind::Normal => "Normal",
-            ActorStatusKind::Initializing => "Initializing",
-            ActorStatusKind::Terminating => "Terminating",
-            ActorStatusKind::Terminated => "Terminated",
-            ActorStatusKind::Alarming => "Alarming",
-            ActorStatusKind::Failed => "Failed",
-        }
-    }
 }
 
 // === ActorStartInfo ===
@@ -358,7 +242,7 @@ impl Actor {
         self.send_status_to_subscribers(&control);
         drop(control);
 
-        if status.is_finished() {
+        if status.kind().is_finished() {
             self.close();
             // Drop all messages to release requests immediately.
             self.mailbox.drop_all();
@@ -368,10 +252,10 @@ impl Actor {
         log_status(&status);
 
         if status.kind != prev_status.kind {
-            if !prev_status.is_finished() {
+            if !prev_status.kind().is_finished() {
                 decrement_gauge!("elfo_active_actors", 1., "status" => prev_status.kind.as_str());
             }
-            if !status.is_finished() {
+            if !status.kind().is_finished() {
                 increment_gauge!("elfo_active_actors", 1., "status" => status.kind.as_str());
             }
 

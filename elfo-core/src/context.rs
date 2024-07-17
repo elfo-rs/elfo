@@ -8,7 +8,8 @@ use tracing::{info, trace};
 use elfo_utils::unlikely;
 
 use crate::{
-    actor::{Actor, ActorStartInfo, ActorStatus},
+    actor::{Actor, ActorStartInfo},
+    actor_status::ActorStatus,
     addr::Addr,
     address_book::AddressBook,
     config::AnyConfig,
@@ -120,7 +121,8 @@ impl<C, K> Context<C, K> {
     /// # }
     /// ```
     /// # Panics
-    /// - Panics when called on pruned context.
+    ///
+    /// Panics when called on pruned context.
     pub fn status_kind(&self) -> ActorStatusKind {
         self.actor
             .as_ref()
