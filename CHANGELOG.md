@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 ### Added
-- core: `Context::status_kind` API, now actors can read `ActorStatusKind` from the context.
-- core: `is_*` methods on `ActorStatusKind` for each variant.
+- core: `Context::status_kind` API, now actors can read `ActorStatusKind` from the context ([#133]).
+- core: `is_*` methods on `ActorStatusKind` for each variant ([#133]).
 - Specify MSRV as 1.76.
 - logger: log truncation up to the `max_line_size` configuration parameter ([#128]).
 - core: directly accept never returning functions in `ActorGroup::exec()` ([#127]).
