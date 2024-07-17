@@ -45,7 +45,7 @@ impl RestartPolicy {
     pub(crate) fn restarting_allowed(&self, status: &ActorStatus) -> bool {
         match &self.mode {
             RestartMode::Always(_) => true,
-            RestartMode::OnFailure(_) => status.is_failed(),
+            RestartMode::OnFailure(_) => status.kind().is_failed(),
             _ => false,
         }
     }

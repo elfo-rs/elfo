@@ -11,7 +11,8 @@ use elfo_utils::CachePadded;
 
 use self::{error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
-    actor::{Actor, ActorMeta, ActorStartInfo, ActorStatus},
+    actor::{Actor, ActorMeta, ActorStartInfo},
+    actor_status::ActorStatus,
     config::{AnyConfig, Config, SystemConfig},
     context::Context,
     envelope::Envelope,
