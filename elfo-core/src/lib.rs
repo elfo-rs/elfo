@@ -10,9 +10,9 @@ extern crate elfo_utils;
 extern crate self as elfo_core;
 
 // TODO: revise this list
-pub use crate::actor_status::{ActorStatus, ActorStatusKind};
 pub use crate::{
     actor::{ActorMeta, ActorStartCause, ActorStartInfo},
+    actor_status::{ActorStatus, ActorStatusKind},
     addr::Addr,
     config::Config,
     context::{Context, RequestBuilder},

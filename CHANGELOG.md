@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#52]: https://github.com/elfo-rs/elfo/issues/52
 [#127]: https://github.com/elfo-rs/elfo/pull/127
 [#128]: https://github.com/elfo-rs/elfo/pull/128
+[#133]: https://github.com/elfo-rs/elfo/pull/133
 
 ## [0.2.0-alpha.15] - 2024-05-13
 ### Added

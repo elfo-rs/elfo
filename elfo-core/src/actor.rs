@@ -272,20 +272,6 @@ impl Actor {
         self.mailbox.close(scope::trace_id())
     }
 
-    pub(crate) fn is_initializing(&self) -> bool {
-        matches!(
-            self.control.read().status.kind,
-            ActorStatusKind::Initializing
-        )
-    }
-
-    pub(crate) fn is_terminating(&self) -> bool {
-        matches!(
-            self.control.read().status.kind,
-            ActorStatusKind::Terminating
-        )
-    }
-
     pub(crate) async fn finished(&self) {
         self.finished.wait().await
     }
@@ -339,8 +325,8 @@ mod tests {
         let fut = actor.finished();
         actor.set_status(ActorStatus::TERMINATED);
         fut.await;
-        assert!(actor.control.read().status.is_finished());
+        assert!(actor.status_kind().is_finished());
         actor.finished().await;
-        assert!(actor.control.read().status.is_finished());
+        assert!(actor.status_kind().is_finished());
     }
 }

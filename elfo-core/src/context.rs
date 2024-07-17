@@ -877,7 +877,7 @@ impl<C, K> Context<C, K> {
 
         if unlikely(self.stage == Stage::PreRecv) {
             let actor = ward!(self.actor.as_ref().and_then(|o| o.as_actor()));
-            if actor.is_initializing() {
+            if actor.status_kind().is_initializing() {
                 actor.set_status(ActorStatus::NORMAL);
             }
             self.stage = Stage::Working;
@@ -1033,7 +1033,7 @@ fn e2m<M: Message>(envelope: Envelope) -> M {
 
 #[cold]
 fn on_input_closed(stage: &mut Stage, actor: &Actor) {
-    if !actor.is_terminating() {
+    if !actor.status_kind().is_terminating() {
         actor.set_status(ActorStatus::TERMINATING);
     }
     *stage = Stage::Closed;
