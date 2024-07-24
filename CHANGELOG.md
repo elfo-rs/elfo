@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.16] - 2024-07-24
 ### Added
 - core: `Context::status_kind` API, now actors can read `ActorStatusKind` from the context ([#133]).
 - core: `is_*` methods on `ActorStatusKind` for each variant ([#133]).
@@ -647,7 +649,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.15...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.16...HEAD
+[0.2.0-alpha.16]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.15...elfo-v0.2.0-alpha.16
 [0.2.0-alpha.15]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.14...elfo-v0.2.0-alpha.15
 [0.2.0-alpha.14]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.13...elfo-v0.2.0-alpha.14
 [0.2.0-alpha.13]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.12...elfo-v0.2.0-alpha.13

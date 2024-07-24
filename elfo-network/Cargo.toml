@@ -1,6 +1,6 @@
 [package]
 name = "elfo-network"
-version = "0.2.0-alpha.15"
+version = "0.2.0-alpha.16"
 description = "Distributed actors for elfo"
 keywords = ["elfo", "actor", "distributed", "tokio", "network"]
 
@@ -15,7 +15,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.15", path = "../elfo-core", features = ["unstable", "network"] }
+elfo-core = { version = "0.2.0-alpha.16", path = "../elfo-core", features = ["unstable", "network"] }
 elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
 
 metrics.workspace = true
