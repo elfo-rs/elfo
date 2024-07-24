@@ -19,7 +19,7 @@ tracing-log = [ "dep:tracing-log", "log" ]
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.15", path = "../elfo-core", features = ["unstable"] }
-elfo-utils = { version = "0.2.5", path = "../elfo-utils" }
+elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
 
 metrics.workspace = true
 dashmap.workspace = true
