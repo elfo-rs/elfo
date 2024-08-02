@@ -86,10 +86,10 @@ enum SignalInner {
 
 /// A kind of signal to listen to.
 ///
-/// * `Unix*` variants are available only on UNIX systems and produce nothing
-/// on other systems.
-/// * `Windows*` variants are available only on Windows and produce nothing
-/// on other systems.
+/// * `Unix*` variants are available only on UNIX systems and produce nothing on
+///   other systems.
+/// * `Windows*` variants are available only on Windows and produce nothing on
+///   other systems.
 ///
 /// It helps to avoid writing `#[cfg(_)]` everywhere around signals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
