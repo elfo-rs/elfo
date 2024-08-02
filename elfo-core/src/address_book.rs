@@ -58,8 +58,12 @@ impl AddressBook {
     }
 
     #[inline]
-    pub fn get<'g>(&self, addr: Addr, guard: &'g EbrGuard) -> Option<BorrowedObject<'g>> {
-        let addr = self.prepare_addr(addr)?;
+    pub fn get<'g>(&self, mut addr: Addr, guard: &'g EbrGuard) -> Option<BorrowedObject<'g>> {
+        // If the address is remote, replace it with a remote handler's address.
+        #[cfg(feature = "network")]
+        if addr.is_remote() {
+            addr = self.remote.get(addr).unwrap_or(Addr::NULL);
+        }
 
         self.local
             .get(addr.slot_key(self.launch_id)?, guard)
@@ -69,11 +73,14 @@ impl AddressBook {
     }
 
     #[inline]
-    pub fn get_owned(&self, addr: Addr) -> Option<OwnedObject> {
-        let addr = self.prepare_addr(addr)?;
+    pub fn get_owned(&self, mut addr: Addr) -> Option<OwnedObject> {
+        // If the address is remote, replace it with a remote handler's address.
+        #[cfg(feature = "network")]
+        if addr.is_remote() {
+            addr = self.remote.get(addr).unwrap_or(Addr::NULL);
+        }
 
         self.local
-            .clone()
             .get_owned(addr.slot_key(self.launch_id)?)
             // idr-ebr doesn't check top bits, so we need to check them manually.
             // It equals to checking the group number, but without extra operations.
@@ -93,23 +100,6 @@ impl AddressBook {
 
     pub(crate) fn remove(&self, addr: Addr) {
         self.local.remove(ward!(addr.slot_key(self.launch_id)));
-    }
-
-    #[inline(always)]
-    fn prepare_addr(&self, addr: Addr) -> Option<Addr> {
-        // If the address is null, return `None`.
-        // It's required, because `Addr::NULL.slot_key()` can be valid for sharded-slab.
-        if addr.is_null() {
-            return None;
-        }
-
-        // If the address is remote, replace it with a remote handler's address.
-        #[cfg(feature = "network")]
-        if addr.is_remote() {
-            return self.remote.get(addr);
-        }
-
-        Some(addr)
     }
 }
 

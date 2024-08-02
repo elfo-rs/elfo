@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Fixed
+- core: update the `idr-ebr` crate to v0.3 to fix possible crash in `Context::finished()`.
 
 ## [0.2.0-alpha.16] - 2024-07-24
 ### Added

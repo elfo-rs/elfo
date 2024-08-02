@@ -28,10 +28,7 @@ pub struct Object {
 }
 
 assert_impl_all!(Object: Sync);
-// TODO: actually, `Slab::Entry<Object>` should be aligned.
-// assert_eq_size!(Object, [u8; 256]);
 
-// TODO: move to `address_book` and wrap to avoid calling the `key()` method.
 pub(crate) type BorrowedObject<'g> = BorrowedEntry<'g, Object>;
 // Reexported in `_priv`.
 pub type OwnedObject = OwnedEntry<Object>;
@@ -73,7 +70,10 @@ impl Object {
                 Ok(()) => SendFut::Ready(Ok(())),
                 Err(TrySendError::Closed(envelope)) => SendFut::Ready(Err(SendError(envelope))),
                 Err(TrySendError::Full(envelope)) => {
-                    let this = this.to_owned();
+                    let Some(this) = this.to_owned() else {
+                        return SendFut::Ready(Err(SendError(envelope)));
+                    };
+
                     SendFut::WaitActor(async move {
                         let actor = this.as_actor().unwrap();
                         actor.send(envelope).await
@@ -90,7 +90,10 @@ impl Object {
                 Ok(()) => SendFut::Ready(Ok(())),
                 Err(TrySendError::Closed(envelope)) => SendFut::Ready(Err(SendError(envelope))),
                 Err(TrySendError::Full(mut envelope)) => {
-                    let this = this.to_owned();
+                    let Some(this) = this.to_owned() else {
+                        return SendFut::Ready(Err(SendError(envelope)));
+                    };
+
                     SendFut::WaitRemote(async move {
                         let handle = this.as_remote().unwrap();
                         loop {

@@ -47,8 +47,10 @@ impl<F: Future> Future for MeasurePoll<F> {
         let this = self.project();
 
         // A controversial decision.
-        // On the one hand, it make all internal guards more cheaper.
-        // On the other hand, if some actor is stuck, garbage collection stop working.
+        // On the one hand, it makes internal guards slightly cheaper and more
+        // predictable, i.e. don't start garbage collection inside an actor's code.
+        // On the other hand, if some actor is stuck, garbage
+        // collection stop working.
         // TODO: introduce a feature flag to disable this.
         let _ebr_guard = EbrGuard::new();
 
