@@ -3,7 +3,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use derive_more::Constructor;
-use elfo::{config::AnyConfig, prelude::*, scope, stream::Stream, tracing::TraceId};
+use elfo::{config::AnyConfig, messages, prelude::*, scope, stream::Stream, tracing::TraceId};
 use futures::StreamExt;
 use parking_lot::Mutex;
 use tokio::time;
@@ -307,4 +307,39 @@ async fn result() {
 
     assert_msg_eq!(proxy.recv().await, Success(10));
     assert_msg_eq!(proxy.recv().await, Failure(20));
+}
+
+// Prevents regression after [unicycle#30].
+// [unicycle#30]: https://github.com/udoprog/unicycle/issues/30
+#[tokio::test(start_paused = true)]
+async fn drop_on_terminate() {
+    struct Guard(Arc<Mutex<bool>>);
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            *self.0.lock() = true;
+        }
+    }
+
+    let dropped = Arc::new(Mutex::new(false));
+    let dropped_1 = dropped.clone();
+
+    let group = ActorGroup::new().exec(move |mut ctx| {
+        let dropped = dropped_1.clone();
+        async move {
+            ctx.attach(Stream::<messages::Impossible>::once(async move {
+                let _guard = Guard(dropped);
+                std::future::pending().await
+            }));
+
+            while ctx.recv().await.is_some() {}
+        }
+    });
+
+    let mut proxy = elfo::test::proxy(group, AnyConfig::default()).await;
+    proxy.sync().await;
+    proxy.send(messages::Terminate::default()).await;
+    proxy.finished().await;
+
+    assert!(*dropped.lock());
 }

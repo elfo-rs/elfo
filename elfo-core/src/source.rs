@@ -206,14 +206,11 @@ impl<S: ?Sized> StreamWithWaker<S> {
     fn update_waker(self: Pin<&mut Self>, cx: &task::Context<'_>) {
         let new_waker = cx.waker();
 
-        // Save the waker for reconfiguration if the stream isn't ready.
-        // NOTE: `unicycle` doesn't support `will_wake` for now:
-        // https://github.com/udoprog/unicycle/pull/15#issuecomment-1100680368
+        // NOTE: `unicycle` doesn't support `will_wake` (called by `clone_from()`)
+        // for now: https://github.com/udoprog/unicycle/pull/15#issuecomment-1100680368
         // But we use it anyway to get benefits in the future.
-        if !self.waker.will_wake(new_waker) {
-            // SAFETY: `waker` is not pinned.
-            unsafe { self.get_unchecked_mut().waker.clone_from(new_waker) }
-        }
+        // SAFETY: `waker` is not pinned.
+        unsafe { self.get_unchecked_mut().waker.clone_from(new_waker) }
     }
 
     fn wake(&self) {
@@ -255,6 +252,7 @@ impl futures::Stream for UntypedSourceArc {
         let result = guard.get_mut().stream().poll_recv(cx);
 
         if result.is_pending() {
+            // The stream isn't ready, so we save waker for reconfiguration.
             guard.get_mut().update_waker(cx);
         } else if matches!(result, Poll::Ready(None)) || guard.status() == StreamStatus::Oneshot {
             guard.get_mut().terminate();
