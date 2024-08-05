@@ -309,7 +309,7 @@ impl<C, K> Context<C, K> {
     ///
     /// It's possible to send requests if the response is not needed.
     ///
-    /// Returns `Err` if the message hasn't reached mailboxes or they are full.
+    /// Returns `Err` if the message hasn't reached mailboxes.
     ///
     /// # Example
     /// ```
@@ -571,7 +571,7 @@ impl<C, K> Context<C, K> {
     ///
     /// It's possible to send requests if the response is not needed.
     ///
-    /// Returns `Err` if the message hasn't reached mailboxes or they are full.
+    /// Returns `Err` if the message hasn't reached mailboxes.
     ///
     /// # Example
     /// ```
