@@ -27,6 +27,7 @@ tracing = "0.1.25"
 [features]
 test-util = ["elfo/test-util"]
 network = ["elfo/network"]
+unstable = ["elfo/unstable"]
 
 [[bin]]
 name = "usage"
