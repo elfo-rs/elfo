@@ -26,8 +26,6 @@ fn consumer() -> Blueprint {
 }
 
 pub(crate) fn topology() -> elfo::Topology {
-    elfo::_priv::node::set_node_no(2);
-
     let topology = elfo::Topology::empty();
     let logger = elfo::batteries::logger::init();
     let telemeter = elfo::batteries::telemeter::init();

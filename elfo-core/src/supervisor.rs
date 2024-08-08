@@ -13,6 +13,7 @@ use self::{error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
     actor::{Actor, ActorMeta, ActorStartInfo},
     actor_status::ActorStatus,
+    addr::{Addr, NodeNo},
     config::{AnyConfig, Config, SystemConfig},
     context::Context,
     envelope::Envelope,
@@ -28,7 +29,7 @@ use crate::{
     scope::{self, Scope, ScopeGroupShared},
     subscription::SubscriptionManager,
     tracing::TraceId,
-    Addr, ResponseToken,
+    ResponseToken,
 };
 
 mod error_chain;
@@ -79,8 +80,10 @@ where
     <X::Output as Future>::Output: ExecResult,
     C: Config,
 {
+    #[allow(clippy::too_many_arguments)] // I know :(
     pub(crate) fn new(
         ctx: Context,
+        node_no: NodeNo,
         group: String,
         exec: X,
         router: R,
@@ -109,7 +112,7 @@ where
             router,
             exec,
             control: CachePadded::new(RwLock::new(control)),
-            scope_shared: Arc::new(ScopeGroupShared::new(ctx.group())),
+            scope_shared: Arc::new(ScopeGroupShared::new(node_no, ctx.group())),
             status_subscription: Arc::new(status_subscription),
             context: ctx,
             rt_manager,

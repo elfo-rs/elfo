@@ -1,3 +1,5 @@
+#![cfg(feature = "test-util")]
+
 use std::time::Duration;
 
 use elfo::{config::AnyConfig, prelude::*, scope, test::Proxy, time::Interval};

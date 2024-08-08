@@ -18,7 +18,7 @@ workspace = true
 unstable = []
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.16", path = "../elfo-core", features = ["test-util"] }
+elfo-core = { version = "0.2.0-alpha.16", path = "../elfo-core" }
 elfo-configurer = { version = "0.2.0-alpha.16", path = "../elfo-configurer" }
 
 tokio.workspace = true

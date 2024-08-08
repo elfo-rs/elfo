@@ -3,6 +3,7 @@ use std::{fmt::Debug, future::Future, marker::PhantomData, sync::Arc};
 use futures::future::BoxFuture;
 
 use crate::{
+    addr::NodeNo,
     config::Config,
     context::Context,
     envelope::Envelope,
@@ -105,20 +106,22 @@ impl<R, C> ActorGroup<R, C> {
         ER: ExecResult,
         C: Config,
     {
-        let mount = move |ctx: Context, name: String, rt_manager: RuntimeManager| {
-            let addr = ctx.group();
-            let sv = Arc::new(Supervisor::new(
-                ctx,
-                name,
-                exec,
-                self.router,
-                self.restart_policy,
-                self.termination_policy,
-                rt_manager,
-            ));
+        let mount =
+            move |ctx: Context, node_no: NodeNo, name: String, rt_manager: RuntimeManager| {
+                let addr = ctx.group();
+                let sv = Arc::new(Supervisor::new(
+                    ctx,
+                    node_no,
+                    name,
+                    exec,
+                    self.router,
+                    self.restart_policy,
+                    self.termination_policy,
+                    rt_manager,
+                ));
 
-            Object::new(addr, Box::new(Handle(sv)) as Box<dyn GroupHandle>)
-        };
+                Object::new(addr, Box::new(Handle(sv)) as Box<dyn GroupHandle>)
+            };
 
         Blueprint {
             mount: Box::new(mount),
@@ -146,7 +149,7 @@ where
 }
 
 pub struct Blueprint {
-    pub(crate) mount: Box<dyn FnOnce(Context, String, RuntimeManager) -> Object>,
+    pub(crate) mount: Box<dyn FnOnce(Context, NodeNo, String, RuntimeManager) -> Object>,
     pub(crate) stop_order: i8,
 }
 

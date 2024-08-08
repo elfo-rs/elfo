@@ -7,7 +7,7 @@ use metrics::counter;
 use tokio::io;
 use tracing::{trace, warn};
 
-use elfo_core::_priv::{NodeLaunchId, NodeNo};
+use elfo_core::addr::{NodeLaunchId, NodeNo};
 use elfo_utils::likely;
 
 use crate::{

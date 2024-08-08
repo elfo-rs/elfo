@@ -5,11 +5,9 @@ use futures::StreamExt;
 use tracing::{debug, error, info, warn};
 
 use elfo_core::{
-    message, msg, scope, Envelope, Message, MoveOwnership, RestartPolicy,
-    _priv::{AnyMessage, GroupNo, MessageKind},
-    messages::ConfigUpdated,
-    stream::Stream,
-    RestartParams, Topology,
+    message, msg, scope, AnyMessage, Envelope, Message, MoveOwnership, RestartPolicy,
+    _priv::MessageKind, addr::GroupNo, messages::ConfigUpdated, stream::Stream, RestartParams,
+    Topology,
 };
 
 use crate::{

@@ -1,5 +1,5 @@
 use elfo_core::{
-    _priv::{GroupNo, NodeNo},
+    addr::{GroupNo, NodeNo},
     message, MoveOwnership,
 };
 

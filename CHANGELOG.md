@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- core/topology: add `Topology::set_node_no()` and `Topology::node_no()`.
+
+### Changed
+- **BREAKING** core/node: remove `node` module, `NodeNo` is moved to `addr`.
+- core/addr: expose the `addr` module.
+- core: generate `NodeNo` randomly if not provided.
+
 ### Fixed
 - core: update the `idr-ebr` crate to v0.3 to fix possible crash in `Context::finished()`.
 

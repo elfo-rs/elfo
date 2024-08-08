@@ -1,3 +1,5 @@
+#![cfg(feature = "test-util")]
+
 use std::{collections::HashMap, time::Duration};
 
 use elfo::{config::AnyConfig, prelude::*, scope, time::Delay};

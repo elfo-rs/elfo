@@ -14,11 +14,6 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
-[[test]]
-name = "msg_macro"
-path = "tests/msg_macro.rs"
-required-features = ["test-util"]
-
 [features]
 full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter", "elfo-pinger"]
 test-util = ["elfo-test", "elfo-core/test-util"]

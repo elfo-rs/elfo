@@ -10,11 +10,20 @@ edition.workspace = true
 readme.workspace = true
 rust-version.workspace = true
 
+[[example]]
+name = "test"
+required-features = ["test-util"]
+
+[[example]]
+name = "network"
+required-features = ["network"]
+
 [features]
-unstable = ["elfo/unstable", "elfo-telemeter/unstable"]
+test-util = ["elfo/test-util"]
+network = ["elfo/network"]
 
 [dev-dependencies]
-elfo = { path = "../elfo", features = ["full", "network", "test-util"] }
+elfo = { path = "../elfo", features = ["full"] }
 elfo-telemeter = { path = "../elfo-telemeter" } # for `AllocatorStats`
 
 tokio = { workspace = true, features = ["full"] }
