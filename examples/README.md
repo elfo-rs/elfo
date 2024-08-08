@@ -2,7 +2,7 @@
 
 This directory contains a collection of examples that demonstrate the use of the `elfo` ecosystem.
 
-Run `cargo run --example <name>` to run specific example if not specified something other.
+Run `cargo run --bin <name>` to execute specific example if not specified something other.
 
 ## usage
 
@@ -14,8 +14,8 @@ Shows how to connect distributed actor groups.
 
 For simplicity, it uses one common binary that runs a specific service based on the CLI argument:
 ```sh
-cargo run --example network -- alice &
-cargo run --example network -- bob
+cargo run --bin network --features network -- alice &
+cargo run --bin network --features network -- bob
 ```
 
 ## stream
@@ -26,9 +26,7 @@ Demonstrates how to attach streams to an actor's context.
 
 Shows how to write functional tests for your actors.
 
-Run it as `cargo test --example test`.
-
-Note that to use test utils (e.g. `Proxy`) you need to enable the `test-util` feature, however in the example it's already enabled.
+Run it as `cargo test --bin test --features test-util`.
 
 ## tokio-broadcast
 

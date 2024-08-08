@@ -10,19 +10,7 @@ edition.workspace = true
 readme.workspace = true
 rust-version.workspace = true
 
-[[example]]
-name = "test"
-required-features = ["test-util"]
-
-[[example]]
-name = "network"
-required-features = ["network"]
-
-[features]
-test-util = ["elfo/test-util"]
-network = ["elfo/network"]
-
-[dev-dependencies]
+[dependencies]
 elfo = { path = "../elfo", features = ["full"] }
 elfo-telemeter = { path = "../elfo-telemeter" } # for `AllocatorStats`
 
@@ -35,3 +23,29 @@ serde = { version = "1.0.120", features = ["derive"] }
 derive_more = "0.99.11"
 humantime-serde = "1"
 tracing = "0.1.25"
+
+[features]
+test-util = ["elfo/test-util"]
+network = ["elfo/network"]
+
+[[bin]]
+name = "usage"
+path = "usage/main.rs"
+
+[[bin]]
+name = "stream"
+path = "stream.rs"
+
+[[bin]]
+name = "network"
+path = "network/main.rs"
+required-features = ["network"]
+
+[[bin]]
+name = "test"
+path = "test.rs"
+required-features = ["test-util"]
+
+[[bin]]
+name = "tokio-broadcast"
+path = "tokio-broadcast.rs"
