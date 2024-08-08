@@ -17,10 +17,10 @@ elfo-telemeter = { path = "../elfo-telemeter" } # for `AllocatorStats`
 tokio = { workspace = true, features = ["full"] }
 metrics.workspace = true
 toml.workspace = true
+derive_more.workspace = true
 anyhow = "1.0.40"
 futures = "0.3.12"
 serde = { version = "1.0.120", features = ["derive"] }
-derive_more = "0.99.11"
 humantime-serde = "1"
 tracing = "0.1.25"
 

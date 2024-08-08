@@ -82,13 +82,13 @@ fn default_attempt_interval() -> Duration {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Serialize)]
 pub enum Transport {
     /// TCP transport ("tcp://host:port").
-    #[display(fmt = "tcp://{}", _0)]
+    #[display("tcp://{_0}")]
     Tcp(String),
     /// Unix domain socket transport ("uds://path/to/socket").
     ///
     /// Used only on UNIX systems, ignored on other platforms.
     #[cfg(unix)]
-    #[display(fmt = "uds://{}", "_0.display()")]
+    #[display("uds://{}", "_0.display()")]
     Uds(PathBuf),
 }
 

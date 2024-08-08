@@ -27,6 +27,7 @@ elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
 stability.workspace = true
 metrics.workspace = true
 dashmap.workspace = true
+derive_more.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time", "signal", "macros"] }
 idr-ebr = "0.3.0"
 futures-intrusive = "0.5"
@@ -35,7 +36,6 @@ parking_lot = "0.12"
 smallbox = "0.8.0"
 # TODO: avoid the `rc` feature here?
 serde = { version = "1.0.120", features = ["derive", "rc"] }
-derive_more = "0.99.11"
 tracing = "0.1.25"
 futures = "0.3.12"
 static_assertions = "1.1.0"

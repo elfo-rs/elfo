@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fmt::{Debug, Display},
-};
+use std::{collections::BTreeMap, fmt::Debug};
 
 use derive_more::{Display, Error};
 
@@ -78,7 +75,7 @@ impl Display for StartError {
 
 #[derive(Clone, Debug, Display, Error)]
 #[non_exhaustive]
-#[display(fmt = "error from group {group}: {reason}")]
+#[display("error from group {group}: {reason}")]
 pub struct StartGroupError {
     pub group: String,
     pub reason: String,
@@ -87,7 +84,7 @@ pub struct StartGroupError {
 // === SendError ===
 
 #[derive(Debug, Display, Error)]
-#[display(fmt = "mailbox closed")]
+#[display("mailbox closed")]
 pub struct SendError<T>(#[error(not(source))] pub T);
 
 impl<T> SendError<T> {
@@ -108,10 +105,10 @@ impl<T> SendError<T> {
 #[derive(Debug, Display, Error)]
 pub enum TrySendError<T> {
     /// The mailbox is full.
-    #[display(fmt = "mailbox full")]
+    #[display("mailbox full")]
     Full(#[error(not(source))] T),
     /// The mailbox has been closed.
-    #[display(fmt = "mailbox closed")]
+    #[display("mailbox closed")]
     Closed(#[error(not(source))] T),
 }
 
@@ -159,10 +156,10 @@ impl<T> From<SendError<T>> for TrySendError<T> {
 #[derive(Debug, Display, Error)]
 pub enum RequestError {
     /// Receiver hasn't got the request.
-    #[display(fmt = "request failed")]
+    #[display("request failed")]
     Failed,
     /// Receiver has got the request, but ignored it.
-    #[display(fmt = "request ignored")]
+    #[display("request ignored")]
     Ignored,
 }
 
@@ -185,10 +182,10 @@ impl RequestError {
 #[derive(Debug, Clone, Display, Error)]
 pub enum TryRecvError {
     /// The mailbox is empty.
-    #[display(fmt = "mailbox empty")]
+    #[display("mailbox empty")]
     Empty,
     /// The mailbox has been closed.
-    #[display(fmt = "mailbox closed")]
+    #[display("mailbox closed")]
     Closed,
 }
 

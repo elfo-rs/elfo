@@ -14,7 +14,7 @@ use crate::addr::NodeNo;
 // TODO(v0.2): remove `derive(Deserialize)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[derive(Serialize, Deserialize, Into, From, Display)]
-#[display(fmt = "{_0}")]
+#[display("{_0}")]
 pub struct TraceId(NonZeroU64);
 
 impl TraceId {

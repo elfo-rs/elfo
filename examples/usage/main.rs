@@ -9,7 +9,6 @@
 // All actor crates depend on one or more protocols.
 // Dependencies between actors should be avoided.
 mod protocol {
-    use derive_more::{Display, From};
     use elfo::prelude::*;
 
     // It's just a regular message.
@@ -47,7 +46,8 @@ mod protocol {
     // Wrappers can be marked as `transparent`, that adds `serde(transparent)`
     // and implements `Debug` without printing the wrapper's name.
     #[message(part, transparent)]
-    #[derive(Copy, PartialEq, Eq, Hash, From, Display)]
+    #[derive(Copy, PartialEq, Eq, Hash)]
+    #[derive(derive_more::From, derive_more::Display)]
     pub struct GroupId(u32);
 }
 

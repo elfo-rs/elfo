@@ -271,7 +271,7 @@ fn case<const FLAGS: Flags>(c: &mut Criterion) {
 }
 
 #[derive(Display)]
-#[display(fmt = "{}p{}c{}w", producers, consumers, workers)]
+#[display("{producers}p{consumers}c{workers}w")]
 struct CaseParams {
     workers: u32,
     producers: u32,
