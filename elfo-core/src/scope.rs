@@ -11,13 +11,13 @@ use std::{
 
 use crate::{
     actor::ActorMeta,
+    addr::{Addr, NodeNo},
     config::SystemConfig,
     dumping::DumpingControl,
     logging::_priv::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
     telemetry::config::TelemetryConfig,
     tracing::TraceId,
-    Addr,
 };
 
 tokio::task_local! {
@@ -38,12 +38,9 @@ impl Scope {
     /// Private API for now.
     #[doc(hidden)]
     pub fn test(actor: Addr, meta: Arc<ActorMeta>) -> Self {
-        Self::new(
-            TraceId::generate(),
-            actor,
-            meta,
-            Arc::new(ScopeGroupShared::new(Addr::NULL)),
-        )
+        let node_no = NodeNo::from_bits(u16::MAX).unwrap();
+        let group_scope = Arc::new(ScopeGroupShared::new(node_no, Addr::NULL));
+        Self::new(TraceId::generate(), actor, meta, group_scope)
     }
 
     pub(crate) fn new(
@@ -72,6 +69,11 @@ impl Scope {
     #[inline]
     pub fn group(&self) -> Addr {
         self.group.addr
+    }
+
+    #[inline]
+    pub fn node_no(&self) -> NodeNo {
+        self.group.node_no
     }
 
     /// Returns the current object's meta.
@@ -197,6 +199,7 @@ impl ScopeActorShared {
 assert_impl_all!(ScopeGroupShared: Send, Sync);
 
 pub(crate) struct ScopeGroupShared {
+    node_no: NodeNo,
     addr: Addr,
     permissions: AtomicPermissions,
     logging: LoggingControl,
@@ -206,8 +209,9 @@ pub(crate) struct ScopeGroupShared {
 assert_impl_all!(ScopeGroupShared: Send, Sync);
 
 impl ScopeGroupShared {
-    pub(crate) fn new(addr: Addr) -> Self {
+    pub(crate) fn new(node_no: NodeNo, addr: Addr) -> Self {
         Self {
+            node_no,
             addr,
             permissions: Default::default(), // everything is disabled
             logging: Default::default(),
@@ -309,6 +313,21 @@ pub fn meta() -> Arc<ActorMeta> {
 #[inline]
 pub fn try_meta() -> Option<Arc<ActorMeta>> {
     try_with(|scope| scope.meta().clone())
+}
+
+/// Returns the node number.
+///
+/// # Panics
+/// This function will panic if called ouside the actor system.
+#[inline]
+pub fn node_no() -> NodeNo {
+    with(|scope| scope.node_no())
+}
+
+/// Returns the node number if inside the actor system.
+#[inline]
+pub fn try_node_no() -> Option<NodeNo> {
+    try_with(|scope| scope.node_no())
 }
 
 thread_local! {

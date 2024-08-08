@@ -30,6 +30,7 @@ pub use elfo_macros::{message_core as message, msg_core as msg};
 #[macro_use]
 mod macros;
 
+pub mod addr;
 pub mod config;
 pub mod coop;
 pub mod dumping;
@@ -37,7 +38,6 @@ pub mod errors;
 pub mod init;
 pub mod logging;
 pub mod messages;
-pub mod node;
 pub mod routers;
 pub mod scope;
 pub mod signal;
@@ -50,7 +50,6 @@ pub mod tracing;
 
 mod actor;
 mod actor_status;
-mod addr;
 mod address_book;
 mod context;
 mod demux;
@@ -80,14 +79,6 @@ mod thread;
 
 #[doc(hidden)]
 pub mod _priv {
-    pub mod node {
-        pub fn set_node_no(node_no: u16) {
-            crate::node::set_node_no(node_no)
-        }
-    }
-
-    #[cfg(feature = "unstable")]
-    pub use crate::addr::{GroupNo, NodeLaunchId, NodeNo};
     pub use crate::{
         address_book::AddressBook,
         envelope::{EnvelopeBorrowed, EnvelopeOwned, MessageKind},

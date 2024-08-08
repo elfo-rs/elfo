@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use elfo_utils::time::Instant;
 
 use super::trace_id::{TraceId, TraceIdLayout, TruncatedTime};
-use crate::node;
+use crate::addr::NodeNo;
 
 // === ChunkRegistry ===
 
@@ -17,6 +17,7 @@ fn next_chunk(chunk_registry: &ChunkRegistry) -> u32 {
 // === Generator ===
 
 pub(crate) struct Generator {
+    node_no: Option<NodeNo>,
     timestamp: CachedTruncatedTime,
     chunk_no: u32,
     counter: u32,
@@ -25,6 +26,7 @@ pub(crate) struct Generator {
 impl Default for Generator {
     fn default() -> Self {
         Self {
+            node_no: None,
             timestamp: CachedTruncatedTime::now(),
             chunk_no: 0, // will be set on first `generate()` call
             counter: 0x3ff,
@@ -49,12 +51,27 @@ impl Generator {
         self.counter += 1;
         let bottom = self.chunk_no << 10 | self.counter;
 
+        // Lazily cache the node number from the scope if not set yet.
+        // We do it here instead of `Default::default()` in order to support
+        // trace ID generation before entering the actor system.
+        //
+        // If called outside of the actor system and the node number is unknown,
+        // all generated trace IDs will have zero in `node_no` part.
+        if self.node_no.is_none() {
+            self.node_no = node_no();
+        }
+
         TraceId::from_layout(TraceIdLayout {
             timestamp: self.timestamp.get(),
-            node_no: node::node_no(),
+            node_no: self.node_no,
             bottom: bottom.into(),
         })
     }
+}
+
+#[cold]
+fn node_no() -> Option<NodeNo> {
+    crate::scope::try_node_no()
 }
 
 // === CachedTruncatedTime ===
@@ -86,55 +103,86 @@ impl CachedTruncatedTime {
     }
 }
 
-#[test]
-fn it_works() {
+#[cfg(test)]
+mod tests {
     use std::{sync::Arc, time::Duration};
 
-    node::set_node_no(65535);
+    use crate::{scope::Scope, ActorMeta, Addr};
 
-    fn is_divisible_by_chunk(diff: u64) {
-        assert_eq!((diff / (1 << 10)) * (1 << 10), diff);
-    }
+    use super::*;
 
-    elfo_utils::time::with_mock(|mock| {
-        let chunk_registry = Arc::new(ChunkRegistry::default());
-        let mut generator = Generator::default();
-
-        let sec = 1 << 38;
-        let st = u64::from(generator.generate(&chunk_registry));
-
-        mock.advance(Duration::from_millis(500));
-        assert_eq!(u64::from(generator.generate(&chunk_registry)), st + 1);
-        mock.advance(Duration::from_millis(500));
-        assert_eq!(u64::from(generator.generate(&chunk_registry)), st + sec + 2,);
-        mock.advance(Duration::from_millis(500));
-        assert_eq!(u64::from(generator.generate(&chunk_registry)), st + sec + 3);
-        mock.advance(Duration::from_millis(500));
-        assert_eq!(
-            u64::from(generator.generate(&chunk_registry)),
-            st + 2 * sec + 4
-        );
-
-        let chunk_registry1 = chunk_registry.clone();
-        std::thread::spawn(move || {
-            elfo_utils::time::with_mock(|mock| {
-                mock.advance(Duration::from_secs(2));
-                let mut generator = Generator::default();
-                is_divisible_by_chunk(
-                    u64::from(generator.generate(&chunk_registry1)) - (st + 2 * sec),
-                );
-            });
-        })
-        .join()
-        .unwrap();
-
-        for i in 5..1023 {
-            assert_eq!(
-                u64::from(generator.generate(&chunk_registry)),
-                st + 2 * sec + i
-            );
+    #[test]
+    fn smoke() {
+        fn is_divisible_by_chunk(diff: u64) {
+            assert_eq!((diff / (1 << 10)) * (1 << 10), diff);
         }
 
-        is_divisible_by_chunk(u64::from(generator.generate(&chunk_registry)) - (st + 2 * sec));
-    });
+        elfo_utils::time::with_mock(|mock| {
+            let chunk_registry = Arc::new(ChunkRegistry::default());
+            let mut generator = Generator::default();
+
+            let sec = 1 << 38;
+            let st = u64::from(generator.generate(&chunk_registry));
+
+            mock.advance(Duration::from_millis(500));
+            assert_eq!(u64::from(generator.generate(&chunk_registry)), st + 1);
+            mock.advance(Duration::from_millis(500));
+            assert_eq!(u64::from(generator.generate(&chunk_registry)), st + sec + 2,);
+            mock.advance(Duration::from_millis(500));
+            assert_eq!(u64::from(generator.generate(&chunk_registry)), st + sec + 3);
+            mock.advance(Duration::from_millis(500));
+            assert_eq!(
+                u64::from(generator.generate(&chunk_registry)),
+                st + 2 * sec + 4
+            );
+
+            let chunk_registry1 = chunk_registry.clone();
+            std::thread::spawn(move || {
+                elfo_utils::time::with_mock(|mock| {
+                    mock.advance(Duration::from_secs(2));
+                    let mut generator = Generator::default();
+                    is_divisible_by_chunk(
+                        u64::from(generator.generate(&chunk_registry1)) - (st + 2 * sec),
+                    );
+                });
+            })
+            .join()
+            .unwrap();
+
+            for i in 5..1023 {
+                assert_eq!(
+                    u64::from(generator.generate(&chunk_registry)),
+                    st + 2 * sec + i
+                );
+            }
+
+            is_divisible_by_chunk(u64::from(generator.generate(&chunk_registry)) - (st + 2 * sec));
+        });
+    }
+
+    #[test]
+    fn node_no() {
+        let chunk_registry = Arc::new(ChunkRegistry::default());
+        let mut generator = Generator::default();
+        assert_eq!(
+            generator.generate(&chunk_registry).to_layout().node_no,
+            None
+        );
+
+        let scope = Scope::test(
+            Addr::NULL,
+            ActorMeta {
+                group: "test".into(),
+                key: "_".into(),
+            }
+            .into(),
+        );
+
+        scope.sync_within(|| {
+            assert_ne!(
+                generator.generate(&chunk_registry).to_layout().node_no,
+                None,
+            );
+        });
+    }
 }

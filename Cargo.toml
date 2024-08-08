@@ -34,6 +34,10 @@ dashmap = "6.0.1"
 toml = "0.8.14"
 bytesize = { version = "1.2.0", features = ["serde"] }
 
+[workspace.dependencies.derive_more]
+version = "1"
+features = ["constructor", "deref", "display", "error", "from", "into", "is_variant"]
+
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }
 unreachable_pub = "warn"

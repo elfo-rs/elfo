@@ -26,8 +26,6 @@ fn consumer() -> Blueprint {
 }
 
 pub(crate) fn topology() -> elfo::Topology {
-    elfo::_priv::node::set_node_no(2);
-
     let topology = elfo::Topology::empty();
     let logger = elfo::batteries::logger::init();
     let telemeter = elfo::batteries::telemeter::init();
@@ -48,7 +46,7 @@ pub(crate) fn topology() -> elfo::Topology {
     network.mount(elfo::batteries::network::new(&topology));
     consumers.mount(consumer());
 
-    let config_path = "examples/examples/network/bob.toml";
+    let config_path = "examples/network/bob.toml";
     configurers.mount(elfo::batteries::configurer::from_path(
         &topology,
         config_path,

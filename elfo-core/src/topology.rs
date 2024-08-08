@@ -7,7 +7,7 @@ use tokio::runtime::Handle;
 #[cfg(feature = "unstable-stuck-detection")]
 use crate::stuck_detection::StuckDetector;
 use crate::{
-    addr::{Addr, GroupNo, NodeLaunchId},
+    addr::{Addr, GroupNo, NodeLaunchId, NodeNo},
     address_book::{AddressBook, VacantEntry},
     context::Context,
     demux::Demux,
@@ -22,6 +22,7 @@ pub(crate) const SYSTEM_INIT_GROUP_NO: u8 = 1;
 /// The topology defines local and remote groups, and routes between them.
 #[derive(Clone)]
 pub struct Topology {
+    node_no: NodeNo,
     launch_id: NodeLaunchId,
     pub(crate) book: AddressBook,
     inner: Arc<RwLock<Inner>>,
@@ -98,13 +99,26 @@ impl Topology {
     pub fn empty() -> Self {
         let launch_id = NodeLaunchId::generate();
         Self {
+            node_no: NodeNo::generate(),
             launch_id,
             book: AddressBook::new(launch_id),
             inner: Arc::new(RwLock::new(Inner::default())),
         }
     }
 
-    #[stability::unstable]
+    /// Returns the current node number.
+    pub fn node_no(&self) -> NodeNo {
+        self.node_no
+    }
+
+    /// Sets the current node number. Otherwise, it's randomly generated.
+    ///
+    /// See [`NodeNo`] for details.
+    pub fn set_node_no(&mut self, node_no: NodeNo) {
+        self.node_no = node_no;
+    }
+
+    /// Returns the current randomly generated launch ID.
     pub fn launch_id(&self) -> NodeLaunchId {
         self.launch_id
     }
@@ -249,7 +263,7 @@ impl<'t> Local<'t> {
         let book = self.topology.book.clone();
         let ctx = Context::new(book, self.demux.into_inner()).with_group(addr);
         let rt_manager = self.topology.inner.read().rt_manager.clone();
-        let object = (blueprint.mount)(ctx, self.name, rt_manager);
+        let object = (blueprint.mount)(ctx, self.topology.node_no, self.name, rt_manager);
         self.entry.insert(object);
     }
 
@@ -296,7 +310,7 @@ cfg_network!({
     use arc_swap::ArcSwap;
     use fxhash::FxHashMap;
 
-    use crate::{addr::NodeNo, remote::RemoteHandle};
+    use crate::remote::RemoteHandle;
 
     /// Contains nodes available for routing between one specific local group
     /// and set of remote ones with the same group name.

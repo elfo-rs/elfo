@@ -7,7 +7,7 @@ use metrics::counter;
 use tokio::io;
 use tracing::{trace, warn};
 
-use elfo_core::_priv::{NodeLaunchId, NodeNo};
+use elfo_core::addr::{NodeLaunchId, NodeNo};
 use elfo_utils::likely;
 
 use crate::{
@@ -37,7 +37,7 @@ pub(crate) struct Socket {
 }
 
 #[derive(Display, Clone, Constructor)]
-#[display(fmt = "peer(node_no={node_no}, launch_id={launch_id})")] // TODO: use `valuable` after tracing#1570
+#[display("peer(node_no={node_no}, launch_id={launch_id})")] // TODO: use `valuable` after tracing#1570
 pub(crate) struct Peer {
     pub(crate) node_no: NodeNo,
     pub(crate) launch_id: NodeLaunchId,

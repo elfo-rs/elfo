@@ -16,9 +16,9 @@ elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
 
 metrics.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+derive_more.workspace = true
 criterion = "0.5.1"
 futures = "0.3"
-derive_more = "0.99.17"
 mimalloc = { version = "0.1.39", default-features = false }
 jemallocator = "0.5.4"
 tcmalloc = { version = "0.3.0", features = ["bundled"] }

@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use eyre::{eyre, Result};
 use tokio::io;
 
-use elfo_core::_priv::{NodeLaunchId, NodeNo};
+use elfo_core::addr::{NodeLaunchId, NodeNo};
 
 use super::{raw, Capabilities};
 

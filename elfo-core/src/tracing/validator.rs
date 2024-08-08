@@ -1,7 +1,6 @@
 use std::{convert::TryFrom, time::Duration};
 
 use super::trace_id::{TraceId, TruncatedTime};
-use crate::node;
 
 /// A [`TraceId`] validator.
 ///
@@ -20,7 +19,6 @@ pub struct TraceIdValidator {
 // Errors
 const CANNOT_BE_ZERO: &str = "cannot be zero";
 const HIGHEST_BIT_MUST_BE_ZERO: &str = "highest bit must be zero";
-const INVALID_NODE_NO: &str = "invalid node no";
 const INVALID_TIMESTAMP: &str = "invalid timestamp";
 
 impl TraceIdValidator {
@@ -43,12 +41,6 @@ impl TraceIdValidator {
             return Err(HIGHEST_BIT_MUST_BE_ZERO);
         }
 
-        // We don't allow to specify valid `node_no` for now,
-        // but at least we can check that it isn't this node.
-        if layout.node_no == node::node_no() {
-            return Err(INVALID_NODE_NO);
-        }
-
         if let Some(time_lag) = self.max_time_difference {
             let truncated_now = TruncatedTime::now();
             let delta = truncated_now.abs_delta(layout.timestamp);
@@ -64,17 +56,11 @@ impl TraceIdValidator {
 
 #[test]
 fn it_works() {
-    node::set_node_no(65535);
-
     elfo_utils::time::with_mock(|mock| {
         let validator = TraceIdValidator::default().max_time_difference(Duration::from_secs(5));
 
         assert_eq!(validator.validate(0), Err(CANNOT_BE_ZERO));
         assert_eq!(validator.validate(1 << 63), Err(HIGHEST_BIT_MUST_BE_ZERO));
-        assert_eq!(
-            validator.validate(u64::from(node::node_no().map_or(0, |n| n.into_bits())) << 22),
-            Err(INVALID_NODE_NO)
-        );
 
         assert!(validator.validate(5 << 38).is_ok());
         assert!(validator.validate(((1 << 25) - 5) << 38).is_ok());

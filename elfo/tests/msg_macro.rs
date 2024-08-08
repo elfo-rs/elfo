@@ -1,3 +1,5 @@
+#![cfg(feature = "test-util")]
+
 use elfo::{config::AnyConfig, prelude::*};
 
 #[message]

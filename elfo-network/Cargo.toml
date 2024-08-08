@@ -20,6 +20,7 @@ elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
 
 metrics.workspace = true
 dashmap.workspace = true
+derive_more.workspace = true
 serde = { version = "1.0.120", features = ["derive"] }
 static_assertions = "1.1.0"
 eyre = "0.6.8"
@@ -29,7 +30,6 @@ tokio = { workspace = true, features = ["net", "io-util"] }
 tokio-util = "0.7"
 tracing = "0.1.25"
 parking_lot = "0.12"
-derive_more = "0.99.11"
 humantime-serde = "1"
 kanal = "0.1.0-pre8"
 bitflags = "2.3.2"

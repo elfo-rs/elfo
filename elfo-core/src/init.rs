@@ -112,6 +112,9 @@ pub async fn start(topology: Topology) {
 pub async fn try_start(topology: Topology) -> Result<()> {
     check_messages_uniqueness()?;
 
+    #[cfg(feature = "test-util")]
+    warn!("elfo is compiled with `test-util` feature, it may affect performance");
+
     let res = do_start(topology, false, termination).await;
 
     if res.is_err() {
@@ -180,7 +183,7 @@ pub async fn do_start<F: Future>(
         Arc::new(SubscriptionManager::new(ctx.clone())),
     );
 
-    let scope_shared = ScopeGroupShared::new(addr);
+    let scope_shared = ScopeGroupShared::new(topology.node_no(), addr);
     let mut config = SystemConfig::default();
     config.logging.max_level = LevelFilter::INFO;
     scope_shared.configure(&config);

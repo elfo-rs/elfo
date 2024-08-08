@@ -9,21 +9,29 @@ use serde::{Deserialize, Serialize};
 
 // === NodeNo ===
 
-/// Represents the node's number.
+/// Represents the node's number in a distributed system.
 /// Cannot be `0`, it's reserved to represent the local node.
+///
+/// Nodes with the same `node_no` cannot be connected.
+///
+/// NOTE: It's 16-bit unsigned integer, which requires manual management for
+/// bigger-than-small clusters and will be replaced with [`NodeLaunchId`]
+/// totally in the future in order to simplify the management.
 #[stability::unstable]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(Display, Serialize, Deserialize)]
 pub struct NodeNo(NonZeroU16);
 
 impl NodeNo {
-    #[stability::unstable]
+    pub(crate) fn generate() -> Self {
+        Self::from_bits(random_u64().max(1) as u16).unwrap()
+    }
+
     #[inline]
     pub fn from_bits(bits: u16) -> Option<Self> {
         NonZeroU16::new(bits).map(NodeNo)
     }
 
-    #[stability::unstable]
     #[inline]
     pub fn into_bits(self) -> u16 {
         self.0.get()
@@ -44,15 +52,7 @@ pub struct NodeLaunchId(u64);
 
 impl NodeLaunchId {
     pub(crate) fn generate() -> Self {
-        use std::{
-            collections::hash_map::RandomState,
-            hash::{BuildHasher, Hasher},
-        };
-
-        // `RandomState` is randomly seeded.
-        let mut hasher = RandomState::new().build_hasher();
-        hasher.write_u64(0xE1F0E1F0E1F0E1F0);
-        Self(hasher.finish())
+        Self(random_u64())
     }
 
     #[stability::unstable]
@@ -304,6 +304,23 @@ const_assert_eq!(
     idr_ebr::Idr::<crate::object::Object, IdrConfig>::USED_BITS,
     GROUP_NO_SHIFT
 );
+
+// === random_u64 ===
+
+fn random_u64() -> u64 {
+    use std::{
+        collections::hash_map::RandomState,
+        hash::{BuildHasher, Hash, Hasher},
+        thread,
+        time::Instant,
+    };
+
+    let mut hasher = RandomState::new().build_hasher();
+    0xE1F0E1F0E1F0E1F0u64.hash(&mut hasher);
+    Instant::now().hash(&mut hasher);
+    thread::current().id().hash(&mut hasher);
+    hasher.finish()
+}
 
 #[cfg(test)]
 mod tests {

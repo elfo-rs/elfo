@@ -43,6 +43,6 @@ pub mod batteries {
 /// Things that are useful to have included when writing actors.
 pub mod prelude {
     pub use super::{
-        assert_msg, assert_msg_eq, message, msg, ActorGroup, Blueprint, Context, SourceHandle,
+        assert_msg, assert_msg_eq, message, msg, ActorGroup, Blueprint, Context, SourceHandle as _,
     };
 }

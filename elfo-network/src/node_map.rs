@@ -2,8 +2,7 @@ use fxhash::FxHashMap;
 use parking_lot::Mutex;
 
 use elfo_core::{
-    _priv::{NodeLaunchId, NodeNo},
-    node,
+    addr::{NodeLaunchId, NodeNo},
     topology::Topology,
 };
 
@@ -19,7 +18,7 @@ pub(crate) struct NodeMap {
 impl NodeMap {
     pub(crate) fn new(topology: &Topology) -> Self {
         let this = NodeInfo {
-            node_no: node::node_no().expect("node no is not set"),
+            node_no: topology.node_no(),
             launch_id: topology.launch_id(),
             groups: topology
                 .locals()

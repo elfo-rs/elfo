@@ -6,14 +6,15 @@ use parking_lot::Mutex;
 use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
+    addr::{Addr, NodeNo},
     message, Local, Message,
-    _priv::{AnyMessage, EbrGuard, GroupVisitor, MessageKind, NodeNo, Object, OwnedObject},
+    _priv::{AnyMessage, EbrGuard, GroupVisitor, MessageKind, Object, OwnedObject},
     errors::{RequestError, SendError, TrySendError},
     messages::{ConfigUpdated, Impossible},
     msg, remote, scope,
     stream::Stream,
     time::Interval,
-    Addr, Context, Envelope, ResponseToken, Topology,
+    Context, Envelope, ResponseToken, Topology,
 };
 use elfo_utils::{likely, time::Instant, unlikely};
 
