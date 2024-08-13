@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - ReleaseDate
 ### Added
 - core/topology: add `Topology::set_node_no()` and `Topology::node_no()`.
+- core/envelope: add `Envelope::request_id()`.
 
 ### Changed
 - **BREAKING** core/node: remove `node` module, `NodeNo` is moved to `addr`.

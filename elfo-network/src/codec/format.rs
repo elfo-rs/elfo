@@ -38,8 +38,7 @@ use elfo_core::{
     addr::{Addr, NodeNo},
     errors::RequestError,
     tracing::TraceId,
-    AnyMessage, Message,
-    _priv::RequestId,
+    AnyMessage, Message, RequestId,
 };
 use elfo_utils::likely;
 
