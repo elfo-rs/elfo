@@ -20,7 +20,7 @@ pub use crate::{
     group::{ActorGroup, Blueprint, TerminationPolicy},
     local::{Local, MoveOwnership},
     message::{AnyMessage, AnyMessageRef, Message, Request},
-    request_table::ResponseToken,
+    request_table::{RequestId, ResponseToken},
     restarting::{RestartParams, RestartPolicy},
     source::{SourceHandle, UnattachedSource},
     topology::Topology,
@@ -95,7 +95,6 @@ pub mod _priv {
         message::*,
         object::{GroupVisitor, Object, OwnedObject},
         permissions::{AtomicPermissions, Permissions},
-        request_table::RequestId,
     };
     pub use erased_serde;
     pub use idr_ebr::EbrGuard;

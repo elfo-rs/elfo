@@ -4,11 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use eyre::{ensure, eyre, Error, WrapErr};
 use tracing::error;
 
-use elfo_core::{
-    _priv::{AnyMessage, RequestId},
-    errors::RequestError,
-    tracing::TraceId,
-};
+use elfo_core::{errors::RequestError, tracing::TraceId, AnyMessage, RequestId};
 use elfo_utils::likely;
 
 use crate::codec::format::{

@@ -2,7 +2,7 @@ use fxhash::FxHashMap;
 use metrics::{decrement_gauge, increment_gauge};
 use tracing::error;
 
-use elfo_core::{Addr, ResponseToken, _priv::RequestId};
+use elfo_core::{Addr, RequestId, ResponseToken};
 
 #[derive(Default)]
 pub(super) struct OutgoingRequests {

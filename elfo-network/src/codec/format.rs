@@ -35,10 +35,7 @@
 use derive_more::Display;
 
 use elfo_core::{
-    errors::RequestError,
-    tracing::TraceId,
-    Addr, Message,
-    _priv::{AnyMessage, NodeNo, RequestId},
+    _priv::NodeNo, errors::RequestError, tracing::TraceId, Addr, AnyMessage, Message, RequestId,
 };
 use elfo_utils::likely;
 

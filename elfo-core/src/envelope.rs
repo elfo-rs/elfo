@@ -174,6 +174,16 @@ impl Envelope {
         }
     }
 
+    #[inline]
+    pub fn request_id(&self) -> Option<RequestId> {
+        match self.message_kind() {
+            MessageKind::Regular { .. } => None,
+            MessageKind::RequestAny(token) => Some(token.request_id()),
+            MessageKind::RequestAll(token) => Some(token.request_id()),
+            MessageKind::Response { request_id, .. } => Some(*request_id),
+        }
+    }
+
     #[doc(hidden)]
     #[inline]
     pub fn type_id(&self) -> MessageTypeId {
