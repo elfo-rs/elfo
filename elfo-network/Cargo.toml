@@ -33,7 +33,7 @@ parking_lot = "0.12"
 humantime-serde = "1"
 kanal = "0.1.0-pre8"
 bitflags = "2.3.2"
-lz4_flex = "0.11.1"
+lz4_flex = { version = "0.11.1", default-features = false, features = ["std"] }
 byteorder = "1.4.3"
 
 [dev-dependencies]
