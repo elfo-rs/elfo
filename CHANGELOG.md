@@ -16,11 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING** core/node: remove `node` module, `NodeNo` is moved to `addr`.
 - core/addr: expose the `addr` module.
 - core: generate `NodeNo` randomly if not provided.
+- network: don't force `safe-*` features of lz4_flex ([#136]).
 
 ### Fixed
 - core: update the `idr-ebr` crate to v0.3 to fix possible crash in `Context::finished()`.
 
 [#135]: https://github.com/elfo-rs/elfo/pull/135
+[#136]: https://github.com/elfo-rs/elfo/pull/136
 
 ## [0.2.0-alpha.16] - 2024-07-24
 ### Added
