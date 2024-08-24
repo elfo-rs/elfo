@@ -1,8 +1,8 @@
 [package]
 name = "elfo"
 version = "0.2.0-alpha.16"
-description = "Your next actor system"
-keywords = ["elfo", "actor", "distributed", "tokio"]
+description = "An asynchronous distributed actor framework with robust observability"
+keywords = ["elfo", "actor", "distributed", "tokio", "observability"]
 
 repository.workspace = true
 authors.workspace = true
