@@ -6,6 +6,7 @@ use std::{
     any::{Any, TypeId},
     fmt, mem,
     ops::Deref,
+    str::FromStr,
     sync::Arc,
 };
 
@@ -283,6 +284,14 @@ impl<T> fmt::Debug for Secret<T> {
 impl<T> fmt::Display for Secret<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "<secret>")
+    }
+}
+
+impl<T: FromStr> FromStr for Secret<T> {
+    type Err = T::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        T::from_str(s).map(Self)
     }
 }
 
