@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - core/topology: add `Topology::set_node_no()` and `Topology::node_no()`.
 - core/envelope: add `Envelope::request_id()`.
+- core/config: impl `FromStr` for `Secret` ([#135]).
 
 ### Changed
 - **BREAKING** core/node: remove `node` module, `NodeNo` is moved to `addr`.
@@ -18,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - core: update the `idr-ebr` crate to v0.3 to fix possible crash in `Context::finished()`.
+
+[#135]: https://github.com/elfo-rs/elfo/pull/135
 
 ## [0.2.0-alpha.16] - 2024-07-24
 ### Added
