@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - core/topology: add `Topology::set_node_no()` and `Topology::node_no()`.
 - core/envelope: add `Envelope::request_id()`.
 - core/config: impl `FromStr` for `Secret` ([#135]).
+- core/init: emit the `elfo_start_time_seconds` metric.
 
 ### Changed
 - **BREAKING** core/node: remove `node` module, `NodeNo` is moved to `addr`.

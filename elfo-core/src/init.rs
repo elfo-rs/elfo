@@ -1,4 +1,8 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use futures::future::join_all;
 use tokio::{
@@ -115,7 +119,7 @@ pub async fn try_start(topology: Topology) -> Result<()> {
     #[cfg(feature = "test-util")]
     warn!("elfo is compiled with `test-util` feature, it may affect performance");
 
-    let res = do_start(topology, false, termination).await;
+    let res = do_start(topology, false, exec).await;
 
     if res.is_err() {
         // XXX: give enough time to the logger.
@@ -132,7 +136,7 @@ pub async fn check_only(topology: Topology) -> Result<()> {
 
     // The logger is not supposed to be initialized in this mode, so we do not wait
     // for it before exiting.
-    do_start(topology, true, do_termination).await
+    do_start(topology, true, terminate).await
 }
 
 /// Checks that all messages are unique by `(protocol, name)` pair.
@@ -161,8 +165,7 @@ pub async fn do_start<F: Future>(
     is_check_only: bool,
     and_then: impl FnOnce(Context, Topology) -> F,
 ) -> Result<F::Output> {
-    // Perform the clock calibration if needed.
-    Instant::now();
+    instant_clock_calibration();
 
     let group_no = GroupNo::new(SYSTEM_INIT_GROUP_NO, topology.launch_id()).unwrap();
     let entry = topology.book.vacant_entry(group_no);
@@ -214,7 +217,9 @@ struct CheckMemoryUsageTick;
 const SEND_CLOSING_TERMINATE_AFTER: Duration = Duration::from_secs(25);
 const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(35);
 
-async fn termination(mut ctx: Context, topology: Topology) {
+async fn exec(mut ctx: Context, topology: Topology) {
+    emit_start_time();
+
     ctx.attach(Signal::new(SignalKind::UnixTerminate, TerminateSystem));
     ctx.attach(Signal::new(SignalKind::UnixInterrupt, TerminateSystem));
     ctx.attach(Signal::new(SignalKind::WindowsCtrlC, TerminateSystem));
@@ -272,7 +277,7 @@ async fn termination(mut ctx: Context, topology: Topology) {
 
     ctx.set_status(ActorStatus::TERMINATING);
 
-    let termination = do_termination(ctx.pruned(), topology);
+    let termination = terminate(ctx.pruned(), topology);
     pin!(termination);
 
     loop {
@@ -296,7 +301,7 @@ async fn termination(mut ctx: Context, topology: Topology) {
     }
 }
 
-async fn do_termination(ctx: Context, topology: Topology) {
+async fn terminate(ctx: Context, topology: Topology) {
     let mut stop_order_list = topology
         .locals()
         .map(|group| group.stop_order)
@@ -375,4 +380,24 @@ async fn watch_group(ctx: &Context, addr: Addr, name: String, started_at: Instan
         group = %name,
         elapsed = ?started_at.elapsed(),
     );
+}
+
+fn instant_clock_calibration() {
+    // Perform the clock calibration if needed.
+    std::hint::black_box(Instant::now());
+}
+
+fn emit_start_time() {
+    metrics::register_gauge!(
+        "elfo_start_time_seconds",
+        metrics::Unit::Seconds,
+        "Start time of the elfo system since unix epoch in seconds",
+    );
+
+    let unix_time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+
+    metrics::gauge!("elfo_start_time_seconds", unix_time);
 }
