@@ -273,7 +273,7 @@ fn sanitize_label_key(key: &str) -> Cow<'_, str> {
 }
 
 fn sanitize_label_value(value: &str) -> Cow<'_, str> {
-    if value.contains(|c: char| c == '\\' || c == '"' || c == '\n') {
+    if value.contains(['\\', '"', '\n']) {
         value.into()
     } else {
         value

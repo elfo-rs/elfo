@@ -232,7 +232,7 @@ fn strip_known_wrappers(mut s: &str) -> &str {
 }
 
 fn extract_path(s: &str) -> &str {
-    if let Some(idx) = s.find(|c| c == '<' || c == '>' || c == ',') {
+    if let Some(idx) = s.find(['<', '>', ',']) {
         &s[..idx]
     } else {
         s

@@ -145,10 +145,7 @@ impl Serializer {
                 }
                 true
             })
-            .map_err(|err| {
-                self.output.truncate(prev_len);
-                err
-            })
+            .inspect_err(|_| self.output.truncate(prev_len))
     }
 
     pub(crate) fn take(&mut self) -> (Option<&[u8]>, Report) {
