@@ -6,4 +6,9 @@ pre-release-replacements = [
     {prerelease=true, file="../CHANGELOG.md", search="ReleaseDate", replace="{{date}}"},
     {prerelease=true, file="../CHANGELOG.md", search="<!-- next-header -->", replace="<!-- next-header -->\n\n## [Unreleased] - ReleaseDate", exactly=1},
     {prerelease=true, file="../CHANGELOG.md", search="<!-- next-url -->", replace="<!-- next-url -->\n[Unreleased]: https://github.com/elfo-rs/elfo/compare/{{tag_name}}...HEAD", exactly=1},
+
+    # Use precise versions (temporary for alpha releases!). TODO: remove once v0.2 is ready.
+    # This is because even if `elfo = "=0.2.0-alpha.X"` is used, `cargo` fetches latest versions of crates (e.g. `elfo-core`).
+    {prerelease=true, file="../elfo/Cargo.toml", search="^(.+version) = \"0.2.0-alpha.*?\"", replace="$1 = \"={{version}}\""},
+    {prerelease=true, file="../elfo-macros/Cargo.toml", search="^(.+version) = \"0.2.0-alpha.*?\"", replace="$1 = \"={{version}}\""},
 ]
