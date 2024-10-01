@@ -86,12 +86,7 @@ impl Formatter<TraceId> for TraceId {
 
 impl Formatter<Arc<ActorMeta>> for Arc<ActorMeta> {
     fn fmt(out: &mut String, v: &Arc<ActorMeta>) {
-        out.push_str(&v.group);
-
-        if !v.key.is_empty() {
-            out.push('.');
-            out.push_str(&v.key);
-        }
+        let _ = write!(out, "{v}");
     }
 }
 

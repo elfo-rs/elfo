@@ -1,5 +1,5 @@
 use std::{
-    mem,
+    fmt, mem,
     sync::{atomic, Arc},
 };
 
@@ -29,8 +29,23 @@ use crate::{
 /// Represents meta information about actor: his group and key.
 #[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActorMeta {
+    /// Actor's group name set in the topology.
     pub group: String,
+    /// Actor's key set by the router.
     pub key: String,
+}
+
+impl fmt::Display for ActorMeta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.group)?;
+
+        if !self.key.is_empty() {
+            f.write_str("/")?;
+            f.write_str(&self.key)?;
+        }
+
+        Ok(())
+    }
 }
 
 // === ActorStartInfo ===

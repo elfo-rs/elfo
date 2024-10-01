@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - core/envelope: add `Envelope::request_id()`.
 - core/config: impl `FromStr` for `Secret` ([#135]).
 - core/init: emit the `elfo_start_time_seconds` metric.
+- core/actor: implement `Display` for `ActorMeta` ([#74]).
 
 ### Changed
 - **BREAKING** core/node: remove `node` module, `NodeNo` is moved to `addr`.
+- logger: use `/` as a delimiter between an actor's group and key ([#74]).
 - core/addr: expose the `addr` module.
 - core: generate `NodeNo` randomly if not provided.
 - network: don't force `safe-*` features of lz4_flex ([#136]).
@@ -22,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - core: update the `idr-ebr` crate to v0.3 to fix possible crash in `Context::finished()`.
 
+[#74]: https://github.com/elfo-rs/elfo/issues/74
 [#135]: https://github.com/elfo-rs/elfo/pull/135
 [#136]: https://github.com/elfo-rs/elfo/pull/136
 
