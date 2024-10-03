@@ -191,7 +191,7 @@ impl Proxy {
     }
 
     /// Creates a subproxy with a different address.
-    /// The main purpose is to test `send_to(..)` and `request(..).from(..)`
+    /// The main purpose is to test `send_to(..)` and `request_to(..)`
     /// calls. It's likely to be changed in the future.
     pub async fn subproxy(&self) -> Proxy {
         let f = async {
