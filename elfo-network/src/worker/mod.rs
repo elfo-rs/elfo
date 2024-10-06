@@ -164,28 +164,38 @@ impl Worker {
         };
         self.ctx.attach(Stream::once(sr.exec()));
 
+        let mut idle = socket.idle;
+
         // Start ping ticks.
         let ping_interval = self.ctx.attach(Interval::new(PingTick));
         ping_interval.start_after(Duration::ZERO, self.ctx.config().ping_interval);
 
         while let Some(envelope) = self.ctx.recv().await {
             // TODO: graceful termination
-            // TODO: handle another `HandleConnection`
 
             msg!(match envelope {
                 ConfigUpdated => {
                     ping_interval.set_period(self.ctx.config().ping_interval);
                 }
                 PingTick => {
+                    let idle_time = idle.check();
+
+                    if idle_time >= self.ctx.config().idle_timeout {
+                        error!(
+                            message = "no data is received for a long time, closing",
+                            idle_time = ?idle_time,
+                            timeout = ?self.ctx.config().idle_timeout,
+                        );
+                        break;
+                    }
+
                     let envelope = make_system_envelope(internode::Ping {
                         payload: Instant::now().nanos_since(time_origin),
                     });
                     let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
-
-                    // TODO: perform health check
                 }
                 msg @ HandleConnection => {
-                    info!("duplicate connection, skipping"); // TODO
+                    info!("duplicate connection, skipping"); // TODO: replace?
                     if self.transport.is_none() {
                         self.transport = msg.transport;
                     }

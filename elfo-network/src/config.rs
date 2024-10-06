@@ -29,17 +29,33 @@ use serde::{
 #[derive(Debug, Deserialize)]
 pub struct Config {
     /// A list of addresses to listen on.
+    #[serde(default)]
     pub listen: Vec<Transport>,
-    /// How often nodes should ping each other.
-    /// `5s` by default
-    #[serde(with = "humantime_serde", default = "default_ping_interval")]
-    pub ping_interval: Duration,
     /// How to discover other nodes.
     #[serde(default)]
     pub discovery: DiscoveryConfig, // TODO: optional?
     /// Compression settings.
     #[serde(default)]
     pub compression: CompressionConfig,
+    /// How often nodes should ping each other.
+    ///
+    /// Pings are used to measure RTT and detect dead connections.
+    /// For the latest purpose, see `idle_timeout`.
+    ///
+    /// `5s` by default.
+    #[serde(with = "humantime_serde", default = "default_ping_interval")]
+    pub ping_interval: Duration,
+    /// The maximum inactivity time of every connection.
+    ///
+    /// If no data is received on a connection for over `idle_timeout` time,
+    /// the connection is considered dead and will be automatically closed.
+    ///
+    /// This timeout is checked every `ping_interval` time, so the actual time
+    /// lies in the range of `idle_timeout` to `idle_timeout + ping_interval`.
+    ///
+    /// `30s` by default.
+    #[serde(with = "humantime_serde", default = "default_idle_timeout")]
+    pub idle_timeout: Duration,
 }
 
 /// Compression settings.
@@ -62,6 +78,10 @@ pub enum CompressionAlgorithm {
 
 fn default_ping_interval() -> Duration {
     Duration::from_secs(5)
+}
+
+fn default_idle_timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 /// How to discover other nodes.

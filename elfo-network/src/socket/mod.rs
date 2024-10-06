@@ -2,7 +2,7 @@ use std::{future::Future, time::Duration};
 
 use derive_more::{Constructor, Display};
 use eyre::{eyre, Result, WrapErr};
-use futures::StreamExt;
+use futures::{stream::BoxStream, StreamExt};
 use metrics::counter;
 use tokio::io;
 use tracing::{trace, warn};
@@ -10,6 +10,7 @@ use tracing::{trace, warn};
 use elfo_core::addr::{NodeLaunchId, NodeNo};
 use elfo_utils::likely;
 
+use self::idleness::{IdleTrack, IdleTracker};
 use crate::{
     codec::{decode::EnvelopeDetails, encode::EncodeError, format::NetworkEnvelope},
     config::Transport,
@@ -20,6 +21,7 @@ use crate::{
 };
 
 mod handshake;
+mod idleness;
 mod raw;
 
 bitflags::bitflags! {
@@ -34,6 +36,7 @@ pub(crate) struct Socket {
     pub(crate) peer: Peer,
     pub(crate) read: ReadHalf,
     pub(crate) write: WriteHalf,
+    pub(crate) idle: IdleTracker,
 }
 
 #[derive(Display, Clone, Constructor)]
@@ -53,11 +56,14 @@ impl Socket {
             (FramedRead::none(), FramedWrite::none(None))
         };
 
+        let (idle_tracker, idle_track) = IdleTracker::new();
+
         Self {
             info: raw.info,
             peer: Peer::new(handshake.node_no, handshake.launch_id),
-            read: ReadHalf::new(framed_read, raw.read),
+            read: ReadHalf::new(framed_read, raw.read, idle_track),
             write: WriteHalf::new(framed_write, raw.write),
+            idle: idle_tracker,
         }
     }
 }
@@ -65,6 +71,7 @@ impl Socket {
 pub(crate) struct ReadHalf {
     framing: FramedRead,
     read: raw::OwnedReadHalf,
+    idle: IdleTrack,
 }
 
 #[derive(Debug)]
@@ -83,8 +90,12 @@ where
 }
 
 impl ReadHalf {
-    fn new(framing: FramedRead, read: raw::OwnedReadHalf) -> Self {
-        Self { framing, read }
+    fn new(framing: FramedRead, read: raw::OwnedReadHalf, idle: IdleTrack) -> Self {
+        Self {
+            framing,
+            read,
+            idle,
+        }
     }
 
     fn report_framing_metrics(&mut self) {
@@ -104,13 +115,15 @@ impl ReadHalf {
         let envelope = loop {
             let buffer = match self.framing.read()? {
                 FramedReadState::NeedMoreData { buffer } => {
-                    trace!(message = "framed read strategy requested more data");
+                    trace!("framed read strategy requested more data");
                     buffer
                 }
                 FramedReadState::EnvelopeSkipped(details) => {
+                    self.idle.update();
                     return Err(ReadError::EnvelopeSkipped(details));
                 }
                 FramedReadState::Done { decoded } => {
+                    self.idle.update();
                     let (protocol, name) = decoded.payload.protocol_and_name();
                     trace!(
                         message = "framed read strategy decoded single envelope",
@@ -123,6 +136,12 @@ impl ReadHalf {
             };
 
             let bytes_read = io::AsyncReadExt::read(&mut self.read, buffer).await?;
+
+            // Large messages cannot be read in a single `read()` call, so we should
+            // additionally update the idle tracker even without waiting until the
+            // message is fully decoded to prevent false positive disconnects.
+            self.idle.update();
+
             if bytes_read == 0 {
                 // EOF.
                 return Ok(None);
@@ -239,7 +258,7 @@ pub(crate) async fn listen(
     node_no: NodeNo,
     launch_id: NodeLaunchId,
     capabilities: Capabilities,
-) -> Result<futures::stream::BoxStream<'static, Socket>> {
+) -> Result<BoxStream<'static, Socket>> {
     let stream = timeout(LISTEN_TIMEOUT, raw::listen(addr)).await?;
     let stream = stream
         .map(move |mut raw_socket| async move {

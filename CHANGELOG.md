@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - core/config: impl `FromStr` for `Secret` ([#135]).
 - core/init: emit the `elfo_start_time_seconds` metric.
 - core/actor: implement `Display` for `ActorMeta` ([#74]).
+- network: add `idle_timeout` to detect and disconnect stuck connections.
 
 ### Changed
 - **BREAKING** core/node: remove `node` module, `NodeNo` is moved to `addr`.
