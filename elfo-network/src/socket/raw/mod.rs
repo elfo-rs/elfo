@@ -6,14 +6,14 @@ use std::{
 
 use derive_more::Display;
 use eyre::Result;
-use futures::{Stream, StreamExt};
+use futures::{stream::BoxStream, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-#[cfg(unix)]
-use tokio_util::either::Either;
 
 use crate::config::Transport;
 
 mod tcp;
+#[cfg(feature = "turmoil06")]
+mod turmoil;
 mod uds;
 
 macro_rules! delegate_call {
@@ -22,6 +22,8 @@ macro_rules! delegate_call {
             Self::Tcp(v) => Pin::new(v).$method($($args),+),
             #[cfg(unix)]
             Self::Uds(v) => Pin::new(v).$method($($args),+),
+            #[cfg(feature = "turmoil06")]
+            Self::Turmoil06(v) => Pin::new(v).$method($($args),+),
         }
     }
 }
@@ -31,12 +33,16 @@ pub(crate) enum SocketInfo {
     Tcp(tcp::SocketInfo),
     #[cfg(unix)]
     Uds(uds::SocketInfo),
+    #[cfg(feature = "turmoil06")]
+    Turmoil06(turmoil::SocketInfo),
 }
 
 pub(super) enum OwnedReadHalf {
     Tcp(tcp::OwnedReadHalf),
     #[cfg(unix)]
     Uds(uds::OwnedReadHalf),
+    #[cfg(feature = "turmoil06")]
+    Turmoil06(turmoil::OwnedReadHalf),
 }
 
 impl AsyncRead for OwnedReadHalf {
@@ -53,6 +59,8 @@ pub(super) enum OwnedWriteHalf {
     Tcp(tcp::OwnedWriteHalf),
     #[cfg(unix)]
     Uds(uds::OwnedWriteHalf),
+    #[cfg(feature = "turmoil06")]
+    Turmoil06(turmoil::OwnedWriteHalf),
 }
 
 impl AsyncWrite for OwnedWriteHalf {
@@ -81,6 +89,8 @@ impl AsyncWrite for OwnedWriteHalf {
             Self::Tcp(v) => v.is_write_vectored(),
             #[cfg(unix)]
             Self::Uds(v) => v.is_write_vectored(),
+            #[cfg(feature = "turmoil06")]
+            Self::Turmoil06(v) => v.is_write_vectored(),
         }
     }
 }
@@ -112,23 +122,33 @@ impl From<uds::Socket> for Socket {
     }
 }
 
+#[cfg(feature = "turmoil06")]
+impl From<turmoil::Socket> for Socket {
+    fn from(socket: turmoil::Socket) -> Self {
+        Self {
+            read: OwnedReadHalf::Turmoil06(socket.read),
+            write: OwnedWriteHalf::Turmoil06(socket.write),
+            info: SocketInfo::Turmoil06(socket.info),
+        }
+    }
+}
+
 pub(super) async fn connect(addr: &Transport) -> Result<Socket> {
     match addr {
         Transport::Tcp(addr) => tcp::connect(addr).await.map(Into::into),
         #[cfg(unix)]
         Transport::Uds(addr) => uds::connect(addr).await.map(Into::into),
+        #[cfg(feature = "turmoil06")]
+        Transport::Turmoil06(addr) => turmoil::connect(addr).await.map(Into::into),
     }
 }
 
-pub(super) async fn listen(addr: &Transport) -> Result<impl Stream<Item = Socket> + 'static> {
-    match addr {
-        Transport::Tcp(addr) => {
-            let result = tcp::listen(addr).await.map(|s| s.map(Into::into));
-            #[cfg(unix)]
-            let result = result.map(Either::Left);
-            result
-        }
+pub(super) async fn listen(addr: &Transport) -> Result<BoxStream<'static, Socket>> {
+    Ok(match addr {
+        Transport::Tcp(addr) => Box::pin(tcp::listen(addr).await?.map(Into::into)),
         #[cfg(unix)]
-        Transport::Uds(addr) => uds::listen(addr).map(|s| Either::Right(s.map(Into::into))),
-    }
+        Transport::Uds(addr) => Box::pin(uds::listen(addr)?.map(Into::into)),
+        #[cfg(feature = "turmoil06")]
+        Transport::Turmoil06(addr) => Box::pin(turmoil::listen(addr).await?.map(Into::into)),
+    })
 }

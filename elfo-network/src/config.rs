@@ -110,6 +110,12 @@ pub enum Transport {
     #[cfg(unix)]
     #[display("uds://{}", "_0.display()")]
     Uds(PathBuf),
+    /// Turmoil v0.6 transport ("turmoil06://host").
+    ///
+    /// Useful for testing purposes only.
+    #[cfg(feature = "turmoil06")]
+    #[display("turmoil06://{_0}")]
+    Turmoil06(String),
 }
 
 impl FromStr for Transport {
@@ -134,6 +140,8 @@ impl FromStr for Transport {
                 );
                 Ok(Transport::Uds(PathBuf::from(addr)))
             }
+            #[cfg(feature = "turmoil06")]
+            "turmoil06" => Ok(Transport::Turmoil06(addr.into())),
             proto => bail!("unknown protocol: {proto}"),
         }
     }
@@ -184,6 +192,10 @@ mod tests {
             Transport::from_str("tcp://127.0.0.1:4242").unwrap(),
             Transport::Tcp("127.0.0.1:4242".into())
         );
+        assert_eq!(
+            Transport::from_str("tcp://alice:4242").unwrap(),
+            Transport::Tcp("alice:4242".into())
+        );
 
         // UDS
         #[cfg(unix)]
@@ -201,5 +213,12 @@ mod tests {
                 "path to UDS socket cannot be directory"
             );
         }
+
+        // Turmoil06
+        #[cfg(feature = "turmoil06")]
+        assert_eq!(
+            Transport::from_str("turmoil06://alice").unwrap(),
+            Transport::Turmoil06("alice".into())
+        );
     }
 }

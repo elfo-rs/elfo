@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - core/config: impl `FromStr` for `Secret` ([#135]).
 - core/init: emit the `elfo_start_time_seconds` metric.
 - core/actor: implement `Display` for `ActorMeta` ([#74]).
-- network: add `idle_timeout` to detect and disconnect stuck connections.
+- network: add `idle_timeout` to detect and disconnect stuck connections ([#137]).
+- network: add the `turmoil` transport for testing distributed actors ([#137]).
 
 ### Changed
 - **BREAKING** core/node: remove `node` module, `NodeNo` is moved to `addr`.
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#74]: https://github.com/elfo-rs/elfo/issues/74
 [#135]: https://github.com/elfo-rs/elfo/pull/135
 [#136]: https://github.com/elfo-rs/elfo/pull/136
+[#137]: https://github.com/elfo-rs/elfo/pull/137
 
 ## [0.2.0-alpha.16] - 2024-07-24
 ### Added

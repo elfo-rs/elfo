@@ -12,23 +12,17 @@ use elfo::{
 };
 use elfo_core::config::AnyConfig;
 
+mod common;
+
 #[message(ret = u64)]
 struct TestRequest;
 
 #[message]
 struct NeverSent;
 
-fn setup_logger() {
-    let _ = tracing_subscriber::fmt()
-        .with_target(false)
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_test_writer()
-        .try_init();
-}
-
 #[tokio::test]
 async fn stealing() {
-    setup_logger();
+    common::setup_logger();
 
     let requester_blueprint = ActorGroup::new().exec(move |mut ctx| async move {
         info!("sent request");
@@ -79,7 +73,10 @@ async fn stealing() {
         })
     });
 
-    configurers.mount(elfo_configurer::fixture(&topology, AnyConfig::default()));
+    configurers.mount(elfo::batteries::configurer::fixture(
+        &topology,
+        AnyConfig::default(),
+    ));
     requester.mount(requester_blueprint);
     responder.mount(responder_blueprint);
     thief.mount(thief_blueprint);
@@ -94,7 +91,7 @@ async fn stealing() {
 
 #[tokio::test]
 async fn multiple_failures() {
-    setup_logger();
+    common::setup_logger();
 
     fn success_blueprint(id: u64) -> Blueprint {
         ActorGroup::new().exec(move |mut ctx| async move {
