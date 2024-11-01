@@ -113,3 +113,13 @@ pub struct ActorStatusReport {
     pub meta: Arc<ActorMeta>,
     pub status: ActorStatus,
 }
+
+impl ActorStatusReport {
+    #[cfg(feature = "test-util")]
+    pub fn new(meta: impl Into<Arc<ActorMeta>>, status: ActorStatus) -> Self {
+        Self {
+            meta: meta.into(),
+            status,
+        }
+    }
+}
