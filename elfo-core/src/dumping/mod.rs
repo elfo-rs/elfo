@@ -7,7 +7,7 @@ use serde::{Serialize, Serializer};
 pub use self::{
     control::{CheckResult, DumpingControl},
     dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName},
-    dumper::Dumper,
+    dumper::{Dumper, DumpingPermit},
     extract_name::{extract_name, extract_name_by_type},
     raw::Raw,
     recorder::{set_make_recorder, Recorder},
@@ -17,7 +17,7 @@ pub use self::{
 pub(crate) use self::{
     control::{CheckResult, DumpingControl},
     dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName},
-    dumper::Dumper,
+    dumper::{Dumper, DumpingPermit},
     extract_name::{extract_name, extract_name_by_type},
     raw::Raw,
     recorder::{set_make_recorder, Recorder},
