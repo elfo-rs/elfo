@@ -28,7 +28,6 @@ tokio = { workspace = true, features = ["macros", "fs", "io-util"] }
 arc-swap = "1.2.0"
 once_cell = { version = "1.8.0", features = ["parking_lot"] }
 futures-intrusive = "0.5"
-atty = "0.2.14"
 serde = { version = "1.0.120", features = ["derive"] }
 parking_lot = "0.12"
 sharded-slab = "0.1.7"

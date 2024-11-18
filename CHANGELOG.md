@@ -21,10 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - logger: use `/` as a delimiter between an actor's group and key ([#74]).
 - core/addr: expose the `addr` module.
 - core: generate `NodeNo` randomly if not provided.
-- network: don't force `safe-*` features of lz4_flex ([#136]).
+- network: don't force `safe-*` features of the `lz4_flex` crate ([#136]).
 
 ### Fixed
 - core: update the `idr-ebr` crate to v0.3 to fix possible crash in `Context::finished()`.
+- logger: replace the `atty` crate with `IsTerminal` to fix cargo-audit warnings.
 
 [#74]: https://github.com/elfo-rs/elfo/issues/74
 [#135]: https://github.com/elfo-rs/elfo/pull/135

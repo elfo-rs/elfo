@@ -1,4 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    io::{self, IsTerminal as _},
+    sync::Arc,
+    time::Duration,
+};
 
 use metrics::increment_counter;
 use tokio::{
@@ -226,7 +230,7 @@ async fn open_file(config: &Config) -> Option<File> {
 }
 
 fn can_use_colors(config: &Config) -> bool {
-    config.sink == Sink::Stdout && atty::is(atty::Stream::Stdout)
+    config.sink == Sink::Stdout && io::stdout().is_terminal()
 }
 
 fn extract_location(metadata: &Metadata<'static>) -> Option<(&'static str, u32)> {
