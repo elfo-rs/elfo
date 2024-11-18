@@ -33,7 +33,7 @@ parking_lot = "0.12"
 sharded-slab = "0.1.7"
 tracing = "0.1.25"
 tracing-subscriber = { version = "0.3.2", features = ["env-filter", "parking_lot"] }
-tracing-log = { version = "0.1.4", optional = true }
+tracing-log = { version = "0.2", optional = true }
 log = { version = "0.4.20", optional = true }
 fxhash = "0.2.1"
 humantime = "2.1.0"
