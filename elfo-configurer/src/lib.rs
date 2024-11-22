@@ -16,10 +16,8 @@ use tracing::{error, info, warn};
 
 use elfo_core::{
     config::AnyConfig,
-    errors::RequestError,
     messages::{
-        EntrypointError, Ping, StartEntrypoint, StartEntrypointRejected, UpdateConfig,
-        ValidateConfig,
+        EntrypointError, StartEntrypoint, StartEntrypointRejected, UpdateConfig, ValidateConfig,
     },
     msg, scope,
     signal::{Signal, SignalKind},
@@ -344,27 +342,16 @@ impl Configurer {
     }
 
     async fn update_all(&self, configs: &[ConfigWithMeta]) {
-        let futures = configs
-            .iter()
-            .cloned()
-            .map(|item| {
-                let group = item.group_name;
-                // While `UpdateConfig` is defined as a request to cover more use cases, default
-                // configurer simply sends out new configs instead of waiting for all groups to
-                // process the message and respond. This is done for performance reasons. If an
-                // actor has a congested mailbox or spends a lot of time processing each
-                // message, updating configs using requests can take a lot of time.
-                let fut = self.ctx.send_to(item.addr, UpdateConfig::new(item.config));
+        for item in configs {
+            let message = UpdateConfig::new(item.config.clone()); // cheap due to `Arc`s.
 
-                wrap_long_running_future(
-                    fut,
-                    group,
-                    "some actors in the group have congested mailboxes, config update is stalled",
-                )
-            })
-            .collect::<Vec<_>>();
-
-        future::join_all(futures).await;
+            // While `UpdateConfig` is defined as a request to cover more use cases, default
+            // configurer simply sends out new configs instead of waiting for all groups to
+            // process the message and respond. This is done for performance reasons. If an
+            // actor has a congested mailbox or spends a lot of time processing each
+            // message, updating configs using requests can take a lot of time.
+            let _ = self.ctx.unbounded_send_to(item.addr, message);
+        }
     }
 }
 
@@ -382,29 +369,6 @@ async fn wrap_long_running_future<F: Future>(
             }
         }
     }
-}
-
-#[allow(dead_code)]
-async fn ping(ctx: &Context, config_list: &[ConfigWithMeta]) -> bool {
-    let futures = config_list
-        .iter()
-        .cloned()
-        .map(|item| ctx.request_to(item.addr, Ping::default()).all().resolve())
-        .collect::<Vec<_>>();
-
-    // TODO: use `try_join_all`.
-    let errors = future::join_all(futures)
-        .await
-        .into_iter()
-        .flatten()
-        .filter_map(|result| match result {
-            Ok(()) | Err(RequestError::Ignored) => None,
-            Err(RequestError::Failed) => Some(String::from("some group is closed")),
-        })
-        // TODO: include actor keys in the error message.
-        .inspect(|reason| error!(%reason, "ping failed"));
-
-    errors.count() == 0
 }
 
 async fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
@@ -433,6 +397,7 @@ fn match_configs(topology: &Topology, config: &Value) -> Vec<ConfigWithMeta> {
             }
         })
         .collect();
+
     // Config parsing happens in the supervisor, which is executed in this actor
     // when it performs `send_to(addr, UpdateConfig)`. User actor groups can
     // have arbitrary large configs, taking a considerable time to deserialize.

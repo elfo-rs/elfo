@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - core/addr: expose the `addr` module.
 - core: generate `NodeNo` randomly if not provided.
 - network: don't force `safe-*` features of the `lz4_flex` crate ([#136]).
+- configurer: send `UpdateConfig` unboundedly.
 
 ### Fixed
 - core: update the `idr-ebr` crate to v0.3 to fix possible crash in `Context::finished()`.
