@@ -28,12 +28,15 @@ impl NodeNo {
     }
 
     #[inline]
-    pub fn from_bits(bits: u16) -> Option<Self> {
-        NonZeroU16::new(bits).map(NodeNo)
+    pub const fn from_bits(bits: u16) -> Option<Self> {
+        match NonZeroU16::new(bits) {
+            Some(node_no) => Some(Self(node_no)),
+            None => None,
+        }
     }
 
     #[inline]
-    pub fn into_bits(self) -> u16 {
+    pub const fn into_bits(self) -> u16 {
         self.0.get()
     }
 }
