@@ -19,7 +19,9 @@ use crate::{
     NetworkContext,
 };
 
-use diff::Diff;
+use self::diff::Diff;
+
+mod diff;
 
 /// Initial window size of every flow.
 /// TODO: should be different for groups and actors.
@@ -166,7 +168,7 @@ impl Discovery {
 
             // FIXME: handle removal.
             if !removed.is_empty() {
-                error!(
+                warn!(
                     ?removed,
                     "got removal of several discovery.predefined entries, this is not supported as of now"
                 );
@@ -597,5 +599,3 @@ fn unexpected_message_error(envelope: Envelope, expected: &[&str]) -> eyre::Repo
 async fn timeout<T>(duration: Duration, fut: impl Future<Output = Result<T>>) -> Result<T> {
     tokio::time::timeout(duration, fut).await?
 }
-
-mod diff;
