@@ -178,7 +178,7 @@ impl Discovery {
         let capabilities = self.get_capabilities();
 
         for transport in &self.cfg.listen {
-            let stream = socket::listen(&transport, node_no, launch_id, capabilities)
+            let stream = socket::listen(transport, node_no, launch_id, capabilities)
                 .await
                 .wrap_err_with(|| eyre!("cannot listen {}", transport))?
                 .filter_map(move |socket| async move {
@@ -669,10 +669,10 @@ mod tests {
                 let (diff_new, diff_removed) = (expected.0.as_ref(), expected.1.as_ref());
 
                 Self {
-                    old: old.iter().copied().collect(),
-                    new: new.iter().copied().collect(),
+                    old: old.to_vec(),
+                    new: new.to_vec(),
                     expected: Diff {
-                        new: diff_new.iter().copied().collect(),
+                        new: diff_new.to_vec(),
                         removed: diff_removed.iter().copied().collect(),
                     },
                 }
