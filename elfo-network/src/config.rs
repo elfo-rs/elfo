@@ -26,7 +26,7 @@ use serde::{
 ///     "uds:///tmp/sock"
 /// ]
 /// ```
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     /// A list of addresses to listen on.
     #[serde(default)]
@@ -59,7 +59,7 @@ pub struct Config {
 }
 
 /// Compression settings.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Clone)]
 pub struct CompressionConfig {
     /// Compression algorithm.
     #[serde(default)]
@@ -67,7 +67,7 @@ pub struct CompressionConfig {
 }
 
 /// Compression algorithms.
-#[derive(Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq, Deserialize, Clone)]
 pub enum CompressionAlgorithm {
     /// LZ4 with default compression level.
     Lz4,
@@ -85,7 +85,7 @@ fn default_idle_timeout() -> Duration {
 }
 
 /// How to discover other nodes.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct DiscoveryConfig {
     /// Predefined list of transports to connect to.
     pub predefined: Vec<Transport>,

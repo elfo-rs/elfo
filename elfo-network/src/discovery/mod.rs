@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{future::Future, mem, sync::Arc, time::Duration};
 
 use eyre::{bail, eyre, Result, WrapErr};
 use futures::StreamExt;
@@ -12,7 +12,7 @@ use elfo_core::{
 
 use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
-    config::{CompressionAlgorithm, Transport},
+    config::{self, CompressionAlgorithm, Transport},
     node_map::{NodeInfo, NodeMap},
     protocol::{internode, DataConnectionFailed, GroupInfo, HandleConnection},
     socket::{self, ReadError, Socket},
@@ -69,6 +69,7 @@ struct ControlConnectionFailed {
 }
 
 pub(super) struct Discovery {
+    cfg: config::Config,
     ctx: NetworkContext,
     node_map: Arc<NodeMap>,
 }
@@ -82,7 +83,9 @@ pub(super) struct Discovery {
 
 impl Discovery {
     pub(super) fn new(ctx: NetworkContext, topology: Topology) -> Self {
+        let cfg = ctx.config().clone();
         Self {
+            cfg,
             ctx,
             node_map: Arc::new(NodeMap::new(&topology)),
         }
@@ -97,14 +100,12 @@ impl Discovery {
             )));
 
         self.listen().await?;
-        self.discover();
+        self.discover_all();
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
                 ConfigUpdated => {
-                    // TODO: update listeners.
-                    // TODO: stop discovering for removed transports.
-                    // TODO: self.discover();
+                    self.on_update_config();
                 }
                 msg @ ConnectionEstablished => self.on_connection_established(msg),
                 msg @ ConnectionAccepted => self.on_connection_accepted(msg),
@@ -121,7 +122,7 @@ impl Discovery {
                 msg @ ControlConnectionFailed => {
                     if let Some(transport) = msg.transport {
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        self.discover_one(transport);
+                        self.discover(transport);
                     }
                 }
             });
@@ -132,10 +133,43 @@ impl Discovery {
 
     fn get_capabilities(&self) -> socket::Capabilities {
         let mut capabilities = socket::Capabilities::empty();
-        if self.ctx.config().compression.algorithm == CompressionAlgorithm::Lz4 {
+        if self.cfg.compression.algorithm == CompressionAlgorithm::Lz4 {
             capabilities |= socket::Capabilities::LZ4;
         }
         capabilities
+    }
+
+    fn on_update_config(&mut self) {
+        // TODO: Update listeners.
+        let cfg = self.ctx.config().clone();
+        let old = mem::replace(&mut self.cfg, cfg);
+
+        self.update_discovery(old.discovery);
+    }
+
+    fn update_discovery(&mut self, old: config::DiscoveryConfig) {
+        let config::DiscoveryConfig {
+            predefined,
+            attempt_interval: _,
+        } = old;
+
+        {
+            let Diff { new, removed } = diff_owned(
+                predefined.into_iter().collect(),
+                self.ctx.config().discovery.predefined.iter(),
+            );
+            for transport in new {
+                self.discover(transport);
+            }
+
+            // FIXME: handle removal.
+            if !removed.is_empty() {
+                error!(
+                    ?removed,
+                    "got removal of several discovery.predefined entries, this is not supported as of now"
+                );
+            }
+        }
     }
 
     async fn listen(&mut self) -> Result<()> {
@@ -143,7 +177,7 @@ impl Discovery {
         let launch_id = self.node_map.this.launch_id;
         let capabilities = self.get_capabilities();
 
-        for transport in self.ctx.config().listen.clone() {
+        for transport in &self.cfg.listen {
             let stream = socket::listen(&transport, node_no, launch_id, capabilities)
                 .await
                 .wrap_err_with(|| eyre!("cannot listen {}", transport))?
@@ -176,13 +210,13 @@ impl Discovery {
         Ok(())
     }
 
-    fn discover(&mut self) {
-        for transport in self.ctx.config().discovery.predefined.clone() {
-            self.discover_one(transport);
+    fn discover_all(&mut self) {
+        for transport in self.cfg.discovery.predefined.clone() {
+            self.discover(transport);
         }
     }
 
-    fn discover_one(&mut self, transport: Transport) {
+    fn discover(&mut self, transport: Transport) {
         let msg = internode::SwitchToControl {
             groups: self.node_map.this.groups.clone(),
         };
@@ -194,7 +228,7 @@ impl Discovery {
         transport: &Transport,
         role: ConnectionRole,
     ) -> Stream<ConnectionEstablished> {
-        let interval = self.ctx.config().discovery.attempt_interval;
+        let interval = self.cfg.discovery.attempt_interval;
         let transport = transport.clone();
         let node_no = self.node_map.this.node_no;
         let launch_id = self.node_map.this.launch_id;
@@ -254,7 +288,7 @@ impl Discovery {
         );
 
         let node_map = self.node_map.clone();
-        let idle_timeout = self.ctx.config().idle_timeout;
+        let idle_timeout = self.cfg.idle_timeout;
         self.ctx.attach(Stream::once(async move {
             let info = socket.info.clone();
             let peer = socket.peer.clone();
@@ -550,6 +584,37 @@ async fn recv_regular<M: Message>(socket: &mut Socket, idle_timeout: Duration) -
     })
 }
 
+#[cfg_attr(test, derive(Debug))]
+struct Diff<T> {
+    new: Vec<T>,
+    removed: fxhash::FxHashSet<T>,
+}
+
+fn diff_owned<'a, T, I>(old: fxhash::FxHashSet<T>, new: I) -> Diff<T>
+where
+    T: std::hash::Hash + Eq + Clone + 'a,
+    I: IntoIterator<Item = &'a T>,
+{
+    let mut new_items = Vec::new();
+    let mut removed = old;
+    // Iterate over `new` version, removing each item from the
+    // `removed` set. Thus, the `removed` set in the end will
+    // contain items which are present in `old`, but not present
+    // in `new` - these elements are removed.
+    for item in new {
+        // If `removed` set previously didn't contain the item, then
+        // it's new.
+        let had = removed.remove(item);
+        if !had {
+            new_items.push(item.clone());
+        }
+    }
+    Diff {
+        new: new_items,
+        removed,
+    }
+}
+
 fn unexpected_message_error(envelope: Envelope, expected: &[&str]) -> eyre::Report {
     eyre!(
         "unexpected message: {}, expected: {}",
@@ -560,4 +625,71 @@ fn unexpected_message_error(envelope: Envelope, expected: &[&str]) -> eyre::Repo
 
 async fn timeout<T>(duration: Duration, fut: impl Future<Output = Result<T>>) -> Result<T> {
     tokio::time::timeout(duration, fut).await?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl<T: Eq + Ord + Clone> PartialEq for Diff<T> {
+        fn eq(&self, other: &Self) -> bool {
+            let mut lhs_new = self.new.clone();
+            let mut lhs_removed = self.removed.iter().cloned().collect::<Vec<_>>();
+
+            lhs_new.sort();
+            lhs_removed.sort();
+
+            let mut rhs_new = other.new.clone();
+            let mut rhs_removed = other.removed.iter().cloned().collect::<Vec<_>>();
+
+            rhs_new.sort();
+            rhs_removed.sort();
+
+            (lhs_new == rhs_new) && (lhs_removed == rhs_removed)
+        }
+    }
+    impl<T: Eq + Ord + Clone> Eq for Diff<T> {}
+
+    #[test]
+    fn diff_works() {
+        struct Input {
+            old: Vec<u64>,
+            new: Vec<u64>,
+            expected: Diff<u64>,
+        }
+
+        impl Input {
+            fn new(
+                old: impl AsRef<[u64]>,
+                new: impl AsRef<[u64]>,
+                expected: (impl AsRef<[u64]>, impl AsRef<[u64]>),
+            ) -> Self {
+                let old = old.as_ref();
+                let new = new.as_ref();
+                let (diff_new, diff_removed) = (expected.0.as_ref(), expected.1.as_ref());
+
+                Self {
+                    old: old.iter().copied().collect(),
+                    new: new.iter().copied().collect(),
+                    expected: Diff {
+                        new: diff_new.iter().copied().collect(),
+                        removed: diff_removed.iter().copied().collect(),
+                    },
+                }
+            }
+        }
+
+        let inputs = [
+            Input::new([], [], ([], [])),
+            Input::new([1, 2, 3], [1, 2, 3], ([], [])),
+            Input::new([1, 2, 3], [1, 3], ([], [2])),
+            Input::new([1, 2, 3], [1, 2, 3, 4], ([4], [])),
+            Input::new([1, 2, 3], [1, 3, 4], ([4], [2])),
+        ];
+        for Input { new, old, expected } in inputs {
+            let actual = diff_owned(old.into_iter().collect(), new.iter());
+
+            assert_eq!(expected, actual);
+        }
+    }
 }
