@@ -27,11 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - core: update the `idr-ebr` crate to v0.3 to fix possible crash in `Context::finished()`.
 - logger: replace the `atty` crate with `IsTerminal` to fix cargo-audit warnings.
+- macros/msg: better go-to-definition via RA ([#141]).
 
 [#74]: https://github.com/elfo-rs/elfo/issues/74
 [#135]: https://github.com/elfo-rs/elfo/pull/135
 [#136]: https://github.com/elfo-rs/elfo/pull/136
 [#137]: https://github.com/elfo-rs/elfo/pull/137
+[#141]: https://github.com/elfo-rs/elfo/issues/141
 
 ## [0.2.0-alpha.16] - 2024-07-24
 ### Added

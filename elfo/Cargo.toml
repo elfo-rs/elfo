@@ -51,6 +51,7 @@ parking_lot = "0.12"
 libc = "0.2.97"
 futures-intrusive = "0.5"
 turmoil = "0.6"
+trybuild = "1.0"
 
 [package.metadata.docs.rs]
 all-features = true

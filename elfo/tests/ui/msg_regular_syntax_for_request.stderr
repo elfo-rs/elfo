@@ -1,0 +1,14 @@
+error[E0283]: type annotations needed
+ --> tests/ui/msg_regular_syntax_for_request.rs:8:9
+  |
+8 |         SomeRequest => {}
+  |         ^^^^^^^^^^^ cannot infer type
+  |
+note: multiple `impl`s satisfying `SomeRequest: MustBeRegularNotRequest<_, Envelope>` found
+ --> tests/ui/msg_regular_syntax_for_request.rs:7:5
+  |
+7 | /     msg!(match envelope {
+8 | |         SomeRequest => {}
+9 | |     });
+  | |______^
+  = note: this error originates in the macro `msg` (in Nightly builds, run with -Z macro-backtrace for more info)

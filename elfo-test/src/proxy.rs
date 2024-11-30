@@ -239,7 +239,9 @@ fn testers(tx: shared::OneshotSender<ProxyContext>) -> Blueprint {
     ActorGroup::new()
         .router(MapRouter::new(move |envelope| {
             msg!(match envelope {
-                StealContext => Outcome::Unicast(next_tester_key.fetch_add(1, Ordering::SeqCst)),
+                StealContext => {
+                    Outcome::Unicast(next_tester_key.fetch_add(1, Ordering::SeqCst))
+                }
                 _ => Outcome::Unicast(0),
             })
         }))

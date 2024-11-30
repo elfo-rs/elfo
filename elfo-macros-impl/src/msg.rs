@@ -1,6 +1,7 @@
 use std::{char, collections::HashMap};
 
-use quote::{quote, quote_spanned};
+use proc_macro2::Span;
+use quote::quote_spanned;
 use syn::{
     parse_macro_input, spanned::Spanned, Arm, ExprMatch, Ident, Pat, PatIdent, PatWild, Path, Token,
 };
@@ -217,17 +218,14 @@ fn add_groups(groups: &mut Vec<MessageGroup>, mut arm: Arm) {
 
 /// Implements the `msg!` macro.
 pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macro::TokenStream {
+    let crate_ = path_to_elfo;
+    let mixed_site = Span::mixed_site();
     let input = parse_macro_input!(input as ExprMatch);
     let mut groups = Vec::<MessageGroup>::with_capacity(input.arms.len());
-    let crate_ = path_to_elfo;
-    let internal = quote![#crate_::_priv];
 
     for arm in input.arms.into_iter() {
         add_groups(&mut groups, arm);
     }
-
-    let type_id_ident = quote! { _elfo_type_id };
-    let envelope_ident = quote! { _elfo_envelope };
 
     // println!(">>> HERE {:#?}", groups);
 
@@ -237,8 +235,8 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
             // Specify the span for better error localization:
             // - used the regular syntax while the request one is expected
             // - unexhaustive match
-            (GroupKind::Regular(path), arms) => quote_spanned! { path.span()=>
-                else if #type_id_ident == <#path as #crate_::Message>::_type_id() {
+            (GroupKind::Regular(path), arms) => quote_spanned! {mixed_site=>
+                else if type_id == <#path as #crate_::Message>::_type_id() {
                     // Ensure it's not a request, or a request but only in a borrowed context.
                     // We cannot use `static_assertions` here because it wraps the check into
                     // a closure that forbids us to use generic `msg!`: (`msg!(match e { M => .. })`).
@@ -246,24 +244,24 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                         trait MustBeRegularNotRequest<A, E> { fn test(_: &E) {} }
                         impl<E, M> MustBeRegularNotRequest<(), E> for M {}
                         struct Invalid;
-                        impl<E: #internal::EnvelopeOwned, M: #crate_::Request>
+                        impl<E: internal::EnvelopeOwned, M: #crate_::Request>
                             MustBeRegularNotRequest<Invalid, E> for M {}
-                        <#path as MustBeRegularNotRequest<_, _>>::test(&#envelope_ident)
+                        <#path as MustBeRegularNotRequest<_, _>>::test(&envelope)
                     }
 
                     #[allow(unknown_lints, clippy::blocks_in_conditions)]
                     match {
                         // Support both owned and borrowed contexts, relying on the type inference.
                         #[allow(unused_imports)]
-                        use #internal::{EnvelopeOwned as _, EnvelopeBorrowed as _};
-                        unsafe { #envelope_ident.unpack_regular_unchecked::<#path>() }
+                        use internal::{EnvelopeOwned as _, EnvelopeBorrowed as _};
+                        unsafe { envelope.unpack_regular_unchecked::<#path>() }
                     } {
                         #(#arms)*
                     }
                 }
             },
-            (GroupKind::Request(path), arms) => quote_spanned! { path.span()=>
-                else if #type_id_ident == <#path as #crate_::Message>::_type_id() {
+            (GroupKind::Request(path), arms) => quote_spanned! {mixed_site=>
+                else if type_id == <#path as #crate_::Message>::_type_id() {
                     // Ensure it's a request. We cannot use `static_assertions` here
                     // because it wraps the check into a closure that forbids us to
                     // use generic `msg!`: (`msg!(match e { (R, token) => .. })`).
@@ -276,8 +274,8 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                     match {
                         // Only the owned context is supported.
                         #[allow(unused_imports)]
-                        use #internal::EnvelopeOwned as _;
-                        unsafe { #envelope_ident.unpack_request_unchecked::<#path>() }
+                        use internal::EnvelopeOwned as _;
+                        unsafe { envelope.unpack_request_unchecked::<#path>() }
                     } {
                         #(#arms)*
                     }
@@ -287,9 +285,9 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
                 let mut arms_iter = arms.iter();
                 let arm = arms_iter.next().unwrap();
 
-                let expanded = quote! {
+                let expanded = quote_spanned! {mixed_site=>
                     else {
-                        match #envelope_ident { #arm }
+                        match envelope { #arm }
                     }
                 };
 
@@ -304,17 +302,18 @@ pub fn msg_impl(input: proc_macro::TokenStream, path_to_elfo: Path) -> proc_macr
     let match_expr = input.expr;
 
     // TODO: propagate `input.attrs`?
-    let expanded = quote! {{
-        let #envelope_ident = #match_expr;
-        let #type_id_ident = #envelope_ident.type_id();
+    let expanded = quote_spanned!(mixed_site=> {
+        use #crate_::_priv as internal;
+        let envelope = #match_expr;
+        let type_id = envelope.type_id();
         #[allow(clippy::suspicious_else_formatting)]
         if false { unreachable!(); }
         #(#groups)*
-    }};
+    });
 
     // Errors must be checked after expansion, otherwise some errors can be lost.
     if let Some(errors) = crate::errors::into_tokens() {
-        quote! {{ #errors #expanded }}.into()
+        quote_spanned!(mixed_site=> { #errors #expanded }).into()
     } else {
         expanded.into()
     }

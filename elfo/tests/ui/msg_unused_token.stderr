@@ -1,0 +1,5 @@
+error: the token must be used, or call `drop(_)` explicitly
+ --> tests/ui/msg_unused_token.rs:8:23
+  |
+8 |         (SomeRequest, _token) => {}
+  |                       ^^^^^^

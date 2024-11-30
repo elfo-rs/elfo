@@ -1,0 +1,5 @@
+error: this branch will never be matched
+ --> tests/ui/msg_double_wild.rs:7:9
+  |
+7 |         b => {}
+  |         ^

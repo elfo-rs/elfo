@@ -1,0 +1,35 @@
+error: macros in pattern position are forbidden
+ --> tests/ui/msg_invalid_pattern.rs:6:9
+  |
+6 |         foo!() => {}
+  |         ^^^
+
+error: literal patterns are forbidden
+ --> tests/ui/msg_invalid_pattern.rs:7:9
+  |
+7 |         "liternal" => {}
+  |         ^^^^^^^^^^
+
+error: range patterns are forbidden
+ --> tests/ui/msg_invalid_pattern.rs:8:9
+  |
+8 |         10..20 => {}
+  |         ^^
+
+error: parenthesized patterns are forbidden
+ --> tests/ui/msg_invalid_pattern.rs:9:9
+  |
+9 |         (A | B) => {}
+  |         ^^^^^^^
+
+error: invalid request pattern
+  --> tests/ui/msg_invalid_pattern.rs:10:9
+   |
+10 |         (SomeRequest, token, extra) => {}
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: token must be identifier
+  --> tests/ui/msg_invalid_pattern.rs:11:9
+   |
+11 |         (SomeRequest, 20) => {}
+   |         ^^^^^^^^^^^^^^^^^

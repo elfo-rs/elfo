@@ -1,0 +1,20 @@
+error[E0277]: the trait bound `SomeEvent: elfo::Request` is not satisfied
+ --> tests/ui/msg_request_syntax_for_regular.rs:8:10
+  |
+8 |         (SomeEvent, token) => {}
+  |          ^^^^^^^^^ the trait `elfo::Request` is not implemented for `SomeEvent`
+  |
+  = help: the following other types implement trait `elfo::Request`:
+            Ping
+            ReloadConfigs
+            StartEntrypoint
+            UpdateConfig
+            ValidateConfig
+note: required by a bound in `must_be_request`
+ --> tests/ui/msg_request_syntax_for_regular.rs:7:5
+  |
+7 | /     msg!(match envelope {
+8 | |         (SomeEvent, token) => {}
+9 | |     });
+  | |______^ required by this bound in `must_be_request`
+  = note: this error originates in the macro `msg` (in Nightly builds, run with -Z macro-backtrace for more info)
