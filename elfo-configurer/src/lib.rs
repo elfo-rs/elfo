@@ -381,8 +381,6 @@ async fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
 fn match_configs(topology: &Topology, config: &Value) -> Vec<ConfigWithMeta> {
     let mut configs: Vec<ConfigWithMeta> = topology
         .locals()
-        // Entrypoints' configs are updated only at startup.
-        .filter(|group| !group.is_entrypoint)
         .map(|group| {
             let empty = Value::Map(Default::default());
             let common = helpers::lookup_value(config, "common").unwrap_or(&empty);

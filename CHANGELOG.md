@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - logger: replace the `atty` crate with `IsTerminal` to fix cargo-audit warnings.
 - macros/msg: better go-to-definition via RA ([#141]).
 - macros/message: irregular warnings about `non_snake_case` by RA.
+- configurer: apply own configuration on the fly.
 
 [#74]: https://github.com/elfo-rs/elfo/issues/74
 [#135]: https://github.com/elfo-rs/elfo/pull/135
