@@ -56,6 +56,12 @@ fn sample() -> Blueprint {
                 _ => None,
             });
 
+            // Check spans.
+            let type_id = 42; // macro's internals
+            msg!(match &envelope {
+                Unit => assert_eq!(type_id, 42),
+            });
+
             // Owned usage.
             msg!(match envelope {
                 // Unit.
