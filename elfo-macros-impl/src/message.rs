@@ -194,7 +194,7 @@ pub fn message_impl(
 
     let serde_transparent_attr = args.transparent.then(|| quote! { #[serde(transparent)] });
 
-    // TODO: pass to `_elfo_Wrapper`.
+    // TODO: pass to `ElfoResponseWrapper`.
     let dumping_allowed = args.dumping_allowed.unwrap_or(true);
 
     let protocol = if let Some(protocol) = &args.protocol {
@@ -234,29 +234,29 @@ pub fn message_impl(
         quote! {
             impl #crate_::Request for #name {
                 type Response = #ret;
-                type Wrapper = _elfo_Wrapper;
+                type Wrapper = ElfoResponseWrapper;
             }
 
             #[message(not(Debug), #protocol name = #wrapper_name_str, elfo = #crate_)]
-            pub struct _elfo_Wrapper(#ret);
+            pub struct ElfoResponseWrapper(#ret);
 
-            impl ::std::fmt::Debug for _elfo_Wrapper {
+            impl ::std::fmt::Debug for ElfoResponseWrapper {
                 #[inline]
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                     self.0.fmt(f)
                 }
             }
 
-            impl From<#ret> for _elfo_Wrapper {
+            impl From<#ret> for ElfoResponseWrapper {
                 #[inline]
                 fn from(inner: #ret) -> Self {
-                    _elfo_Wrapper(inner)
+                    ElfoResponseWrapper(inner)
                 }
             }
 
-            impl From<_elfo_Wrapper> for #ret {
+            impl From<ElfoResponseWrapper> for #ret {
                 #[inline]
-                fn from(wrapper: _elfo_Wrapper) -> Self {
+                fn from(wrapper: ElfoResponseWrapper) -> Self {
                     wrapper.0
                 }
             }
@@ -277,7 +277,6 @@ pub fn message_impl(
         #input
 
         #[doc(hidden)]
-        #[allow(non_snake_case)]
         #[allow(unreachable_code)] // for `enum Impossible {}`
         const _: () = {
             #impl_message
