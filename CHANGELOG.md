@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.17] - 2024-12-01
 ### Added
 - core/topology: add `Topology::set_node_no()` and `Topology::node_no()`.
 - core/envelope: add `Envelope::request_id()`.
@@ -678,7 +680,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.16...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.17...HEAD
+[0.2.0-alpha.17]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.16...elfo-v0.2.0-alpha.17
 [0.2.0-alpha.16]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.15...elfo-v0.2.0-alpha.16
 [0.2.0-alpha.15]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.14...elfo-v0.2.0-alpha.15
 [0.2.0-alpha.14]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.13...elfo-v0.2.0-alpha.14
