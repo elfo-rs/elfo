@@ -23,6 +23,7 @@ futures = "0.3.12"
 serde = { version = "1.0.120", features = ["derive"] }
 humantime-serde = "1"
 tracing = "0.1.25"
+mimalloc = { version = "0.1.39", default-features = false }
 
 [features]
 test-util = ["elfo/test-util"]
@@ -50,3 +51,7 @@ required-features = ["test-util"]
 [[bin]]
 name = "tokio-broadcast"
 path = "tokio-broadcast.rs"
+
+[[bin]]
+name = "md"
+path = "md/main.rs"

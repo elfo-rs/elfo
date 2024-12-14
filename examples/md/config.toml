@@ -1,0 +1,5 @@
+[common]
+system.logging.max_level = "Debug"
+
+[strategies]
+predefined = ["strategy_a", "strategy_b"]
