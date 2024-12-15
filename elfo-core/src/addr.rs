@@ -24,7 +24,7 @@ pub struct NodeNo(NonZeroU16);
 
 impl NodeNo {
     pub(crate) fn generate() -> Self {
-        Self::from_bits(random_u64().max(1) as u16).unwrap()
+        Self::from_bits((random_u64() as u16).max(1)).unwrap()
     }
 
     #[inline]
@@ -332,6 +332,13 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+
+    #[test]
+    fn node_no_generate() {
+        for _ in 0..1_000_000 {
+            NodeNo::generate();
+        }
+    }
 
     #[test]
     fn node_launch_id_generate() {
