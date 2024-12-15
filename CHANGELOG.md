@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Fixed
+- core/addr: probabilistic panics if `NodeNo` is generated ([#144]).
+
+[#144]: https://github.com/elfo-rs/elfo/issues/144
 
 ## [0.2.0-alpha.17] - 2024-12-01
 ### Added
