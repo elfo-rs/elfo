@@ -10,6 +10,10 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use serde::Deserialize;
 
+pub(crate) mod dump_path;
+
+pub use dump_path::DumpPath;
+
 /// The dumper's config.
 ///
 /// # Examples
@@ -39,7 +43,7 @@ pub struct Config {
     /// A path to a dump file or template:
     /// * `path/all.dump` - one file.
     /// * `path/{class}.dump` - file per class.
-    pub path: String,
+    pub path: DumpPath,
     /// How often dumpers should write dumps to files.
     /// `500ms` by default.
     #[serde(with = "humantime_serde", default = "default_write_interval")]
@@ -102,12 +106,6 @@ pub enum OnOverflow {
     /// Truncate a dump, serialize as an incomplete JSON with appended
     /// `TRUNCATED`.
     Truncate,
-}
-
-impl Config {
-    pub(crate) fn path(&self, class: &str) -> String {
-        self.path.replace("{class}", class)
-    }
 }
 
 fn default_write_interval() -> Duration {
