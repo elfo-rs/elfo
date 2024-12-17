@@ -98,11 +98,12 @@ impl Proxy {
 
     /// See [`Context::request()`] for details.
     #[track_caller]
-    pub fn request<R: Request>(&self, request: R) -> impl Future<Output = R::Response> + '_ {
+    pub fn request<R: Request>(&self, request: R) -> impl Future<Output = R::Response> {
         let location = Location::caller();
+        let context = self.context.pruned();
         self.scope.clone().within(async move {
             let name = request.name();
-            match self.context.request(request).resolve().await {
+            match context.request(request).resolve().await {
                 Ok(response) => response,
                 Err(err) => panic!("cannot send {} ({}) at {}", name, err, location),
             }
@@ -115,11 +116,12 @@ impl Proxy {
         &self,
         recipient: Addr,
         request: R,
-    ) -> impl Future<Output = R::Response> + '_ {
+    ) -> impl Future<Output = R::Response> {
         let location = Location::caller();
+        let context = self.context.pruned();
         self.scope.clone().within(async move {
             let name = request.name();
-            match self.context.request_to(recipient, request).resolve().await {
+            match context.request_to(recipient, request).resolve().await {
                 Ok(response) => response,
                 Err(err) => panic!("cannot send {} ({}) at {}", name, err, location),
             }
