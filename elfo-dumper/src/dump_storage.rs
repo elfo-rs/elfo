@@ -328,7 +328,7 @@ impl<'a> Drain<'a> {
     }
 }
 
-impl<'a> Iterator for Drain<'a> {
+impl Iterator for Drain<'_> {
     type Item = Dump;
 
     fn next(&mut self) -> Option<Dump> {

@@ -20,7 +20,7 @@ struct Repr<'a> {
 #[derive(Debug)]
 pub(crate) struct TruncatingWrite<'a>(Repr<'a>);
 
-impl<'a> Line for TruncatingWrite<'a> {
+impl Line for TruncatingWrite<'_> {
     fn try_commit(mut self) -> bool {
         let add_truncated_marker = self.probe_size_limit();
 
@@ -51,7 +51,7 @@ impl<'a> Line for TruncatingWrite<'a> {
     }
 }
 
-impl<'a> TruncatingWrite<'a> {
+impl TruncatingWrite<'_> {
     fn meta_len(&self) -> usize {
         self.0.buf.buffer.len() - self.0.pre_start_buffer_size
     }
@@ -61,7 +61,7 @@ impl<'a> TruncatingWrite<'a> {
     }
 }
 
-impl<'a> TruncatingWrite<'a> {
+impl TruncatingWrite<'_> {
     fn probe_size_limit(&mut self) -> bool {
         let len = self.len();
         let mut need_to_erase = if len > self.0.buf.max_line_size {
@@ -96,7 +96,7 @@ impl<'a> TruncatingWrite<'a> {
     }
 }
 
-impl<'a> Drop for TruncatingWrite<'a> {
+impl Drop for TruncatingWrite<'_> {
     fn drop(&mut self) {
         self.0.buf.buffer.truncate(self.0.pre_start_buffer_size);
     }
@@ -107,7 +107,7 @@ impl<'a> Drop for TruncatingWrite<'a> {
 #[derive(Debug)]
 pub(crate) struct DirectWrite<'a>(Repr<'a>);
 
-impl<'a> DirectWrite<'a> {
+impl DirectWrite<'_> {
     fn len(&self) -> usize {
         self.0.buf.buffer.len() - self.0.pre_start_buffer_size
     }
@@ -144,7 +144,7 @@ impl Line for DirectWrite<'_> {
     }
 }
 
-impl<'a> Drop for DirectWrite<'a> {
+impl Drop for DirectWrite<'_> {
     fn drop(&mut self) {
         self.0.buf.buffer.truncate(self.0.pre_start_buffer_size);
     }

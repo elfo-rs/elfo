@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 #![cfg(feature = "test-util")]
 
 use std::{collections::HashMap, sync::Arc, time::Duration};

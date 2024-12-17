@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use serde::Serialize;
 use static_assertions::*;
 

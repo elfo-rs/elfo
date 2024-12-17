@@ -181,7 +181,7 @@ struct CompactDump<'a> {
     message: Option<Cow<'a, str>>,
 }
 
-impl<'a> serde::Serialize for CompactDump<'a> {
+impl serde::Serialize for CompactDump<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let field_count = 12
             + !self.dump.meta.key.is_empty() as usize // "k"

@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 #![cfg(feature = "network")]
 
 use std::collections::HashMap;

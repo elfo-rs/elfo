@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 #![cfg(feature = "test-util")]
 #![cfg_attr(windows, allow(unused_imports))] // TODO: test on windows
 #![allow(clippy::await_holding_lock)]

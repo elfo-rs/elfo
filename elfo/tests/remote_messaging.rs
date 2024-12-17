@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 #![cfg(feature = "network")]
 #![cfg(feature = "turmoil06")]
 

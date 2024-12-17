@@ -347,7 +347,7 @@ struct MessageTag<'a> {
     name: &'a str,
 }
 
-impl<'de, 'tag> de::DeserializeSeed<'de> for MessageTag<'tag> {
+impl<'de> de::DeserializeSeed<'de> for MessageTag<'_> {
     type Value = AnyMessage;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
