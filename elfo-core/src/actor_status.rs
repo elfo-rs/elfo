@@ -1,5 +1,7 @@
-use std::sync::atomic::{self, AtomicU8};
-use std::{fmt, mem};
+use std::{
+    fmt, mem,
+    sync::atomic::{self, AtomicU8},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -142,8 +144,9 @@ impl AtomicActorStatusKind {
         let result = self.0.load(ordering);
 
         // SAFETY: `ActorStatusKind` has `#[repr(u8)]` annotation. The only
-        // place where value may be changed is `Self::store`, which consumes `ActorStatusKind`, thus,
-        // guarantees that possibly invalid value cannot be stored
+        // place where value may be changed is `Self::store`, which consumes
+        // `ActorStatusKind`, thus, guarantees that possibly invalid value
+        // cannot be stored
         unsafe { mem::transmute::<u8, ActorStatusKind>(result) }
     }
 }

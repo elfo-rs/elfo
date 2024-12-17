@@ -1,4 +1,5 @@
 #![allow(dead_code)] // TODO: combine tests into "it/*"
+#![allow(missing_docs)]
 
 // For tests without `elfo::test::proxy`.
 pub(crate) fn setup_logger() {

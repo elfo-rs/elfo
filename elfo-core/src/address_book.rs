@@ -109,7 +109,7 @@ pub(crate) struct VacantEntry<'g> {
     group_no: GroupNo,
 }
 
-impl<'g> VacantEntry<'g> {
+impl VacantEntry<'_> {
     pub(crate) fn insert(self, object: Object) {
         self.entry.insert(object)
     }

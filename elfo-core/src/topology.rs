@@ -194,7 +194,7 @@ pub struct Local<'t> {
     demux: RefCell<Demux>,
 }
 
-impl<'t> Local<'t> {
+impl Local<'_> {
     #[doc(hidden)]
     pub fn addr(&self) -> Addr {
         self.entry.addr()
@@ -497,7 +497,7 @@ cfg_network!({
         nodes: Option<Nodes>,
     }
 
-    impl<'a> RegisterRemoteGroupGuard<'a> {
+    impl RegisterRemoteGroupGuard<'_> {
         pub fn handle_addr(&self) -> Addr {
             self.handle_addr
         }
