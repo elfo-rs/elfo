@@ -1,4 +1,8 @@
-use std::{iter, panic, sync::Arc, time::Duration};
+use std::{
+    iter, panic,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
@@ -20,7 +24,7 @@ use elfo_core::{
 use elfo_utils::ward;
 
 use crate::{
-    config::Config,
+    config::{dump_path::TemplateVariables, Config},
     dump_storage::{Drain, DumpRegistry, DumpStorage},
     file_registry::{FileHandle, FileRegistry},
     reporter::{Report, Reporter},
@@ -80,8 +84,32 @@ impl Dumper {
         }
     }
 
+    fn make_template_variables(&self) -> TemplateVariables<'_> {
+        let now = SystemTime::now();
+        let ts = now
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("shit happens")
+            .as_secs();
+
+        TemplateVariables {
+            class: self.ctx.key(),
+            ts,
+        }
+    }
+
+    fn render_path(&self, to: &mut String) {
+        to.clear();
+        self.ctx
+            .config()
+            .path
+            .render_into(self.make_template_variables(), to);
+    }
+
     async fn main(mut self) -> Result<()> {
-        let mut path = self.ctx.config().path(self.ctx.key());
+        let mut path = String::new();
+        let mut path_swap = String::new();
+
+        self.render_path(&mut path);
         self.file_registry
             .open(&path, false)
             .await
@@ -106,7 +134,7 @@ impl Dumper {
                     let config = self.ctx.config();
                     self.interval.set_period(config.write_interval);
 
-                    path = config.path(self.ctx.key());
+                    self.render_path(&mut path);
                     self.file_registry
                         .open(&path, false)
                         .await
@@ -132,7 +160,16 @@ impl Dumper {
                 DumpingTick => {
                     let timeout = self.ctx.config().write_interval;
                     let dump_registry = self.dump_registry.clone();
-                    let file = self.file_registry.acquire(&path).await;
+
+                    // NOTE: could be optimized by not re-rendering path
+                    // if variables aren't changed in the affectable way, it's
+                    // not that matters here though.
+                    self.render_path(&mut path_swap);
+                    let file = self.file_registry.acquire_for_write(&path, &mut path_swap).await?;
+                    if path != path_swap {
+                        path.clear();
+                        std::mem::swap(&mut path, &mut path_swap);
+                    }
 
                     // A blocking background task that writes a lot of dumps in batch.
                     // It's much faster than calling tokio's async functions.
