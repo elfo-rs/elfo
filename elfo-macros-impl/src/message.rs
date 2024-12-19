@@ -140,9 +140,9 @@ fn gen_impl_debug(input: &DeriveInput) -> TokenStream {
     };
 
     let propagate_fmt = if let Some(ident) = field.ident.as_ref() {
-        quote! { self.#ident.fmt(f) }
+        quote! { ::std::fmt::Debug::fmt(&self.#ident, f) }
     } else {
-        quote! { self.0.fmt(f) }
+        quote! { ::std::fmt::Debug::fmt(&self.0, f) }
     };
 
     quote! {
@@ -243,7 +243,7 @@ pub fn message_impl(
             impl ::std::fmt::Debug for ElfoResponseWrapper {
                 #[inline]
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                    self.0.fmt(f)
+                    ::std::fmt::Debug::fmt(&self.0, f)
                 }
             }
 
