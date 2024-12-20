@@ -167,7 +167,7 @@ impl Dumper {
                     self.render_path(&mut path_swap);
                     let file = self
                         .file_registry
-                        .acquire_for_write(&path, &mut path_swap)
+                        .acquire_for_write(&path, &path_swap)
                         .await?;
                     if path != path_swap {
                         path.clear();

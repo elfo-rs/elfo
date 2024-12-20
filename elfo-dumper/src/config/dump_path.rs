@@ -29,7 +29,7 @@ impl<'de> Deserialize<'de> for DumpPath {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Self::parse(s).map_err(|e| serde::de::Error::custom(e))
+        Self::parse(s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -48,7 +48,7 @@ impl DumpPath {
             Variable::Class => dest.push_str(vars.class),
             Variable::Time { format } => {
                 let ts = vars.ts;
-                strftime(ts as i64, format, dest);
+                strftime(ts, format, dest);
             }
         }
     }
@@ -60,7 +60,7 @@ impl DumpPath {
             let size = *size as usize;
             match data {
                 ComponentData::Variable(var) => {
-                    Self::expand_variable(&var, &variables, to);
+                    Self::expand_variable(var, &variables, to);
                 }
                 ComponentData::Path => {
                     to.push_str(&self.template[offset..offset + size]);
@@ -210,7 +210,10 @@ struct Component {
 
 /// Convert unix timestamp to [`libc::tm`].
 fn ts2tm(ts: i64) -> libc::tm {
+    // SAFETY: [`libc::tm`] is `#[repr(C)]` and contains
+    // only integral types.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: safe, lol.
     unsafe { libc::localtime_r(std::ptr::addr_of!(ts), std::ptr::addr_of_mut!(tm)) };
 
     tm
@@ -219,9 +222,12 @@ fn ts2tm(ts: i64) -> libc::tm {
 fn strftime(ts: i64, format: &cstr::Utf8CString, dest: &mut String) -> bool {
     let tm = ts2tm(ts);
     let mut formatted: [libc::c_char; FMT_TS_ARRAY_LEN] = [0; FMT_TS_ARRAY_LEN];
+    // SAFETY: calling function from libc is unsafe, but
+    // 1. formatted is valid buffer
+    // 2. tm is valid too.
     let len = unsafe {
         libc::strftime(
-            std::ptr::addr_of_mut!(formatted).cast(),
+            std::ptr::addr_of_mut!(formatted).cast::<libc::c_char>(),
             FMT_TS_ARRAY_LEN,
             format.as_ptr(),
             std::ptr::addr_of!(tm),

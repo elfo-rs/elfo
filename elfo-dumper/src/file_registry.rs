@@ -37,7 +37,7 @@ impl FileRegistry {
     pub(crate) async fn open(&self, path: &str, force: bool) -> Result<()> {
         let mut file = {
             let mut files = self.files.lock();
-            Self::insert_handle(path, &mut *files)
+            Self::insert_handle(path, &mut files)
         };
 
         Self::open_inner(path, force, &mut file).await?;
@@ -57,7 +57,7 @@ impl FileRegistry {
                 files.remove(old_path);
             }
 
-            Self::insert_handle(path, &mut *files)
+            Self::insert_handle(path, &mut files)
         };
 
         // NOTE: a bit racy part here, two threads observe
