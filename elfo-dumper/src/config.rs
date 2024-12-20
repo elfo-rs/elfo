@@ -43,6 +43,9 @@ pub struct Config {
     /// A path to a dump file or template:
     /// * `path/all.dump` - one file.
     /// * `path/{class}.dump` - file per class.
+    /// * `path/{time:<FORMAT>}.dump` - file per dump time. The `<FORMAT>`
+    ///   refers to the time format as in strftime:
+    ///   <https://cplusplus.com/reference/ctime/strftime/> (`man strftime(3)`).
     pub path: DumpPath,
     /// How often dumpers should write dumps to files.
     /// `500ms` by default.

@@ -190,7 +190,7 @@ enum Variable {
 
     /// Time of the dump.
     Time {
-        /// strptime string format.
+        /// strftime string format.
         format: cstr::Utf8CString,
     },
 }
@@ -241,7 +241,7 @@ fn strftime(ts: i64, format: &cstr::Utf8CString, dest: &mut String) -> bool {
     unsafe {
         // 1. mem::transmute wouldn't compile if u8 and libc::c_char differ in size
         // (there are strange circumstances).
-        // 2. `libc::c_char` to i8 is i8 -> u8 conversion, thus converting
+        // 2. `libc::c_char` to u8 is i8 -> u8 conversion, thus converting
         // same-sized arrays through transmute is safe (btw transmute checks that
         // condition in compile time)
         let u8_array = std::mem::transmute::<
