@@ -2,11 +2,14 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+const MAX_FMT_TS_LEN: usize = 64;
+const FMT_TS_ARRAY_LEN: usize = MAX_FMT_TS_LEN + 1;
+
 /// Variables for substitution in the path.
 #[derive(Debug)]
 pub(crate) struct TemplateVariables<'a> {
     pub(crate) class: &'a str,
-    pub(crate) ts: u64,
+    pub(crate) ts: i64,
 }
 
 /// Template for the dump path.
@@ -26,7 +29,7 @@ impl<'de> Deserialize<'de> for DumpPath {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(Self::parse(s))
+        Self::parse(s).map_err(|e| serde::de::Error::custom(e))
     }
 }
 
@@ -40,11 +43,12 @@ impl Serialize for DumpPath {
 }
 
 impl DumpPath {
-    fn expand_variable(var: Variable, vars: &TemplateVariables<'_>, dest: &mut String) {
+    fn expand_variable(var: &Variable, vars: &TemplateVariables<'_>, dest: &mut String) {
         match var {
             Variable::Class => dest.push_str(vars.class),
-            Variable::Time => {
-                dest.push_str(&vars.ts.to_string());
+            Variable::Time { format } => {
+                let ts = vars.ts;
+                strftime(ts as i64, format, dest);
             }
         }
     }
@@ -52,11 +56,11 @@ impl DumpPath {
     pub(crate) fn render_into(&self, variables: TemplateVariables<'_>, to: &mut String) {
         let mut offset = 0;
 
-        for Component { size, data } in self.components.iter().copied() {
-            let size = size as usize;
+        for Component { size, data } in self.components.iter() {
+            let size = *size as usize;
             match data {
                 ComponentData::Variable(var) => {
-                    Self::expand_variable(var, &variables, to);
+                    Self::expand_variable(&var, &variables, to);
                 }
                 ComponentData::Path => {
                     to.push_str(&self.template[offset..offset + size]);
@@ -69,14 +73,36 @@ impl DumpPath {
 }
 
 impl DumpPath {
-    fn parse_variable(var: &str) -> Option<Variable> {
+    /// Test whether provided strftime format is valid.
+    fn test_strftime(format: &cstr::Utf8CString) -> Result<(), String> {
+        let mut dest = String::new();
+        let success = strftime(100, format, &mut dest);
+        if success {
+            Ok(())
+        } else {
+            Err(format!("invalid strftime format: {format:?}"))
+        }
+    }
+
+    fn parse_variable(var: &str) -> Result<Option<Variable>, String> {
         use Variable as V;
 
-        Some(match var {
-            "time" => V::Time,
+        let var = match var {
             "class" => V::Class,
-            _ => return None,
-        })
+            _ => {
+                if let Some(fmt) = var.strip_prefix("time:") {
+                    let format = cstr::Utf8CString::new(fmt);
+                    // Test strftime validity to fail early if it is invalid.
+                    Self::test_strftime(&format)?;
+
+                    V::Time { format }
+                } else {
+                    return Ok(None);
+                }
+            }
+        };
+
+        Ok(Some(var))
     }
 
     fn push_path(of_size: &mut usize, to: &mut Vec<Component>) {
@@ -90,7 +116,7 @@ impl DumpPath {
     }
 
     /// Parse template.
-    fn parse(s: impl Into<String>) -> DumpPath {
+    fn parse(s: impl Into<String>) -> Result<Self, String> {
         let template = s.into();
         let mut components = vec![];
 
@@ -116,7 +142,7 @@ impl DumpPath {
                 chunk = after;
                 continue;
             };
-            let Some(variable) = Self::parse_variable(raw_variable) else {
+            let Some(variable) = Self::parse_variable(raw_variable)? else {
                 // "{<variable>}"
                 plain_size += 2 + raw_variable.len();
                 chunk = after;
@@ -133,10 +159,10 @@ impl DumpPath {
         }
         Self::push_path(&mut plain_size, &mut components);
 
-        DumpPath {
+        Ok(DumpPath {
             template,
             components,
-        }
+        })
     }
 }
 
@@ -146,7 +172,7 @@ impl fmt::Display for DumpPath {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 enum ComponentData {
     /// Simple path, no templating.
@@ -156,17 +182,20 @@ enum ComponentData {
     Variable(Variable),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 enum Variable {
     /// Dump class.
     Class,
 
     /// Time of the dump.
-    Time,
+    Time {
+        /// strptime string format.
+        format: cstr::Utf8CString,
+    },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 struct Component {
     /// How much this component occupies space in template, in bytes. Each
@@ -179,19 +208,141 @@ struct Component {
     data: ComponentData,
 }
 
+/// Convert unix timestamp to [`libc::tm`].
+fn ts2tm(ts: i64) -> libc::tm {
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(std::ptr::addr_of!(ts), std::ptr::addr_of_mut!(tm)) };
+
+    tm
+}
+
+fn strftime(ts: i64, format: &cstr::Utf8CString, dest: &mut String) -> bool {
+    let tm = ts2tm(ts);
+    let mut formatted: [libc::c_char; FMT_TS_ARRAY_LEN] = [0; FMT_TS_ARRAY_LEN];
+    let len = unsafe {
+        libc::strftime(
+            std::ptr::addr_of_mut!(formatted).cast(),
+            FMT_TS_ARRAY_LEN,
+            format.as_ptr(),
+            std::ptr::addr_of!(tm),
+        )
+    };
+    if len == 0 {
+        return false;
+    }
+
+    // SAFETY: comments inside.
+    unsafe {
+        // 1. mem::transmute wouldn't compile if u8 and libc::c_char differ in size
+        // (there are strange circumstances).
+        // 2. `libc::c_char` to i8 is i8 -> u8 conversion, thus converting
+        // same-sized arrays through transmute is safe (btw transmute checks that
+        // condition in compile time)
+        let u8_array = std::mem::transmute::<
+            [libc::c_char; FMT_TS_ARRAY_LEN],
+            [u8; FMT_TS_ARRAY_LEN],
+        >(formatted);
+        // 3. It's guaranteed that formatted string is in UTF8, since
+        // format string is valid UTF8.
+        let utf8_str = std::str::from_utf8_unchecked(&u8_array[..len]);
+        dest.push_str(utf8_str);
+    }
+
+    true
+}
+
+// Separate module to ensure encapsulation.
+mod cstr {
+    use std::{ffi::CString, fmt};
+
+    /// [`CString`] which is guaranteed to be valid utf8.
+    #[derive(Clone, PartialEq, Eq)]
+    pub(super) struct Utf8CString(CString);
+
+    impl fmt::Debug for Utf8CString {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            <str as fmt::Debug>::fmt(self.as_str(), f)
+        }
+    }
+
+    impl fmt::Display for Utf8CString {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.as_str())
+        }
+    }
+
+    impl Utf8CString {
+        pub(super) fn as_str(&self) -> &str {
+            // SAFETY: provided cstring is valid utf8.
+            unsafe { std::str::from_utf8_unchecked(self.0.as_bytes()) }
+        }
+
+        pub(super) fn as_ptr(&self) -> *const libc::c_char {
+            self.0.as_ptr()
+        }
+
+        pub(super) fn new(s: &str) -> Self {
+            Self(CString::new(s).expect("nul-byte encountered"))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn time() -> Variable {
+        Variable::Time {
+            format: cstr::Utf8CString::new("%d.%m.%Y"),
+        }
+    }
+
     #[test]
-    fn it_renders_successfully() {
+    fn strftime_wrapper_works() {
+        fn case(ts: i64, format: &str, expected: &str) {
+            // Silly hack to get rid of timezone-awareness
+            // of `libc::strftime`, to make it testable.
+            let gmtoff = ts2tm(ts).tm_gmtoff;
+            let ts = ts - gmtoff;
+
+            let format = cstr::Utf8CString::new(format);
+            let mut dest = String::new();
+
+            assert!(strftime(ts, &format, &mut dest));
+            assert_eq!(dest, expected);
+        }
+
+        // %s here is not covered, since
+        // it would be shifted according to tm_gmtoff.
+
+        // 0 seconds
+        case(0, "%S", "00");
+
+        // 1 Minute
+        case(60, "%M", "01");
+
+        // 1 Hour
+        case(60 * 60, "%H:%M", "01:00");
+
+        // 1 Hour and 10 Minutes
+        case(60 * 60 + 10 * 60, "%H:%M", "01:10")
+    }
+
+    #[test]
+    fn it_renders_correctly() {
         #[track_caller]
         fn case(template: &str, vars: TemplateVariables<'_>, expected: &str) {
-            let path = DumpPath::parse(template);
+            let path = DumpPath::parse(template).unwrap();
             let mut actual = String::new();
             path.render_into(vars, &mut actual);
 
             assert_eq!(actual, expected);
+        }
+
+        // NB: see strftime test above.
+        fn ts(time: i64) -> i64 {
+            let gmtoff = ts2tm(time).tm_gmtoff;
+            time - gmtoff
         }
 
         // Simple class substitution
@@ -199,19 +350,20 @@ mod tests {
             "/tmp/{class}.dump",
             TemplateVariables {
                 class: "class",
-                ts: 0,
+                ts: ts(0),
             },
             "/tmp/class.dump",
         );
 
         // Class and time.
         case(
-            "/tmp/dump-{class}-{time}.dump",
+            "/tmp/dump-{class}-{time:%H:%M}.dump",
             TemplateVariables {
                 class: "class",
-                ts: 1337100,
+                // 1 hour 10 minutes
+                ts: ts(60 * 60 + 60 * 10),
             },
-            "/tmp/dump-system.network-1337100.dump",
+            "/tmp/dump-class-01:10.dump",
         );
     }
 
@@ -226,7 +378,7 @@ mod tests {
                 .into_iter()
                 .map(|(size, data)| Component { size, data })
                 .collect();
-            let actual = DumpPath::parse(template);
+            let actual = DumpPath::parse(template).unwrap();
 
             assert_eq!(expected, actual.components);
         }
@@ -248,11 +400,11 @@ mod tests {
 
         // {time} precedes {class}.
         case(
-            "/tmp/{class}{time}.dump",
+            "/tmp/{class}{time:%d.%m.%Y}.dump",
             [
                 (5, D::Path),
                 (7, D::Variable(Variable::Class)),
-                (6, D::Variable(Variable::Time)),
+                (15, D::Variable(time())),
                 (5, D::Path),
             ],
         );
@@ -262,12 +414,8 @@ mod tests {
 
         // Valid template variable precedes invalid.
         case(
-            "/tmp/{lol}{time}.dump",
-            [
-                (10, D::Path),
-                (6, D::Variable(Variable::Time)),
-                (5, D::Path),
-            ],
+            "/tmp/{lol}{time:%d.%m.%Y}.dump",
+            [(10, D::Path), (15, D::Variable(time())), (5, D::Path)],
         );
     }
 }

@@ -89,7 +89,7 @@ impl Dumper {
         let ts = now
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("shit happens")
-            .as_secs();
+            .as_secs() as i64;
 
         TemplateVariables {
             class: self.ctx.key(),
@@ -165,7 +165,10 @@ impl Dumper {
                     // if variables aren't changed in the affectable way, it's
                     // not that matters here though.
                     self.render_path(&mut path_swap);
-                    let file = self.file_registry.acquire_for_write(&path, &mut path_swap).await?;
+                    let file = self
+                        .file_registry
+                        .acquire_for_write(&path, &mut path_swap)
+                        .await?;
                     if path != path_swap {
                         path.clear();
                         std::mem::swap(&mut path, &mut path_swap);

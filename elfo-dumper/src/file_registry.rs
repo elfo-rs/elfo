@@ -62,8 +62,9 @@ impl FileRegistry {
 
         // NOTE: a bit racy part here, two threads observe
         // file status (open or not open) in random order, but it doesn't
-        // matter here, since after first thread opens the file - it's guaranteed by underlying mutex that
-        // other threads will see it as open, thus opening will pe performed only once.
+        // matter here, since after first thread opens the file - it's guaranteed by
+        // underlying mutex that other threads will see it as open, thus opening
+        // will pe performed only once.
         Self::open_inner(path, false, &mut fh).await?;
         Ok(fh)
     }
