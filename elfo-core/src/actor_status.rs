@@ -23,7 +23,16 @@ impl ActorStatus {
     pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
     pub const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
 
+    #[cfg(not(feature = "test-util"))]
     const fn new(kind: ActorStatusKind) -> Self {
+        Self {
+            kind,
+            details: None,
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    pub const fn new(kind: ActorStatusKind) -> Self {
         Self {
             kind,
             details: None,
