@@ -16,13 +16,6 @@ pub struct ActorStatus {
 }
 
 impl ActorStatus {
-    pub const ALARMING: ActorStatus = ActorStatus::new(ActorStatusKind::Alarming);
-    pub(crate) const FAILED: ActorStatus = ActorStatus::new(ActorStatusKind::Failed);
-    pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
-    pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
-    pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
-    pub const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
-
     const fn new(kind: ActorStatusKind) -> Self {
         Self {
             kind,
@@ -47,6 +40,26 @@ impl ActorStatus {
     pub fn details(&self) -> Option<&str> {
         self.details.as_deref()
     }
+}
+
+#[cfg(not(feature = "test-util"))]
+impl ActorStatus {
+    pub const ALARMING: ActorStatus = ActorStatus::new(ActorStatusKind::Alarming);
+    pub(crate) const FAILED: ActorStatus = ActorStatus::new(ActorStatusKind::Failed);
+    pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
+    pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
+    pub(crate) const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
+    pub const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
+}
+
+#[cfg(feature = "test-util")]
+impl ActorStatus {
+    pub const ALARMING: ActorStatus = ActorStatus::new(ActorStatusKind::Alarming);
+    pub const FAILED: ActorStatus = ActorStatus::new(ActorStatusKind::Failed);
+    pub const INITIALIZING: ActorStatus = ActorStatus::new(ActorStatusKind::Initializing);
+    pub const NORMAL: ActorStatus = ActorStatus::new(ActorStatusKind::Normal);
+    pub const TERMINATED: ActorStatus = ActorStatus::new(ActorStatusKind::Terminated);
+    pub const TERMINATING: ActorStatus = ActorStatus::new(ActorStatusKind::Terminating);
 }
 
 impl fmt::Display for ActorStatus {
