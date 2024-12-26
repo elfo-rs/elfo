@@ -32,6 +32,7 @@ use crate::{
 
 use self::stats::Stats;
 
+mod send;
 mod stats;
 
 static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
@@ -210,9 +211,8 @@ impl<C, K> Context<C, K> {
     /// ```
     ///
     /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
-    pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_async(message, kind).await
+    pub fn send<M: Message>(&self, message: M) -> send::Send<'_, M, C, K> {
+        send::Send::new(message, self)
     }
 
     /// Tries to send a message using the [inter-group routing] system.
@@ -244,59 +244,7 @@ impl<C, K> Context<C, K> {
     ///
     /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
     pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
-        // XXX: avoid duplication with `unbounded_send()` and `send()`.
-
-        let kind = MessageKind::regular(self.actor_addr);
-
-        self.stats.on_sent_message(&message); // TODO: only if successful?
-
-        trace!("> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m(&message) {
-            permit.record(Dump::message(&message, &kind, Direction::Out));
-        }
-
-        let envelope = Envelope::new(message, kind);
-        let addrs = self.demux.filter(&envelope);
-
-        if addrs.is_empty() {
-            return Err(TrySendError::Closed(e2m(envelope)));
-        }
-
-        let guard = EbrGuard::new();
-
-        if addrs.len() == 1 {
-            return match self.book.get(addrs[0], &guard) {
-                Some(object) => object
-                    .try_send(Addr::NULL, envelope)
-                    .map_err(|err| err.map(e2m)),
-                None => Err(TrySendError::Closed(e2m(envelope))),
-            };
-        }
-
-        let mut unused = None;
-        let mut has_full = false;
-        let mut success = false;
-
-        for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
-            match self.book.get(addr, &guard) {
-                Some(object) => match object.try_send(Addr::NULL, envelope) {
-                    Ok(()) => success = true,
-                    Err(err) => {
-                        has_full |= err.is_full();
-                        unused = Some(err.into_inner());
-                    }
-                },
-                None => unused = Some(envelope),
-            };
-        }
-
-        if success {
-            Ok(())
-        } else if has_full {
-            Err(TrySendError::Full(e2m(unused.unwrap())))
-        } else {
-            Err(TrySendError::Closed(e2m(unused.unwrap())))
-        }
+        self.send(message).try_()
     }
 
     /// Sends a message using the [inter-group routing] system.
@@ -331,51 +279,7 @@ impl<C, K> Context<C, K> {
     ///
     /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
     pub fn unbounded_send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-
-        self.stats.on_sent_message(&message); // TODO: only if successful?
-
-        trace!("> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m(&message) {
-            permit.record(Dump::message(&message, &kind, Direction::Out));
-        }
-
-        let envelope = Envelope::new(message, kind);
-        let addrs = self.demux.filter(&envelope);
-
-        if addrs.is_empty() {
-            return Err(SendError(e2m(envelope)));
-        }
-
-        let guard = EbrGuard::new();
-
-        if addrs.len() == 1 {
-            return match self.book.get(addrs[0], &guard) {
-                Some(object) => object
-                    .unbounded_send(Addr::NULL, envelope)
-                    .map_err(|err| err.map(e2m)),
-                None => Err(SendError(e2m(envelope))),
-            };
-        }
-
-        let mut unused = None;
-        let mut success = false;
-
-        for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
-            match self.book.get(addr, &guard) {
-                Some(object) => match object.unbounded_send(Addr::NULL, envelope) {
-                    Ok(()) => success = true,
-                    Err(err) => unused = Some(err.into_inner()),
-                },
-                None => unused = Some(envelope),
-            };
-        }
-
-        if success {
-            Ok(())
-        } else {
-            Err(SendError(e2m(unused.unwrap())))
-        }
+        self.send(message).unbounded()
     }
 
     /// Returns a request builder to send a request (on `resolve()`) using
@@ -508,17 +412,8 @@ impl<C, K> Context<C, K> {
     /// }
     /// # }
     /// ```
-    pub async fn send_to<M: Message>(
-        &self,
-        recipient: Addr,
-        message: M,
-    ) -> Result<(), SendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_to(recipient, message, kind, |object, envelope| {
-            Object::send(object, recipient, envelope)
-        })?
-        .await
-        .map_err(|err| err.map(e2m))
+    pub fn send_to<M: Message>(&self, recipient: Addr, message: M) -> send::Send<'_, M, C, K> {
+        self.send(message).to(recipient)
     }
 
     /// Tries to send a message to the specified recipient.
@@ -553,12 +448,7 @@ impl<C, K> Context<C, K> {
         recipient: Addr,
         message: M,
     ) -> Result<(), TrySendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_to(recipient, message, kind, |object, envelope| {
-            object
-                .try_send(recipient, envelope)
-                .map_err(|err| err.map(e2m))
-        })?
+        self.send(message).to(recipient).try_()
     }
 
     /// Sends a message to the specified recipient.
@@ -595,12 +485,7 @@ impl<C, K> Context<C, K> {
         recipient: Addr,
         message: M,
     ) -> Result<(), SendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_to(recipient, message, kind, |object, envelope| {
-            object
-                .unbounded_send(recipient, envelope)
-                .map_err(|err| err.map(e2m))
-        })?
+        self.send(message).to(recipient).unbounded()
     }
 
     #[inline(always)]

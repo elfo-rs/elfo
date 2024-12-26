@@ -1,5 +1,5 @@
 use std::{
-    future::Future,
+    future::{Future, IntoFuture},
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -336,7 +336,7 @@ async fn terminate_group(ctx: &Context, addr: Addr, name: String, started_at: In
     // Terminate::default
 
     info!(group = %name, "sending polite Terminate");
-    let fut = ctx.send_to(addr, Terminate::default());
+    let fut = ctx.send_to(addr, Terminate::default()).into_future();
 
     if timeout(SEND_CLOSING_TERMINATE_AFTER, fut).await.is_ok() {
         let elapsed = started_at.elapsed();
@@ -354,7 +354,7 @@ async fn terminate_group(ctx: &Context, addr: Addr, name: String, started_at: In
         group = %name,
         elapsed = ?started_at.elapsed(),
     );
-    let fut = ctx.send_to(addr, Terminate::closing());
+    let fut = ctx.send_to(addr, Terminate::closing()).into_future();
 
     if timeout(STOP_GROUP_TERMINATION_AFTER, fut).await.is_ok() {
         let elapsed = started_at.elapsed();
