@@ -891,17 +891,24 @@ impl remote::RemoteHandle for RemoteHandle {
 
         let recipient = NetworkAddr::from_remote(token.sender());
 
+        let mut item = Some(KanalItem {
+            recipient,
+            envelope,
+            token: Some(token),
+        });
+
         if likely(self.tx_flows.do_acquire(recipient)) {
-            let item = KanalItem {
-                recipient,
-                envelope,
-                token: Some(token),
-            };
-            match self.tx.try_send(item) {
+            match self.tx.try_send_option(&mut item) {
                 Ok(true) => return,
                 Ok(false) => unreachable!(),
                 Err(_) => {}
             }
+        }
+
+        if let Some(item) = item {
+            let token = item.token.expect("response token set above");
+            // Flow is closed, token is not required anymore
+            token.forget();
         }
 
         trace!(addr = %recipient, "flow is closed, response is lost");
