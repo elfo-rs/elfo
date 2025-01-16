@@ -12,7 +12,7 @@ use elfo_core::{
 
 use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
-    config::{self, CompressionAlgorithm, Transport},
+    config::{self, Transport},
     node_map::{NodeInfo, NodeMap},
     protocol::{internode, DataConnectionFailed, GroupInfo, HandleConnection},
     socket::{self, ReadError, Socket},
@@ -135,12 +135,21 @@ impl Discovery {
         Ok(())
     }
 
+    fn get_compression(&self) -> socket::Compression {
+        use socket::Algorithms as Algos;
+
+        let mut compression = socket::Compression::empty();
+        let cfg = &self.cfg.compression.algorithms;
+
+        compression.toggle(Algos::LZ4, cfg.lz4);
+
+        compression
+    }
+
     fn get_capabilities(&self) -> socket::Capabilities {
-        let mut capabilities = socket::Capabilities::empty();
-        if self.cfg.compression.algorithm == CompressionAlgorithm::Lz4 {
-            capabilities |= socket::Capabilities::LZ4;
-        }
-        capabilities
+        let compression = self.get_compression();
+
+        socket::Capabilities::new(compression)
     }
 
     fn on_update_config(&mut self) {

@@ -58,22 +58,46 @@ pub struct Config {
     pub idle_timeout: Duration,
 }
 
+/// Preference.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Preference {
+    /// This is preferred.
+    Preferred,
+
+    /// This is just supported.
+    Supported,
+}
+
+/// Preferences for the compression algorithms
+/// selection.
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct CompressionPreference {
+    /// LZ4 compression algorithm.
+    pub lz4: Option<Preference>,
+}
+
 /// Compression settings.
 #[derive(Debug, Default, Deserialize, Clone)]
 pub struct CompressionConfig {
-    /// Compression algorithm.
+    /// Compression algorithms.
+    ///
+    /// Example:
+    /// ```toml
+    /// algorithms = { lz4 = "preferred" }
+    /// ```
+    ///
+    /// Preferred implies supported.
     #[serde(default)]
-    pub algorithm: CompressionAlgorithm,
+    pub algorithms: CompressionPreference,
 }
 
 /// Compression algorithms.
 #[derive(Debug, Default, PartialEq, Eq, Deserialize, Clone)]
 pub enum CompressionAlgorithm {
     /// LZ4 with default compression level.
-    Lz4,
-    /// Compression disabled.
     #[default]
-    None,
+    Lz4,
 }
 
 fn default_ping_interval() -> Duration {
