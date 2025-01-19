@@ -9,7 +9,7 @@ const FMT_TS_ARRAY_LEN: usize = MAX_FMT_TS_LEN + 1;
 #[derive(Debug)]
 pub(crate) struct TemplateVariables<'a> {
     pub(crate) class: &'a str,
-    pub(crate) ts: i64,
+    pub(crate) ts: i64, // TODO: replace with `SystemTime`
 }
 
 /// Template for the dump path.

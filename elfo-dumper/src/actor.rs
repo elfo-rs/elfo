@@ -84,37 +84,8 @@ impl Dumper {
         }
     }
 
-    fn make_template_variables(&self) -> TemplateVariables<'_> {
-        let now = SystemTime::now();
-        let ts = now
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("shit happens")
-            .as_secs() as i64;
-
-        TemplateVariables {
-            class: self.ctx.key(),
-            ts,
-        }
-    }
-
-    fn render_path(&self, to: &mut String) {
-        to.clear();
-        self.ctx
-            .config()
-            .path
-            .render_into(self.make_template_variables(), to);
-    }
-
     async fn main(mut self) -> Result<()> {
-        let mut path = String::new();
-        let mut path_swap = String::new();
-
-        self.render_path(&mut path);
-        self.file_registry
-            .open(&path, false)
-            .await
-            .wrap_err("cannot open the dump file")?;
-
+        let mut file = self.acquire_file();
         let mut serializer = Serializer::new(self.dump_registry.class());
         let mut rule_set = RuleSet::new(self.dump_registry.class());
         let mut reporter = Reporter::new(self.ctx.config().log_cooldown);
@@ -122,8 +93,15 @@ impl Dumper {
 
         rule_set.configure(&self.ctx.config().rules);
 
-        self.ctx
-            .attach(Signal::new(SignalKind::UnixHangup, ReopenDumpFile));
+        // TODO: comment
+        if self.manager.is_some() {
+            self.ctx
+                .attach(Signal::new(SignalKind::UnixHangup, ReopenDumpFile));
+
+            // If the manager actor has been restarted, we need to reopen all files
+            // because some `ReopenDumpFile` signals may have been lost.
+            self.file_registry.schedule_reopen();
+        }
 
         // TODO: use `interval.start_after` to set random time shift.
         self.interval.start(self.ctx.config().write_interval);
@@ -134,47 +112,27 @@ impl Dumper {
                     let config = self.ctx.config();
                     self.interval.set_period(config.write_interval);
 
-                    self.render_path(&mut path);
-                    self.file_registry
-                        .open(&path, false)
-                        .await
-                        .wrap_err("cannot open the dump file")?;
-
                     rule_set.configure(&config.rules);
                     reporter.configure(config.log_cooldown);
+
+                    file = self.acquire_file();
 
                     if let Some(m) = &self.manager {
                         m.dump_storage.lock().configure(config.registry_capacity);
                     }
                 }
                 ReopenDumpFile => {
-                    // TODO: reopen the dump file at most once.
-                    // It's possible to reopen the file multiple times,
-                    // if the same file is used for multiple classes.
-                    // It's ok for now, but should be fixed later.
-                    self.file_registry
-                        .open(&path, true)
-                        .await
-                        .wrap_err("cannot reopen the dump file")?;
+                    assert!(self.manager.is_some());
+                    self.file_registry.schedule_reopen();
                 }
                 DumpingTick => {
                     let timeout = self.ctx.config().write_interval;
                     let dump_registry = self.dump_registry.clone();
+                    file = self.acquire_file();
 
-                    // NOTE: could be optimized by not re-rendering path
-                    // if variables aren't changed in the affectable way, it's
-                    // not that matters here though.
-                    self.render_path(&mut path_swap);
-                    let file = self
-                        .file_registry
-                        .acquire_for_write(&path, &path_swap)
-                        .await?;
-                    if path != path_swap {
-                        path.clear();
-                        std::mem::swap(&mut path, &mut path_swap);
-                    }
+                    let file = file.clone();
 
-                    // A blocking background task that writes a lot of dumps in batch.
+                    // A blocking background task that writes a lot of dumps in a batch.
                     // It's much faster than calling tokio's async functions.
                     let background = move || -> Result<(Serializer, RuleSet, Reporter)> {
                         let mut report = Report::default();
@@ -220,13 +178,31 @@ impl Dumper {
             });
         }
 
-        info!("synchronizing the file");
-        self.file_registry
-            .sync(&path)
-            .await
-            .context("cannot sync the dump file")?;
+        file.sync().await
+    }
 
-        Ok(())
+    fn acquire_file(&self) -> FileHandle {
+        let mut path = String::new();
+
+        self.ctx
+            .config()
+            .path
+            .render_into(self.make_template_variables(), &mut path);
+
+        self.file_registry.acquire(&path)
+    }
+
+    fn make_template_variables(&self) -> TemplateVariables<'_> {
+        let now = SystemTime::now();
+        let ts = now
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("shit happens")
+            .as_secs() as i64;
+
+        TemplateVariables {
+            class: self.ctx.key(),
+            ts,
+        }
     }
 
     fn spawn_dumpers_if_needed(&mut self) {

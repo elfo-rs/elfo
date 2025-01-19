@@ -30,13 +30,7 @@ pub use dump_path::DumpPath;
 /// [system.dumpers]
 /// system.telemetry.per_actor_group = false
 /// system.telemetry.per_actor_key = true
-///
 /// path = "/path/{class}.dump"
-/// rules = [
-///     { max_size = "128KiB", on_overflow = "Truncate" },
-///     { class = "ws_api", log_on_overflow = "Info" },
-///     { class = "external", max_size = "1MiB" },
-/// ]
 /// ```
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -63,11 +57,20 @@ pub struct Config {
     pub registry_capacity: usize,
     /// Rule set to override properties.
     /// All rules that match a message are merged. If several relevant rules
-    /// define same property, the last one is applied.
+    /// define the same property (e.g. `max_size`), the last one is applied.
     ///
     /// There is the prepended implicit rule that defines default properties:
     /// ```toml
     /// { max_size = "64KiB", on_overflow = "Skip", log_on_overflow = "Warn", log_on_failure = "Warn" }
+    /// ```
+    ///
+    /// # Examples
+    /// ```toml
+    /// rules = [
+    ///     { max_size = "128KiB", on_overflow = "Truncate" },
+    ///     { class = "grpc", log_on_overflow = "Info" },
+    ///     { class = "external", max_size = "1MiB" },
+    /// ]
     /// ```
     #[serde(default)]
     pub rules: Vec<Rule>,
