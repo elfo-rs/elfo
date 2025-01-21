@@ -56,17 +56,14 @@ impl Compression {
         Self(joined)
     }
 
-    pub(crate) fn toggle(&mut self, algos: Algorithms, pref: Option<Preference>) {
-        let Some(pref) = pref else {
-            return;
-        };
-
+    pub(crate) fn toggle(&mut self, algos: Algorithms, pref: Preference) {
         let preferred = self.preferred();
         let supported = self.supported();
 
         *self = match pref {
             Preference::Preferred => Self::new(supported, preferred | algos),
             Preference::Supported => Self::new(supported | algos, preferred),
+            Preference::Disabled => *self,
         };
     }
 
