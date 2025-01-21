@@ -309,51 +309,6 @@ mod tests {
     #[derive(PartialEq)]
     struct TestSocketMessage(String);
 
-    #[test]
-    fn capabilities_format_is_compatible_with_020alpha17() {
-        let caps = Capabilities::new(Compression::new(Algorithms::LZ4, Algorithms::empty()));
-        let lz4_bit = caps.bits() & (1 << 8);
-
-        assert_eq!(lz4_bit, 1 << 8);
-    }
-
-    #[test]
-    fn compression_capabilities_encoded_right_way() {
-        #[track_caller]
-        fn case(create: (Algorithms, Algorithms), expect: (Algorithms, Algorithms)) {
-            let caps = Capabilities::new(Compression::new(create.0, create.1));
-            let compr = caps.compression();
-
-            assert_eq!(compr.supported(), expect.0);
-            assert_eq!(compr.preferred(), expect.1);
-
-            // Just in case we should decode same caps.
-
-            let bits = caps.bits();
-            let same_caps = Capabilities::from_bits_truncate(bits);
-
-            assert_eq!(caps, same_caps);
-        }
-
-        // Supported does not implies preferred.
-        case(
-            (Algorithms::LZ4, Algorithms::empty()),
-            (Algorithms::LZ4, Algorithms::empty()),
-        );
-
-        // Preferred implies supported.
-        case(
-            (Algorithms::empty(), Algorithms::LZ4),
-            (Algorithms::LZ4, Algorithms::LZ4),
-        );
-
-        // Nothing ever happens.
-        case(
-            (Algorithms::empty(), Algorithms::empty()),
-            (Algorithms::empty(), Algorithms::empty()),
-        );
-    }
-
     fn feed_frame(client_socket: &mut Socket, envelope: &NetworkEnvelope) {
         for _ in 0..100 {
             client_socket

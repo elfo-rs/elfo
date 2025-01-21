@@ -4,66 +4,38 @@ use std::fmt;
 
 use crate::config::Preference;
 
+bitflags::bitflags! {
+    /// Set of algorithms. 24 bits.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) struct Algorithms: u32 {
+        const LZ4 = 1;
+        // NB: Shift by 2: `const ZSTD = 1 << 2;`.
+    }
+}
+
+/// Compression capabilities.
+///
 /// Layout:
 /// ```text
-///     Bits
-///   6    2
-/// +---+-----+
-/// | R | Lz4 |
-/// +---+-----+
+///       22        2
+/// ┌────────────┬─────┐
+/// │  Reserved  │ Lz4 │
+/// └────────────┴─────┘
 /// ```
 ///
-/// `R` - reserved, any other mean specific compression algorithm. Layout
-/// for specific compression algorithm:
+/// Each mentioned algorithm here occupies two bits for a reason, here's the
+/// layout of those bits:
 /// ```text
-///    Bits
-///   1   1
-/// +---+---+
-/// | S | P |
-/// +---+---+
+///       1           1
+/// ┌───────────┬───────────┐
+/// │ Preferred │ Supported │
+/// └───────────┴───────────┘
 /// ```
 ///
-/// 1. `S` - the compression algorithm is supported.
-/// 2. `P` - the compression algorithm is preferred, implies `S`.
+/// 1. Preferred - the compression algorithm is preferred, implies `Supported`.
+/// 2. Supported - the compression algorithm is supported.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Compression(u32);
-
-fn write_array(
-    hide: Option<Algorithms>,
-    algos: Algorithms,
-    f: &mut fmt::Formatter<'_>,
-) -> fmt::Result {
-    write!(f, "[")?;
-    let mut need_comma = false;
-    for (name, _) in algos
-        .iter_names()
-        .filter(|(_, algo)| hide.map_or(true, |hide| hide.contains(*algo)))
-    {
-        if need_comma {
-            write!(f, ", ")?;
-        }
-
-        f.write_str(name)?;
-        need_comma = true;
-    }
-
-    write!(f, "]")
-}
-
-impl fmt::Display for Compression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let preferred = self.preferred();
-        let supported = self.supported();
-
-        write!(f, "(preferred: ")?;
-        write_array(None, preferred, f)?;
-        write!(f, ", supported: ")?;
-        // Don't show preferred in supported, more compact
-        // output.
-        write_array(Some(preferred), supported, f)?;
-        write!(f, ")")
-    }
-}
 
 impl Compression {
     pub(crate) const fn empty() -> Self {
@@ -75,8 +47,8 @@ impl Compression {
     }
 
     pub(crate) const fn from_bits_truncate(v: u32) -> Self {
-        let supported = Algorithms::from_bits_truncate(v >> 1);
-        let preferred = Algorithms::from_bits_truncate(v);
+        let supported = Algorithms::from_bits_truncate(v);
+        let preferred = Algorithms::from_bits_truncate(v >> 1);
 
         Self::new(supported, preferred)
     }
@@ -86,11 +58,11 @@ impl Compression {
         // Preferred implies supported.
         let supported = supported.bits() | preferred;
 
-        // 0 1 0 1 | Preferred
-        // 1 0 1 0 | Supported
+        // 0 1 0 1 | Supported
+        // 1 0 1 0 | Preferred
         // -------
         // 1 1 1 1
-        let joined = (supported << 1) | preferred;
+        let joined = supported | (preferred << 1);
 
         Self(joined)
     }
@@ -138,20 +110,48 @@ impl Compression {
 
     pub(crate) const fn supported(self) -> Algorithms {
         // `preferred` bits would be discarded.
-        Algorithms::from_bits_truncate(self.0 >> 1)
+        Algorithms::from_bits_truncate(self.0)
     }
 
     pub(crate) const fn preferred(self) -> Algorithms {
         // `supported` bits would be discarded.
-        Algorithms::from_bits_truncate(self.0)
+        Algorithms::from_bits_truncate(self.0 >> 1)
     }
 }
 
-bitflags::bitflags! {
-    // Actually, 24 bits.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub(crate) struct Algorithms: u32 {
-        const LZ4 = 1;
-        // NB: Shift by 2: `const ZSTD = 1 << 2;`.
+impl fmt::Display for Compression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn write_array(
+            hide: Option<Algorithms>,
+            algos: Algorithms,
+            f: &mut fmt::Formatter<'_>,
+        ) -> fmt::Result {
+            write!(f, "[")?;
+            let mut need_comma = false;
+            for (name, _) in algos
+                .iter_names()
+                .filter(|(_, algo)| hide.map_or(true, |hide| hide.contains(*algo)))
+            {
+                if need_comma {
+                    write!(f, ", ")?;
+                }
+
+                f.write_str(name)?;
+                need_comma = true;
+            }
+
+            write!(f, "]")
+        }
+
+        let preferred = self.preferred();
+        let supported = self.supported();
+
+        write!(f, "(preferred: ")?;
+        write_array(None, preferred, f)?;
+        write!(f, ", supported: ")?;
+        // Don't show preferred in supported, more compact
+        // output.
+        write_array(Some(preferred), supported, f)?;
+        write!(f, ")")
     }
 }
