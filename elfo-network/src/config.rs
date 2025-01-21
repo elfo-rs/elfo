@@ -92,14 +92,6 @@ pub struct CompressionConfig {
     pub algorithms: CompressionPreference,
 }
 
-/// Compression algorithms.
-#[derive(Debug, Default, PartialEq, Eq, Deserialize, Clone)]
-pub enum CompressionAlgorithm {
-    /// LZ4 with default compression level.
-    #[default]
-    Lz4,
-}
-
 fn default_ping_interval() -> Duration {
     Duration::from_secs(5)
 }
