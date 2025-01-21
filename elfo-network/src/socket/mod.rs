@@ -13,208 +13,23 @@ use elfo_utils::likely;
 use self::idleness::{IdleTrack, IdleTracker};
 use crate::{
     codec::{decode::EnvelopeDetails, encode::EncodeError, format::NetworkEnvelope},
-    config::{CompressionAlgorithm, Preference, Transport},
+    config::Transport,
     frame::{
         read::{FramedRead, FramedReadState, FramedReadStrategy},
         write::{FrameState, FramedWrite, FramedWriteStrategy},
     },
 };
 
+pub(crate) use self::capabilities::{
+    compression::{Algorithms, Compression},
+    Capabilities,
+};
+
 mod handshake;
 mod idleness;
 mod raw;
 
-bitflags::bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub(crate) struct Algorithms: u8 {
-        const LZ4 = 1;
-        // NB: Shift by 2: `const ZSTD = 1 << 2;`.
-    }
-}
-
-impl Algorithms {
-    // Calculated to not require keeping in sync by hand.
-    // TODO: This is plain silly, `bitflags` should support that
-    // by default, given that they support iteration by names.
-    const NO_ELEMS: u32 = {
-        let all = Algorithms::all().bits();
-
-        // Number of unfilled zeros are odd, since:
-        // 1 (odd, LZ4) + 1 (odd, zero bit) + 1 (odd, used bit) = odd.
-        // This is because (ASSUMED) we have one at the lowest bit, so we just subtract
-        // it.
-        let unfilled_bits = all.leading_zeros() - 1;
-
-        // Get number of unfilled cells.
-        // Cell = two flags (supported + preferred).
-        let unfilled_cells = unfilled_bits / 2;
-        // Total number of available cells.
-        let cells = 4;
-
-        cells - unfilled_cells
-    };
-}
-
-// Layouts are specified from highest to lowest bits.
-
-/// Layout:
-/// ```text
-///     Bits
-///    6    2
-/// +---+-----+
-/// | R | Lz4 |
-/// +---+-----+
-/// ```
-///
-/// `R` - reserved, any other mean specific compression algorithm. Layout
-/// for specific compression algorithm:
-/// ```text
-///    Bits
-///   1   1
-/// +---+---+
-/// | S | P |
-/// +---+---+
-/// ```
-///
-/// 1. `S` - the compression algorithm is supported.
-/// 2. `P` - the compression algorithm is preferred, implies `S`.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Compression(u8);
-
-impl Compression {
-    pub(crate) const fn empty() -> Self {
-        Self::new(Algorithms::empty(), Algorithms::empty())
-    }
-
-    pub(crate) const fn from_bits_truncate(v: u8) -> Self {
-        let supported = Algorithms::from_bits_truncate(v >> 1);
-        let preferred = Algorithms::from_bits_truncate(v);
-
-        Self::new(supported, preferred)
-    }
-
-    pub(crate) const fn new(supported: Algorithms, preferred: Algorithms) -> Self {
-        let preferred = preferred.bits();
-        // Preferred implies supported.
-        let supported = supported.bits() | preferred;
-
-        // 0 1 0 1 | Preferred
-        // 1 0 1 0 | Supported
-        // -------
-        // 1 1 1 1
-        let joined = (supported << 1) | preferred;
-
-        Self(joined)
-    }
-
-    pub(crate) fn toggle(&mut self, algos: Algorithms, pref: Option<Preference>) {
-        let Some(pref) = pref else {
-            return;
-        };
-
-        let preferred = self.preferred();
-        let supported = self.supported();
-
-        *self = match pref {
-            Preference::Preferred => Self::new(supported, preferred | algos),
-            Preference::Supported => Self::new(supported | algos, preferred),
-        };
-    }
-
-    pub(crate) const fn intersection(self, rhs: Self) -> Self {
-        let we_prefer = self.preferred();
-        let we_support = self.supported();
-
-        let they_prefer = rhs.preferred();
-        let they_support = rhs.supported();
-
-        // Let's see what we both support.
-        let both_support = we_support.intersection(they_support);
-        // And if we both prefer something.
-        let both_prefer = we_prefer.intersection(they_prefer);
-
-        let preferred = if both_prefer.is_empty() {
-            // if we prefer something that is supported by us and
-            // the remote node, then it's a deal.
-            we_prefer.intersection(both_support)
-        } else {
-            // We both prefer something!
-            both_prefer
-        };
-
-        Self::new(both_support, preferred)
-    }
-}
-
-impl Compression {
-    pub(crate) const fn bits(self) -> u8 {
-        self.0
-    }
-
-    pub(crate) const fn supported(self) -> Algorithms {
-        // `preferred` bits would be discarded.
-        Algorithms::from_bits_truncate(self.0 >> 1)
-    }
-
-    pub(crate) const fn preferred(self) -> Algorithms {
-        // `supported` bits would be discarded.
-        Algorithms::from_bits_truncate(self.0)
-    }
-}
-
-/// Layout:
-/// ```text
-///        Bits
-///    23    2     7
-/// +-----+-----+-----+
-/// |  R  |  C  |  R  |
-/// +-----+-----+-----+
-/// ```
-///
-/// 1. C - compression
-/// 2. R - reserved
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Capabilities(u32);
-
-const COMPRESSION_SHIFT: u32 = 9 - Algorithms::NO_ELEMS * 2;
-
-const fn compression_bits(whole: u32) -> u8 {
-    // 9 ones.
-    const MASK: u32 = (1 << 9) - 1;
-    let part = whole & MASK;
-    let compression = part >> COMPRESSION_SHIFT;
-
-    compression as u8
-}
-
-impl Capabilities {
-    pub(crate) const fn new(compression: Compression) -> Self {
-        let compression = compression.bits() as u32;
-        let joined = compression << COMPRESSION_SHIFT;
-
-        Self(joined)
-    }
-
-    pub(crate) const fn from_bits_truncate(bits: u32) -> Self {
-        let compression = Compression::from_bits_truncate(compression_bits(bits));
-        Self::new(compression)
-    }
-
-    pub(crate) const fn intersection(self, rhs: Self) -> Self {
-        let compr = self.compression().intersection(rhs.compression());
-        Self::new(compr)
-    }
-}
-
-impl Capabilities {
-    pub(crate) const fn compression(self) -> Compression {
-        Compression(compression_bits(self.0))
-    }
-
-    pub(crate) const fn bits(self) -> u32 {
-        self.0
-    }
-}
+mod capabilities;
 
 pub(crate) struct Socket {
     pub(crate) info: raw::SocketInfo,
@@ -233,15 +48,13 @@ pub(crate) struct Peer {
 
 impl Socket {
     fn new(raw: raw::Socket, handshake: handshake::Handshake) -> Self {
-        // TODO: maybe do something with the version.
-        let algorithm = handshake.choose_compression();
+        // The actual algorithms selection logic happens in
+        // [`Compression::intersection`], so we just choose the algorithm from
+        // preferred.
+        let algos = handshake.capabilities.compression().preferred();
 
-        let (framed_read, framed_write) = if let Some(algo) = algorithm {
-            use CompressionAlgorithm as Algo;
-
-            match algo {
-                Algo::Lz4 => (FramedRead::lz4(), FramedWrite::lz4(None)),
-            }
+        let (framed_read, framed_write) = if algos.contains(Algorithms::LZ4) {
+            (FramedRead::lz4(), FramedWrite::lz4(None))
         } else {
             (FramedRead::none(), FramedWrite::none(None))
         };

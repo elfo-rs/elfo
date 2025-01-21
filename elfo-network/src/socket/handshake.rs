@@ -6,9 +6,7 @@ use tokio::io;
 
 use elfo_core::addr::{NodeLaunchId, NodeNo};
 
-use crate::config::CompressionAlgorithm;
-
-use super::{raw, Algorithms, Capabilities};
+use super::{raw, Capabilities};
 
 const THIS_NODE_VERSION: u8 = 0;
 
@@ -38,18 +36,6 @@ impl Handshake {
             node_no,
             launch_id,
             capabilities,
-        }
-    }
-
-    pub(super) fn choose_compression(&self) -> Option<CompressionAlgorithm> {
-        let compr = self.capabilities.compression().preferred();
-
-        // Actual selection logic is done in the [`Compression::intersection`],
-        // let's just check our preferences.
-        if compr.contains(Algorithms::LZ4) {
-            Some(CompressionAlgorithm::Lz4)
-        } else {
-            None
         }
     }
 
