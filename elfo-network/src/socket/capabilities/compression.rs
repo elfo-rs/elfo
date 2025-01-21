@@ -1,5 +1,7 @@
 // Layouts are specified from highest to lowest bits.
 
+use std::fmt;
+
 use crate::config::Preference;
 
 /// Layout:
@@ -25,6 +27,43 @@ use crate::config::Preference;
 /// 2. `P` - the compression algorithm is preferred, implies `S`.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Compression(u32);
+
+fn write_array(
+    hide: Option<Algorithms>,
+    algos: Algorithms,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    write!(f, "[")?;
+    let mut need_comma = false;
+    for (name, _) in algos
+        .iter_names()
+        .filter(|(_, algo)| hide.map_or(true, |hide| hide.contains(*algo)))
+    {
+        if need_comma {
+            write!(f, ", ")?;
+        }
+
+        f.write_str(name)?;
+        need_comma = true;
+    }
+
+    write!(f, "]")
+}
+
+impl fmt::Display for Compression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let preferred = self.preferred();
+        let supported = self.supported();
+
+        write!(f, "(preferred: ")?;
+        write_array(None, preferred, f)?;
+        write!(f, ", supported: ")?;
+        // Don't show preferred in supported, more compact
+        // output.
+        write_array(Some(preferred), supported, f)?;
+        write!(f, ")")
+    }
+}
 
 impl Compression {
     pub(crate) const fn empty() -> Self {

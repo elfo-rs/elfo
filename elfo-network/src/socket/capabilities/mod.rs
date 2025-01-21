@@ -1,9 +1,17 @@
+use std::fmt;
+
 use self::compression::Compression;
 
 pub(crate) mod compression;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Capabilities(u32);
+
+impl fmt::Display for Capabilities {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(compression: {})", self.compression())
+    }
+}
 
 impl Capabilities {
     pub(crate) const fn new(compression: Compression) -> Self {
