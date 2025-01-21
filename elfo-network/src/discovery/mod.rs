@@ -215,6 +215,7 @@ impl Discovery {
             info!(
                 message = "listening for connections",
                 addr = %transport,
+                capabilities = %capabilities,
             );
 
             self.ctx.attach(Stream::from_futures03(stream));
@@ -252,7 +253,12 @@ impl Discovery {
 
         self.ctx.attach(Stream::once(async move {
             loop {
-                debug!(message = "connecting to peer", addr = %transport, role = ?role);
+                debug!(
+                    message = "connecting to peer",
+                    addr = %transport,
+                    role = ?role,
+                    capabilities = %capabilities,
+                );
 
                 match socket::connect(&transport, node_no, launch_id, capabilities).await {
                     Ok(socket) => {

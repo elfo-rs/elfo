@@ -88,17 +88,19 @@ pub struct CompressionAlgorithms {
     pub lz4: Algorithm,
 }
 
+impl CompressionAlgorithms {
+    const fn lz4_default() -> Algorithm {
+        Algorithm {
+            preference: Preference::Supported,
+        }
+    }
+}
+
 impl Default for CompressionAlgorithms {
     fn default() -> Self {
         Self {
             lz4: Self::lz4_default(),
         }
-    }
-}
-
-impl CompressionAlgorithms {
-    const fn lz4_default() -> Algorithm {
-        Algorithm { preference: Preference::Supported }
     }
 }
 
