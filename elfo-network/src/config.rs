@@ -59,22 +59,47 @@ pub struct Config {
 }
 
 /// Preference.
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub enum Preference {
-    /// This is preferred.
+    /// This is preferred, implies [`Preference::Supported`].
     Preferred,
 
     /// This is just supported.
+    #[default]
     Supported,
+
+    /// Must not be used.
+    Disabled,
 }
 
-/// Preferences for the compression algorithms
-/// selection.
-#[derive(Debug, Deserialize, Default, Clone)]
-pub struct CompressionPreference {
+/// Options for the specific algorithm.
+#[derive(Debug, Deserialize, Clone)]
+pub struct Algorithm {
+    /// Preference when deciding which algorithm to use in
+    /// communication between nodes.
+    pub preference: Preference,
+}
+
+/// Options for the compression algorithms.
+#[derive(Debug, Deserialize, Clone)]
+pub struct CompressionAlgorithms {
     /// LZ4 compression algorithm.
-    pub lz4: Option<Preference>,
+    #[serde(default = "CompressionAlgorithms::lz4_default")]
+    pub lz4: Algorithm,
+}
+
+impl Default for CompressionAlgorithms {
+    fn default() -> Self {
+        Self {
+            lz4: Self::lz4_default(),
+        }
+    }
+}
+
+impl CompressionAlgorithms {
+    const fn lz4_default() -> Algorithm {
+        Algorithm { preference: Preference::Supported }
+    }
 }
 
 /// Compression settings.
@@ -84,12 +109,12 @@ pub struct CompressionConfig {
     ///
     /// Example:
     /// ```toml
-    /// algorithms = { lz4 = "preferred" }
+    /// algorithms.lz4 = { preference = "Preferred" }
     /// ```
     ///
     /// Preferred implies supported.
     #[serde(default)]
-    pub algorithms: CompressionPreference,
+    pub algorithms: CompressionAlgorithms,
 }
 
 fn default_ping_interval() -> Duration {
