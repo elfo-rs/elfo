@@ -26,10 +26,10 @@ pub struct ReloadConfigsRejected {
 }
 
 impl ReloadConfigsRejected {
-    /// Create new empty reject.
+    /// Creates new empty reject.
     #[cfg(feature = "test-util")]
-    pub fn new() -> Self {
-        ReloadConfigsRejected { errors: Vec::new() }
+    pub fn empty(errors: Vec<ReloadConfigsError>) -> Self {
+        Self { errors }
     }
 }
 
@@ -41,4 +41,12 @@ pub struct ReloadConfigsError {
     pub group: String,
     /// The reason why the config is rejected.
     pub reason: String,
+}
+
+impl ReloadConfigsError {
+    /// Creates new error.
+    #[cfg(feature = "test-util")]
+    pub fn new(group: String, reason: String) -> Self {
+        Self { group, reason }
+    }
 }
