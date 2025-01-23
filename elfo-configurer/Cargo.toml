@@ -27,3 +27,6 @@ fxhash = "0.2.1"
 
 [dev-dependencies]
 serde_json = "1.0.94"
+
+[features]
+test-util = []

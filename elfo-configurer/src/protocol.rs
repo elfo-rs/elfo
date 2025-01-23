@@ -25,6 +25,14 @@ pub struct ReloadConfigsRejected {
     pub errors: Vec<ReloadConfigsError>,
 }
 
+impl ReloadConfigsRejected {
+    /// Creates a new reject.
+    #[cfg(feature = "test-util")]
+    pub fn new(errors: Vec<ReloadConfigsError>) -> Self {
+        Self { errors }
+    }
+}
+
 /// Contains a reason why some actor rejects the config.
 #[message(part)]
 #[non_exhaustive]
@@ -33,4 +41,12 @@ pub struct ReloadConfigsError {
     pub group: String,
     /// The reason why the config is rejected.
     pub reason: String,
+}
+
+impl ReloadConfigsError {
+    /// Creates a new error.
+    #[cfg(feature = "test-util")]
+    pub fn new(group: String, reason: String) -> Self {
+        Self { group, reason }
+    }
 }
