@@ -26,6 +26,7 @@ pub struct ReloadConfigsRejected {
 }
 
 impl ReloadConfigsRejected {
+    /// Create new empty reject.
     #[cfg(feature = "test-util")]
     pub fn new() -> Self {
         ReloadConfigsRejected { errors: Vec::new() }
