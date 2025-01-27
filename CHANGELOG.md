@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- configurer: add a test constructor for `ReloadConfigsRejected` ([#151]).
+- network: more flexible way to control compression ([#150]).
+
+### Changed
+- **BREAKING** network/config: revise compression settings.
+
 ### Fixed
 - core/addr: probabilistic panics if `NodeNo` is generated ([#144]).
 - test/proxy: remove lifetime from `request(_to)` futures ([#146]).
@@ -17,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#146]: https://github.com/elfo-rs/elfo/pull/146
 [#147]: https://github.com/elfo-rs/elfo/pull/147
 [#149]: https://github.com/elfo-rs/elfo/pull/149
+[#150]: https://github.com/elfo-rs/elfo/pull/150
+[#151]: https://github.com/elfo-rs/elfo/pull/151
 
 ## [0.2.0-alpha.17] - 2024-12-01
 ### Added
