@@ -96,9 +96,15 @@ pub(super) async fn handshake(
     let version = this_node_handshake
         .version
         .min(other_node_handshake.version);
-    let capabilities = this_node_handshake
-        .capabilities
-        .intersection(other_node_handshake.capabilities);
+
+    // Agree on the capabilities that both nodes support.
+    let this_caps = this_node_handshake.capabilities;
+    let that_caps = other_node_handshake.capabilities;
+    let capabilities = this_caps.intersection(that_caps);
+
+    // The intersection must be commutative. In other words, both nodes
+    // must finally agree on the same capabilities.
+    assert_eq!(that_caps.intersection(this_caps), capabilities);
 
     Ok(Handshake {
         version,

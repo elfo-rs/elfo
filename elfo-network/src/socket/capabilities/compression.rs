@@ -78,28 +78,20 @@ impl Compression {
         };
     }
 
-    pub(crate) const fn intersection(self, rhs: Self) -> Self {
-        let we_prefer = self.preferred();
-        let we_support = self.supported();
+    pub(crate) fn intersection(self, rhs: Self) -> Self {
+        let supported = self.supported() & rhs.supported();
+        let both_prefer = self.preferred() & rhs.preferred();
+        let some_prefer = (self.preferred() | rhs.preferred()) & supported;
 
-        let they_prefer = rhs.preferred();
-        let they_support = rhs.supported();
-
-        // Let's see what we both support.
-        let both_support = we_support.intersection(they_support);
-        // And if we both prefer something.
-        let both_prefer = we_prefer.intersection(they_prefer);
-
-        let preferred = if both_prefer.is_empty() {
-            // if we prefer something that is supported by us and
-            // the remote node, then it's a deal.
-            we_prefer.intersection(both_support)
-        } else {
-            // We both prefer something!
+        // If both nodes prefer the same algorithms, use this set.
+        // Otherwise, use the set preferred by at least one node.
+        let preferred = if !both_prefer.is_empty() {
             both_prefer
+        } else {
+            some_prefer
         };
 
-        Self::new(both_support, preferred)
+        Self::new(supported, preferred)
     }
 }
 
@@ -121,37 +113,24 @@ impl Compression {
 
 impl fmt::Display for Compression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn write_array(
-            hide: Option<Algorithms>,
-            algos: Algorithms,
-            f: &mut fmt::Formatter<'_>,
-        ) -> fmt::Result {
-            write!(f, "[")?;
-            let mut need_comma = false;
-            for (name, _) in algos
-                .iter_names()
-                .filter(|(_, algo)| hide.map_or(true, |hide| hide.contains(*algo)))
-            {
-                if need_comma {
-                    write!(f, ", ")?;
-                }
+        let mut empty = true;
 
-                f.write_str(name)?;
-                need_comma = true;
+        // Print only preferred algorithms, because they are required to
+        // actually enable compression. For resolved final capabilities,
+        // only one of the preferred algorithms should be selected.
+        // Thus, it will be printed as a single value.
+        for (name, _) in self.preferred().iter_names() {
+            if !empty {
+                f.write_str(", ")?;
             }
-
-            write!(f, "]")
+            write!(f, "{name}")?;
+            empty = false;
         }
 
-        let preferred = self.preferred();
-        let supported = self.supported();
+        if empty {
+            f.write_str("None")?;
+        }
 
-        write!(f, "(preferred: ")?;
-        write_array(None, preferred, f)?;
-        write!(f, ", supported: ")?;
-        // Don't show preferred in supported, more compact
-        // output.
-        write_array(Some(preferred), supported, f)?;
-        write!(f, ")")
+        Ok(())
     }
 }

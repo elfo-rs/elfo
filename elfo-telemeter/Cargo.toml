@@ -46,5 +46,5 @@ elfo-configurer = { path = "../elfo-configurer" }
 
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 toml.workspace = true
-criterion = "0.5.1"
-proptest = "1.4"
+criterion.workspace = true
+proptest.workspace = true

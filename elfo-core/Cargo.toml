@@ -61,8 +61,8 @@ elfo-utils = { version = "0.2.6", path = "../elfo-utils", features = ["test-util
 
 tokio = { workspace = true, features = ["full"] }
 toml.workspace = true
+proptest.workspace = true
 anyhow = "1.0.40"
-proptest = "1.4.0"
 
 [package.metadata.docs.rs]
 all-features = true

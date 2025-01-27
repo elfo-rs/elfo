@@ -25,15 +25,15 @@ pub(crate) use self::capabilities::{
     Capabilities,
 };
 
+mod capabilities;
 mod handshake;
 mod idleness;
 mod raw;
 
-mod capabilities;
-
 pub(crate) struct Socket {
     pub(crate) info: raw::SocketInfo,
     pub(crate) peer: Peer,
+    pub(crate) capabilities: Capabilities,
     pub(crate) read: ReadHalf,
     pub(crate) write: WriteHalf,
     pub(crate) idle: IdleTracker,
@@ -63,6 +63,7 @@ impl Socket {
         Self {
             info: raw.info,
             peer: Peer::new(handshake.node_no, handshake.launch_id),
+            capabilities: handshake.capabilities,
             read: ReadHalf::new(framed_read, raw.read, idle_track),
             write: WriteHalf::new(framed_write, raw.write),
             idle: idle_tracker,

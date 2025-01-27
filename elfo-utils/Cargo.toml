@@ -26,4 +26,4 @@ quanta = "0.12"
 crossbeam-utils = "0.8"
 
 [dev-dependencies]
-criterion = "0.5.1"
+criterion.workspace = true

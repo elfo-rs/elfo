@@ -32,7 +32,7 @@ impl Capabilities {
         Self::new(compression)
     }
 
-    pub(crate) const fn intersection(self, rhs: Self) -> Self {
+    pub(crate) fn intersection(self, rhs: Self) -> Self {
         let compr = self.compression().intersection(rhs.compression());
         Self::new(compr)
     }
@@ -50,18 +50,19 @@ impl Capabilities {
 
 impl fmt::Display for Capabilities {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(compression: {})", self.compression())
+        write!(f, "caps(compression={})", self.compression())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use proptest::prelude::*;
 
     use self::compression::Algorithms;
+    use super::*;
 
     #[test]
-    fn capabilities_format_is_compatible_with_020alpha17() {
+    fn format_is_compatible_with_020alpha17() {
         let caps = Capabilities::new(Compression::new(Algorithms::LZ4, Algorithms::empty()));
         let lz4_bit = caps.bits() & (1 << 8);
 
@@ -69,7 +70,7 @@ mod tests {
     }
 
     #[test]
-    fn compression_capabilities_encoded_right_way() {
+    fn compression_encoded_right_way() {
         #[track_caller]
         fn case(create: (Algorithms, Algorithms), expect: (Algorithms, Algorithms)) {
             let caps = Capabilities::new(Compression::new(create.0, create.1));
@@ -103,5 +104,14 @@ mod tests {
             (Algorithms::empty(), Algorithms::empty()),
             (Algorithms::empty(), Algorithms::empty()),
         );
+    }
+
+    proptest! {
+        #[test]
+        fn intersection_is_commutative(lhs in prop::num::u32::ANY, rhs in prop::num::u32::ANY) {
+            let lhs = Capabilities::from_bits_truncate(lhs);
+            let rhs = Capabilities::from_bits_truncate(rhs);
+            prop_assert_eq!(lhs.intersection(rhs), rhs.intersection(lhs));
+        }
     }
 }

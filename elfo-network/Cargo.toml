@@ -41,3 +41,4 @@ turmoil06 = { package = "turmoil", version = "0.6", optional = true }
 
 [dev-dependencies]
 tracing-test = "0.2.4" # TODO: actually unused?
+proptest.workspace = true

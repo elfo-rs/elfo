@@ -33,6 +33,8 @@ metrics = "0.17.1"
 dashmap = "6.0.1"
 toml = "0.8.14"
 bytesize = { version = "1.2.0", features = ["serde"] }
+proptest = "1.6"
+criterion = "0.5.1"
 
 [workspace.dependencies.derive_more]
 version = "1"

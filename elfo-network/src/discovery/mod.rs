@@ -209,11 +209,7 @@ impl Discovery {
                     transport: None,
                 });
 
-            info!(
-                message = "listening for connections",
-                addr = %transport,
-                capabilities = %capabilities,
-            );
+            info!(message = "listening for connections", addr = %transport);
 
             self.ctx.attach(Stream::from_futures03(stream));
         }
@@ -254,7 +250,6 @@ impl Discovery {
                     message = "connecting to peer",
                     addr = %transport,
                     role = ?role,
-                    capabilities = %capabilities,
                 );
 
                 match socket::connect(&transport, node_no, launch_id, capabilities).await {
@@ -300,6 +295,7 @@ impl Discovery {
             message = "new connection established",
             socket = %socket.info,
             peer = %socket.peer,
+            capabilities = %socket.capabilities,
             role = msg.role.as_str(),
         );
 
