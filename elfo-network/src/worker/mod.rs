@@ -667,7 +667,7 @@ impl SocketReader {
         // If the recipient is unstable (i.e. already has pending messages), enqueue and
         // return. The envelope will be handled by the corresponding pusher.
         // Unexisted flows (new ones or already closed) are considered stable.
-        if flow.as_ref().map_or(false, |f| !f.is_stable()) {
+        if flow.as_ref().is_some_and(|f| !f.is_stable()) {
             let mut flow = flow.unwrap();
             flow.acquire_direct(!routed);
             flow.enqueue(envelope, routed);

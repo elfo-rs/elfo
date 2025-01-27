@@ -1129,7 +1129,7 @@ impl<'c, C, K, R> RequestBuilder<'c, C, K, R, Any> {
     }
 }
 
-impl<'c, C, K, R: Request, M> RequestBuilder<'c, C, K, R, M> {
+impl<C, K, R: Request, M> RequestBuilder<'_, C, K, R, M> {
     /// Specified the recipient of the request.
     #[inline]
     fn to(mut self, addr: Addr) -> Self {
@@ -1156,7 +1156,7 @@ impl<'c, C, K, R: Request, M> RequestBuilder<'c, C, K, R, M> {
 }
 
 // TODO: add `pub async fn id() { ... }`
-impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
+impl<C: 'static, K, R: Request> RequestBuilder<'_, C, K, R, Any> {
     /// Waits for the response.
     pub async fn resolve(self) -> Result<R::Response, RequestError> {
         // TODO: use `context.actor` after removing pruned contexts.
@@ -1181,7 +1181,7 @@ impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, Any> {
     }
 }
 
-impl<'c, C: 'static, K, R: Request> RequestBuilder<'c, C, K, R, All> {
+impl<C: 'static, K, R: Request> RequestBuilder<'_, C, K, R, All> {
     /// Waits for the responses.
     pub async fn resolve(self) -> Vec<Result<R::Response, RequestError>> {
         // TODO: use `context.actor` after removing pruned contexts.

@@ -34,7 +34,7 @@ fn is_type_ident(ident: &Ident) -> bool {
         .to_string()
         .chars()
         .next()
-        .map_or(false, char::is_uppercase)
+        .is_some_and(char::is_uppercase)
 }
 
 fn extract_path_to_type(path: &Path) -> Path {
@@ -125,7 +125,7 @@ fn is_binding_with_type(ident: &PatIdent) -> bool {
     ident
         .subpat
         .as_ref()
-        .map_or(false, |sp| is_likely_type(&sp.1))
+        .is_some_and(|sp| is_likely_type(&sp.1))
 }
 
 fn refine_pat(pat: &mut Pat) {

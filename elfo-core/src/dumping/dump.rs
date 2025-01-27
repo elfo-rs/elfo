@@ -157,7 +157,7 @@ impl<'a> PartialEq<&'a str> for MessageName {
     fn eq(&self, s: &&'a str) -> bool {
         if let Some(variant) = self.1 {
             s.split_once("::")
-                .map_or(false, |(n, v)| n == self.0 && v == variant)
+                .is_some_and(|(n, v)| n == self.0 && v == variant)
         } else {
             self.0 == *s
         }
