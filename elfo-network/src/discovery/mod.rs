@@ -139,10 +139,7 @@ impl Discovery {
         use socket::Algorithms as Algos;
 
         let mut compression = socket::Compression::empty();
-        let cfg = &self.cfg.compression.algorithms;
-
-        compression.toggle(Algos::LZ4, cfg.lz4.preference);
-
+        compression.toggle(Algos::LZ4, self.cfg.compression.lz4);
         compression
     }
 

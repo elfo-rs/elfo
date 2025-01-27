@@ -58,67 +58,6 @@ pub struct Config {
     pub idle_timeout: Duration,
 }
 
-/// Preference.
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-pub enum Preference {
-    /// This is preferred, implies [`Preference::Supported`].
-    Preferred,
-
-    /// This is just supported.
-    #[default]
-    Supported,
-
-    /// Must not be used.
-    Disabled,
-}
-
-/// Options for the specific algorithm.
-#[derive(Debug, Deserialize, Clone)]
-pub struct Algorithm {
-    /// Preference when deciding which algorithm to use in
-    /// communication between nodes.
-    pub preference: Preference,
-}
-
-/// Options for the compression algorithms.
-#[derive(Debug, Deserialize, Clone)]
-pub struct CompressionAlgorithms {
-    /// LZ4 compression algorithm.
-    #[serde(default = "CompressionAlgorithms::lz4_default")]
-    pub lz4: Algorithm,
-}
-
-impl CompressionAlgorithms {
-    const fn lz4_default() -> Algorithm {
-        Algorithm {
-            preference: Preference::Supported,
-        }
-    }
-}
-
-impl Default for CompressionAlgorithms {
-    fn default() -> Self {
-        Self {
-            lz4: Self::lz4_default(),
-        }
-    }
-}
-
-/// Compression settings.
-#[derive(Debug, Default, Deserialize, Clone)]
-pub struct CompressionConfig {
-    /// Compression algorithms.
-    ///
-    /// Example:
-    /// ```toml
-    /// algorithms.lz4 = { preference = "Preferred" }
-    /// ```
-    ///
-    /// Preferred implies supported.
-    #[serde(default)]
-    pub algorithms: CompressionAlgorithms,
-}
-
 fn default_ping_interval() -> Duration {
     Duration::from_secs(5)
 }
@@ -201,6 +140,49 @@ impl<'de> Deserialize<'de> for Transport {
         s.parse::<Transport>()
             .map_err(|err| de::Error::custom(format!(r#"unsupported transport: "{}", {}"#, s, err)))
     }
+}
+
+/// Compression settings.
+///
+/// # Preference
+///
+/// By default, compression between nodes is supported but not enabled.
+/// If a node is configured with `Preferred` for some compression algorithm,
+/// all connections with this node will use this algorithm, until the other side
+/// explicitly disables it.
+///
+/// See [`Preference`] for more details.
+///
+/// # Example
+///
+/// ```toml
+/// [system.network]
+/// compression.lz4 = "Preferred"
+/// ```
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct CompressionConfig {
+    /// LZ4 compression algorithm.
+    #[serde(default)]
+    pub lz4: Preference,
+}
+
+/// Preference in a capability.
+///
+/// The following rules apply during handshake between nodes:
+/// * `Preferred` + `Preferred`/`Supported` leads to using the capability;
+/// * `Supported` + `Supported` leads to not using the capability;
+/// * `Disabled` + any leads to not using the capability.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub enum Preference {
+    /// This is preferred, implies `Supported`.
+    Preferred,
+
+    /// This is just supported.
+    #[default]
+    Supported,
+
+    /// Must not be used.
+    Disabled,
 }
 
 #[cfg(test)]
