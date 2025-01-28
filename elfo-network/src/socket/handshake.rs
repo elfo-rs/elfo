@@ -46,7 +46,7 @@ impl Handshake {
         buf.write_u8(self.version)?;
         buf.write_u16::<LittleEndian>(self.node_no.into_bits())?;
         buf.write_u64::<LittleEndian>(self.launch_id.into_bits())?;
-        buf.write_u32::<LittleEndian>(self.capabilities.bits())?;
+        buf.write_u32::<LittleEndian>(self.capabilities.into_bits())?;
 
         let result = buf.into_inner();
         debug_assert_eq!(result.len(), HANDSHAKE_LENGTH);
@@ -73,7 +73,7 @@ impl Handshake {
             node_no: NodeNo::from_bits(input.read_u16::<LittleEndian>()?)
                 .ok_or_else(|| eyre!("invalid node no"))?,
             launch_id: NodeLaunchId::from_bits(input.read_u64::<LittleEndian>()?),
-            capabilities: Capabilities::from_bits_truncate(input.read_u32::<LittleEndian>()?),
+            capabilities: Capabilities::from_bits(input.read_u32::<LittleEndian>()?),
         };
 
         Ok(result)

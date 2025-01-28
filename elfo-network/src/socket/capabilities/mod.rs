@@ -5,46 +5,40 @@ use self::compression::Compression;
 pub(crate) mod compression;
 
 /// Things supported by the node.
-///
-/// ### Layout
-///
-/// ```text
-///         24 bits              8 bits
-/// ┌─────────────────────┬──────────────────┐
-/// │     Compression     │     Reserved     │
-/// └─────────────────────┴──────────────────┘
-/// ```
-///
-/// 1. [`Compression`] - compression capabilities.
+// ~
+// Layout:
+// ```text
+//      16 bits       8 bits         8 bits
+// ┌──────────────┬─────────────┬──────────────┐
+// │   Reserved   │ Compression │   Reserved   │
+// └──────────────┴─────────────┴──────────────┘
+// ```
+//
+// 1. [`Compression`] - compression capabilities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Capabilities(u32);
 
 impl Capabilities {
-    pub(crate) const fn new(compression: Compression) -> Self {
-        let compression = compression.bits();
-        let joined = compression << 8;
-
-        Self(joined)
+    pub(crate) fn new(compression: Compression) -> Self {
+        let compression = compression.into_bits();
+        Self(u32::from(compression) << 8)
     }
 
-    pub(crate) const fn from_bits_truncate(bits: u32) -> Self {
-        let compression = Compression::from_bits_truncate(bits >> 8);
-        Self::new(compression)
+    pub(crate) const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    pub(crate) const fn into_bits(self) -> u32 {
+        self.0
     }
 
     pub(crate) fn intersection(self, rhs: Self) -> Self {
         let compr = self.compression().intersection(rhs.compression());
         Self::new(compr)
     }
-}
 
-impl Capabilities {
     pub(crate) const fn compression(self) -> Compression {
-        Compression::from_bits_unchecked(self.0 >> 8)
-    }
-
-    pub(crate) const fn bits(self) -> u32 {
-        self.0
+        Compression::from_bits((self.0 >> 8) as u8)
     }
 }
 
@@ -64,7 +58,7 @@ mod tests {
     #[test]
     fn format_is_compatible_with_020alpha17() {
         let caps = Capabilities::new(Compression::new(Algorithms::LZ4, Algorithms::empty()));
-        let lz4_bit = caps.bits() & (1 << 8);
+        let lz4_bit = caps.into_bits() & (1 << 8);
 
         assert_eq!(lz4_bit, 1 << 8);
     }
@@ -81,8 +75,8 @@ mod tests {
 
             // Just in case we should decode same caps.
 
-            let bits = caps.bits();
-            let same_caps = Capabilities::from_bits_truncate(bits);
+            let bits = caps.into_bits();
+            let same_caps = Capabilities::from_bits(bits);
 
             assert_eq!(caps, same_caps);
         }
@@ -109,8 +103,8 @@ mod tests {
     proptest! {
         #[test]
         fn intersection_is_commutative(lhs in prop::num::u32::ANY, rhs in prop::num::u32::ANY) {
-            let lhs = Capabilities::from_bits_truncate(lhs);
-            let rhs = Capabilities::from_bits_truncate(rhs);
+            let lhs = Capabilities::from_bits(lhs);
+            let rhs = Capabilities::from_bits(rhs);
             prop_assert_eq!(lhs.intersection(rhs), rhs.intersection(lhs));
         }
     }

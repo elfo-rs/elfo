@@ -304,7 +304,7 @@ mod tests {
 
     use super::*;
 
-    const EMPTY_CAPS: Capabilities = Capabilities::new(Compression::empty());
+    const EMPTY_CAPS: Capabilities = Capabilities::from_bits(0);
 
     #[message]
     #[derive(PartialEq)]
