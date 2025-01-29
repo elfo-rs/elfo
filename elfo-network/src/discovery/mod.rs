@@ -7,7 +7,7 @@ use tracing::{debug, error, info, warn};
 use elfo_core::{
     message, msg, scope, tracing::TraceId, AnyMessage, Envelope, Message, MoveOwnership,
     RestartPolicy, _priv::MessageKind, addr::GroupNo, messages::ConfigUpdated, stream::Stream,
-    RestartParams, Topology,
+    time::Delay, RestartParams, Topology,
 };
 
 use crate::{
@@ -72,6 +72,12 @@ struct ControlConnectionFailed {
     transport: Option<Transport>,
 }
 
+#[message]
+struct DelayReconnect {
+    role: ConnectionRole,
+    transport: Transport,
+}
+
 pub(super) struct Discovery {
     cfg: config::Config,
     ctx: NetworkContext,
@@ -115,13 +121,22 @@ impl Discovery {
                 msg @ ConnectionAccepted => self.on_connection_accepted(msg),
                 msg @ ConnectionRejected => self.on_connection_rejected(msg),
                 msg @ DataConnectionFailed => {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     let role = ConnectionRole::Data(internode::SwitchToData {
                         my_group_no: msg.local,
                         your_group_no: msg.remote.1,
                         initial_window: INITIAL_WINDOW_SIZE,
                     });
-                    self.open_connection(&msg.transport, role);
+                    self.ctx.attach(Delay::new(
+                        // TODO: config param?
+                        Duration::from_secs(1),
+                        DelayReconnect {
+                            role,
+                            transport: msg.transport,
+                        },
+                    ));
+                }
+                msg @ DelayReconnect => {
+                    self.open_connection(&msg.transport, msg.role);
                 }
                 msg @ ControlConnectionFailed => {
                     if let Some(transport) = msg.transport {
