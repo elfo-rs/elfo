@@ -10,22 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - configurer: add a test constructor for `ReloadConfigsRejected` ([#151]).
 - network: more flexible way to control compression ([#150]).
+- dumper: support `{time:<FORMAT>}` in the `path` parameter ([#145]).
+- core/actor: allow construction of arbitrary `ActorStatusKind` in tests ([#148]).
 
 ### Changed
-- **BREAKING** network/config: revise compression settings.
+- **BREAKING** network/config: revise compression settings ([#150]).
 
 ### Fixed
 - core/addr: probabilistic panics if `NodeNo` is generated ([#144]).
 - test/proxy: remove lifetime from `request(_to)` futures ([#146]).
 - macros/message: avoid `Debug::fmt()` ambiguous ([#147]).
 - network: prevent recursion if a response token cannot be sent when a peer is gone ([#149]).
+- network/discovery: avoid extra delays if multiple data connections are failed ([#152]).
 
 [#144]: https://github.com/elfo-rs/elfo/issues/144
+[#145]: https://github.com/elfo-rs/elfo/pull/145
 [#146]: https://github.com/elfo-rs/elfo/pull/146
 [#147]: https://github.com/elfo-rs/elfo/pull/147
+[#148]: https://github.com/elfo-rs/elfo/pull/148
 [#149]: https://github.com/elfo-rs/elfo/pull/149
 [#150]: https://github.com/elfo-rs/elfo/pull/150
 [#151]: https://github.com/elfo-rs/elfo/pull/151
+[#152]: https://github.com/elfo-rs/elfo/pull/152
 
 ## [0.2.0-alpha.17] - 2024-12-01
 ### Added
