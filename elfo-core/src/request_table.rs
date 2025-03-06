@@ -276,7 +276,9 @@ impl ResponseToken {
 }
 
 impl<R> ResponseToken<R> {
-    pub(crate) fn forgotten() -> Self {
+    #[doc(hidden)]
+    #[inline]
+    pub fn forgotten() -> Self {
         Self {
             data: None,
             received: false,
