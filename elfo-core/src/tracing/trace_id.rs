@@ -19,8 +19,8 @@ pub struct TraceId(NonZeroU64);
 
 impl TraceId {
     pub(crate) fn from_layout(layout: TraceIdLayout) -> Self {
-        let raw = (u64::from(*layout.timestamp)) << 38
-            | u64::from(layout.node_no.map_or(0, |n| n.into_bits())) << 22
+        let raw = ((u64::from(*layout.timestamp)) << 38)
+            | (u64::from(layout.node_no.map_or(0, |n| n.into_bits())) << 22)
             | u64::from(*layout.bottom);
 
         Self::try_from(raw).unwrap()
@@ -31,7 +31,7 @@ impl TraceId {
 
         TraceIdLayout {
             timestamp: TruncatedTime((raw >> 38) as u32 & 0x1ff_ffff),
-            node_no: NodeNo::from_bits((raw >> 22 & 0xffff) as u16),
+            node_no: NodeNo::from_bits(((raw >> 22) & 0xffff) as u16),
             bottom: Bottom((raw & 0x3f_ffff) as u32),
         }
     }

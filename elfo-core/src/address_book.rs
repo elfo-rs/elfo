@@ -142,8 +142,8 @@ cfg_network!({
             remote_group: (NodeNo, GroupNo),
             handle_addr: Addr,
         ) {
-            let key = u64::from(local_group.into_bits()) << 32
-                | u64::from(remote_group.0.into_bits()) << 8
+            let key = (u64::from(local_group.into_bits()) << 32)
+                | (u64::from(remote_group.0.into_bits()) << 8)
                 | u64::from(remote_group.1.into_bits());
 
             self.0.rcu(|inner| {
@@ -161,8 +161,8 @@ cfg_network!({
             remote_group: (NodeNo, GroupNo),
             handle_addr: Addr,
         ) {
-            let key = u64::from(local_group.into_bits()) << 32
-                | u64::from(remote_group.0.into_bits()) << 8
+            let key = (u64::from(local_group.into_bits()) << 32)
+                | (u64::from(remote_group.0.into_bits()) << 8)
                 | u64::from(remote_group.1.into_bits());
 
             self.0.rcu(|inner| {
@@ -182,7 +182,7 @@ cfg_network!({
 
             let local_actor = crate::scope::with(|scope| scope.actor());
             let remote = remote_addr.node_no_group_no();
-            let key = u64::from(local_actor.node_no_group_no()) << 32 | u64::from(remote);
+            let key = (u64::from(local_actor.node_no_group_no()) << 32) | u64::from(remote);
 
             let inner = self.0.load();
             inner

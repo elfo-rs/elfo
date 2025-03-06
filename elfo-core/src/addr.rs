@@ -217,7 +217,7 @@ impl Addr {
     }
 
     fn new_local_inner(slot_key: u64, group_no: GroupNo) -> Self {
-        Self(u64::from(group_no.into_bits()) << GROUP_NO_SHIFT | slot_key)
+        Self((u64::from(group_no.into_bits()) << GROUP_NO_SHIFT) | slot_key)
     }
 
     #[stability::unstable]
@@ -281,7 +281,7 @@ impl Addr {
     #[inline]
     pub fn into_remote(self, node_no: NodeNo) -> Self {
         if self.is_local() {
-            Self(self.0 | (node_no.into_bits() as u64) << NODE_NO_SHIFT)
+            Self(self.0 | (u64::from(node_no.into_bits()) << NODE_NO_SHIFT))
         } else {
             self
         }

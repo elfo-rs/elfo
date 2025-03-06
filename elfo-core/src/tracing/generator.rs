@@ -49,7 +49,7 @@ impl Generator {
         }
 
         self.counter += 1;
-        let bottom = self.chunk_no << 10 | self.counter;
+        let bottom = (self.chunk_no << 10) | self.counter;
 
         // Lazily cache the node number from the scope if not set yet.
         // We do it here instead of `Default::default()` in order to support
