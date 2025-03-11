@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Debug};
 
-use derive_more::{Display, Error};
+use derive_more::{Display, Error, IsVariant};
 
 // === StartError ===
 
@@ -153,7 +153,7 @@ impl<T> From<SendError<T>> for TrySendError<T> {
 
 // === RequestError ===
 
-#[derive(Debug, Display, Error)]
+#[derive(Debug, IsVariant, Display, Clone, Error)]
 pub enum RequestError {
     /// Receiver hasn't got the request.
     #[display("request failed")]
@@ -161,20 +161,6 @@ pub enum RequestError {
     /// Receiver has got the request, but ignored it.
     #[display("request ignored")]
     Ignored,
-}
-
-impl RequestError {
-    /// Returns whether the error is the `Failed` variant.
-    #[inline]
-    pub fn is_failed(&self) -> bool {
-        matches!(self, Self::Failed)
-    }
-
-    /// Returns whether the error is the `Ignored` variant.
-    #[inline]
-    pub fn is_ignored(&self) -> bool {
-        matches!(self, Self::Ignored)
-    }
 }
 
 // === TryRecvError ===
