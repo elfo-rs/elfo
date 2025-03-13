@@ -14,7 +14,7 @@ use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     config::{self, Transport},
     node_map::{NodeInfo, NodeMap},
-    protocol::{internode, DataConnectionFailed, GroupInfo, HandleConnection},
+    protocol::{internode, ConnectionFailed, ConnectionRole, GroupInfo, HandleConnection},
     socket::{self, ReadError, Socket},
     NetworkContext,
 };
@@ -29,51 +29,40 @@ const INITIAL_WINDOW_SIZE: i32 = 100_000;
 
 #[message]
 struct ConnectionEstablished {
-    role: ConnectionRole,
     socket: MoveOwnership<Socket>,
+    role: ConnectionRole,
+    // `Some` if this node is initiator.
+    transport: Option<Transport>,
+}
+
+#[message]
+struct ConnectionAccepted {
+    socket: MoveOwnership<Socket>,
+    remote_msg: RemoteSwitchMessage,
     // `Some` only on the client side.
     transport: Option<Transport>,
 }
 
 #[message(part)]
-enum ConnectionRole {
-    // Only possible if this node is a server.
-    Unknown,
+enum RemoteSwitchMessage {
     Control(internode::SwitchToControl),
     Data(internode::SwitchToData),
 }
 
-impl ConnectionRole {
-    fn as_str(&self) -> &'static str {
+impl RemoteSwitchMessage {
+    fn role(&self) -> ConnectionRole {
         match self {
-            Self::Unknown => "Unknown",
-            Self::Control(_) => "Control",
-            Self::Data(_) => "Data",
+            RemoteSwitchMessage::Control(_) => ConnectionRole::Control,
+            RemoteSwitchMessage::Data(msg) => ConnectionRole::Data {
+                local_group_no: msg.your_group_no,
+                remote_group_no: msg.my_group_no,
+            },
         }
     }
 }
 
 #[message]
-struct ConnectionAccepted {
-    role: ConnectionRole,
-    socket: MoveOwnership<Socket>,
-    // `Some` only on the client side.
-    transport: Option<Transport>,
-}
-
-#[message]
-struct ConnectionRejected {
-    error: String,
-}
-
-#[message]
-struct ControlConnectionFailed {
-    // `Some` only on the client side.
-    transport: Option<Transport>,
-}
-
-#[message]
-struct DelayReconnect {
+struct OpenConnection {
     role: ConnectionRole,
     transport: Transport,
 }
@@ -114,36 +103,23 @@ impl Discovery {
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
-                ConfigUpdated => {
-                    self.on_update_config();
-                }
+                ConfigUpdated => self.on_update_config(),
+
+                // Connection management.
+                //
+                //   ┌──────────┐ handshake ┌─────────────┐
+                //   │ Unopened ├───────────► Established │
+                //   └───▲────┬─┘           └──┬───┬──────┘
+                //       │    │                │   │ switch to
+                //  delay│    │   ┌────────────┘   │ data/control
+                //    ┌──┴────▼┐  │          ┌─────▼────┐
+                //    │ Failed ◄──┴──────────┤ Accepted │
+                //    └────────┘             └──────────┘
+                // ~
+                msg @ OpenConnection => self.on_open_connection(msg),
                 msg @ ConnectionEstablished => self.on_connection_established(msg),
                 msg @ ConnectionAccepted => self.on_connection_accepted(msg),
-                msg @ ConnectionRejected => self.on_connection_rejected(msg),
-                msg @ DataConnectionFailed => {
-                    let role = ConnectionRole::Data(internode::SwitchToData {
-                        my_group_no: msg.local,
-                        your_group_no: msg.remote.1,
-                        initial_window: INITIAL_WINDOW_SIZE,
-                    });
-                    self.ctx.attach(Delay::new(
-                        // TODO: config param?
-                        Duration::from_secs(1),
-                        DelayReconnect {
-                            role,
-                            transport: msg.transport,
-                        },
-                    ));
-                }
-                msg @ DelayReconnect => {
-                    self.open_connection(&msg.transport, msg.role);
-                }
-                msg @ ControlConnectionFailed => {
-                    if let Some(transport) = msg.transport {
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        self.discover(transport);
-                    }
-                }
+                msg @ ConnectionFailed => self.on_connection_failed(msg),
             });
         }
 
@@ -181,9 +157,10 @@ impl Discovery {
         {
             let Diff { new, removed } = Diff::make(
                 predefined.into_iter().collect(),
-                self.ctx.config().discovery.predefined.iter(),
+                &self.ctx.config().discovery.predefined,
             );
-            for transport in new {
+
+            for transport in &new {
                 self.discover(transport);
             }
 
@@ -205,19 +182,7 @@ impl Discovery {
         for transport in &self.cfg.listen {
             let stream = socket::listen(transport, node_no, launch_id, capabilities)
                 .await
-                .wrap_err_with(|| eyre!("cannot listen {}", transport))?
-                .filter_map(move |socket| async move {
-                    if socket.peer.node_no != node_no {
-                        Some(socket)
-                    } else {
-                        info!(
-                            message = "connection to self ignored",
-                            socket = %socket.info,
-                            peer = %socket.peer,
-                        );
-                        None
-                    }
-                })
+                .wrap_err_with(|| eyre!("cannot listen {transport}"))?
                 .map(|socket| ConnectionEstablished {
                     role: ConnectionRole::Unknown,
                     socket: socket.into(),
@@ -233,124 +198,128 @@ impl Discovery {
     }
 
     fn discover_all(&mut self) {
-        for transport in self.cfg.discovery.predefined.clone() {
+        for transport in &self.cfg.discovery.predefined {
             self.discover(transport);
         }
     }
 
-    fn discover(&mut self, transport: Transport) {
-        let msg = internode::SwitchToControl {
-            groups: self.node_map.this.groups.clone(),
-        };
-        self.open_connection(&transport, ConnectionRole::Control(msg));
+    fn discover(&self, transport: &Transport) {
+        self.open_connection(transport, ConnectionRole::Control);
     }
 
-    fn open_connection(
-        &mut self,
-        transport: &Transport,
-        role: ConnectionRole,
-    ) -> Stream<ConnectionEstablished> {
-        let interval = self.cfg.discovery.attempt_interval;
-        let transport = transport.clone();
+    fn open_connection(&self, transport: &Transport, role: ConnectionRole) {
+        let _ = self.ctx.unbounded_send_to(
+            self.ctx.addr(),
+            OpenConnection {
+                role,
+                transport: transport.clone(),
+            },
+        );
+    }
+
+    fn on_open_connection(&mut self, msg: OpenConnection) {
+        let OpenConnection { transport, role } = msg;
         let node_no = self.node_map.this.node_no;
         let launch_id = self.node_map.this.launch_id;
         let capabilities = self.get_capabilities();
 
-        let shift =
-            std::time::Duration::from_millis(self.node_map.this.launch_id.into_bits() % 5000);
-
         self.ctx.attach(Stream::once(async move {
-            loop {
-                debug!(
-                    message = "connecting to peer",
-                    addr = %transport,
-                    role = ?role,
-                );
+            debug!(
+                message = "connecting to peer",
+                addr = %transport,
+                role = %role,
+                capabilities = %capabilities,
+            );
 
-                match socket::connect(&transport, node_no, launch_id, capabilities).await {
-                    Ok(socket) => {
-                        if socket.peer.node_no != node_no {
-                            break ConnectionEstablished {
-                                role,
-                                socket: socket.into(),
-                                transport: Some(transport),
-                            };
-                        } else {
-                            info!(
-                                message = "connection to self ignored",
-                                socket = %socket.info,
-                                peer = %socket.peer,
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        // TODO: some errors should be logged as warnings.
-                        info!(
-                            message = "cannot connect",
-                            error = %err,
-                            addr = %transport,
-                        );
-                    }
-                }
-
-                let delay = interval + shift;
-
-                // TODO: should we change trace_id?
-                debug!(message = "retrying after some time", addr = %transport, delay = ?delay);
-                tokio::time::sleep(delay).await;
-            }
-        }))
-    }
-
-    fn on_connection_established(&mut self, msg: ConnectionEstablished) {
-        let socket = msg.socket.take().unwrap();
-        let transport = msg.transport;
-
-        info!(
-            message = "new connection established",
-            socket = %socket.info,
-            peer = %socket.peer,
-            capabilities = %socket.capabilities,
-            role = msg.role.as_str(),
-        );
-
-        let node_map = self.node_map.clone();
-        let idle_timeout = self.cfg.idle_timeout;
-        self.ctx.attach(Stream::once(async move {
-            let info = socket.info.clone();
-            let peer = socket.peer.clone();
-
-            let result =
-                accept_connection(socket, msg.role, transport, &node_map.this, idle_timeout).await;
-            match result {
-                Ok(accepted) => Ok(accepted),
+            match socket::connect(&transport, node_no, launch_id, capabilities).await {
+                Ok(socket) => Ok(ConnectionEstablished {
+                    socket: socket.into(),
+                    role,
+                    transport: Some(transport),
+                }),
                 Err(err) => {
-                    let error = format!("{:#}", err);
-                    warn!(
-                        message = "new connection rejected",
-                        socket = %info,
-                        peer = %peer,
-                        error = %error,
+                    // TODO: some errors should be logged as warnings.
+                    info!(
+                        message = "cannot connect",
+                        error = %err,
+                        addr = %transport,
+                        role = %role,
                     );
-                    Err(ConnectionRejected { error })
+
+                    Err(ConnectionFailed {
+                        role,
+                        transport: Some(transport),
+                    })
                 }
             }
         }));
     }
 
+    fn on_connection_established(&mut self, msg: ConnectionEstablished) {
+        let socket = msg.socket.take().unwrap();
+
+        debug!(
+            message = "new connection established",
+            socket = %socket.info,
+            peer = %socket.peer,
+            role = %msg.role,
+            capabilities = %socket.capabilities,
+        );
+
+        if socket.peer.node_no == self.node_map.this.node_no {
+            info!(
+                message = "connection to self ignored",
+                socket = %socket.info,
+                peer = %socket.peer,
+                role = %msg.role,
+            );
+            return;
+        }
+
+        let node_map = self.node_map.clone();
+        let idle_timeout = self.cfg.idle_timeout;
+
+        self.ctx.attach(Stream::once(async move {
+            let info = socket.info.clone();
+            let peer = socket.peer.clone();
+
+            accept_connection(
+                socket,
+                msg.role.clone(),
+                msg.transport.clone(),
+                &node_map.this,
+                idle_timeout,
+            )
+            .await
+            .map_err(|err| {
+                warn!(
+                    message = "new connection rejected",
+                    error = %format!("{err:#}"),
+                    socket = %info,
+                    peer = %peer,
+                    role = %msg.role,
+                );
+                ConnectionFailed {
+                    role: msg.role,
+                    transport: msg.transport,
+                }
+            })
+        }));
+    }
+
     fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
         let socket = msg.socket.take().unwrap();
+        let role = msg.remote_msg.role();
 
         info!(
             message = "new connection accepted",
             socket = %socket.info,
             peer = %socket.peer,
-            role = msg.role.as_str(),
+            role = %role,
         );
 
-        match msg.role {
-            ConnectionRole::Unknown => unreachable!(),
-            ConnectionRole::Control(remote) => {
+        match msg.remote_msg {
+            RemoteSwitchMessage::Control(remote) => {
                 {
                     let mut nodes = self.node_map.nodes.lock();
                     nodes.insert(
@@ -382,45 +351,66 @@ impl Discovery {
                     .collect::<Vec<_>>()
                     .into_iter()
                     .for_each(|(local_group_no, remote_group_no)| {
+                        let role = ConnectionRole::Data {
+                            local_group_no,
+                            remote_group_no,
+                        };
+
                         // TODO: save stream to cancel later.
                         // TODO: connect without DNS resolving here.
-                        self.open_connection(
-                            &transport,
-                            ConnectionRole::Data(internode::SwitchToData {
-                                my_group_no: local_group_no,
-                                your_group_no: remote_group_no,
-                                initial_window: INITIAL_WINDOW_SIZE,
-                            }),
-                        );
+                        self.open_connection(&transport, role);
                     });
             }
-            ConnectionRole::Data(remote) => {
+            RemoteSwitchMessage::Data(remote) => {
+                let local_group_no = remote.your_group_no;
                 let local_group_name = self
                     .node_map
                     .this
                     .groups
                     .iter()
-                    .find(|g| g.group_no == remote.your_group_no)
-                    .map(|g| g.name.clone());
+                    .find(|g| g.group_no == local_group_no)
+                    .map(|g| g.name.clone())
+                    .ok_or("group not found");
 
+                let remote_group_no = remote.my_group_no;
                 let remote_group_name = self
                     .node_map
                     .nodes
                     .lock()
                     .get(&socket.peer.node_no)
+                    .ok_or("node not found")
                     .and_then(|n| {
                         n.groups
                             .iter()
-                            .find(|g| g.group_no == remote.my_group_no)
+                            .find(|g| g.group_no == remote_group_no)
                             .map(|g| g.name.clone())
+                            .ok_or("group not found")
                     });
 
+                let failed = ConnectionFailed {
+                    role,
+                    transport: msg.transport.clone(),
+                };
+
                 let (local_group_name, remote_group_name) =
-                    ward!(local_group_name.zip(remote_group_name), {
-                        // TODO: it should be error once connection manager is implemented.
-                        info!("control and data connections contradict each other");
-                        return;
-                    });
+                    match (local_group_name, remote_group_name) {
+                        (Ok(local_group_name), Ok(remote_group_name)) => {
+                            (local_group_name, remote_group_name)
+                        }
+                        (local_group, remote_group) => {
+                            // TODO: it should be error once connection manager is implemented.
+                            info!(
+                                message = "control and data connections contradict each other",
+                                socket = %socket.info,
+                                peer = %socket.peer,
+                                ?local_group,
+                                ?remote_group,
+                            );
+
+                            let _ = self.ctx.unbounded_send_to(self.ctx.addr(), failed);
+                            return;
+                        }
+                    };
 
                 let res = self.ctx.try_send_to(
                     self.ctx.group(),
@@ -443,14 +433,35 @@ impl Discovery {
 
                 if let Err(err) = res {
                     error!(message = "cannot start connection handler", error = %err);
-                    // TODO: something else?
+                    let _ = self.ctx.unbounded_send_to(self.ctx.addr(), failed);
                 }
             }
         }
     }
 
-    fn on_connection_rejected(&mut self, _msg: ConnectionRejected) {
-        // TODO: something else? Retries?
+    fn on_connection_failed(&mut self, msg: ConnectionFailed) {
+        let ConnectionFailed { role, transport } = msg;
+
+        let Some(transport) = transport else {
+            debug!(
+                message = "connection failed, address to reconnect is unknown",
+                role = %role,
+            );
+            return;
+        };
+
+        // TODO: autoreset interval, exponential backoff.
+        let interval = self.cfg.discovery.attempt_interval;
+
+        debug!(
+            message = "connection failed, reconnecting after delay",
+            addr = %transport,
+            role = %role,
+            delay = ?interval,
+        );
+
+        let msg = OpenConnection { role, transport };
+        self.ctx.attach(Delay::new(interval, msg));
     }
 
     fn control_maintenance(&mut self, mut socket: Socket, transport: Option<Transport>) {
@@ -461,10 +472,11 @@ impl Discovery {
                 message = "control connection closed",
                 socket = %socket.info,
                 peer = %socket.peer,
-                reason = format!("{:#}", err), // TODO: use `AsRef<dyn Error>`
+                reason = format!("{err:#}"), // TODO: use `AsRef<dyn Error>`
             );
 
-            ControlConnectionFailed { transport }
+            let role = ConnectionRole::Control;
+            ConnectionFailed { role, transport }
         }));
     }
 }
@@ -476,7 +488,7 @@ async fn accept_connection(
     this_node: &NodeInfo,
     idle_timeout: Duration,
 ) -> Result<ConnectionAccepted> {
-    let role = match role {
+    let remote_msg = match role {
         ConnectionRole::Unknown => {
             msg!(match recv(&mut socket, idle_timeout).await? {
                 msg @ internode::SwitchToControl => {
@@ -484,7 +496,7 @@ async fn accept_connection(
                         groups: this_node.groups.clone(),
                     };
                     send_regular(&mut socket, idle_timeout, my_msg).await?;
-                    ConnectionRole::Control(msg)
+                    RemoteSwitchMessage::Control(msg)
                 }
                 msg @ internode::SwitchToData => {
                     let my_msg = internode::SwitchToData {
@@ -493,7 +505,7 @@ async fn accept_connection(
                         initial_window: INITIAL_WINDOW_SIZE,
                     };
                     send_regular(&mut socket, idle_timeout, my_msg).await?;
-                    ConnectionRole::Data(msg)
+                    RemoteSwitchMessage::Data(msg)
                 }
                 envelope =>
                     return Err(unexpected_message_error(
@@ -502,20 +514,31 @@ async fn accept_connection(
                     )),
             })
         }
-        ConnectionRole::Control(msg) => {
-            send_regular(&mut socket, idle_timeout, msg).await?;
+        ConnectionRole::Control => {
+            let my_msg = internode::SwitchToControl {
+                groups: this_node.groups.clone(),
+            };
+            send_regular(&mut socket, idle_timeout, my_msg).await?;
             let msg = recv_regular::<internode::SwitchToControl>(&mut socket, idle_timeout).await?;
-            ConnectionRole::Control(msg)
+            RemoteSwitchMessage::Control(msg)
         }
-        ConnectionRole::Data(msg) => {
-            send_regular(&mut socket, idle_timeout, msg).await?;
+        ConnectionRole::Data {
+            local_group_no,
+            remote_group_no,
+        } => {
+            let my_msg = internode::SwitchToData {
+                my_group_no: local_group_no,
+                your_group_no: remote_group_no,
+                initial_window: INITIAL_WINDOW_SIZE,
+            };
+            send_regular(&mut socket, idle_timeout, my_msg).await?;
             let msg = recv_regular::<internode::SwitchToData>(&mut socket, idle_timeout).await?;
-            ConnectionRole::Data(msg)
+            RemoteSwitchMessage::Data(msg)
         }
     };
 
     Ok(ConnectionAccepted {
-        role,
+        remote_msg,
         socket: socket.into(),
         transport,
     })

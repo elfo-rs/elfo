@@ -1,3 +1,5 @@
+use derive_more::Display;
+
 use elfo_core::{
     addr::{GroupNo, NodeNo},
     message, MoveOwnership,
@@ -19,10 +21,23 @@ pub(crate) struct HandleConnection {
 }
 
 #[message]
-pub(crate) struct DataConnectionFailed {
-    pub(crate) transport: Transport,
-    pub(crate) local: GroupNo,
-    pub(crate) remote: (NodeNo, GroupNo),
+pub(crate) struct ConnectionFailed {
+    pub(crate) role: ConnectionRole,
+    // `Some` only on the client side.
+    pub(crate) transport: Option<Transport>,
+}
+
+#[derive(Display)]
+#[message(part)]
+pub(crate) enum ConnectionRole {
+    // Only possible if this node is a server.
+    Unknown,
+    Control,
+    #[display("Data({local_group_no}, {remote_group_no})")]
+    Data {
+        local_group_no: GroupNo,
+        remote_group_no: GroupNo,
+    },
 }
 
 #[message(part)]

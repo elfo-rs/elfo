@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - macros/message: avoid `Debug::fmt()` ambiguous ([#147]).
 - network: prevent recursion if a response token cannot be sent when a peer is gone ([#149]).
 - network/discovery: avoid extra delays if multiple data connections are failed ([#152]).
+- network/discovery: reconnect failed connections in more cases.
 
 [#144]: https://github.com/elfo-rs/elfo/issues/144
 [#145]: https://github.com/elfo-rs/elfo/pull/145

@@ -123,6 +123,7 @@ fn simple() {
             toml! {
                 [system.network]
                 discovery.predefined = ["turmoil06://server"]
+                discovery.attempt_interval = "1s"
                 ping_interval = "1s"
                 idle_timeout = "1s"
             },

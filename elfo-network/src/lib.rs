@@ -22,7 +22,7 @@ use elfo_core::{
 
 use crate::{
     config::Config,
-    protocol::{DataConnectionFailed, GroupInfo, HandleConnection},
+    protocol::{ConnectionFailed, GroupInfo, HandleConnection},
 };
 
 pub mod config;
@@ -74,7 +74,7 @@ pub fn new(topology: &Topology) -> Blueprint {
                     local: msg.local.clone(),
                     remote: msg.remote.clone(),
                 }),
-                DataConnectionFailed => Outcome::Unicast(ActorKey::Discovery),
+                ConnectionFailed => Outcome::Unicast(ActorKey::Discovery),
                 _ => Outcome::Default,
             })
         }))
