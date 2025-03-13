@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - network: more flexible way to control compression ([#150]).
 - dumper: support `{time:<FORMAT>}` in the `path` parameter ([#145]).
 - core/actor: allow construction of arbitrary `ActorStatusKind` in tests ([#148]).
+- core/errors: make errors cloneable ([#156]).
 
 ### Changed
 - **BREAKING** network/config: revise compression settings ([#150]).
@@ -32,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#150]: https://github.com/elfo-rs/elfo/pull/150
 [#151]: https://github.com/elfo-rs/elfo/pull/151
 [#152]: https://github.com/elfo-rs/elfo/pull/152
+[#156]: https://github.com/elfo-rs/elfo/pull/156
 
 ## [0.2.0-alpha.17] - 2024-12-01
 ### Added
