@@ -4,7 +4,7 @@ use derive_more::{Display, Error, IsVariant};
 
 // === StartError ===
 
-#[derive(Error)]
+#[derive(Clone, Error)]
 #[non_exhaustive]
 pub struct StartError {
     pub errors: Vec<StartGroupError>,
@@ -83,7 +83,7 @@ pub struct StartGroupError {
 
 // === SendError ===
 
-#[derive(Debug, Display, Error)]
+#[derive(Clone, Debug, Display, Error)]
 #[display("mailbox closed")]
 pub struct SendError<T>(#[error(not(source))] pub T);
 
@@ -102,7 +102,7 @@ impl<T> SendError<T> {
 
 // === TrySendError ===
 
-#[derive(Debug, Display, Error)]
+#[derive(Clone, Debug, Display, Error)]
 pub enum TrySendError<T> {
     /// The mailbox is full.
     #[display("mailbox full")]
@@ -153,7 +153,7 @@ impl<T> From<SendError<T>> for TrySendError<T> {
 
 // === RequestError ===
 
-#[derive(Debug, IsVariant, Display, Clone, Error)]
+#[derive(Debug, Clone, IsVariant, Display, Error)]
 pub enum RequestError {
     /// Receiver hasn't got the request.
     #[display("request failed")]
