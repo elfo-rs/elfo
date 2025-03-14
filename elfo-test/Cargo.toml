@@ -1,6 +1,6 @@
 [package]
 name = "elfo-test"
-version = "0.2.0-alpha.17"
+version = "0.2.0-alpha.18"
 description = "Test utils for the elfo system"
 keywords = ["elfo", "actor", "distributed", "tokio", "testing"]
 
@@ -18,8 +18,8 @@ workspace = true
 unstable = []
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.17", path = "../elfo-core" }
-elfo-configurer = { version = "0.2.0-alpha.17", path = "../elfo-configurer" }
+elfo-core = { version = "0.2.0-alpha.18", path = "../elfo-core" }
+elfo-configurer = { version = "0.2.0-alpha.18", path = "../elfo-configurer" }
 
 tokio.workspace = true
 stability.workspace = true

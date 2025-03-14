@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.18] - 2025-03-14
 ### Added
 - configurer: add a test constructor for `ReloadConfigsRejected` ([#151]).
 - network: more flexible way to control compression ([#150]).
@@ -708,7 +710,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.17...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.18...HEAD
+[0.2.0-alpha.18]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.17...elfo-v0.2.0-alpha.18
 [0.2.0-alpha.17]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.16...elfo-v0.2.0-alpha.17
 [0.2.0-alpha.16]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.15...elfo-v0.2.0-alpha.16
 [0.2.0-alpha.15]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.14...elfo-v0.2.0-alpha.15
