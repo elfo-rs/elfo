@@ -9,6 +9,6 @@ pre-release-replacements = [
 
     # Use precise versions (temporary for alpha releases!). TODO: remove once v0.2 is ready.
     # This is because even if `elfo = "=0.2.0-alpha.X"` is used, `cargo` fetches latest versions of crates (e.g. `elfo-core`).
-    {prerelease=true, file="../elfo/Cargo.toml", search="^(.+version) = \"0.2.0-alpha.*?\"", replace="$1 = \"={{version}}\""},
-    {prerelease=true, file="../elfo-macros/Cargo.toml", search="^(.+version) = \"0.2.0-alpha.*?\"", replace="$1 = \"={{version}}\""},
+    {prerelease=true, file="../elfo/Cargo.toml", search="^(.+version) = \"=0.2.0-alpha.*?\"", replace="$1 = \"={{version}}\""},
+    {prerelease=true, file="../elfo-macros/Cargo.toml", search="^(.+version) = \"=0.2.0-alpha.*?\"", replace="$1 = \"={{version}}\""},
 ]
