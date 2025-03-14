@@ -32,12 +32,12 @@ stability = "0.2.0"
 metrics = "0.17.1"
 dashmap = "6.0.1"
 toml = "0.8.14"
-bytesize = { version = "1.2.0", features = ["serde"] }
+bytesize = { version = "2", features = ["serde"] }
 proptest = "1.6"
 criterion = "0.5.1"
 
 [workspace.dependencies.derive_more]
-version = "1"
+version = "2"
 features = ["constructor", "deref", "display", "error", "from", "into", "is_variant"]
 
 [workspace.lints.rust]

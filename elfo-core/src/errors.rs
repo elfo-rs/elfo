@@ -59,7 +59,7 @@ impl Debug for StartError {
     }
 }
 
-impl Display for StartError {
+impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "failed to start: ")?;
         let mut i = 1;
