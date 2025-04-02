@@ -13,7 +13,7 @@ env:
   MIRIFLAGS: -Zmiri-strict-provenance
   RUST_BACKTRACE: 1
   RUST_LOG: elfo
-  MSRV: 1.76.0
+  MSRV: 1.81.0
 
 jobs:
   build:
