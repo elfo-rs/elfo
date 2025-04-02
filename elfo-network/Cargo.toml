@@ -33,7 +33,7 @@ tokio = { workspace = true, features = ["net", "io-util"] }
 tracing = "0.1.25"
 parking_lot = "0.12"
 humantime-serde = "1"
-kanal = "0.1.0-pre8"
+kanal = "0.1.1"
 bitflags = "2.3.2"
 lz4_flex = { version = "0.11.1", default-features = false, features = ["std"] }
 byteorder = "1.4.3"
