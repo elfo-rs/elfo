@@ -92,6 +92,15 @@ pub trait Message:
         any.as_real_ref()
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that `any` holds this message type.
+    #[doc(hidden)]
+    #[inline(always)]
+    unsafe fn _from_any_mut(any: &mut AnyMessage) -> &mut Self {
+        any.as_real_mut()
+    }
+
     #[doc(hidden)]
     #[inline(always)]
     fn _erase(&self) -> dumping::ErasedMessage {
