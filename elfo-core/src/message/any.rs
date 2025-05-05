@@ -77,6 +77,15 @@ impl AnyMessage {
         &self.0.cast::<MessageRepr<M>>().as_ref().data
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    pub(super) unsafe fn as_real_mut<M: Message>(&mut self) -> &mut M {
+        debug_assert_ne!(M::_type_id(), Self::_type_id());
+
+        &mut self.0.cast::<MessageRepr<M>>().as_mut().data
+    }
+
     /// Returns [`AnyMessageRef`] that borrows the message.
     pub fn as_ref(&self) -> AnyMessageRef<'_> {
         // SAFETY: `self` is valid for reads.
@@ -114,6 +123,25 @@ impl AnyMessage {
         // If `M != AnyMessage` then `as_real_ref()` is called.
         // Otherwise, the message is returned as is.
         M::_from_any_ref(self)
+    }
+
+    /// Tries to downcast the message to a mutable reference to the concrete type.
+    ///
+    /// Note: it returns `Some(&mut self)` if `M` is [`AnyMessage`].
+    #[inline]
+    pub fn downcast_mut<M: Message>(&mut self) -> Option<&mut M> {
+        self.is::<M>()
+            // SAFETY: `self` is of type `M`, checked above.
+            .then(|| unsafe { self.downcast_mut_unchecked() })
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the message is of the correct type.
+    pub(crate) unsafe fn downcast_mut_unchecked<M: Message>(&mut self) -> &mut M {
+        // If `M != AnyMessage` then `as_real_mut()` is called.
+        // Otherwise, the message is returned as is.
+        M::_from_any_mut(self)
     }
 
     /// Tries to downcast the message to a concrete type.
@@ -241,6 +269,11 @@ impl Message for AnyMessage {
 
     #[inline(always)]
     unsafe fn _from_any_ref(any: &AnyMessage) -> &Self {
+        any
+    }
+
+    #[inline(always)]
+    unsafe fn _from_any_mut(any: &mut AnyMessage) -> &mut Self {
         any
     }
 
@@ -490,8 +523,8 @@ mod tests_miri {
     #[derive(PartialEq)]
     struct P16(u128);
 
-    fn check_basic_ops<M: Message + PartialEq>(message: M) {
-        let message_box = AnyMessage::new(message.clone());
+    fn check_basic_ops<M: Message + PartialEq>(mut message: M) {
+        let mut message_box = AnyMessage::new(message.clone());
 
         // Debug
         assert_eq!(format!("{:?}", message_box), format!("{:?}", message));
@@ -516,6 +549,9 @@ mod tests_miri {
         assert!(message_box.as_ref().is::<M>());
         assert!(!message_box.is::<Unused>());
         assert!(!message_box.as_ref().is::<Unused>());
+        // We do `.downcast_mut()` first to check that it doesn't break the envelope
+        assert_eq!(message_box.downcast_mut::<M>(), Some(&mut message));
+        assert_eq!(message_box.downcast_mut::<Unused>(), None);
         assert_eq!(message_box.downcast_ref::<M>(), Some(&message));
         assert_eq!(message_box.as_ref().downcast_ref::<M>(), Some(&message));
         assert_eq!(message_box.downcast_ref::<Unused>(), None);
@@ -525,7 +561,9 @@ mod tests_miri {
         assert_eq!(message_box.downcast::<M>().unwrap(), message);
 
         // Downcast to `AnyMessage`
-        let message_box = message_box_2.downcast::<AnyMessage>().unwrap();
+        let mut message_box = message_box_2.downcast::<AnyMessage>().unwrap();
+        let any_message_mut = message_box.downcast_mut::<AnyMessage>().unwrap();
+        assert_eq!(format!("{:?}", any_message_mut), format!("{:?}", message));
         let any_message = message_box.downcast_ref::<AnyMessage>().unwrap();
         assert!(message_box.is::<AnyMessage>());
         assert_eq!(format!("{:?}", any_message), format!("{:?}", message));
