@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- core/message: add `AnyMessage::downcast_mut()` ([#159]).
+
+[#159]: https://github.com/elfo-rs/elfo/pull/159
 
 ## [0.2.0-alpha.18] - 2025-03-14
 ### Added
