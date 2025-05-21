@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.19] - 2025-05-21
 ### Added
 - core/message: add `AnyMessage::downcast_mut()` ([#159]).
 
@@ -714,7 +716,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.18...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.19...HEAD
+[0.2.0-alpha.19]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.18...elfo-v0.2.0-alpha.19
 [0.2.0-alpha.18]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.17...elfo-v0.2.0-alpha.18
 [0.2.0-alpha.17]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.16...elfo-v0.2.0-alpha.17
 [0.2.0-alpha.16]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.15...elfo-v0.2.0-alpha.16

@@ -1,6 +1,6 @@
 [package]
 name = "elfo"
-version = "0.2.0-alpha.18"
+version = "0.2.0-alpha.19"
 description = "An asynchronous distributed actor framework with robust observability"
 keywords = ["elfo", "actor", "distributed", "tokio", "observability"]
 
@@ -24,18 +24,18 @@ tracing-log = ["elfo-logger/tracing-log"]
 turmoil06 = ["elfo-network/turmoil06"]
 
 [dependencies]
-elfo-core = { version = "=0.2.0-alpha.18", path = "../elfo-core" }
-elfo-macros = { version = "=0.2.0-alpha.18", path = "../elfo-macros" }
-elfo-test = { version = "=0.2.0-alpha.18", path = "../elfo-test", optional = true }
-elfo-configurer = { version = "=0.2.0-alpha.18", path = "../elfo-configurer", optional = true }
-elfo-logger = { version = "=0.2.0-alpha.18", path = "../elfo-logger", optional = true }
-elfo-telemeter = { version = "=0.2.0-alpha.18", path = "../elfo-telemeter", optional = true }
-elfo-dumper = { version = "=0.2.0-alpha.18", path = "../elfo-dumper", optional = true }
-elfo-pinger = { version = "=0.2.0-alpha.18", path = "../elfo-pinger", optional = true }
-elfo-network = { version = "=0.2.0-alpha.18", path = "../elfo-network", optional = true }
+elfo-core = { version = "=0.2.0-alpha.19", path = "../elfo-core" }
+elfo-macros = { version = "=0.2.0-alpha.19", path = "../elfo-macros" }
+elfo-test = { version = "=0.2.0-alpha.19", path = "../elfo-test", optional = true }
+elfo-configurer = { version = "=0.2.0-alpha.19", path = "../elfo-configurer", optional = true }
+elfo-logger = { version = "=0.2.0-alpha.19", path = "../elfo-logger", optional = true }
+elfo-telemeter = { version = "=0.2.0-alpha.19", path = "../elfo-telemeter", optional = true }
+elfo-dumper = { version = "=0.2.0-alpha.19", path = "../elfo-dumper", optional = true }
+elfo-pinger = { version = "=0.2.0-alpha.19", path = "../elfo-pinger", optional = true }
+elfo-network = { version = "=0.2.0-alpha.19", path = "../elfo-network", optional = true }
 
 [dev-dependencies]
-elfo-test = { version = "=0.2.0-alpha.18", path = "../elfo-test" }
+elfo-test = { version = "=0.2.0-alpha.19", path = "../elfo-test" }
 
 metrics.workspace = true
 toml.workspace = true

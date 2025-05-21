@@ -1,6 +1,6 @@
 [package]
 name = "elfo-dumper"
-version = "0.2.0-alpha.18"
+version = "0.2.0-alpha.19"
 description = "Dumps messages of the elfo system on disk"
 keywords = ["elfo", "actor", "distributed", "tokio", "dumping"]
 
@@ -15,7 +15,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.18", path = "../elfo-core", features = ["unstable"] }
+elfo-core = { version = "0.2.0-alpha.19", path = "../elfo-core", features = ["unstable"] }
 elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
 
 metrics.workspace = true
@@ -32,4 +32,4 @@ thread_local = "1.1.3"
 libc = "0.2.169"
 
 [dev-dependencies]
-elfo-core = { version = "0.2.0-alpha.18", path = "../elfo-core", features = ["test-util"] }
+elfo-core = { version = "0.2.0-alpha.19", path = "../elfo-core", features = ["test-util"] }
