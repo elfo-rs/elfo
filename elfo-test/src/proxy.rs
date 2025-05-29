@@ -23,7 +23,7 @@ use elfo_core::{
     ActorGroup, ActorMeta, Addr, Blueprint, Context, Envelope, Local, Message, Request,
     ResponseToken,
     _priv::do_start,
-    errors::TrySendError,
+    errors::{RequestError, TrySendError},
     message, msg,
     routers::{MapRouter, Outcome},
     scope::Scope,
@@ -96,6 +96,17 @@ impl Proxy {
             .sync_within(|| self.context.try_send_to(recipient, message))
     }
 
+    /// Same as [`Self::request`], but doesn't unwraps the error.
+    pub fn request_fallible<R: Request>(
+        &self,
+        request: R,
+    ) -> impl Future<Output = Result<R::Response, RequestError>> {
+        let context = self.context.pruned();
+        self.scope
+            .clone()
+            .within(async move { context.request(request).resolve().await })
+    }
+
     /// See [`Context::request()`] for details.
     #[track_caller]
     pub fn request<R: Request>(&self, request: R) -> impl Future<Output = R::Response> {
@@ -108,6 +119,18 @@ impl Proxy {
                 Err(err) => panic!("cannot send {} ({}) at {}", name, err, location),
             }
         })
+    }
+
+    /// Same as [`Self::request_to`], but doesn't unwraps the errors.
+    pub fn request_to_fallible<R: Request>(
+        &self,
+        recipient: Addr,
+        request: R,
+    ) -> impl Future<Output = Result<R::Response, RequestError>> {
+        let context = self.context.pruned();
+        self.scope
+            .clone()
+            .within(async move { context.request_to(recipient, request).resolve().await })
     }
 
     /// See [`Context::request_to()`] for details.
