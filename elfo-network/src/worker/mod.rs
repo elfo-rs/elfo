@@ -32,9 +32,8 @@ use crate::{
             KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
         },
     },
-    config::Transport,
     frame::write::FrameState,
-    protocol::{internode, ConnectionFailed, ConnectionRole, GroupInfo, HandleConnection},
+    protocol::{internode, ConnId, ConnectionFailed, GroupInfo, HandleConnection},
     rtt::Rtt,
     socket::{ReadError, ReadHalf, WriteHalf},
     NetworkContext,
@@ -60,27 +59,23 @@ struct PingTick;
 #[message]
 struct ConnectionClosed;
 
+struct FailGuard {
+    ctx: Context,
+    id: ConnId,
+}
+
+impl Drop for FailGuard {
+    fn drop(&mut self) {
+        let Self { ctx, id } = self;
+        _ = ctx.unbounded_send_to(ctx.group(), ConnectionFailed { id: *id });
+    }
+}
+
 pub(crate) struct Worker {
     ctx: NetworkContext,
     topology: Topology,
     local: GroupInfo,
     remote: GroupInfo,
-    transport: Option<Transport>,
-}
-
-impl Drop for Worker {
-    fn drop(&mut self) {
-        let _ = self.ctx.try_send_to(
-            self.ctx.group(),
-            ConnectionFailed {
-                role: ConnectionRole::Data {
-                    local_group_no: self.local.group_no,
-                    remote_group_no: self.remote.group_no,
-                },
-                transport: self.transport.clone(),
-            },
-        );
-    }
 }
 
 impl Worker {
@@ -95,7 +90,6 @@ impl Worker {
             topology,
             local,
             remote,
-            transport: None,
         }
     }
 
@@ -105,8 +99,10 @@ impl Worker {
             msg @ HandleConnection => msg,
             _ => unreachable!("unexpected initial message"),
         });
-
-        self.transport = first_message.transport;
+        let _fail_guard = FailGuard {
+            ctx: self.ctx.pruned(),
+            id: first_message.id,
+        };
 
         let time_origin = Instant::now();
         let (tx_flows, tx_flows_acquirer) = TxFlows::new(first_message.initial_window);
@@ -192,11 +188,8 @@ impl Worker {
                     });
                     let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
                 }
-                msg @ HandleConnection => {
+                HandleConnection => {
                     info!("duplicate connection, skipping"); // TODO: replace?
-                    if self.transport.is_none() {
-                        self.transport = msg.transport;
-                    }
                 }
                 StartPusher(addr) => {
                     let pusher = Pusher {

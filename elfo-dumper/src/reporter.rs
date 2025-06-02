@@ -190,7 +190,7 @@ impl Reporter {
         }
 
         self.last_report_time
-            .map_or(true, |t| t.elapsed() >= self.log_cooldown)
+            .is_none_or(|t| t.elapsed() >= self.log_cooldown)
     }
 }
 
