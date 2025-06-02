@@ -28,6 +28,7 @@ use crate::{
 pub mod config;
 
 mod codec;
+mod connman;
 mod discovery;
 mod frame;
 mod node_map;
