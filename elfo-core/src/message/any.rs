@@ -125,7 +125,8 @@ impl AnyMessage {
         M::_from_any_ref(self)
     }
 
-    /// Tries to downcast the message to a mutable reference to the concrete type.
+    /// Tries to downcast the message to a mutable reference to the concrete
+    /// type.
     ///
     /// Note: it returns `Some(&mut self)` if `M` is [`AnyMessage`].
     #[inline]
