@@ -8,7 +8,7 @@ use tracing::warn;
 
 pub(super) use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
-#[derive(Clone, Display)]
+#[derive(Clone, Display, PartialEq, Eq)]
 #[display("tcp(local={local}, peer={peer})")] // TODO: use `valuable` after tracing#1570
 pub(crate) struct SocketInfo {
     local: SocketAddr,

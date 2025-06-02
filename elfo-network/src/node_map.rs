@@ -16,6 +16,14 @@ pub(crate) struct NodeMap {
 }
 
 impl NodeMap {
+    #[cfg(test)]
+    pub(crate) fn test() -> Self {
+        Self {
+            nodes: Mutex::new(Default::default()),
+            this: NodeInfo::test(),
+        }
+    }
+
     pub(crate) fn new(topology: &Topology) -> Self {
         let this = NodeInfo {
             node_no: topology.node_no(),
@@ -53,4 +61,15 @@ pub(crate) struct NodeInfo {
     pub(crate) node_no: NodeNo,
     pub(crate) launch_id: NodeLaunchId,
     pub(crate) groups: Vec<GroupInfo>,
+}
+
+#[cfg(test)]
+impl NodeInfo {
+    pub(crate) fn test() -> Self {
+        Self {
+            node_no: NodeNo::from_bits(1).unwrap(),
+            launch_id: NodeLaunchId::from_bits(1337).unwrap(),
+            groups: vec![],
+        }
+    }
 }

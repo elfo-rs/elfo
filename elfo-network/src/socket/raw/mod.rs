@@ -28,7 +28,7 @@ macro_rules! delegate_call {
     }
 }
 
-#[derive(Clone, Display)]
+#[derive(Clone, Display, PartialEq, Eq)]
 pub(crate) enum SocketInfo {
     Tcp(tcp::SocketInfo),
     #[cfg(unix)]
