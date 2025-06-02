@@ -13,7 +13,7 @@ use tracing::{debug, warn};
 
 pub(super) use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct SocketInfo {
     path: PathBuf,
     peer_pid: Option<Pid>,

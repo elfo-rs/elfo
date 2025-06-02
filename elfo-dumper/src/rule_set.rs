@@ -44,7 +44,7 @@ impl RuleSet {
     pub(crate) fn configure(&mut self, rules: &[Rule]) {
         let iter = rules
             .iter()
-            .filter(|rule| rule.class.as_ref().map_or(true, |c| c == self.class));
+            .filter(|rule| rule.class.as_ref().is_none_or(|c| c == self.class));
 
         if self.rules.iter().ne(iter.clone()) {
             self.cache.clear();
@@ -74,8 +74,8 @@ fn collect_params(rules: &[Rule], protocol: &'static str, message: &MessageName)
     rules
         .iter()
         .filter(|r| {
-            r.protocol.as_ref().map_or(true, |p| p == protocol)
-                && r.message.as_ref().map_or(true, |m| &m.as_str() == message)
+            r.protocol.as_ref().is_none_or(|p| p == protocol)
+                && r.message.as_ref().is_none_or(|m| &m.as_str() == message)
         })
         .for_each(|r| {
             params.max_size = r.max_size.map(|s| s.0 as _).unwrap_or(params.max_size);
