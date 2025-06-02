@@ -20,9 +20,12 @@ use crate::{
     },
 };
 
-pub(crate) use self::capabilities::{
-    compression::{Algorithms, Compression},
-    Capabilities,
+pub(crate) use self::{
+    capabilities::{
+        compression::{Algorithms, Compression},
+        Capabilities,
+    },
+    raw::SocketInfo,
 };
 
 mod capabilities;
@@ -31,7 +34,7 @@ mod idleness;
 mod raw;
 
 pub(crate) struct Socket {
-    pub(crate) info: raw::SocketInfo,
+    pub(crate) info: SocketInfo,
     pub(crate) peer: Peer,
     pub(crate) capabilities: Capabilities,
     pub(crate) read: ReadHalf,
@@ -39,7 +42,7 @@ pub(crate) struct Socket {
     pub(crate) idle: IdleTracker,
 }
 
-#[derive(Display, Clone, Constructor)]
+#[derive(Debug, Display, Clone, Copy, Constructor, PartialEq, Eq)]
 #[display("peer(node_no={node_no}, launch_id={launch_id})")] // TODO: use `valuable` after tracing#1570
 pub(crate) struct Peer {
     pub(crate) node_no: NodeNo,

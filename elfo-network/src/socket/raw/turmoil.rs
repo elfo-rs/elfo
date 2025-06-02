@@ -10,7 +10,7 @@ pub(super) use turmoil06::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 const PORT: u16 = 0xE1F0;
 
-#[derive(Clone, Display)]
+#[derive(Clone, Display, PartialEq, Eq)]
 #[display("turmoil06(local={local}, peer={peer})")] // TODO: use `valuable` after tracing#1570
 pub(crate) struct SocketInfo {
     local: String,
