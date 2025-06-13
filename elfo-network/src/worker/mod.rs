@@ -33,6 +33,7 @@ use crate::{
         },
     },
     config::Transport,
+    connman::ConnId,
     frame::write::FrameState,
     protocol::{internode, ConnectionFailed, ConnectionRole, GroupInfo, HandleConnection},
     rtt::Rtt,
@@ -60,27 +61,24 @@ struct PingTick;
 #[message]
 struct ConnectionClosed;
 
+struct FailGuard {
+    ctx: elfo_core::Context,
+    id: ConnId,
+}
+
+impl Drop for FailGuard {
+    fn drop(&mut self) {
+        let Self { ctx, id } = self;
+        _ = ctx.try_send_to(ctx.group(), ConnectionFailed { id: *id });
+    }
+}
+
 pub(crate) struct Worker {
     ctx: NetworkContext,
     topology: Topology,
     local: GroupInfo,
     remote: GroupInfo,
     transport: Option<Transport>,
-}
-
-impl Drop for Worker {
-    fn drop(&mut self) {
-        let _ = self.ctx.try_send_to(
-            self.ctx.group(),
-            ConnectionFailed {
-                role: ConnectionRole::Data {
-                    local_group_no: self.local.group_no,
-                    remote_group_no: self.remote.group_no,
-                },
-                transport: self.transport.clone(),
-            },
-        );
-    }
 }
 
 impl Worker {
@@ -105,6 +103,10 @@ impl Worker {
             msg @ HandleConnection => msg,
             _ => unreachable!("unexpected initial message"),
         });
+        let _fail_guard = FailGuard {
+            ctx: self.ctx.pruned(),
+            id: first_message.id,
+        };
 
         self.transport = first_message.transport;
 
