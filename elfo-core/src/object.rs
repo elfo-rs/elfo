@@ -34,6 +34,7 @@ pub(crate) type BorrowedObject<'g> = BorrowedEntry<'g, Object>;
 pub type OwnedObject = OwnedEntry<Object>;
 
 #[derive(From)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum ObjectKind {
     Actor(Actor),
     Group(Box<dyn GroupHandle>),
