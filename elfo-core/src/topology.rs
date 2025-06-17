@@ -57,6 +57,7 @@ pub struct LocalActorGroup {
     pub addr: Addr,
     pub name: String,
     pub is_entrypoint: bool,
+    pub is_mounted: bool,
     pub(crate) stop_order: i8,
 }
 
@@ -160,6 +161,7 @@ impl Topology {
         inner.locals.push(LocalActorGroup {
             addr: entry.addr(),
             name: name.clone(),
+            is_mounted: false,
             is_entrypoint: false,
             stop_order: 0,
         });
@@ -172,10 +174,10 @@ impl Topology {
         }
     }
 
-    /// Returns an iterator over all local groups.
+    /// Returns an iterator over all mounted local groups.
     pub fn locals(&self) -> impl Iterator<Item = LocalActorGroup> + '_ {
         let inner = self.inner.read();
-        inner.locals.clone().into_iter()
+        inner.locals.clone().into_iter().filter(|g| g.is_mounted)
     }
 
     #[stability::unstable]
@@ -257,7 +259,10 @@ impl Local<'_> {
 
     /// Mounts a blueprint to this group.
     pub fn mount(self, blueprint: Blueprint) {
-        self.with_group_mut(|group| group.stop_order = blueprint.stop_order);
+        self.with_group_mut(|group| {
+            group.stop_order = blueprint.stop_order;
+            group.is_mounted = true;
+        });
 
         let addr = self.entry.addr();
         let book = self.topology.book.clone();
