@@ -37,6 +37,8 @@ proptest = "1.6"
 criterion = "0.5.1"
 slotmap = "1.0.7"
 
+elfo-utils = { version = "0.2.6", path = "./elfo-utils" }
+
 [workspace.dependencies.derive_more]
 version = "2"
 features = ["constructor", "deref", "display", "error", "from", "into", "is_variant"]

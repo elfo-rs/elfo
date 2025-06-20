@@ -18,7 +18,7 @@ pub(crate) struct HandleConnection {
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
     // TODO: different windows for rx/tx and routed flows.
-    pub(crate) transport: Option<Transport>,
+    pub(crate) transport: Transport,
 }
 
 #[message]

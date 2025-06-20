@@ -13,7 +13,7 @@ use elfo_core::{
 use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     config::{self, Transport},
-    connman::{Conn, ConnId, ConnMan},
+    connman::{self, Conn, ConnId, ConnMan},
     node_map::{NodeInfo, NodeMap},
     protocol::{internode, ConnectionFailed, ConnectionRole, GroupInfo, HandleConnection},
     socket::{self, ReadError, Socket},
@@ -29,15 +29,18 @@ mod diff;
 const INITIAL_WINDOW_SIZE: i32 = 100_000;
 
 #[message]
-enum EstablishSide {
-    Server { transport: Transport },
-    Client { id: ConnId },
+struct ReconnectAdvised;
+
+#[message]
+enum ConnectionAllocation {
+    NonAllocated { transport: Transport },
+    Allocated { id: ConnId },
 }
 
 #[message]
 struct ConnectionEstablished {
     socket: MoveOwnership<Socket>,
-    side: EstablishSide,
+    connection: ConnectionAllocation,
 }
 
 #[message]
@@ -88,10 +91,12 @@ impl Discovery {
     pub(super) fn new(ctx: NetworkContext, topology: Topology) -> Self {
         let cfg = ctx.config().clone();
         Self {
+            node_map: Arc::new(NodeMap::new(&topology)),
+            connman: ConnMan::new(connman::Config {
+                reconnect_interval: cfg.discovery.attempt_interval,
+            }),
             cfg,
             ctx,
-            node_map: Arc::new(NodeMap::new(&topology)),
-            connman: ConnMan::default(),
         }
     }
 
@@ -109,6 +114,7 @@ impl Discovery {
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
                 ConfigUpdated => self.on_update_config(),
+                ReconnectAdvised => self.reconnect_failed(),
 
                 // Connection management.
                 //
@@ -129,6 +135,27 @@ impl Discovery {
         }
 
         Ok(())
+    }
+
+    fn reconnect_failed(&mut self) {
+        loop {
+            let mut failed = self.connman.failed();
+            match failed.pop_for_establishing() {
+                Ok(id) => {
+                    _ = self
+                        .ctx
+                        .unbounded_send_to(self.ctx.addr(), OpenConnection { id });
+                }
+
+                Err(Some(advise)) => {
+                    self.ctx
+                        .attach(Delay::new(advise.duration, ReconnectAdvised));
+                    break;
+                }
+
+                Err(None) => break,
+            }
+        }
     }
 
     fn get_compression(&self) -> socket::Compression {
@@ -191,7 +218,7 @@ impl Discovery {
                 .wrap_err_with(|| eyre!("cannot listen {transport}"))?
                 .map(move |socket| ConnectionEstablished {
                     socket: socket.into(),
-                    side: EstablishSide::Server {
+                    connection: ConnectionAllocation::NonAllocated {
                         transport: cloned.clone(),
                     },
                 });
@@ -215,11 +242,11 @@ impl Discovery {
     }
 
     fn discover(&mut self, transport: Transport) {
-        self.open_connection(transport, ConnectionRole::Control);
+        self.open_new_connection(transport, ConnectionRole::Control);
     }
 
-    fn open_connection(&mut self, transport: Transport, role: ConnectionRole) {
-        let conn_id = self.connman.insert(Conn::new(role, transport));
+    fn open_new_connection(&mut self, transport: Transport, role: ConnectionRole) {
+        let conn_id = self.connman.insert(Conn::new(role, transport)).id();
         _ = self
             .ctx
             .unbounded_send_to(self.ctx.addr(), OpenConnection { id: conn_id });
@@ -232,10 +259,7 @@ impl Discovery {
         let capabilities = self.get_capabilities();
 
         let conn = &self.connman[id];
-        let transport = conn
-            .transport()
-            .expect("got `OpenConnection` for self")
-            .clone();
+        let transport = conn.transport().clone();
         let role = conn.role();
 
         self.ctx.attach(Stream::once(async move {
@@ -249,7 +273,7 @@ impl Discovery {
             match socket::connect(&transport, node_no, launch_id, capabilities).await {
                 Ok(socket) => Ok(ConnectionEstablished {
                     socket: socket.into(),
-                    side: EstablishSide::Client { id },
+                    connection: ConnectionAllocation::Allocated { id },
                 }),
                 Err(err) => {
                     // TODO: some errors should be logged as warnings.
@@ -267,30 +291,30 @@ impl Discovery {
     }
 
     fn on_connection_established(&mut self, msg: ConnectionEstablished) {
-        let ConnectionEstablished { socket, side } = msg;
+        let ConnectionEstablished { socket, connection } = msg;
 
-        let (role, id) = match side {
-            EstablishSide::Client { id } => {
-                let mut conn = self.connman.get_mut(id).unwrap();
-                conn.change_state(|t| t.established());
-                (conn.role(), id)
-            }
+        let mut conn = match connection {
+            ConnectionAllocation::Allocated { id } => self.connman.get_mut(id).unwrap(),
 
-            EstablishSide::Server { transport } => {
-                let role = ConnectionRole::Unknown;
-                let id = self.connman.insert(Conn::new(role, transport));
-
-                (role, id)
-            }
+            ConnectionAllocation::NonAllocated { transport } => self
+                .connman
+                .insert(Conn::new(ConnectionRole::Unknown, transport)),
         };
 
+        conn.change_state(|t| t.established());
+        // that's enough mr mut no more today.
+        let conn = conn;
+
         let socket = socket.take().unwrap();
+
+        let role = conn.role();
+        let id = conn.id();
 
         debug!(
             message = "new connection established",
             socket = %socket.info,
             peer = %socket.peer,
-            role = %role,
+            role = %conn.role(),
             capabilities = %socket.capabilities,
         );
 
@@ -336,6 +360,7 @@ impl Discovery {
             socket = %socket.info,
             peer = %socket.peer,
             role = %role,
+            id = %id,
         );
 
         match msg.remote_msg {
@@ -361,9 +386,7 @@ impl Discovery {
 
                 // Only initiator (client) can start new connections,
                 // because he knows the transport address.
-                let Some(transport) = conn.transport().cloned() else {
-                    return;
-                };
+                let transport = conn.transport().clone();
 
                 let this_node = &self.node_map.clone().this;
 
@@ -381,7 +404,7 @@ impl Discovery {
 
                         // TODO: save stream to cancel later.
                         // TODO: connect without DNS resolving here.
-                        self.open_connection(transport.clone(), role);
+                        self.open_new_connection(transport.clone(), role);
                     });
             }
             RemoteSwitchMessage::Data(remote) => {
@@ -434,7 +457,7 @@ impl Discovery {
                                 ?remote_group,
                             );
 
-                            let _ = self.ctx.unbounded_send_to(self.ctx.addr(), failed);
+                            _ = self.ctx.unbounded_send_to(self.ctx.addr(), failed);
                             return;
                         }
                     };
@@ -453,7 +476,7 @@ impl Discovery {
                             group_no: remote.my_group_no,
                             group_name: remote_group_name,
                         },
-                        transport: conn.transport().cloned(),
+                        transport: conn.transport().clone(),
                         socket: socket.into(),
                         initial_window: remote.initial_window,
                     },
@@ -471,29 +494,11 @@ impl Discovery {
         let ConnectionFailed { id } = msg;
 
         let mut conn = self.connman.get_mut(id).unwrap();
-        let role = conn.role();
-
-        let Some(transport) = conn.transport().cloned() else {
-            debug!(
-                message = "connection failed, address to reconnect is unknown",
-                role = %role,
-            );
-            return;
-        };
-
-        // TODO: autoreset interval, exponential backoff.
-        let interval = self.cfg.discovery.attempt_interval;
         conn.change_state(|t| t.failed());
 
-        debug!(
-            message = "connection failed, reconnecting after delay",
-            addr = %transport,
-            role = %role,
-            delay = ?interval,
-        );
-
-        let msg = OpenConnection { id };
-        self.ctx.attach(Delay::new(interval, msg));
+        // This will push reconnect advices and optionally
+        // immediately reconnect.
+        self.reconnect_failed();
     }
 
     fn control_maintenance(&mut self, mut socket: Socket, id: ConnId) {

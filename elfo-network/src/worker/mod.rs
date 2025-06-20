@@ -35,7 +35,7 @@ use crate::{
     config::Transport,
     connman::ConnId,
     frame::write::FrameState,
-    protocol::{internode, ConnectionFailed, ConnectionRole, GroupInfo, HandleConnection},
+    protocol::{internode, ConnectionFailed, GroupInfo, HandleConnection},
     rtt::Rtt,
     socket::{ReadError, ReadHalf, WriteHalf},
     NetworkContext,
@@ -108,7 +108,7 @@ impl Worker {
             id: first_message.id,
         };
 
-        self.transport = first_message.transport;
+        self.transport = Some(first_message.transport);
 
         let time_origin = Instant::now();
         let tx_flows = Arc::new(TxFlows::new(first_message.initial_window));
@@ -197,7 +197,7 @@ impl Worker {
                 msg @ HandleConnection => {
                     info!("duplicate connection, skipping"); // TODO: replace?
                     if self.transport.is_none() {
-                        self.transport = msg.transport;
+                        self.transport = Some(msg.transport);
                     }
                 }
                 StartPusher(addr) => {
