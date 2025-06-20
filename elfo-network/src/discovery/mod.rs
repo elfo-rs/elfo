@@ -213,7 +213,7 @@ impl Discovery {
 
         for transport in &self.cfg.listen {
             let cloned = transport.clone();
-            let stream = socket::listen(&transport, node_no, launch_id, capabilities)
+            let stream = socket::listen(transport, node_no, launch_id, capabilities)
                 .await
                 .wrap_err_with(|| eyre!("cannot listen {transport}"))?
                 .map(move |socket| ConnectionEstablished {
@@ -335,7 +335,7 @@ impl Discovery {
             let info = socket.info.clone();
             let peer = socket.peer.clone();
 
-            accept_connection(socket, id, role.clone(), &node_map.this, idle_timeout)
+            accept_connection(socket, id, role, &node_map.this, idle_timeout)
                 .await
                 .map_err(|err| {
                     warn!(

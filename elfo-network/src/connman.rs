@@ -35,7 +35,7 @@ pub(crate) struct NextCheckAdvise {
 
 pub(crate) struct Failed<'a>(&'a mut ConnMan);
 
-impl<'a> Failed<'a> {
+impl Failed<'_> {
     /// Pop one failed connection for reconnection purpose. Automatically
     /// sets state to establishing.
     pub(crate) fn pop_for_establishing(&mut self) -> Result<ConnId, Option<NextCheckAdvise>> {
@@ -182,7 +182,7 @@ impl<'a> ManagedConn<'a> {
     }
 }
 
-impl<'a> Deref for ManagedConn<'a> {
+impl Deref for ManagedConn<'_> {
     type Target = Conn;
 
     fn deref(&self) -> &Self::Target {
@@ -190,7 +190,7 @@ impl<'a> Deref for ManagedConn<'a> {
     }
 }
 
-impl<'a> DerefMut for ManagedConn<'a> {
+impl DerefMut for ManagedConn<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.conn
     }
@@ -198,7 +198,7 @@ impl<'a> DerefMut for ManagedConn<'a> {
 
 pub(crate) struct StateTransition<'a, 't>(&'a mut ManagedConn<'t>);
 
-impl<'a, 't> StateTransition<'a, 't> {
+impl StateTransition<'_, '_> {
     fn transition(&mut self, to: State) -> Option<State> {
         use std::mem::discriminant;
 
