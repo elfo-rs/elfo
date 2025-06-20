@@ -9,8 +9,6 @@ use derive_more::{Display, IsVariant};
 use elfo_core::message;
 use elfo_utils::time::Instant;
 
-use tracing::debug;
-
 use crate::{config::Transport, protocol::ConnectionRole};
 
 pub(crate) use self::config::Config;
@@ -71,59 +69,60 @@ slotmap::new_key_type! {
     pub struct ConnId;
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct NextCheckAdvise {
-    pub(crate) duration: Duration,
+#[message(part)]
+#[derive(PartialEq, Eq)]
+pub(crate) struct DeferReconnect {
+    pub(crate) after: Duration,
+    pub(crate) id: ConnId,
 }
 
 pub(crate) struct Failed<'a>(&'a mut ConnMan);
 
 impl Failed<'_> {
-    /// Pop one failed connection for reconnection purpose. Automatically
-    /// sets state to establishing.
-    pub(crate) fn pop_for_establishing(&mut self) -> Result<ConnId, Option<NextCheckAdvise>> {
-        // IMO allowing to customize this is redundant. Making `PRECISION` larger
-        // can lessen latency for reconnection, but can also produce more
-        // "spurious" reconnects, which can affect latency as well.
-        //
-        // When adjusting this constant, make wise decision.
-        const PRECISION: Duration = Duration::from_millis(2);
+    /// Pop one from retry queue.
+    pub(crate) fn pop_for_retry(&mut self) -> Result<ConnId, Option<DeferReconnect>> {
+        let current_time = Instant::now();
+        let (QueueKey { at, .. }, id) = self
+            .0
+            .retry_schedule
+            .queue
+            .first_entry()
+            .ok_or(None)?
+            .remove_entry();
 
-        let cur = Instant::now();
-        loop {
-            let entry = self.0.retry_schedule.first_entry().ok_or(None)?;
-            let after = *entry.key();
-
-            // if current time is in `[after - PRECISION; after]`, then
-            // pass further, otherwise advise to wait.
-            if cur < after && after.duration_since(cur) > PRECISION {
-                return Err(Some(NextCheckAdvise {
-                    duration: after.duration_since(cur),
-                }));
-            }
-
-            let id = entry.remove();
-            let mut conn = self.0.get_mut(id).unwrap();
-            let state = conn.state();
-
-            // Unlikely, but let's log that occasion, this signals about bug
-            // in state handling I believe.
-            if !matches!(state, State::Failed) {
-                debug!(state = ?state, id = %id, "got non-failed connection in the retry schedule");
-                continue;
-            }
-
-            conn.change_state(|t| t.establishing());
-            return Ok(id);
+        if current_time >= at {
+            Ok(id)
+        } else {
+            Err(Some(DeferReconnect {
+                after: at.duration_since(current_time),
+                id,
+            }))
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct QueueKey {
+    at: Instant,
+    nth: usize,
+}
+
+impl QueueKey {
+    const fn new(at: Instant, nth: usize) -> Self {
+        Self { at, nth }
+    }
+}
+
+#[derive(Debug, Default)]
+struct RetrySchedule {
+    queue: BTreeMap<QueueKey, ConnId>,
 }
 
 #[derive(Debug)]
 pub(crate) struct ConnMan {
     config: config::Config,
     conns: slotmap::SlotMap<ConnId, Conn>,
-    retry_schedule: BTreeMap<Instant, ConnId>,
+    retry_schedule: RetrySchedule,
 }
 
 impl ConnMan {
@@ -131,7 +130,7 @@ impl ConnMan {
         Self {
             config,
             conns: slotmap::SlotMap::<_, _>::default(),
-            retry_schedule: BTreeMap::default(),
+            retry_schedule: RetrySchedule::default(),
         }
     }
 
@@ -160,6 +159,14 @@ impl ConnMan {
             })
             .ok_or(NoSuchConn(id))
     }
+
+    pub(crate) fn remove(&mut self, id: ConnId) -> Option<Conn> {
+        self.conns.remove(id).inspect(|c| {
+            if let State::Failed(st) = c.state() {
+                self.retry_schedule.queue.remove(&st.queue_place);
+            }
+        })
+    }
 }
 
 impl Index<ConnId> for ConnMan {
@@ -172,11 +179,16 @@ impl Index<ConnId> for ConnMan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FailedState {
+    queue_place: QueueKey,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IsVariant)]
 pub(crate) enum State {
     Establishing,
     Established,
     Accepted,
-    Failed,
+    Failed(FailedState),
 }
 
 #[derive(Debug)]
@@ -212,7 +224,7 @@ pub(crate) struct ManagedConn<'a> {
     id: ConnId,
     config: &'a Config,
     conn: &'a mut Conn,
-    retry_schedule: &'a mut BTreeMap<Instant, ConnId>,
+    retry_schedule: &'a mut RetrySchedule,
 }
 
 impl<'a> ManagedConn<'a> {
@@ -250,6 +262,12 @@ impl StateTransition<'_, '_> {
         // Comparing discriminants to ignore state
         // data.
         if discriminant(&to) != discriminant(&prev) {
+            // If transitioning `Failed -> !Failed`, let's remove
+            // ourselves from schedule.
+            if let State::Failed(st) = prev {
+                self.0.retry_schedule.queue.remove(&st.queue_place);
+            }
+
             self.0.state = to;
             Some(prev)
         } else {
@@ -257,23 +275,27 @@ impl StateTransition<'_, '_> {
         }
     }
 
-    pub(crate) fn failed(mut self) {
-        if self.transition(State::Failed).is_some() {
-            let recon_interval = self.0.config.reconnect_interval;
-            let now = Instant::now();
-
-            let mut retry_at = now.checked_add(recon_interval).unwrap();
-            let mut id = self.0.id;
-            let _1ns = Duration::from_nanos(1);
-
-            // It's highly unlikely that we get the same nanosecond instant,
-            // but just to not screw everything up - let's make things simple
-            // and just add 1ns if we met same instant by the fortune.
-            while let Some(prev) = self.0.retry_schedule.insert(retry_at, id) {
-                id = prev;
-                retry_at = retry_at.checked_add(_1ns).unwrap();
-            }
+    pub(crate) fn failed(self) {
+        if self.0.state.is_failed() {
+            return;
         }
+
+        let recon_interval = self.0.config.reconnect_interval;
+        let now = Instant::now();
+        let retry_at = now.checked_add(recon_interval).unwrap();
+        let id = self.0.id();
+
+        let nth = self
+            .0
+            .retry_schedule
+            .queue
+            .range(QueueKey::new(retry_at, 0)..QueueKey::new(retry_at, usize::MAX))
+            .next_back()
+            .map_or(0, |(QueueKey { nth, .. }, _)| nth + 1);
+        let queue_place = QueueKey::new(retry_at, nth);
+        self.0.retry_schedule.queue.insert(queue_place, id);
+
+        self.0.state = State::Failed(FailedState { queue_place });
     }
 
     pub(crate) fn establishing(mut self) {

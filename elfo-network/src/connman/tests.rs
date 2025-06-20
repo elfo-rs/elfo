@@ -20,7 +20,7 @@ fn tcp() -> ConnectTransport {
 
 #[test]
 fn reconnection_works() {
-    with_instant_mock(|mock| {
+    with_instant_mock(|_| {
         let mut man = manager();
         let mut conn = man.insert(Conn::new(ConnectionRole::Control, tcp()));
         let conn_id = conn.id();
@@ -29,7 +29,7 @@ fn reconnection_works() {
 
         let advise = man
             .failed()
-            .pop_for_establishing()
+            .pop_for_retry()
             .expect_err("new connection must be in establishing state, thus not in queue");
         // And no advise should be given.
         assert_eq!(advise, None);
@@ -40,29 +40,17 @@ fn reconnection_works() {
 
         let advise = man
             .failed()
-            .pop_for_establishing()
+            .pop_for_retry()
             .expect_err("manager must not be ready to reconnect at the time")
             .expect("manager must advise reconnection, since failed connection is just landed");
         // Must advise to reconnect after 100ms.
-        assert_eq!(advise.duration.as_millis(), 100);
+        assert_eq!(advise.after.as_millis(), 100);
+        assert_eq!(advise.id, conn_id);
 
-        mock.advance(Duration::from_millis(100));
-
-        let failed_id = man
-            .failed()
-            .pop_for_establishing()
-            .expect("the reconnection now must be ready");
-        assert_eq!(failed_id, conn_id);
-
-        // Must change state to establishing as well.
-        let conn = &man[conn_id];
-        assert_eq!(conn.state(), State::Establishing);
-
-        // Since there's no failed connections, it must return err with no advise.
         let advise = man
             .failed()
-            .pop_for_establishing()
-            .expect_err("no connections failed, must return error");
+            .pop_for_retry()
+            .expect_err("queue must be empty now");
         assert_eq!(advise, None);
     });
 }

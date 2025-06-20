@@ -6,8 +6,8 @@ use tracing::{debug, error, info, warn};
 
 use elfo_core::{
     message, msg, scope, tracing::TraceId, AnyMessage, Envelope, Message, MoveOwnership,
-    RestartPolicy, _priv::MessageKind, addr::GroupNo, messages::ConfigUpdated, stream::Stream,
-    time::Delay, RestartParams, Topology,
+    RestartPolicy, _priv::MessageKind, addr::GroupNo, errors::TryRecvError,
+    messages::ConfigUpdated, stream::Stream, time::Delay, RestartParams, Topology,
 };
 
 use crate::{
@@ -27,9 +27,6 @@ mod diff;
 /// Initial window size of every flow.
 /// TODO: should be different for groups and actors.
 const INITIAL_WINDOW_SIZE: i32 = 100_000;
-
-#[message]
-struct ReconnectAdvised;
 
 #[message]
 enum ConnectionAllocation {
@@ -108,49 +105,72 @@ impl Discovery {
                 Duration::from_secs(30),
             )));
 
+        const MAX_BATCH_SIZE: usize = 64;
+
+        let mut batch_fuel_left = MAX_BATCH_SIZE;
+
         self.listen().await?;
         self.discover_all();
 
-        while let Some(envelope) = self.ctx.recv().await {
-            msg!(match envelope {
-                ConfigUpdated => self.on_update_config(),
-                ReconnectAdvised => self.reconnect_failed(),
+        'root: while let Some(mut envelope) = self.ctx.recv().await {
+            'batch: loop {
+                msg!(match envelope {
+                    ConfigUpdated => self.on_update_config(),
 
-                // Connection management.
-                //
-                //   ┌──────────┐ handshake ┌─────────────┐
-                //   │ Unopened ├───────────► Established │
-                //   └───▲────┬─┘           └──┬───┬──────┘
-                //       │    │                │   │ switch to
-                //  delay│    │   ┌────────────┘   │ data/control
-                //    ┌──┴────▼┐  │          ┌─────▼────┐
-                //    │ Failed ◄──┴──────────┤ Accepted │
-                //    └────────┘             └──────────┘
-                // ~
-                msg @ OpenConnection => self.on_open_connection(msg),
-                msg @ ConnectionEstablished => self.on_connection_established(msg),
-                msg @ ConnectionAccepted => self.on_connection_accepted(msg),
-                msg @ ConnectionFailed => self.on_connection_failed(msg),
-            });
+                    // Connection management.
+                    //
+                    //   ┌──────────┐ handshake ┌─────────────┐
+                    //   │ Unopened ├───────────► Established │
+                    //   └───▲────┬─┘           └──┬───┬──────┘
+                    //       │    │                │   │ switch to
+                    //  delay│    │   ┌────────────┘   │ data/control
+                    //    ┌──┴────▼┐  │          ┌─────▼────┐
+                    //    │ Failed ◄──┴──────────┤ Accepted │
+                    //    └────────┘             └──────────┘
+                    // ~
+                    msg @ OpenConnection => self.on_open_connection(msg),
+                    msg @ ConnectionEstablished => self.on_connection_established(msg),
+                    msg @ ConnectionAccepted => self.on_connection_accepted(msg),
+                    msg @ ConnectionFailed => self.on_connection_failed(msg),
+                });
+
+                batch_fuel_left = batch_fuel_left.saturating_sub(1);
+                // Don't let between-batch logic starve.
+                if batch_fuel_left == 0 {
+                    batch_fuel_left = MAX_BATCH_SIZE;
+                    break 'batch;
+                }
+
+                match self.ctx.try_recv().await {
+                    Ok(e) => envelope = e,
+                    Err(TryRecvError::Closed) => break 'root,
+                    Err(TryRecvError::Empty) => break 'batch,
+                }
+            }
+
+            self.per_batch_maintenance();
         }
 
         Ok(())
     }
 
+    fn per_batch_maintenance(&mut self) {
+        self.reconnect_failed();
+    }
+
     fn reconnect_failed(&mut self) {
+        let mut failed = self.connman.failed();
         loop {
-            let mut failed = self.connman.failed();
-            match failed.pop_for_establishing() {
+            match failed.pop_for_retry() {
                 Ok(id) => {
                     _ = self
                         .ctx
                         .unbounded_send_to(self.ctx.addr(), OpenConnection { id });
                 }
 
-                Err(Some(advise)) => {
+                Err(Some(defer)) => {
                     self.ctx
-                        .attach(Delay::new(advise.duration, ReconnectAdvised));
-                    break;
+                        .attach(Delay::new(defer.after, OpenConnection { id: defer.id }));
                 }
 
                 Err(None) => break,
@@ -261,11 +281,14 @@ impl Discovery {
         let launch_id = self.node_map.this.launch_id;
         let capabilities = self.get_capabilities();
 
-        let conn = &self.connman[id];
+        let mut conn = self.connman.get_mut(id).unwrap();
+        conn.change_state(|t| t.establishing());
+        let conn = conn;
+
         let transport = conn.transport();
-        if !transport.kind.is_remote() {
+        if transport.kind.is_current_node() {
             error!(connection = %id, "cannot initiate connection to current node");
-            // TODO: remove connection?
+            self.connman.remove(id);
             return;
         }
 
@@ -397,7 +420,7 @@ impl Discovery {
                 // Only initiator (client) can start new connections,
                 // because he knows the transport address.
                 let transport = conn.transport();
-                if transport.kind.is_current_node() {
+                if !transport.kind.is_remote() {
                     return;
                 }
 
@@ -507,11 +530,12 @@ impl Discovery {
         let ConnectionFailed { id } = msg;
 
         let mut conn = self.connman.get_mut(id).unwrap();
+        if conn.transport().kind.is_current_node() {
+            _ = self.connman.remove(id);
+            info!(id = %id, "connection failed, reconnect address is unknown, remote node must reconnect");
+            return;
+        }
         conn.change_state(|t| t.failed());
-
-        // This will push reconnect advices and optionally
-        // immediately reconnect.
-        self.reconnect_failed();
     }
 
     fn control_maintenance(&mut self, mut socket: Socket, id: ConnId) {
