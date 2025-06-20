@@ -98,7 +98,7 @@ impl ConnMan {
         unsafe { self.get_mut(id).unwrap_unchecked() }
     }
 
-    pub(crate) const fn failed(&mut self) -> Failed<'_> {
+    pub(crate) fn failed(&mut self) -> Failed<'_> {
         Failed(self)
     }
 
