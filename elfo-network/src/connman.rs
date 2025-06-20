@@ -53,7 +53,7 @@ impl Failed<'_> {
 
             // if current time is in `[after - PRECISION; after]`, then
             // pass further, otherwise advise to wait.
-            if cur < after && after.duration_since(cur) < PRECISION {
+            if cur < after && after.duration_since(cur) > PRECISION {
                 return Err(Some(NextCheckAdvise {
                     duration: after.duration_since(cur),
                 }));

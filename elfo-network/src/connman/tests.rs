@@ -10,7 +10,7 @@ use crate::{
 
 fn manager() -> ConnMan {
     ConnMan::new(Config {
-        reconnect_interval: Duration::from_nanos(1),
+        reconnect_interval: Duration::from_millis(100),
     })
 }
 
@@ -43,10 +43,10 @@ fn reconnection_works() {
             .pop_for_establishing()
             .expect_err("manager must not be ready to reconnect at the time")
             .expect("manager must advise reconnection, since failed connection is just landed");
-        // Must advise to reconnect after a millisecond.
-        assert_eq!(advise.duration.as_nanos(), 1);
+        // Must advise to reconnect after 100ms.
+        assert_eq!(advise.duration.as_millis(), 100);
 
-        mock.advance(Duration::from_nanos(1));
+        mock.advance(Duration::from_millis(100));
 
         let failed_id = man
             .failed()
