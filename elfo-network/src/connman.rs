@@ -41,9 +41,9 @@ impl Failed<'_> {
     pub(crate) fn pop_for_establishing(&mut self) -> Result<ConnId, Option<NextCheckAdvise>> {
         // IMO allowing to customize this is redundant. Making `PRECISION` larger
         // can lessen latency for reconnection, but can also produce more
-        // "spurious" reconnects, which can affect latency as well, especially
-        // when backoff would be introduced. When adjusting this constant, make wise
-        // decision.
+        // "spurious" reconnects, which can affect latency as well.
+        //
+        // When adjusting this constant, make wise decision.
         const PRECISION: Duration = Duration::from_millis(2);
 
         let cur = Instant::now();
