@@ -4,14 +4,57 @@ use std::{
     time::Duration,
 };
 
-use derive_more::Display;
+use derive_more::{Display, IsVariant};
 
+use elfo_core::message;
 use elfo_utils::time::Instant;
+
 use tracing::debug;
 
 use crate::{config::Transport, protocol::ConnectionRole};
 
 pub(crate) use self::config::Config;
+
+#[message(part)]
+#[derive(Display, IsVariant)]
+pub(crate) enum TransportKind {
+    /// This transport refers to the remote node.
+    #[display("remote")]
+    Remote,
+    /// This transport refers to the current node.
+    #[display("current_node")]
+    CurrentNode,
+}
+
+#[message(part)]
+#[derive(Display)]
+#[display("{kind}#{transport}")]
+pub(crate) struct ConnectTransport {
+    /// Transport using which connection was made.
+    pub(crate) transport: Transport,
+    /// To what transport refers.
+    /// - [`TransportKind::Remote`] - to the remote node, connection
+    /// initiator is current node
+    /// - [`TransportKind::CurrentNode`] - to the current node, connection
+    /// initiator is the remote node.
+    pub(crate) kind: TransportKind,
+}
+
+impl ConnectTransport {
+    pub(crate) const fn remote(transport: Transport) -> Self {
+        Self {
+            transport,
+            kind: TransportKind::Remote,
+        }
+    }
+
+    pub(crate) const fn current_node(transport: Transport) -> Self {
+        Self {
+            transport,
+            kind: TransportKind::CurrentNode,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests;
@@ -140,11 +183,11 @@ pub(crate) enum State {
 pub(crate) struct Conn {
     role: ConnectionRole,
     state: State,
-    transport: Transport,
+    transport: ConnectTransport,
 }
 
 impl Conn {
-    pub(crate) fn new(role: ConnectionRole, transport: Transport) -> Self {
+    pub(crate) fn new(role: ConnectionRole, transport: ConnectTransport) -> Self {
         Self {
             role,
             transport,
@@ -152,7 +195,7 @@ impl Conn {
         }
     }
 
-    pub(crate) const fn transport(&self) -> &Transport {
+    pub(crate) const fn transport(&self) -> &ConnectTransport {
         &self.transport
     }
 

@@ -13,7 +13,7 @@ use elfo_core::{
 use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     config::{self, Transport},
-    connman::{self, Conn, ConnId, ConnMan},
+    connman::{self, Conn, ConnId, ConnMan, ConnectTransport},
     node_map::{NodeInfo, NodeMap},
     protocol::{internode, ConnectionFailed, ConnectionRole, GroupInfo, HandleConnection},
     socket::{self, ReadError, Socket},
@@ -33,7 +33,7 @@ struct ReconnectAdvised;
 
 #[message]
 enum ConnectionAllocation {
-    NonAllocated { transport: Transport },
+    NonAllocated { transport: ConnectTransport },
     Allocated { id: ConnId },
 }
 
@@ -219,7 +219,7 @@ impl Discovery {
                 .map(move |socket| ConnectionEstablished {
                     socket: socket.into(),
                     connection: ConnectionAllocation::NonAllocated {
-                        transport: cloned.clone(),
+                        transport: ConnectTransport::current_node(cloned.clone()),
                     },
                 });
 
@@ -246,7 +246,10 @@ impl Discovery {
     }
 
     fn open_new_connection(&mut self, transport: Transport, role: ConnectionRole) {
-        let conn_id = self.connman.insert(Conn::new(role, transport)).id();
+        let conn_id = self
+            .connman
+            .insert(Conn::new(role, ConnectTransport::remote(transport)))
+            .id();
         _ = self
             .ctx
             .unbounded_send_to(self.ctx.addr(), OpenConnection { id: conn_id });
@@ -259,8 +262,15 @@ impl Discovery {
         let capabilities = self.get_capabilities();
 
         let conn = &self.connman[id];
-        let transport = conn.transport().clone();
+        let transport = conn.transport();
+        if !transport.kind.is_remote() {
+            error!(connection = %id, "cannot initiate connection to current node");
+            // TODO: remove connection?
+            return;
+        }
+
         let role = conn.role();
+        let transport = transport.transport.clone();
 
         self.ctx.attach(Stream::once(async move {
             debug!(
@@ -386,9 +396,13 @@ impl Discovery {
 
                 // Only initiator (client) can start new connections,
                 // because he knows the transport address.
-                let transport = conn.transport().clone();
+                let transport = conn.transport();
+                if transport.kind.is_current_node() {
+                    return;
+                }
 
                 let this_node = &self.node_map.clone().this;
+                let transport = transport.transport.clone();
 
                 // Open connections for all interesting pairs of groups.
                 infer_connections(&remote.groups, &this_node.groups)
@@ -476,7 +490,6 @@ impl Discovery {
                             group_no: remote.my_group_no,
                             group_name: remote_group_name,
                         },
-                        transport: conn.transport().clone(),
                         socket: socket.into(),
                         initial_window: remote.initial_window,
                     },

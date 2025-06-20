@@ -32,7 +32,6 @@ use crate::{
             KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
         },
     },
-    config::Transport,
     connman::ConnId,
     frame::write::FrameState,
     protocol::{internode, ConnectionFailed, GroupInfo, HandleConnection},
@@ -78,7 +77,6 @@ pub(crate) struct Worker {
     topology: Topology,
     local: GroupInfo,
     remote: GroupInfo,
-    transport: Option<Transport>,
 }
 
 impl Worker {
@@ -93,7 +91,6 @@ impl Worker {
             topology,
             local,
             remote,
-            transport: None,
         }
     }
 
@@ -107,8 +104,6 @@ impl Worker {
             ctx: self.ctx.pruned(),
             id: first_message.id,
         };
-
-        self.transport = Some(first_message.transport);
 
         let time_origin = Instant::now();
         let tx_flows = Arc::new(TxFlows::new(first_message.initial_window));
@@ -194,11 +189,8 @@ impl Worker {
                     });
                     let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
                 }
-                msg @ HandleConnection => {
+                HandleConnection => {
                     info!("duplicate connection, skipping"); // TODO: replace?
-                    if self.transport.is_none() {
-                        self.transport = Some(msg.transport);
-                    }
                 }
                 StartPusher(addr) => {
                     let pusher = Pusher {

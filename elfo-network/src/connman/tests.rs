@@ -4,7 +4,7 @@ use elfo_utils::time::with_instant_mock;
 
 use crate::{
     config::Transport,
-    connman::{Config, Conn, ConnMan, State},
+    connman::{Config, Conn, ConnMan, ConnectTransport, State},
     protocol::ConnectionRole,
 };
 
@@ -14,8 +14,8 @@ fn manager() -> ConnMan {
     })
 }
 
-fn tcp() -> Transport {
-    Transport::Tcp("0.0.0.0:1337".to_owned())
+fn tcp() -> ConnectTransport {
+    ConnectTransport::remote(Transport::Tcp("0.0.0.0:1337".to_owned()))
 }
 
 #[test]

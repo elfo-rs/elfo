@@ -5,7 +5,7 @@ use elfo_core::{
     message, MoveOwnership,
 };
 
-use crate::{codec::format::NetworkAddr, config::Transport, connman::ConnId, socket::Socket};
+use crate::{codec::format::NetworkAddr, connman::ConnId, socket::Socket};
 
 // Internal.
 
@@ -18,7 +18,6 @@ pub(crate) struct HandleConnection {
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
     // TODO: different windows for rx/tx and routed flows.
-    pub(crate) transport: Transport,
 }
 
 #[message]
