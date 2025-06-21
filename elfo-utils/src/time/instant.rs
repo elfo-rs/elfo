@@ -19,6 +19,16 @@ impl Instant {
         Self(with_clock(|c| c.raw()))
     }
 
+    /// Same as [`std::time::Instant::checked_add`].
+    pub const fn checked_add(self, dur: Duration) -> Option<Self> {
+        let nanos = dur.as_nanos() as u64;
+        if let Some(res) = self.0.checked_add(nanos) {
+            Some(Self(res))
+        } else {
+            None
+        }
+    }
+
     /// Returns the amount of time elapsed since this instant.
     ///
     /// Prefer `secs_f64_since()` if used for metrics.
