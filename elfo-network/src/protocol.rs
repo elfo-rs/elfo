@@ -5,29 +5,27 @@ use elfo_core::{
     message, MoveOwnership,
 };
 
-use crate::{codec::format::NetworkAddr, config::Transport, socket::Socket};
+use crate::{codec::format::NetworkAddr, connman::ConnId, socket::Socket};
 
 // Internal.
 
 #[message]
 pub(crate) struct HandleConnection {
+    pub(crate) id: ConnId,
     pub(crate) local: GroupInfo,
     pub(crate) remote: GroupInfo,
     pub(crate) socket: MoveOwnership<Socket>,
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
     // TODO: different windows for rx/tx and routed flows.
-    pub(crate) transport: Option<Transport>,
 }
 
 #[message]
 pub(crate) struct ConnectionFailed {
-    pub(crate) role: ConnectionRole,
-    // `Some` only on the client side.
-    pub(crate) transport: Option<Transport>,
+    pub(crate) id: ConnId,
 }
 
-#[derive(Display)]
+#[derive(Display, Copy)]
 #[message(part)]
 pub(crate) enum ConnectionRole {
     // Only possible if this node is a server.

@@ -13,10 +13,25 @@ use quanta::Clock;
 pub struct Instant(u64 /* raw TSC value */); // TODO: make it `NonZeroU64`?
 
 impl Instant {
+    /// Minimum value.
+    pub const MIN: Instant = Self(0);
+    /// Maximum value.
+    pub const MAX: Instant = Self(u64::MAX);
+
     /// Returns the current monotonic time.
     #[inline]
     pub fn now() -> Self {
         Self(with_clock(|c| c.raw()))
+    }
+
+    /// Same as [`std::time::Instant::checked_add`].
+    pub const fn checked_add(self, dur: Duration) -> Option<Self> {
+        let nanos = dur.as_nanos() as u64;
+        if let Some(res) = self.0.checked_add(nanos) {
+            Some(Self(res))
+        } else {
+            None
+        }
     }
 
     /// Returns the amount of time elapsed since this instant.

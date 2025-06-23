@@ -19,7 +19,7 @@ turmoil06 = ["dep:turmoil06"]
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.19", path = "../elfo-core", features = ["unstable", "network"] }
-elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
+elfo-utils = { workspace = true }
 
 metrics.workspace = true
 dashmap.workspace = true
@@ -38,7 +38,9 @@ bitflags = "2.3.2"
 lz4_flex = { version = "0.11.1", default-features = false, features = ["std"] }
 byteorder = "1.4.3"
 turmoil06 = { package = "turmoil", version = "0.6", optional = true }
+slotmap = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 tracing-test = "0.2.4" # TODO: actually unused?
+elfo-utils = { workspace = true, features = ["test-util"] }
 proptest.workspace = true
