@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    ops::{Deref, DerefMut, Index},
-    time::Duration,
-};
+use std::ops::{Deref, DerefMut, Index};
 
 use derive_more::{Display, IsVariant};
 
@@ -69,79 +65,66 @@ slotmap::new_key_type! {
     pub struct ConnId;
 }
 
-#[message(part)]
-#[derive(PartialEq, Eq)]
-pub(crate) struct DeferReconnect {
-    pub(crate) after: Duration,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConnectTask {
+    pub(crate) at: Instant,
     pub(crate) id: ConnId,
 }
 
-pub(crate) struct Failed<'a>(&'a mut ConnMan);
-
-impl Failed<'_> {
-    /// Pop one from retry queue.
-    pub(crate) fn pop_for_retry(&mut self) -> Result<ConnId, Option<DeferReconnect>> {
-        let current_time = Instant::now();
-        let (QueueKey { at, .. }, id) = self
-            .0
-            .retry_schedule
-            .queue
-            .first_entry()
-            .ok_or(None)?
-            .remove_entry();
-
-        if current_time >= at {
-            Ok(id)
-        } else {
-            Err(Some(DeferReconnect {
-                after: at.duration_since(current_time),
-                id,
-            }))
-        }
-    }
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Task {
+    Connect(ConnectTask),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct QueueKey {
-    at: Instant,
-    nth: usize,
+slotmap::new_key_type! {
+    struct QueuePlace;
 }
 
-impl QueueKey {
-    const fn new(at: Instant, nth: usize) -> Self {
-        Self { at, nth }
-    }
-}
-
-#[derive(Debug, Default)]
-struct RetrySchedule {
-    queue: BTreeMap<QueueKey, ConnId>,
-}
+type TaskQueue = slotmap::SlotMap<QueuePlace, Task>;
 
 #[derive(Debug)]
 pub(crate) struct ConnMan {
     config: config::Config,
     conns: slotmap::SlotMap<ConnId, Conn>,
-    retry_schedule: RetrySchedule,
+    task_queue: TaskQueue,
 }
 
 impl ConnMan {
     pub(crate) fn new(config: config::Config) -> Self {
         Self {
             config,
-            conns: slotmap::SlotMap::<_, _>::default(),
-            retry_schedule: RetrySchedule::default(),
+            conns: slotmap::SlotMap::<ConnId, _>::default(),
+            task_queue: TaskQueue::default(),
         }
     }
 
-    pub(crate) fn insert(&mut self, conn: Conn) -> ManagedConn<'_> {
-        let id = self.conns.insert(conn);
-        // SAFETY: just got inserted.
+    pub(crate) fn drain_task_queue(&mut self) -> impl Iterator<Item = Task> + use<'_> {
+        self.task_queue.drain().map(|(_, t)| t)
+    }
+
+    fn insert_establishing(&mut self, f: impl FnOnce(QueuePlace) -> Conn) -> ManagedConn<'_> {
+        let id = self.conns.insert_with_key(|id| {
+            let place = self.task_queue.insert(Task::Connect(ConnectTask {
+                at: Instant::MIN,
+                id,
+            }));
+            f(place)
+        });
+
+        // SAFETY: just inserted.
         unsafe { self.get_mut(id).unwrap_unchecked() }
     }
 
-    pub(crate) fn failed(&mut self) -> Failed<'_> {
-        Failed(self)
+    pub(crate) fn insert(
+        &mut self,
+        role: ConnectionRole,
+        transport: ConnectTransport,
+    ) -> ManagedConn<'_> {
+        self.insert_establishing(move |connect_task| Conn {
+            role,
+            state: State::Establishing(EstablishingState { connect_task }),
+            transport,
+        })
     }
 
     pub(crate) fn get(&self, id: ConnId) -> Result<&Conn, NoSuchConn> {
@@ -155,7 +138,7 @@ impl ConnMan {
                 id,
                 conn,
                 config: &self.config,
-                retry_schedule: &mut self.retry_schedule,
+                task_queue: &mut self.task_queue,
             })
             .ok_or(NoSuchConn(id))
     }
@@ -163,7 +146,7 @@ impl ConnMan {
     pub(crate) fn remove(&mut self, id: ConnId) -> Option<Conn> {
         self.conns.remove(id).inspect(|c| {
             if let State::Failed(st) = c.state() {
-                self.retry_schedule.queue.remove(&st.queue_place);
+                self.task_queue.remove(st.reconnect_task);
             }
         })
     }
@@ -180,12 +163,17 @@ impl Index<ConnId> for ConnMan {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FailedState {
-    queue_place: QueueKey,
+    reconnect_task: QueuePlace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EstablishingState {
+    connect_task: QueuePlace,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IsVariant)]
 pub(crate) enum State {
-    Establishing,
+    Establishing(EstablishingState),
     Established,
     Accepted,
     Failed(FailedState),
@@ -199,14 +187,6 @@ pub(crate) struct Conn {
 }
 
 impl Conn {
-    pub(crate) fn new(role: ConnectionRole, transport: ConnectTransport) -> Self {
-        Self {
-            role,
-            transport,
-            state: State::Establishing,
-        }
-    }
-
     pub(crate) const fn transport(&self) -> &ConnectTransport {
         &self.transport
     }
@@ -224,7 +204,7 @@ pub(crate) struct ManagedConn<'a> {
     id: ConnId,
     config: &'a Config,
     conn: &'a mut Conn,
-    retry_schedule: &'a mut RetrySchedule,
+    task_queue: &'a mut TaskQueue,
 }
 
 impl<'a> ManagedConn<'a> {
@@ -253,62 +233,78 @@ impl DerefMut for ManagedConn<'_> {
 
 pub(crate) struct StateTransition<'a, 't>(&'a mut ManagedConn<'t>);
 
-impl StateTransition<'_, '_> {
-    fn transition(&mut self, to: State) -> Option<State> {
-        use std::mem::discriminant;
-
+impl<'t> StateTransition<'_, 't> {
+    fn transition(
+        &mut self,
+        map: impl FnOnce(&mut ManagedConn<'t>, State) -> Option<State>,
+    ) -> Option<State> {
         let prev = self.0.state;
+        let new = map(&mut *self.0, prev);
 
-        // Comparing discriminants to ignore state
-        // data.
-        if discriminant(&to) != discriminant(&prev) {
-            // If transitioning `Failed -> !Failed`, let's remove
-            // ourselves from schedule.
-            if let State::Failed(st) = prev {
-                self.0.retry_schedule.queue.remove(&st.queue_place);
+        if new.is_some() {
+            match prev {
+                State::Establishing(EstablishingState { connect_task }) => {
+                    self.0.task_queue.remove(connect_task);
+                }
+                State::Failed(FailedState { reconnect_task }) => {
+                    self.0.task_queue.remove(reconnect_task);
+                }
+
+                State::Accepted | State::Established => {}
             }
 
-            self.0.state = to;
-            Some(prev)
+            new
         } else {
             None
         }
     }
 
-    pub(crate) fn failed(self) {
-        if self.0.state.is_failed() {
-            return;
-        }
+    pub(crate) fn failed(mut self) {
+        self.transition(|this, prev| {
+            if prev.is_failed() {
+                return None;
+            }
 
-        let recon_interval = self.0.config.reconnect_interval;
-        let now = Instant::now();
-        let retry_at = now.checked_add(recon_interval).unwrap();
-        let id = self.0.id();
+            let recon_interval = this.config.reconnect_interval;
+            let now = Instant::now();
+            let retry_at = now.checked_add(recon_interval).unwrap();
+            let id = this.id();
 
-        let nth = self
-            .0
-            .retry_schedule
-            .queue
-            .range(QueueKey::new(retry_at, 0)..QueueKey::new(retry_at, usize::MAX))
-            .next_back()
-            .map_or(0, |(QueueKey { nth, .. }, _)| nth + 1);
-        let queue_place = QueueKey::new(retry_at, nth);
-        self.0.retry_schedule.queue.insert(queue_place, id);
+            let reconnect_task = this
+                .task_queue
+                .insert(Task::Connect(ConnectTask { at: retry_at, id }));
 
-        self.0.state = State::Failed(FailedState { queue_place });
+            Some(State::Failed(FailedState { reconnect_task }))
+        });
     }
 
     pub(crate) fn establishing(mut self) {
-        self.transition(State::Establishing);
+        self.transition(|this, prev| {
+            if prev.is_establishing() {
+                return None;
+            }
+
+            Some(State::Establishing(EstablishingState {
+                connect_task: this.task_queue.insert(Task::Connect(ConnectTask {
+                    at: Instant::MIN,
+                    id: this.id,
+                })),
+            }))
+        });
     }
 
     pub(crate) fn established(mut self) {
-        self.transition(State::Established);
+        self.transition(|_, prev| (!prev.is_established()).then_some(State::Established));
     }
 
     pub(crate) fn accepted(mut self, role: ConnectionRole) {
-        if self.transition(State::Accepted).is_some() {
-            self.0.role = role;
-        }
+        self.transition(|this, prev| {
+            if prev.is_accepted() {
+                return None;
+            }
+
+            this.role = role;
+            Some(State::Accepted)
+        });
     }
 }

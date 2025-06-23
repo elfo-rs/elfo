@@ -6,14 +6,14 @@ use tracing::{debug, error, info, warn};
 
 use elfo_core::{
     message, msg, scope, tracing::TraceId, AnyMessage, Envelope, Message, MoveOwnership,
-    RestartPolicy, _priv::MessageKind, addr::GroupNo, errors::TryRecvError,
-    messages::ConfigUpdated, stream::Stream, time::Delay, RestartParams, Topology,
+    RestartPolicy, _priv::MessageKind, addr::GroupNo, messages::ConfigUpdated, stream::Stream,
+    time::Delay, RestartParams, Topology,
 };
 
 use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     config::{self, Transport},
-    connman::{self, Conn, ConnId, ConnMan, ConnectTransport},
+    connman::{self, ConnId, ConnMan, ConnectTransport},
     node_map::{NodeInfo, NodeMap},
     protocol::{internode, ConnectionFailed, ConnectionRole, GroupInfo, HandleConnection},
     socket::{self, ReadError, Socket},
@@ -105,75 +105,55 @@ impl Discovery {
                 Duration::from_secs(30),
             )));
 
-        const MAX_BATCH_SIZE: usize = 64;
-
-        let mut batch_fuel_left = MAX_BATCH_SIZE;
-
         self.listen().await?;
         self.discover_all();
 
-        'root: while let Some(mut envelope) = self.ctx.recv().await {
-            'batch: loop {
-                msg!(match envelope {
-                    ConfigUpdated => self.on_update_config(),
+        while let Some(envelope) = self.ctx.recv().await {
+            msg!(match envelope {
+                ConfigUpdated => self.on_update_config(),
 
-                    // Connection management.
-                    //
-                    //   ┌──────────┐ handshake ┌─────────────┐
-                    //   │ Unopened ├───────────► Established │
-                    //   └───▲────┬─┘           └──┬───┬──────┘
-                    //       │    │                │   │ switch to
-                    //  delay│    │   ┌────────────┘   │ data/control
-                    //    ┌──┴────▼┐  │          ┌─────▼────┐
-                    //    │ Failed ◄──┴──────────┤ Accepted │
-                    //    └────────┘             └──────────┘
-                    // ~
-                    msg @ OpenConnection => self.on_open_connection(msg),
-                    msg @ ConnectionEstablished => self.on_connection_established(msg),
-                    msg @ ConnectionAccepted => self.on_connection_accepted(msg),
-                    msg @ ConnectionFailed => self.on_connection_failed(msg),
-                });
+                // Connection management.
+                //
+                //   ┌──────────┐ handshake ┌─────────────┐
+                //   │ Unopened ├───────────► Established │
+                //   └───▲────┬─┘           └──┬───┬──────┘
+                //       │    │                │   │ switch to
+                //  delay│    │   ┌────────────┘   │ data/control
+                //    ┌──┴────▼┐  │          ┌─────▼────┐
+                //    │ Failed ◄──┴──────────┤ Accepted │
+                //    └────────┘             └──────────┘
+                // ~
+                msg @ OpenConnection => self.on_open_connection(msg),
+                msg @ ConnectionEstablished => self.on_connection_established(msg),
+                msg @ ConnectionAccepted => self.on_connection_accepted(msg),
+                msg @ ConnectionFailed => self.on_connection_failed(msg),
+            });
 
-                batch_fuel_left = batch_fuel_left.saturating_sub(1);
-                // Don't let between-batch logic starve.
-                if batch_fuel_left == 0 {
-                    batch_fuel_left = MAX_BATCH_SIZE;
-                    break 'batch;
-                }
-
-                match self.ctx.try_recv().await {
-                    Ok(e) => envelope = e,
-                    Err(TryRecvError::Closed) => break 'root,
-                    Err(TryRecvError::Empty) => break 'batch,
-                }
-            }
-
-            self.per_batch_maintenance();
+            self.handle_connman_task_queue();
         }
 
         Ok(())
     }
 
-    fn per_batch_maintenance(&mut self) {
-        self.reconnect_failed();
-    }
+    fn handle_connman_task_queue(&mut self) {
+        use crate::connman::{ConnectTask, Task};
+        const RECON_PRECISION: Duration = Duration::from_millis(5);
 
-    fn reconnect_failed(&mut self) {
-        let mut failed = self.connman.failed();
-        loop {
-            match failed.pop_for_retry() {
-                Ok(id) => {
-                    _ = self
-                        .ctx
-                        .unbounded_send_to(self.ctx.addr(), OpenConnection { id });
+        let now = elfo_utils::time::Instant::now();
+        let this = self.ctx.addr();
+
+        for task in self.connman.drain_task_queue() {
+            match task {
+                Task::Connect(ConnectTask { at, id }) => {
+                    let delay = now.duration_since(at);
+                    let msg = OpenConnection { id };
+
+                    if delay > RECON_PRECISION {
+                        _ = self.ctx.unbounded_send_to(this, msg);
+                    } else {
+                        self.ctx.attach(Delay::new(delay, msg));
+                    }
                 }
-
-                Err(Some(defer)) => {
-                    self.ctx
-                        .attach(Delay::new(defer.after, OpenConnection { id: defer.id }));
-                }
-
-                Err(None) => break,
             }
         }
     }
@@ -268,7 +248,7 @@ impl Discovery {
     fn open_new_connection(&mut self, transport: Transport, role: ConnectionRole) {
         let conn_id = self
             .connman
-            .insert(Conn::new(role, ConnectTransport::remote(transport)))
+            .insert(role, ConnectTransport::remote(transport))
             .id();
         _ = self
             .ctx
@@ -329,9 +309,9 @@ impl Discovery {
         let mut conn = match connection {
             ConnectionAllocation::Allocated { id } => self.connman.get_mut(id).unwrap(),
 
-            ConnectionAllocation::NonAllocated { transport } => self
-                .connman
-                .insert(Conn::new(ConnectionRole::Unknown, transport)),
+            ConnectionAllocation::NonAllocated { transport } => {
+                self.connman.insert(ConnectionRole::Unknown, transport)
+            }
         };
 
         conn.change_state(|t| t.established());

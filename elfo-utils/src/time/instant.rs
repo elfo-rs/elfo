@@ -13,6 +13,11 @@ use quanta::Clock;
 pub struct Instant(u64 /* raw TSC value */); // TODO: make it `NonZeroU64`?
 
 impl Instant {
+    /// Minimum value.
+    pub const MIN: Instant = Self(0);
+    /// Maximum value.
+    pub const MAX: Instant = Self(u64::MAX);
+
     /// Returns the current monotonic time.
     #[inline]
     pub fn now() -> Self {
