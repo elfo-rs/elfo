@@ -1,5 +1,6 @@
 use std::{future::poll_fn, marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
 
+use builder::Opts;
 use futures::{pin_mut, Stream};
 use idr_ebr::EbrGuard;
 use once_cell::sync::Lazy;
@@ -27,11 +28,12 @@ use crate::{
     routers::Singleton,
     scope,
     source::{SourceHandle, Sources, UnattachedSource},
-    ActorStatusKind,
+    ActorStatusKind, SendFn, SendMsg,
 };
 
 use self::stats::Stats;
 
+pub(crate) mod builder;
 mod stats;
 
 static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
@@ -60,6 +62,238 @@ enum Stage {
 
 assert_impl_all!(Context: Send);
 // TODO: !Sync?
+
+async fn do_send<C, K, M>(opts: Opts<M>, ctx: &Context<C, K>) -> Result<(), SendError<M>>
+where
+    M: Message,
+    Context<C, K>: Sync,
+    C: 'static,
+    K: 'static,
+{
+    let Opts { msg, dst } = opts;
+    let kind = MessageKind::regular(ctx.actor_addr);
+
+    if let Some(dst) = dst {
+        ctx.do_send_to(dst, msg, kind, |obj, env| Object::send(obj, dst, env))?
+            .await
+            .map_err(|err| err.map(e2m))
+    } else {
+        ctx.do_send_async(msg, kind).await
+    }
+}
+
+impl<C, K> Context<C, K>
+where
+    C: 'static + Send + Sync,
+    K: 'static + Send + Sync,
+{
+    /// Sends a message using the [inter-group routing] system.
+    ///
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns `Err` if the message hasn't reached any mailboxes.
+    ///
+    /// # Cancel safety
+    ///
+    /// If cancelled, recipients with full mailboxes wont't receive the message.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
+    /// // Fire and forget.
+    /// let _ = ctx.send(SomethingHappened).await;
+    ///
+    /// // Fire or log.
+    /// if let Err(error) = ctx.send(SomethingHappened).await {
+    ///     tracing::warn!(%error, "...");
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
+    pub fn send<M: Message>(&self, message: M) -> SendMsg<'_, M, C, K, impl SendFn<'_, M, C, K>> {
+        SendMsg::new(do_send, self, message)
+    }
+
+    /// Tries to send a message to the specified recipient.
+    /// Returns an error if the recipient's mailbox is full.
+    ///
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns
+    /// * `Ok(())` if the message has been added to any mailbox.
+    /// * `Err(Full(_))` if some mailboxes are full.
+    /// * `Err(Closed(_))` otherwise.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
+    /// // Fire and forget.
+    /// let _ = ctx.try_send_to(addr, SomethingHappened);
+    ///
+    /// // Fire or log.
+    /// if let Err(error) = ctx.try_send_to(addr, SomethingHappened) {
+    ///     tracing::warn!(%error, "...");
+    /// }
+    /// # }
+    /// ```
+    pub fn try_send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+    ) -> Result<(), TrySendError<M>> {
+        self.send(message).to(recipient).try_()
+    }
+
+    /// Tries to send a message using the [inter-group routing] system.
+    ///
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns
+    /// * `Ok(())` if the message has been added to any mailbox.
+    /// * `Err(Full(_))` if some mailboxes are full.
+    /// * `Err(Closed(_))` otherwise.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
+    /// // Fire and forget.
+    /// let _ = ctx.try_send(SomethingHappened);
+    ///
+    /// // Fire or log.
+    /// if let Err(error) = ctx.try_send(SomethingHappened) {
+    ///     tracing::warn!(%error, "...");
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
+    pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
+        self.send(message).try_()
+    }
+
+    /// Sends a message to the specified recipient.
+    /// Waits if the recipient's mailbox is full.
+    ///
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns `Err` if the message hasn't reached any mailboxes.
+    ///
+    /// # Cancel safety
+    ///
+    /// If cancelled, recipients with full mailboxes wont't receive the message.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
+    /// let _ = ctx.send_to(addr, SomethingHappened).await;
+    ///
+    /// // Fire or log.
+    /// if let Err(error) = ctx.send_to(addr, SomethingHappened).await {
+    ///     tracing::warn!(%error, "...");
+    /// }
+    /// # }
+    /// ```
+    pub async fn send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+    ) -> Result<(), SendError<M>> {
+        self.send(message).to(recipient).await
+    }
+
+    /// Sends a message using the [inter-group routing] system.
+    /// Ignores the capacity of the recipient's mailbox and doesn't change its
+    /// size, thus it doesn't affect other senders.
+    ///
+    /// Usually this method shouldn't be used because it can lead to high memory
+    /// usage and even OOM if the recipient works too slowly.
+    /// Prefer [`Context::try_send()`] or [`Context::send()`] instead.
+    ///
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns `Err` if the message hasn't reached mailboxes.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
+    /// // Fire and forget.
+    /// let _ = ctx.unbounded_send(SomethingHappened);
+    ///
+    /// // Fire or log.
+    /// if let Err(error) = ctx.unbounded_send(SomethingHappened) {
+    ///     tracing::warn!(%error, "...");
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
+    pub fn unbounded_send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
+        self.send(message).unbounded()
+    }
+
+    /// Sends a message to the specified recipient.
+    /// Ignores the capacity of the recipient's mailbox and doesn't change its
+    /// size, thus it doesn't affect other senders.
+    ///
+    /// Usually this method shouldn't be used because it can lead to high memory
+    /// usage and even OOM if the recipient works too slowly.
+    /// Prefer [`Context::try_send_to()`] or [`Context::send_to()`] instead.
+    ///
+    /// It's possible to send requests if the response is not needed.
+    ///
+    /// Returns `Err` if the message hasn't reached mailboxes.
+    ///
+    /// # Example
+    /// ```
+    /// # use elfo_core as elfo;
+    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
+    /// # use elfo::{message, msg};
+    /// #[message]
+    /// struct SomethingHappened;
+    ///
+    /// // Fire and forget.
+    /// let _ = ctx.unbounded_send_to(addr, SomethingHappened);
+    ///
+    /// // Fire or log.
+    /// if let Err(error) = ctx.unbounded_send_to(addr, SomethingHappened) {
+    ///     tracing::warn!(%error, "...");
+    /// }
+    /// # }
+    /// ```
+    pub fn unbounded_send_to<M: Message>(
+        &self,
+        recipient: Addr,
+        message: M,
+    ) -> Result<(), SendError<M>> {
+        self.send(message).to(recipient).unbounded()
+    }
+}
 
 impl<C, K> Context<C, K> {
     /// Returns the actor's address.
@@ -181,203 +415,6 @@ impl<C, K> Context<C, K> {
         ward!(self.actor.as_ref().and_then(|o| o.as_actor()), return false).close()
     }
 
-    /// Sends a message using the [inter-group routing] system.
-    ///
-    /// It's possible to send requests if the response is not needed.
-    ///
-    /// Returns `Err` if the message hasn't reached any mailboxes.
-    ///
-    /// # Cancel safety
-    ///
-    /// If cancelled, recipients with full mailboxes wont't receive the message.
-    ///
-    /// # Example
-    /// ```
-    /// # use elfo_core as elfo;
-    /// # async fn exec(mut ctx: elfo::Context) {
-    /// # use elfo::{message, msg};
-    /// #[message]
-    /// struct SomethingHappened;
-    ///
-    /// // Fire and forget.
-    /// let _ = ctx.send(SomethingHappened).await;
-    ///
-    /// // Fire or log.
-    /// if let Err(error) = ctx.send(SomethingHappened).await {
-    ///     tracing::warn!(%error, "...");
-    /// }
-    /// # }
-    /// ```
-    ///
-    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
-    pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_async(message, kind).await
-    }
-
-    /// Tries to send a message using the [inter-group routing] system.
-    ///
-    /// It's possible to send requests if the response is not needed.
-    ///
-    /// Returns
-    /// * `Ok(())` if the message has been added to any mailbox.
-    /// * `Err(Full(_))` if some mailboxes are full.
-    /// * `Err(Closed(_))` otherwise.
-    ///
-    /// # Example
-    /// ```
-    /// # use elfo_core as elfo;
-    /// # async fn exec(mut ctx: elfo::Context) {
-    /// # use elfo::{message, msg};
-    /// #[message]
-    /// struct SomethingHappened;
-    ///
-    /// // Fire and forget.
-    /// let _ = ctx.try_send(SomethingHappened);
-    ///
-    /// // Fire or log.
-    /// if let Err(error) = ctx.try_send(SomethingHappened) {
-    ///     tracing::warn!(%error, "...");
-    /// }
-    /// # }
-    /// ```
-    ///
-    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
-    pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
-        // XXX: avoid duplication with `unbounded_send()` and `send()`.
-
-        let kind = MessageKind::regular(self.actor_addr);
-
-        self.stats.on_sent_message(&message); // TODO: only if successful?
-
-        trace!("> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m(&message) {
-            permit.record(Dump::message(&message, &kind, Direction::Out));
-        }
-
-        let envelope = Envelope::new(message, kind);
-        let addrs = self.demux.filter(&envelope);
-
-        if addrs.is_empty() {
-            return Err(TrySendError::Closed(e2m(envelope)));
-        }
-
-        let guard = EbrGuard::new();
-
-        if addrs.len() == 1 {
-            return match self.book.get(addrs[0], &guard) {
-                Some(object) => object
-                    .try_send(Addr::NULL, envelope)
-                    .map_err(|err| err.map(e2m)),
-                None => Err(TrySendError::Closed(e2m(envelope))),
-            };
-        }
-
-        let mut unused = None;
-        let mut has_full = false;
-        let mut success = false;
-
-        for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
-            match self.book.get(addr, &guard) {
-                Some(object) => match object.try_send(Addr::NULL, envelope) {
-                    Ok(()) => success = true,
-                    Err(err) => {
-                        has_full |= err.is_full();
-                        unused = Some(err.into_inner());
-                    }
-                },
-                None => unused = Some(envelope),
-            };
-        }
-
-        if success {
-            Ok(())
-        } else if has_full {
-            Err(TrySendError::Full(e2m(unused.unwrap())))
-        } else {
-            Err(TrySendError::Closed(e2m(unused.unwrap())))
-        }
-    }
-
-    /// Sends a message using the [inter-group routing] system.
-    /// Ignores the capacity of the recipient's mailbox and doesn't change its
-    /// size, thus it doesn't affect other senders.
-    ///
-    /// Usually this method shouldn't be used because it can lead to high memory
-    /// usage and even OOM if the recipient works too slowly.
-    /// Prefer [`Context::try_send()`] or [`Context::send()`] instead.
-    ///
-    /// It's possible to send requests if the response is not needed.
-    ///
-    /// Returns `Err` if the message hasn't reached mailboxes.
-    ///
-    /// # Example
-    /// ```
-    /// # use elfo_core as elfo;
-    /// # async fn exec(mut ctx: elfo::Context) {
-    /// # use elfo::{message, msg};
-    /// #[message]
-    /// struct SomethingHappened;
-    ///
-    /// // Fire and forget.
-    /// let _ = ctx.unbounded_send(SomethingHappened);
-    ///
-    /// // Fire or log.
-    /// if let Err(error) = ctx.unbounded_send(SomethingHappened) {
-    ///     tracing::warn!(%error, "...");
-    /// }
-    /// # }
-    /// ```
-    ///
-    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
-    pub fn unbounded_send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-
-        self.stats.on_sent_message(&message); // TODO: only if successful?
-
-        trace!("> {:?}", message);
-        if let Some(permit) = DUMPER.acquire_m(&message) {
-            permit.record(Dump::message(&message, &kind, Direction::Out));
-        }
-
-        let envelope = Envelope::new(message, kind);
-        let addrs = self.demux.filter(&envelope);
-
-        if addrs.is_empty() {
-            return Err(SendError(e2m(envelope)));
-        }
-
-        let guard = EbrGuard::new();
-
-        if addrs.len() == 1 {
-            return match self.book.get(addrs[0], &guard) {
-                Some(object) => object
-                    .unbounded_send(Addr::NULL, envelope)
-                    .map_err(|err| err.map(e2m)),
-                None => Err(SendError(e2m(envelope))),
-            };
-        }
-
-        let mut unused = None;
-        let mut success = false;
-
-        for (addr, envelope) in addrs_with_envelope(envelope, &addrs) {
-            match self.book.get(addr, &guard) {
-                Some(object) => match object.unbounded_send(Addr::NULL, envelope) {
-                    Ok(()) => success = true,
-                    Err(err) => unused = Some(err.into_inner()),
-                },
-                None => unused = Some(envelope),
-            };
-        }
-
-        if success {
-            Ok(())
-        } else {
-            Err(SendError(e2m(unused.unwrap())))
-        }
-    }
-
     /// Returns a request builder to send a request (on `resolve()`) using
     /// the [inter-group routing] system.
     ///
@@ -479,128 +516,6 @@ impl<C, K> Context<C, K> {
         } else {
             Err(SendError(e2m(unused.unwrap())))
         }
-    }
-
-    /// Sends a message to the specified recipient.
-    /// Waits if the recipient's mailbox is full.
-    ///
-    /// It's possible to send requests if the response is not needed.
-    ///
-    /// Returns `Err` if the message hasn't reached any mailboxes.
-    ///
-    /// # Cancel safety
-    ///
-    /// If cancelled, recipients with full mailboxes wont't receive the message.
-    ///
-    /// # Example
-    /// ```
-    /// # use elfo_core as elfo;
-    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
-    /// # use elfo::{message, msg};
-    /// #[message]
-    /// struct SomethingHappened;
-    ///
-    /// let _ = ctx.send_to(addr, SomethingHappened).await;
-    ///
-    /// // Fire or log.
-    /// if let Err(error) = ctx.send_to(addr, SomethingHappened).await {
-    ///     tracing::warn!(%error, "...");
-    /// }
-    /// # }
-    /// ```
-    pub async fn send_to<M: Message>(
-        &self,
-        recipient: Addr,
-        message: M,
-    ) -> Result<(), SendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_to(recipient, message, kind, |object, envelope| {
-            Object::send(object, recipient, envelope)
-        })?
-        .await
-        .map_err(|err| err.map(e2m))
-    }
-
-    /// Tries to send a message to the specified recipient.
-    /// Returns an error if the recipient's mailbox is full.
-    ///
-    /// It's possible to send requests if the response is not needed.
-    ///
-    /// Returns
-    /// * `Ok(())` if the message has been added to any mailbox.
-    /// * `Err(Full(_))` if some mailboxes are full.
-    /// * `Err(Closed(_))` otherwise.
-    ///
-    /// # Example
-    /// ```
-    /// # use elfo_core as elfo;
-    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
-    /// # use elfo::{message, msg};
-    /// #[message]
-    /// struct SomethingHappened;
-    ///
-    /// // Fire and forget.
-    /// let _ = ctx.try_send_to(addr, SomethingHappened);
-    ///
-    /// // Fire or log.
-    /// if let Err(error) = ctx.try_send_to(addr, SomethingHappened) {
-    ///     tracing::warn!(%error, "...");
-    /// }
-    /// # }
-    /// ```
-    pub fn try_send_to<M: Message>(
-        &self,
-        recipient: Addr,
-        message: M,
-    ) -> Result<(), TrySendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_to(recipient, message, kind, |object, envelope| {
-            object
-                .try_send(recipient, envelope)
-                .map_err(|err| err.map(e2m))
-        })?
-    }
-
-    /// Sends a message to the specified recipient.
-    /// Ignores the capacity of the recipient's mailbox and doesn't change its
-    /// size, thus it doesn't affect other senders.
-    ///
-    /// Usually this method shouldn't be used because it can lead to high memory
-    /// usage and even OOM if the recipient works too slowly.
-    /// Prefer [`Context::try_send_to()`] or [`Context::send_to()`] instead.
-    ///
-    /// It's possible to send requests if the response is not needed.
-    ///
-    /// Returns `Err` if the message hasn't reached mailboxes.
-    ///
-    /// # Example
-    /// ```
-    /// # use elfo_core as elfo;
-    /// # async fn exec(mut ctx: elfo::Context, addr: elfo::Addr) {
-    /// # use elfo::{message, msg};
-    /// #[message]
-    /// struct SomethingHappened;
-    ///
-    /// // Fire and forget.
-    /// let _ = ctx.unbounded_send_to(addr, SomethingHappened);
-    ///
-    /// // Fire or log.
-    /// if let Err(error) = ctx.unbounded_send_to(addr, SomethingHappened) {
-    ///     tracing::warn!(%error, "...");
-    /// }
-    /// # }
-    /// ```
-    pub fn unbounded_send_to<M: Message>(
-        &self,
-        recipient: Addr,
-        message: M,
-    ) -> Result<(), SendError<M>> {
-        let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_to(recipient, message, kind, |object, envelope| {
-            object
-                .unbounded_send(recipient, envelope)
-                .map_err(|err| err.map(e2m))
-        })?
     }
 
     #[inline(always)]
