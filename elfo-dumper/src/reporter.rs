@@ -162,7 +162,7 @@ impl Reporter {
                 message = "cannot serialize message, skipped",
                 protocol = %protocol,
                 name = %name,
-                error = &info.error as &(dyn StdError),
+                error = &info.error as &dyn StdError,
                 count = info.count,
             );
         }

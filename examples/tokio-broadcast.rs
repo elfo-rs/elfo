@@ -43,7 +43,7 @@ fn receiver(broadcast_tx: broadcast::Sender<SomeMessage>) -> Blueprint {
                 while let Some(envelope) = ctx.recv().await {
                     msg!(match envelope {
                         SomeMessage(num) => tracing::info!("got {}", num),
-                        Lagged(skipped) => panic!("lost {} messages", skipped),
+                        Lagged(skipped) => panic!("lost {skipped} messages"),
                     })
                 }
             }
