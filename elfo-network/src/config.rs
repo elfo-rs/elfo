@@ -138,7 +138,7 @@ impl<'de> Deserialize<'de> for Transport {
         let s: String = Deserialize::deserialize(deserializer)?;
 
         s.parse::<Transport>()
-            .map_err(|err| de::Error::custom(format!(r#"unsupported transport: "{}", {}"#, s, err)))
+            .map_err(|err| de::Error::custom(format!(r#"unsupported transport: "{s}", {err}"#)))
     }
 }
 

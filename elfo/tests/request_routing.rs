@@ -145,7 +145,7 @@ async fn multiple_failures() {
 
             info!("sent all-request");
             let responses = ctx.request(TestRequest).all().resolve().await;
-            assert_eq!(responses.len(), 7, "{:?}", responses);
+            assert_eq!(responses.len(), 7, "{responses:?}");
         }
 
         let envelope = ctx.recv().await.unwrap();

@@ -190,9 +190,9 @@ impl fmt::Display for Addr {
         let bottom = self.0 & ((1 << GROUP_NO_SHIFT) - 1);
 
         if let Some(node_no) = self.node_no() {
-            write!(f, "{}/{}/{}", node_no, group_no, bottom)
+            write!(f, "{node_no}/{group_no}/{bottom}")
         } else {
-            write!(f, "{}/{}", group_no, bottom)
+            write!(f, "{group_no}/{bottom}")
         }
     }
 }

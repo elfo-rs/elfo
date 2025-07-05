@@ -75,7 +75,7 @@ async fn check_seq(proxy: &mut Proxy, expected: &[(u32, ActorStatusKind, Option<
 
     let expected = expected
         .iter()
-        .map(|(key, status, details)| format!("{} {:?} {:?}", key, status, details))
+        .map(|(key, status, details)| format!("{key} {status:?} {details:?}"))
         .collect::<Vec<_>>();
 
     assert_eq!(actual, expected);

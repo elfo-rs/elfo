@@ -55,7 +55,7 @@ impl Proxy {
         self.scope.clone().within(async move {
             let name = message.name();
             if let Err(err) = self.context.send(message).await {
-                panic!("cannot send {} ({}) at {}", name, err, location);
+                panic!("cannot send {name} ({err}) at {location}");
             }
         })
     }
@@ -71,7 +71,7 @@ impl Proxy {
         self.scope.clone().within(async move {
             let name = message.name();
             if let Err(err) = self.context.send_to(recipient, message).await {
-                panic!("cannot send {} ({}) at {}", name, err, location);
+                panic!("cannot send {name} ({err}) at {location}");
             }
         })
     }
@@ -116,7 +116,7 @@ impl Proxy {
             let name = request.name();
             match context.request(request).resolve().await {
                 Ok(response) => response,
-                Err(err) => panic!("cannot send {} ({}) at {}", name, err, location),
+                Err(err) => panic!("cannot send {name} ({err}) at {location}"),
             }
         })
     }
@@ -146,7 +146,7 @@ impl Proxy {
             let name = request.name();
             match context.request_to(recipient, request).resolve().await {
                 Ok(response) => response,
-                Err(err) => panic!("cannot send {} ({}) at {}", name, err, location),
+                Err(err) => panic!("cannot send {name} ({err}) at {location}"),
             }
         })
     }

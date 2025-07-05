@@ -151,7 +151,7 @@ pub fn check_messages_uniqueness() -> Result<()> {
             .into_iter()
             .map(|(protocol, name)| StartGroupError {
                 group: INIT_GROUP_NAME.into(),
-                reason: format!("message `{}/{}` is defined several times", protocol, name),
+                reason: format!("message `{protocol}/{name}` is defined several times"),
             })
             .collect();
 

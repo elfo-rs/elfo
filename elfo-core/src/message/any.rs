@@ -528,7 +528,7 @@ mod tests_miri {
         let mut message_box = AnyMessage::new(message.clone());
 
         // Debug
-        assert_eq!(format!("{:?}", message_box), format!("{:?}", message));
+        assert_eq!(format!("{message_box:?}"), format!("{message:?}"));
         assert_eq!(
             format!("{:?}", message_box.as_ref()),
             format!("{:?}", message)
@@ -564,15 +564,15 @@ mod tests_miri {
         // Downcast to `AnyMessage`
         let mut message_box = message_box_2.downcast::<AnyMessage>().unwrap();
         let any_message_mut = message_box.downcast_mut::<AnyMessage>().unwrap();
-        assert_eq!(format!("{:?}", any_message_mut), format!("{:?}", message));
+        assert_eq!(format!("{any_message_mut:?}"), format!("{message:?}"));
         let any_message = message_box.downcast_ref::<AnyMessage>().unwrap();
         assert!(message_box.is::<AnyMessage>());
-        assert_eq!(format!("{:?}", any_message), format!("{:?}", message));
+        assert_eq!(format!("{any_message:?}"), format!("{message:?}"));
 
         // `AnyMessageRef::clone()`
         let message_box_2: AnyMessage = message_box.as_ref().clone();
         assert!(message_box_2.is::<AnyMessage>());
-        assert_eq!(format!("{:?}", message_box_2), format!("{:?}", message));
+        assert_eq!(format!("{message_box_2:?}"), format!("{message:?}"));
     }
 
     #[test]
@@ -699,7 +699,7 @@ mod tests_miri {
 
         for limit in 0..=20 {
             let err = any_message.write_msgpack(&mut buffer, limit).unwrap_err();
-            assert!(format!("{:?}", err).contains("failed to write whole buffer"));
+            assert!(format!("{err:?}").contains("failed to write whole buffer"));
         }
     }
 }

@@ -388,9 +388,9 @@ impl SocketReader {
                     self.handle_skipped_message(details);
                     continue;
                 }
-                Err(ReadError::Fatal(e)) => {
+                Err(ReadError::Fatal(err)) => {
                     // TODO: error handling.
-                    panic!("fatal error while reading from socket: {:#}", e);
+                    panic!("fatal error while reading from socket: {err:#}");
                 }
             };
 

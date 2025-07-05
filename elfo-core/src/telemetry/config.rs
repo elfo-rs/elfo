@@ -51,7 +51,7 @@ pub enum PerActorKey {
 impl fmt::Debug for PerActorKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Bool(flag) => write!(f, "{:?}", flag),
+            Self::Bool(flag) => write!(f, "{flag:?}"),
             Self::Replacement(pattern, template) => f
                 .debug_tuple("")
                 .field(&pattern.as_str())

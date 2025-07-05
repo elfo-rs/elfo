@@ -447,7 +447,7 @@ mod tests_miri {
         let envelope = make_regular_envelope(message.clone());
 
         let (actual_message, _) = envelope.unpack::<AnyMessage>().unwrap();
-        assert_eq!(format!("{:?}", actual_message), format!("{:?}", message));
+        assert_eq!(format!("{actual_message:?}"), format!("{message:?}"));
     }
 
     #[test]
