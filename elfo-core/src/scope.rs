@@ -39,7 +39,7 @@ impl Scope {
     #[doc(hidden)]
     pub fn test(actor: Addr, meta: Arc<ActorMeta>) -> Self {
         let node_no = NodeNo::from_bits(u16::MAX).unwrap();
-        let node_launch_id = NodeLaunchId::from_bits(u64::MAX);
+        let node_launch_id = NodeLaunchId::from_bits(u64::MAX).unwrap();
         let group_scope = Arc::new(ScopeGroupShared::new(node_no, node_launch_id, Addr::NULL));
         Self::new(TraceId::generate(), actor, meta, group_scope)
     }

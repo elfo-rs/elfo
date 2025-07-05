@@ -72,7 +72,8 @@ impl Handshake {
             version: input.read_u8()?,
             node_no: NodeNo::from_bits(input.read_u16::<LittleEndian>()?)
                 .ok_or_else(|| eyre!("invalid node no"))?,
-            launch_id: NodeLaunchId::from_bits(input.read_u64::<LittleEndian>()?),
+            launch_id: NodeLaunchId::from_bits(input.read_u64::<LittleEndian>()?)
+                .ok_or_else(|| eyre!("invalid node launch id"))?,
             capabilities: Capabilities::from_bits(input.read_u32::<LittleEndian>()?),
         };
 

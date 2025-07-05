@@ -1,6 +1,6 @@
 use std::{
     fmt,
-    num::{NonZeroU16, NonZeroU8},
+    num::{NonZeroU16, NonZeroU64, NonZeroU8},
 };
 
 use derive_more::Display;
@@ -51,23 +51,23 @@ impl NodeNo {
 /// * To improve [`Addr`] uniqueness in the cluster.
 #[stability::unstable]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
-pub struct NodeLaunchId(u64); // TODO: make it `NonZeroU64`
+pub struct NodeLaunchId(NonZeroU64);
 
 impl NodeLaunchId {
     pub(crate) fn generate() -> Self {
-        Self(random_u64())
+        Self::from_bits(random_u64().max(1)).unwrap()
     }
 
     #[stability::unstable]
     #[inline]
-    pub fn from_bits(bits: u64) -> Self {
-        Self(bits)
+    pub fn from_bits(bits: u64) -> Option<Self> {
+        NonZeroU64::new(bits).map(Self)
     }
 
     #[stability::unstable]
     #[inline]
     pub fn into_bits(self) -> u64 {
-        self.0
+        self.0.get()
     }
 }
 
@@ -349,10 +349,7 @@ mod tests {
 
     #[test]
     fn group_no() {
-        let launch_ids = (0..5)
-            .map(|_| NodeLaunchId::generate())
-            .chain(Some(NodeLaunchId::from_bits(0)))
-            .collect::<Vec<_>>();
+        let launch_ids = (0..5).map(|_| NodeLaunchId::generate()).collect::<Vec<_>>();
 
         for launch_id in launch_ids {
             // no = 0 is always invalid.
@@ -372,7 +369,7 @@ mod tests {
         fn addr(
             slot_keys in prop::collection::hash_set(1u64..(1 << GROUP_NO_SHIFT), 10),
             group_nos in prop::collection::hash_set(1..=u8::MAX, 10),
-            launch_ids in prop::collection::hash_set(prop::num::u64::ANY, 10),
+            launch_ids in prop::collection::hash_set(1..=u64::MAX, 10),
         ) {
             #[cfg(feature = "network")]
             let expected_count = slot_keys.len() * group_nos.len() * launch_ids.len();
@@ -385,7 +382,7 @@ mod tests {
                 for group_no in &group_nos {
                     for launch_id in &launch_ids {
                         let slot_key = Key::try_from(*slot_key).unwrap();
-                        let launch_id = NodeLaunchId::from_bits(*launch_id);
+                        let launch_id = NodeLaunchId::from_bits(*launch_id).unwrap();
                         let group_no = GroupNo::new(*group_no, launch_id).unwrap();
                         let addr = Addr::new_local(slot_key, group_no, launch_id);
                         set.insert(addr);

@@ -363,7 +363,7 @@ mod tests {
     async fn ensure_read_write(transport: &str, capabilities: Capabilities) {
         let transport = transport.parse().unwrap();
         let node_no = NodeNo::from_bits(2).unwrap();
-        let launch_id = NodeLaunchId::from_bits(1);
+        let launch_id = NodeLaunchId::from_bits(1).unwrap();
 
         let mut listen_stream = listen(&transport, node_no, launch_id, capabilities)
             .await
@@ -371,7 +371,7 @@ mod tests {
         let server_socket_fut = listen_stream.next();
 
         let node_no = NodeNo::from_bits(1).unwrap();
-        let launch_id = NodeLaunchId::from_bits(2);
+        let launch_id = NodeLaunchId::from_bits(2).unwrap();
         let client_socket_fut = connect(&transport, node_no, launch_id, capabilities);
 
         let (server_socket, client_socket) =
