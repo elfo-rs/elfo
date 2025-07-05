@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     actor::ActorMeta,
-    addr::{Addr, NodeNo},
+    addr::{Addr, NodeLaunchId, NodeNo},
     config::SystemConfig,
     dumping::DumpingControl,
     logging::_priv::LoggingControl,
@@ -39,7 +39,8 @@ impl Scope {
     #[doc(hidden)]
     pub fn test(actor: Addr, meta: Arc<ActorMeta>) -> Self {
         let node_no = NodeNo::from_bits(u16::MAX).unwrap();
-        let group_scope = Arc::new(ScopeGroupShared::new(node_no, Addr::NULL));
+        let node_launch_id = NodeLaunchId::from_bits(u64::MAX);
+        let group_scope = Arc::new(ScopeGroupShared::new(node_no, node_launch_id, Addr::NULL));
         Self::new(TraceId::generate(), actor, meta, group_scope)
     }
 
@@ -74,6 +75,11 @@ impl Scope {
     #[inline]
     pub fn node_no(&self) -> NodeNo {
         self.group.node_no
+    }
+
+    #[inline]
+    pub fn node_launch_id(&self) -> NodeLaunchId {
+        self.group.node_launch_id
     }
 
     /// Returns the current object's meta.
@@ -200,6 +206,7 @@ assert_impl_all!(ScopeGroupShared: Send, Sync);
 
 pub(crate) struct ScopeGroupShared {
     node_no: NodeNo,
+    node_launch_id: NodeLaunchId,
     addr: Addr,
     permissions: AtomicPermissions,
     logging: LoggingControl,
@@ -209,9 +216,10 @@ pub(crate) struct ScopeGroupShared {
 assert_impl_all!(ScopeGroupShared: Send, Sync);
 
 impl ScopeGroupShared {
-    pub(crate) fn new(node_no: NodeNo, addr: Addr) -> Self {
+    pub(crate) fn new(node_no: NodeNo, node_launch_id: NodeLaunchId, addr: Addr) -> Self {
         Self {
             node_no,
+            node_launch_id,
             addr,
             permissions: Default::default(), // everything is disabled
             logging: Default::default(),

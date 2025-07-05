@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - ReleaseDate
 ### Added
 - test/proxy: add fallible methods for requesting ([#162]).
+- test/proxy: add the `Proxy::node_launch_id()` method.
 
 [#162]: https://github.com/elfo-rs/elfo/pull/162
 

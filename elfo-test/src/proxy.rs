@@ -10,23 +10,21 @@ use std::{
     time::Duration,
 };
 
-use futures_intrusive::{
-    channel::shared,
-    timer::{LocalTimer, StdClock, TimerService},
-};
+use futures_intrusive::timer::{LocalTimer, StdClock, TimerService};
 use once_cell::sync::Lazy;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
-use tokio::task;
+use tokio::{sync::oneshot, task};
 
 use elfo_core::{
-    ActorGroup, ActorMeta, Addr, Blueprint, Context, Envelope, Local, Message, Request,
+    ActorGroup, Addr, Blueprint, Context, Envelope, Local, Message, MoveOwnership, Request,
     ResponseToken,
     _priv::do_start,
+    addr::NodeLaunchId,
     errors::{RequestError, TrySendError},
     message, msg,
     routers::{MapRouter, Outcome},
-    scope::Scope,
+    scope::{self, Scope},
     topology::Topology,
 };
 
@@ -46,6 +44,14 @@ impl Proxy {
     /// Returns an address of the proxy.
     pub fn addr(&self) -> Addr {
         self.context.addr()
+    }
+
+    /// Returns a launch ID of the topology.
+    ///
+    /// It can be used to distinguish produced artifacts (logs, dumps, metrics)
+    /// from different concurrent tests if the custom implementation is used.
+    pub fn node_launch_id(&self) -> NodeLaunchId {
+        self.scope.node_launch_id()
     }
 
     /// See [`Context::send()`] for details.
@@ -216,27 +222,21 @@ impl Proxy {
     }
 
     /// Creates a subproxy with a different address.
-    /// The main purpose is to test `send_to(..)` and `request_to(..)`
-    /// calls. It's likely to be changed in the future.
+    /// The main purpose is to test `send_to(..)` and `request_to(..)` calls.
     pub async fn subproxy(&self) -> Proxy {
         let f = async {
             self.context
-                .request_to(self.context.group(), StealContext)
+                .request_to(self.context.group(), CreateSubproxy)
                 .resolve()
                 .await
-                .expect("cannot steal tester's context")
-                .into_inner()
+                .expect("cannot create a new subpoxy")
         };
-        let context = self.scope.clone().within(f).await;
 
-        let meta = Arc::new(ActorMeta {
-            group: "subproxy".into(),
-            key: String::new(),
-        });
+        let ProxyCreated { context, scope } = self.scope.clone().within(f).await;
 
         Proxy {
-            scope: Scope::test(context.addr(), meta),
-            context,
+            context: context.into_inner(),
+            scope: scope.into_inner(),
             subject_addr: self.subject_addr,
             recv_timeout: self.recv_timeout,
         }
@@ -254,38 +254,53 @@ impl Proxy {
     }
 }
 
-#[message(ret = Local<ProxyContext>)]
-struct StealContext;
+#[message(ret = ProxyCreated)]
+struct CreateSubproxy;
 
-fn testers(tx: shared::OneshotSender<ProxyContext>) -> Blueprint {
-    let tx = Arc::new(tx);
-    let next_tester_key = AtomicUsize::new(1);
+#[message(part)]
+struct ProxyCreated {
+    context: Local<ProxyContext>,
+    scope: Local<Scope>,
+}
+
+fn testers(tx: oneshot::Sender<ProxyCreated>) -> Blueprint {
+    let tx = MoveOwnership::from(tx);
+    let key = AtomicUsize::new(1); // 0 is reserved for the main proxy
 
     ActorGroup::new()
         .router(MapRouter::new(move |envelope| {
             msg!(match envelope {
-                StealContext => {
-                    Outcome::Unicast(next_tester_key.fetch_add(1, Ordering::SeqCst))
-                }
+                CreateSubproxy => Outcome::Unicast(key.fetch_add(1, Ordering::SeqCst)),
                 _ => Outcome::Unicast(0),
             })
         }))
         .exec(move |mut ctx| {
             let tx = tx.clone();
-
             async move {
-                if *ctx.key() == 0 {
-                    let _ = tx.send(ctx);
+                // It would be nice to use the code in the `else` branch also for the main
+                // proxy. Unfortunately, the main proxy can receive messages from the subject
+                // before receiving the `CreateSubproxy` message. That's why we need to use
+                // a dedicated oneshot channel for the main proxy.
+                // See the `it_handles_race_at_startup` test for an example.
+                if let Some(tx) = tx.take() {
+                    let _ = tx.send(ProxyCreated {
+                        context: ctx.into(),
+                        scope: scope::expose().into(),
+                    });
                 } else {
                     let envelope = ctx.recv().await.unwrap();
-                    msg!(match envelope {
-                        (StealContext, token) => {
-                            ctx.pruned().respond(token, Local::from(ctx));
-                        }
-                        envelope => panic!("unexpected message: {:?}", envelope.message()),
-                    });
+                    let (_, token) = crate::extract_request::<CreateSubproxy>(envelope);
+
+                    ctx.pruned().respond(
+                        token,
+                        ProxyCreated {
+                            scope: scope::expose().into(),
+                            context: ctx.into(),
+                        },
+                    );
                 }
 
+                // We don't track the lifetime of sent context for now, so keep the actor alive.
                 future::pending::<()>().await;
             }
         })
@@ -301,6 +316,8 @@ pub async fn proxy_with_route<F>(
 where
     F: Fn(&Envelope) -> bool + Send + Sync + 'static,
 {
+    // Initialize logging but skip errors if the logger is already initialized.
+    // It occurs when tests are run in the same process.
     let _ = tracing_subscriber::fmt()
         .with_target(false)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -322,26 +339,20 @@ where
     testers.route_all_to(&subject);
     subject.route_to(&testers, route_filter);
 
-    // TODO: capture log messages.
-    // TODO: capture metrics.
     configurers.mount(elfo_configurer::fixture(&topology, config));
     subject.mount(blueprint);
 
-    let (tx, rx) = shared::oneshot_channel();
+    let (tx, rx) = oneshot::channel();
     testers.mount(self::testers(tx));
     do_start(topology, false, |_, _| future::ready(()))
         .await
         .expect("cannot start");
 
-    let context = rx.receive().await.unwrap();
-    let meta = Arc::new(ActorMeta {
-        group: "proxy".into(), // TODO: use a normal group here.
-        key: String::new(),
-    });
+    let ProxyCreated { context, scope } = rx.await.expect("cannot create main proxy");
 
     Proxy {
-        scope: Scope::test(context.addr(), meta),
-        context,
+        context: context.into_inner(),
+        scope: scope.into_inner(),
         subject_addr,
         recv_timeout: Duration::from_millis(150),
     }

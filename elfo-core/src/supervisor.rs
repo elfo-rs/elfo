@@ -13,7 +13,7 @@ use self::{error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
     actor::{Actor, ActorMeta, ActorStartInfo},
     actor_status::ActorStatus,
-    addr::{Addr, NodeNo},
+    addr::{Addr, NodeLaunchId, NodeNo},
     config::{AnyConfig, Config, SystemConfig},
     context::Context,
     envelope::Envelope,
@@ -84,6 +84,7 @@ where
     pub(crate) fn new(
         ctx: Context,
         node_no: NodeNo,
+        node_launch_id: NodeLaunchId,
         group: String,
         exec: X,
         router: R,
@@ -112,7 +113,7 @@ where
             router,
             exec,
             control: CachePadded::new(RwLock::new(control)),
-            scope_shared: Arc::new(ScopeGroupShared::new(node_no, ctx.group())),
+            scope_shared: Arc::new(ScopeGroupShared::new(node_no, node_launch_id, ctx.group())),
             status_subscription: Arc::new(status_subscription),
             context: ctx,
             rt_manager,

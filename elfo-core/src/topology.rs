@@ -268,7 +268,13 @@ impl Local<'_> {
         let book = self.topology.book.clone();
         let ctx = Context::new(book, self.demux.into_inner()).with_group(addr);
         let rt_manager = self.topology.inner.read().rt_manager.clone();
-        let object = (blueprint.mount)(ctx, self.topology.node_no, self.name, rt_manager);
+        let object = (blueprint.mount)(
+            ctx,
+            self.topology.node_no,
+            self.topology.launch_id,
+            self.name,
+            rt_manager,
+        );
         self.entry.insert(object);
     }
 

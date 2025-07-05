@@ -186,7 +186,7 @@ pub async fn do_start<F: Future>(
         Arc::new(SubscriptionManager::new(ctx.clone())),
     );
 
-    let scope_shared = ScopeGroupShared::new(topology.node_no(), addr);
+    let scope_shared = ScopeGroupShared::new(topology.node_no(), topology.launch_id(), addr);
     let mut config = SystemConfig::default();
     config.logging.max_level = LevelFilter::INFO;
     scope_shared.configure(&config);

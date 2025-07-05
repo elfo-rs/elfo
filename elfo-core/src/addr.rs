@@ -51,7 +51,7 @@ impl NodeNo {
 /// * To improve [`Addr`] uniqueness in the cluster.
 #[stability::unstable]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
-pub struct NodeLaunchId(u64);
+pub struct NodeLaunchId(u64); // TODO: make it `NonZeroU64`
 
 impl NodeLaunchId {
     pub(crate) fn generate() -> Self {

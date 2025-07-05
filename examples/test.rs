@@ -76,7 +76,6 @@ async fn it_uses_subproxies() {
     // It's possible to get a subproxy with a different address.
     // The main purpose is to test `send_to(..)` and `request_to(..)` calls.
     // Subproxies inherit properties (`non_exhaustive` etc) from the original proxy.
-    // Note that API is likely to be changed in the future.
     let mut subproxy = proxy.subproxy().await;
     assert_eq!(subproxy.request(Summarize).await, 0);
     assert!(proxy.try_recv().await.is_none());
