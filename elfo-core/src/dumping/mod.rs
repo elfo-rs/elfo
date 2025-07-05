@@ -38,6 +38,16 @@ mod raw;
 mod recorder;
 mod sequence_no;
 
+#[stability::unstable]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Level {
+    // 0 is reserved for the `Off` filter.
+    Normal = 1,
+    Verbose = 2,
+    Total = 3,
+    Never = 4,
+}
+
 /// Dumps a field as `<hidden>`.
 pub fn hide<T: Serialize, S: Serializer>(value: &T, serializer: S) -> Result<S::Ok, S::Error> {
     if crate::scope::serde_mode() == crate::scope::SerdeMode::Dumping {

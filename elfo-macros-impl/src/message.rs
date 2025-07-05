@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
     parenthesized,
@@ -12,15 +12,32 @@ use crate::errors::emit_error;
 
 #[derive(Debug)]
 struct MessageArgs {
+    /// A message's name override.
+    /// If `None`, the message's name is the same as the type's name.
     name: Option<LitStr>,
+    /// A message's protocol override.
+    /// If `None`, it is a result of `elfo::get_protocol!()`:
+    /// * `elfo::set_protocol!()` in the current module
+    /// * or, usually, a package name
     protocol: Option<LitStr>,
+    /// A message is request with this response type.
     ret: Option<Type>,
+    /// Don't implement `Message` or `Request` traits.
     part: bool,
+    /// Adds `serde(transparent)` and implement transparent `Debug`.
     transparent: bool,
-    dumping_allowed: Option<bool>,
+    /// Specifies the dumping level. `Normal` by default.
+    /// Must be a variant of `elfo::dumping::Level`.
+    dumping_level: Option<Ident>,
+    /// Override the path to the `elfo` crate.
     crate_: Option<Path>,
-    not: Vec<String>,
+    /// Don't derive these traits (see `GENERATED_IMPLS`).
+    not: Vec<Ident>,
 }
+
+/// `elfo::dumping::Level` variants.
+const DUMPING_LEVELS: [&str; 4] = ["Normal", "Verbose", "Total", "Never"];
+const GENERATED_IMPLS: [&str; 4] = ["Debug", "Clone", "Serialize", "Deserialize"];
 
 impl Parse for MessageArgs {
     fn parse(input: ParseStream<'_>) -> Result<Self, ParseError> {
@@ -30,61 +47,81 @@ impl Parse for MessageArgs {
             protocol: None,
             part: false,
             transparent: false,
-            dumping_allowed: None,
+            dumping_level: None,
             crate_: None,
             not: Vec::new(),
         };
 
-        // `#[message]`
-        // `#[message(name = "N")]`
-        // `#[message(protocol = "P")]`
-        // `#[message(ret = A)]`
-        // `#[message(part)]`
-        // `#[message(part, transparent)]`
-        // `#[message(elfo = some)]`
-        // `#[message(not(Debug))]`
-        // `#[message(dumping = "disabled")]`
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
 
             match ident.to_string().as_str() {
+                // name = "Some"
                 "name" => {
                     let _: Token![=] = input.parse()?;
                     args.name = Some(input.parse()?);
                 }
+                // protocol = "some"
                 "protocol" => {
                     let _: Token![=] = input.parse()?;
                     args.protocol = Some(input.parse()?);
                 }
+                // ret = path::to::Type
                 "ret" => {
                     let _: Token![=] = input.parse()?;
                     args.ret = Some(input.parse()?);
                 }
+                // part (boolean)
                 "part" => args.part = true,
+                // transparent (boolean)
                 "transparent" => args.transparent = true,
+                // dumping = "Normal"
+                // dumping = "Verbose"
+                // dumping = "Total"
+                // dumping = "Never"
                 "dumping" => {
-                    // TODO: introduce `DumpingMode`.
                     let _: Token![=] = input.parse()?;
-                    let s: LitStr = input.parse()?;
+                    let lit: LitStr = input.parse()?;
+                    let s = lit.value();
 
-                    if s.value() == "disabled" {
-                        args.dumping_allowed = Some(false);
+                    if DUMPING_LEVELS.contains(&s.as_str()) {
+                        args.dumping_level = Some(Ident::new(&s, lit.span()));
                     } else {
-                        return Err(input.error("only `dumping = \"disabled\"` is supported"));
+                        emit_error!(
+                            s.span(),
+                            "allowed `dumping` values: {}",
+                            DUMPING_LEVELS.join(", ")
+                        );
                     }
                 }
+                // elfo = path::to::elfo::crate
                 // TODO: call it `crate` like in linkme?
                 "elfo" => {
                     let _: Token![=] = input.parse()?;
                     args.crate_ = Some(input.parse()?);
                 }
+                // not(Debug, Clone)
                 "not" => {
                     let content;
                     parenthesized!(content in input);
+
                     args.not = content
                         .parse_terminated(Ident::parse, Token![,])?
-                        .iter()
-                        .map(|ident| ident.to_string())
+                        .into_iter()
+                        .filter(|ident| {
+                            let is_allowed =
+                                GENERATED_IMPLS.into_iter().any(|allowed| ident == allowed);
+
+                            if !is_allowed {
+                                emit_error!(
+                                    ident.span(),
+                                    "allowed `not` values: {}",
+                                    GENERATED_IMPLS.join(", ")
+                                );
+                            }
+
+                            is_allowed
+                        })
                         .collect();
                 }
                 _ => return Err(input.error("unknown attribute")),
@@ -95,6 +132,8 @@ impl Parse for MessageArgs {
             }
         }
 
+        args.validate();
+
         Ok(args)
     }
 }
@@ -102,26 +141,22 @@ impl Parse for MessageArgs {
 impl MessageArgs {
     fn validate(&self) {
         if self.part {
-            fn incompatible(spanned: &Option<impl Spanned>, name: &str) {
+            fn incompatible_with_part(spanned: &Option<impl Spanned>, name: &str) {
                 if let Some(span) = spanned.as_ref().map(|s| s.span()) {
                     emit_error!(span, "`part` and `{name}` attributes are incompatible");
                 }
             }
 
-            incompatible(&self.ret, "ret");
-            incompatible(&self.name, "name");
-            incompatible(&self.protocol, "protocol");
-            incompatible(&self.dumping_allowed, "dumping_allowed");
+            incompatible_with_part(&self.ret, "ret");
+            incompatible_with_part(&self.name, "name");
+            incompatible_with_part(&self.protocol, "protocol");
+            incompatible_with_part(&self.dumping_level, "dumping");
         }
     }
-}
 
-fn gen_derive_attr(blacklist: &[String], name: &str, path: TokenStream) -> TokenStream {
-    blacklist
-        .iter()
-        .all(|x| x != name)
-        .then(|| quote! { #[derive(#path)] })
-        .into_token_stream()
+    fn should_impl(&self, name: &str) -> bool {
+        self.not.iter().all(|not| not != name)
+    }
 }
 
 fn gen_impl_debug(input: &DeriveInput) -> TokenStream {
@@ -163,9 +198,7 @@ pub fn message_impl(
     default_path_to_elfo: Path,
 ) -> proc_macro::TokenStream {
     let args = parse_macro_input!(args as MessageArgs);
-    args.validate();
-
-    let crate_ = args.crate_.unwrap_or(default_path_to_elfo);
+    let crate_ = args.crate_.as_ref().unwrap_or(&default_path_to_elfo);
 
     // TODO: what about parsing into something cheaper?
     let input = parse_macro_input!(input as DeriveInput);
@@ -180,23 +213,26 @@ pub fn message_impl(
         .unwrap_or_else(|| input.ident.to_string());
 
     let derive_debug =
-        (!args.transparent).then(|| gen_derive_attr(&args.not, "Debug", quote![Debug]));
-    let derive_clone = gen_derive_attr(&args.not, "Clone", quote![Clone]);
-    let derive_serialize =
-        gen_derive_attr(&args.not, "Serialize", quote![#internal::serde::Serialize]);
-    let derive_deserialize = gen_derive_attr(
-        &args.not,
-        "Deserialize",
-        quote![#internal::serde::Deserialize],
-    );
+        (!args.transparent && args.should_impl("Debug")).then(|| quote! { #[derive(Debug)] });
+    let derive_clone = args
+        .should_impl("Clone")
+        .then(|| quote! { #[derive(Clone)] });
+    let derive_serialize = args
+        .should_impl("Serialize")
+        .then(|| quote! { #[derive(#internal::serde::Serialize)] });
+    let derive_deserialize = args
+        .should_impl("Deserialize")
+        .then(|| quote! { #[derive(#internal::serde::Deserialize)] });
 
-    let serde_crate_attr = (!derive_serialize.is_empty() || !derive_deserialize.is_empty())
+    let serde_crate_attr = (derive_serialize.is_some() || derive_deserialize.is_some())
         .then(|| quote! { #[serde(crate = #serde_crate)] });
 
     let serde_transparent_attr = args.transparent.then(|| quote! { #[serde(transparent)] });
 
-    // TODO: pass to `ElfoResponseWrapper`.
-    let dumping_allowed = args.dumping_allowed.unwrap_or(true);
+    let dumping_level = args
+        .dumping_level
+        .clone()
+        .unwrap_or_else(|| Ident::new("Normal", Span::call_site()));
 
     let protocol = if let Some(protocol) = &args.protocol {
         quote! { #protocol }
@@ -224,7 +260,7 @@ pub fn message_impl(
             static VTABLE: &#internal::MessageVTable = &#internal::MessageVTable::new::<#name>(
                 #name_str,
                 #protocol,
-                #dumping_allowed
+                #crate_::dumping::Level::#dumping_level,
             );
         }
     });
@@ -232,6 +268,7 @@ pub fn message_impl(
     let impl_request = args.ret.as_ref().map(|ret| {
         let wrapper_name_str = format!("{name_str}::Response");
         let protocol = args.protocol.as_ref().map(|p| quote! { protocol = #p, });
+        let dumping_level_str = dumping_level.to_string();
 
         quote! {
             #[automatically_derived]
@@ -240,7 +277,11 @@ pub fn message_impl(
                 type Wrapper = ElfoResponseWrapper;
             }
 
-            #[message(not(Debug), #protocol name = #wrapper_name_str, elfo = #crate_)]
+            #[message(
+                #protocol name = #wrapper_name_str,
+                dumping = #dumping_level_str,
+                not(Debug), elfo = #crate_
+            )]
             pub struct ElfoResponseWrapper(#ret);
 
             #[automatically_derived]
@@ -270,7 +311,7 @@ pub fn message_impl(
     });
 
     let impl_debug =
-        (args.transparent && args.not.iter().all(|x| x != "Debug")).then(|| gen_impl_debug(&input));
+        (args.transparent && args.should_impl("Debug")).then(|| gen_impl_debug(&input));
 
     // Don't add `use` statements here to avoid possible collisions with user code.
     let expanded = quote! {

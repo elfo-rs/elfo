@@ -113,8 +113,8 @@ pub struct MessageVTable {
     pub(super) repr_layout: alloc::Layout, // of `MessageRepr<M>`
     pub(super) name: &'static str,
     pub(super) protocol: &'static str,
-    pub(super) labels: [Label; 2],    // protocol + name for `metrics`
-    pub(super) dumping_allowed: bool, // TODO: introduce `DumpingMode`.
+    pub(super) labels: [Label; 2], // protocol + name for `metrics`
+    pub(super) dumping_level: dumping::Level,
     #[cfg(feature = "network")]
     pub(super) read_msgpack:
         unsafe fn(buffer: &[u8], out_ptr: NonNull<MessageRepr>) -> Result<(), decode::Error>,
@@ -147,7 +147,7 @@ impl MessageVTable {
     pub const fn new<M: Message>(
         name: &'static str,
         protocol: &'static str,
-        dumping_allowed: bool,
+        dumping_level: dumping::Level,
     ) -> Self {
         Self {
             repr_layout: alloc::Layout::new::<MessageRepr<M>>(),
@@ -157,7 +157,7 @@ impl MessageVTable {
                 Label::from_static_parts("message", name),
                 Label::from_static_parts("protocol", protocol),
             ],
-            dumping_allowed,
+            dumping_level,
             debug: vtablefns::debug::<M>,
             clone: vtablefns::clone::<M>,
             erase: vtablefns::erase::<M>,

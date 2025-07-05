@@ -5,7 +5,10 @@ use crate::Message;
 use super::{
     dump::*,
     recorder::{self, Recorder},
+    Level,
 };
+
+// TODO: ArcSwap<> + lazy initialization
 
 #[derive(Clone)]
 #[stability::unstable]
@@ -28,7 +31,9 @@ impl Dumper {
     }
 
     pub(crate) fn acquire_m<M: Message>(&self, message: &M) -> Option<DumpingPermit<'_>> {
-        if !message.dumping_allowed() {
+        // Skip totally messages with disabled dumping.
+        // It's not necessary to do this check here, simply optimization.
+        if message.dumping_level() == Level::Never {
             return None;
         }
 

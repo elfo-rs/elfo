@@ -8,11 +8,11 @@
 #
 # Logging
 #system.logging.max_level = "Info" # one of: Trace, Debug, Info, Warn, Error, Off.
-#system.logging.max_rate_per_level = 1000    # per second
+#system.logging.max_rate_per_level = 1_000    # per second
 #
 # Dumping
-#system.dumping.disabled = false
-#system.dumping.max_rate = 100_000 # per second
+#system.dumping.max_level = "Off" # one of: Normal, Verbose, Total, Off.
+#system.dumping.max_rate_per_class = 10_000 # per second
 #
 # Telemetry
 #system.telemetry.per_actor_group = true

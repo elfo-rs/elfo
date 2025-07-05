@@ -42,8 +42,8 @@ pub trait Message:
 
     #[doc(hidden)] // unstable because will be replaced with `DumpingMode`
     #[inline(always)]
-    fn dumping_allowed(&self) -> bool {
-        self._vtable().dumping_allowed
+    fn dumping_level(&self) -> dumping::Level {
+        self._vtable().dumping_level
     }
 
     // Private API.
