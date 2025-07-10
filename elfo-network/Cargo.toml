@@ -24,9 +24,9 @@ elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
 metrics.workspace = true
 dashmap.workspace = true
 derive_more.workspace = true
+eyre.workspace = true
 serde = { version = "1.0.120", features = ["derive"] }
 static_assertions = "1.1.0"
-eyre = "0.6.8"
 fxhash = "0.2.1"
 futures = "0.3.21"
 tokio = { workspace = true, features = ["net", "io-util"] }
