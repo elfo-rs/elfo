@@ -365,7 +365,7 @@ async fn terminate_group(
     // Terminate::default
 
     info!(group = %name, "sending polite Terminate");
-    let fut = ctx.send_to(addr, Terminate::with_reason(reason));
+    let fut = ctx.send_to(addr, Terminate::default().with_reason(reason));
 
     if timeout(SEND_CLOSING_TERMINATE_AFTER, fut).await.is_ok() {
         let elapsed = started_at.elapsed();
@@ -469,11 +469,11 @@ mod tests {
                 ctx.addr(),
                 TerminateSystem(TerminateReason::Signal(SignalKind::UnixTerminate)),
             )
-            .unwrap();
+            .expect("failed to send terminate message");
             for group in topology.locals() {
                 ctx.send_to(group.addr, UpdateConfig::new(AnyConfig::default()))
                     .await
-                    .unwrap();
+                    .expect("failed to send update config message");
             }
             exec(ctx, topology).await;
         })

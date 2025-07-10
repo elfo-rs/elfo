@@ -83,6 +83,7 @@ pub struct ConfigUpdated {
 #[non_exhaustive]
 pub struct Terminate {
     pub(crate) closing: bool,
+    #[serde(default)]
     pub reason: TerminateReason,
 }
 
@@ -96,11 +97,9 @@ impl Terminate {
     }
 
     /// Create terminate message with provided reason
-    pub fn with_reason(reason: TerminateReason) -> Self {
-        Self {
-            closing: false,
-            reason,
-        }
+    pub fn with_reason(mut self, reason: TerminateReason) -> Self {
+        self.reason = reason;
+        self
     }
 }
 

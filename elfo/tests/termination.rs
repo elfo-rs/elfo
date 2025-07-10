@@ -103,7 +103,9 @@ async fn terminate_with_reason() {
     let mut proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     let reason = TerminateReason::custom("custom reason");
-    proxy.send(Terminate::with_reason(reason.clone())).await;
+    proxy
+        .send(Terminate::default().with_reason(reason.clone()))
+        .await;
     assert_msg_eq!(proxy.recv().await, TerminateResponse(reason));
     assert!(proxy.try_recv().await.is_none());
 }
