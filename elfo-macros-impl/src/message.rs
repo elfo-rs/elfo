@@ -146,6 +146,7 @@ fn gen_impl_debug(input: &DeriveInput) -> TokenStream {
     };
 
     quote! {
+        #[automatically_derived]
         impl ::std::fmt::Debug for #name {
             #[inline]
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -205,6 +206,7 @@ pub fn message_impl(
 
     let impl_message = (!args.part).then(|| {
         quote! {
+            #[automatically_derived]
             impl #crate_::Message for #name {
                 #[inline(always)]
                 fn _type_id() -> #internal::MessageTypeId {
@@ -232,6 +234,7 @@ pub fn message_impl(
         let protocol = args.protocol.as_ref().map(|p| quote! { protocol = #p, });
 
         quote! {
+            #[automatically_derived]
             impl #crate_::Request for #name {
                 type Response = #ret;
                 type Wrapper = ElfoResponseWrapper;
@@ -240,6 +243,7 @@ pub fn message_impl(
             #[message(not(Debug), #protocol name = #wrapper_name_str, elfo = #crate_)]
             pub struct ElfoResponseWrapper(#ret);
 
+            #[automatically_derived]
             impl ::std::fmt::Debug for ElfoResponseWrapper {
                 #[inline]
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -247,6 +251,7 @@ pub fn message_impl(
                 }
             }
 
+            #[automatically_derived]
             impl From<#ret> for ElfoResponseWrapper {
                 #[inline]
                 fn from(inner: #ret) -> Self {
@@ -254,6 +259,7 @@ pub fn message_impl(
                 }
             }
 
+            #[automatically_derived]
             impl From<ElfoResponseWrapper> for #ret {
                 #[inline]
                 fn from(wrapper: ElfoResponseWrapper) -> Self {
