@@ -28,7 +28,8 @@ use crate::{
     demux::Demux,
     errors::{RequestError, StartError, StartGroupError},
     message,
-    messages::{StartEntrypoint, Terminate, UpdateConfig},
+    messages::{StartEntrypoint, Terminate, TerminateReason, UpdateConfig},
+    msg,
     object::Object,
     scope::{Scope, ScopeGroupShared},
     signal::{Signal, SignalKind},
@@ -136,7 +137,10 @@ pub async fn check_only(topology: Topology) -> Result<()> {
 
     // The logger is not supposed to be initialized in this mode, so we do not wait
     // for it before exiting.
-    do_start(topology, true, terminate).await
+    do_start(topology, true, |ctx, topology| {
+        terminate(ctx, topology, None)
+    })
+    .await
 }
 
 /// Checks that all messages are unique by `(protocol, name)` pair.
@@ -208,7 +212,7 @@ pub async fn do_start<F: Future>(
 }
 
 #[message]
-struct TerminateSystem;
+struct TerminateSystem(TerminateReason);
 
 #[message]
 struct CheckMemoryUsageTick;
@@ -220,9 +224,18 @@ const STOP_GROUP_TERMINATION_AFTER: Duration = Duration::from_secs(35);
 async fn exec(mut ctx: Context, topology: Topology) {
     emit_start_time();
 
-    ctx.attach(Signal::new(SignalKind::UnixTerminate, TerminateSystem));
-    ctx.attach(Signal::new(SignalKind::UnixInterrupt, TerminateSystem));
-    ctx.attach(Signal::new(SignalKind::WindowsCtrlC, TerminateSystem));
+    ctx.attach(Signal::new(
+        SignalKind::UnixTerminate,
+        TerminateSystem(TerminateReason::Signal(SignalKind::UnixTerminate)),
+    ));
+    ctx.attach(Signal::new(
+        SignalKind::UnixInterrupt,
+        TerminateSystem(TerminateReason::Signal(SignalKind::UnixInterrupt)),
+    ));
+    ctx.attach(Signal::new(
+        SignalKind::WindowsCtrlC,
+        TerminateSystem(TerminateReason::Signal(SignalKind::WindowsCtrlC)),
+    ));
 
     #[cfg(target_os = "linux")]
     let memory_tracker = {
@@ -243,11 +256,15 @@ async fn exec(mut ctx: Context, topology: Topology) {
     };
 
     let mut oom_prevented = false;
+    let mut terminate_reason = None;
 
     while let Some(envelope) = ctx.recv().await {
-        if envelope.is::<TerminateSystem>() {
-            break;
-        }
+        msg!(match &envelope {
+            TerminateSystem(reason) => {
+                terminate_reason = Some(reason.clone());
+                break;
+            }
+        });
 
         #[cfg(target_os = "linux")]
         if envelope.is::<CheckMemoryUsageTick>() {
@@ -265,7 +282,7 @@ async fn exec(mut ctx: Context, topology: Topology) {
                         "maximum memory usage is reached, forcibly terminating"
                     );
 
-                    let _ = ctx.try_send_to(ctx.addr(), TerminateSystem);
+                    let _ = ctx.try_send_to(ctx.addr(), TerminateSystem(TerminateReason::Oom));
                     oom_prevented = true;
                 }
                 Some(Err(err)) => {
@@ -277,7 +294,7 @@ async fn exec(mut ctx: Context, topology: Topology) {
 
     ctx.set_status(ActorStatus::TERMINATING);
 
-    let termination = terminate(ctx.pruned(), topology);
+    let termination = terminate(ctx.pruned(), topology, terminate_reason);
     pin!(termination);
 
     loop {
@@ -301,7 +318,7 @@ async fn exec(mut ctx: Context, topology: Topology) {
     }
 }
 
-async fn terminate(ctx: Context, topology: Topology) {
+async fn terminate(ctx: Context, topology: Topology, reason: Option<TerminateReason>) {
     let mut stop_order_list = topology
         .locals()
         .map(|group| group.stop_order)
@@ -312,18 +329,24 @@ async fn terminate(ctx: Context, topology: Topology) {
 
     for stop_order in stop_order_list {
         info!(%stop_order, "terminating groups");
-        terminate_groups(&ctx, &topology, stop_order).await;
+        terminate_groups(&ctx, &topology, stop_order, reason.clone()).await;
     }
 }
 
-async fn terminate_groups(ctx: &Context, topology: &Topology, stop_order: i8) {
+async fn terminate_groups(
+    ctx: &Context,
+    topology: &Topology,
+    stop_order: i8,
+    reason: Option<TerminateReason>,
+) {
     let futures = topology
         .locals()
         .filter(|group| group.stop_order == stop_order)
-        .map(|group| async move {
+        .zip(core::iter::repeat(reason))
+        .map(|(group, reason)| async move {
             let started_at = Instant::now();
             select! {
-                _ = terminate_group(ctx, group.addr, group.name.clone(), started_at) => {},
+                _ = terminate_group(ctx, group.addr, group.name.clone(), started_at, reason) => {},
                 _ = watch_group(ctx, group.addr, group.name, started_at) => {},
             }
         })
@@ -332,11 +355,17 @@ async fn terminate_groups(ctx: &Context, topology: &Topology, stop_order: i8) {
     join_all(futures).await;
 }
 
-async fn terminate_group(ctx: &Context, addr: Addr, name: String, started_at: Instant) {
+async fn terminate_group(
+    ctx: &Context,
+    addr: Addr,
+    name: String,
+    started_at: Instant,
+    reason: Option<TerminateReason>,
+) {
     // Terminate::default
 
     info!(group = %name, "sending polite Terminate");
-    let fut = ctx.send_to(addr, Terminate::default());
+    let fut = ctx.send_to(addr, Terminate::with_reason(reason));
 
     if timeout(SEND_CLOSING_TERMINATE_AFTER, fut).await.is_ok() {
         let elapsed = started_at.elapsed();
