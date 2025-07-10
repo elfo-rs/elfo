@@ -58,9 +58,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: taiki-e/install-action@cargo-llvm-cov
     - run: rustup show active-toolchain -v
-    - run: cargo test
-    - run: cargo test --all-features
+    - run: cargo llvm-cov test --no-report
+    - run: cargo llvm-cov test --all-features --no-report
+    - run: cargo llvm-cov report --codecov --output-path codecov.json
+    - uses: codecov/codecov-action@v5
+      with:
+        files: codecov.json
+        token: ${{ secrets.CODECOV_TOKEN }}
+        slug: elfo-rs/elfo
+        fail_ci_if_error: true
 
   miri:
     needs: build
