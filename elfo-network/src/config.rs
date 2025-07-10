@@ -90,7 +90,7 @@ pub enum Transport {
     ///
     /// Used only on UNIX systems, ignored on other platforms.
     #[cfg(unix)]
-    #[display("uds://{}", "_0.display()")]
+    #[display("uds://{}", _0.display())]
     Uds(PathBuf),
     /// Turmoil v0.6 transport ("turmoil06://host").
     ///
@@ -244,6 +244,15 @@ mod tests {
         assert_eq!(
             Transport::from_str("turmoil06://alice").unwrap(),
             Transport::Turmoil06("alice".into())
+        );
+    }
+
+    #[test]
+    fn transport_display() {
+        #[cfg(unix)]
+        assert_eq!(
+            Transport::Uds(PathBuf::from("/some/path")).to_string(),
+            "uds:///some/path"
         );
     }
 }
