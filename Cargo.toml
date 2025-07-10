@@ -35,6 +35,7 @@ toml = "0.8.14"
 bytesize = { version = "2", features = ["serde"] }
 proptest = "1.6"
 criterion = "0.5.1"
+eyre = "0.6.8"
 
 [workspace.dependencies.derive_more]
 version = "2"
