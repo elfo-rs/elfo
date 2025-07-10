@@ -20,7 +20,7 @@ use elfo_core::{
 };
 
 use crate::{
-    config::{Config, Sink},
+    config::{Colorization, Config, Sink},
     filtering_layer::FilteringLayer,
     formatters::Formatter,
     line_buffer::LineBuffer,
@@ -230,7 +230,11 @@ async fn open_file(config: &Config) -> Option<File> {
 }
 
 fn can_use_colors(config: &Config) -> bool {
-    config.sink == Sink::Stdout && io::stdout().is_terminal()
+    match config.format.colorization {
+        Colorization::Always => true,
+        Colorization::Never => false,
+        Colorization::Auto => config.sink == Sink::Stdout && io::stdout().is_terminal(),
+    }
 }
 
 fn extract_location(metadata: &Metadata<'static>) -> Option<(&'static str, u32)> {

@@ -72,7 +72,22 @@ pub struct Format {
     /// Include module info in the log output.
     #[serde(default)]
     pub with_module: bool,
-    // TODO: colors
+    /// Specify when to use colored output.
+    /// By default, colors are enabled only for interactive terminals.
+    #[serde(default)]
+    pub colorization: Colorization,
+}
+
+/// When to use colored output.
+#[derive(Debug, Deserialize, Default)]
+pub enum Colorization {
+    /// Use colors only if the output is a terminal.
+    #[default]
+    Auto,
+    /// Never use colors.
+    Never,
+    /// Use colors unconditionally.
+    Always,
 }
 
 fn default_max_line_size() -> ByteSize {

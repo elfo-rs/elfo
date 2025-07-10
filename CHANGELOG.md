@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - test/proxy: add fallible methods for requesting ([#162]).
 - test/proxy: add the `Proxy::node_launch_id()` method.
+- logger: add the `format.colorization` parameter to force colors in logs.
 
 [#162]: https://github.com/elfo-rs/elfo/pull/162
 

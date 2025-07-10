@@ -41,3 +41,7 @@ bytesize.workspace = true
 
 [dev-dependencies]
 elfo-core = { version = "0.2.0-alpha.19", path = "../elfo-core", features = ["test-util"] }
+elfo-test = { path = "../elfo-test" }
+
+toml.workspace = true
+tempdir = "0.3.7"
