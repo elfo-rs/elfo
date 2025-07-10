@@ -430,3 +430,60 @@ fn emit_start_time() {
 
     metrics::gauge!("elfo_start_time_seconds", unix_time);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tokio::sync::mpsc;
+
+    use crate::{config::AnyConfig, ActorGroup, TerminationPolicy};
+
+    #[tokio::test]
+    async fn terminate() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let group = ActorGroup::new()
+            .termination_policy(TerminationPolicy::manually())
+            .exec(move |mut ctx| {
+                let tx = tx.clone();
+                async move {
+                    while let Some(envelope) = ctx.recv().await {
+                        msg!(match envelope {
+                            msg @ Terminate => {
+                                let _ = tx.send(msg.reason);
+                                break;
+                            }
+                            _ => {}
+                        });
+                    }
+                }
+            });
+
+        let topology = Topology::empty();
+        let test_terminate = topology.local("test.terminate");
+        test_terminate.mount(group);
+
+        do_start(topology, false, |ctx, topology| async move {
+            ctx.try_send_to(
+                ctx.addr(),
+                TerminateSystem(TerminateReason::Signal(SignalKind::UnixTerminate)),
+            )
+            .unwrap();
+            for group in topology.locals() {
+                ctx.send_to(group.addr, UpdateConfig::new(AnyConfig::default()))
+                    .await
+                    .unwrap();
+            }
+            exec(ctx, topology).await;
+        })
+        .await
+        .expect("cannot start");
+
+        let reason = rx.recv().await.expect("failed to receive terminate reason");
+        assert_eq!(
+            reason,
+            Some(TerminateReason::Signal(SignalKind::UnixTerminate))
+        );
+    }
+}
