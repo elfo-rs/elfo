@@ -186,7 +186,7 @@ impl Actor {
     #[inline(always)]
     fn handle_system(&self, envelope: Envelope) -> Option<Envelope> {
         msg!(match &envelope {
-            Terminate { closing } => {
+            Terminate { closing, .. } => {
                 if (*closing || self.termination_policy.close_mailbox) && self.close() {
                     // First closing `Terminate` is considered successful.
                     return None;

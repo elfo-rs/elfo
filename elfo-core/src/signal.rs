@@ -8,6 +8,7 @@ use std::{
 
 use pin_project::pin_project;
 use sealed::sealed;
+use serde::{Deserialize, Serialize};
 #[cfg(unix)]
 use tokio::signal;
 #[cfg(unix)]
@@ -92,7 +93,7 @@ enum SignalInner {
 ///   other systems.
 ///
 /// It helps to avoid writing `#[cfg(_)]` everywhere around signals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SignalKind {
     /// The "ctrl-c" notification.
