@@ -138,7 +138,7 @@ pub async fn check_only(topology: Topology) -> Result<()> {
     // The logger is not supposed to be initialized in this mode, so we do not wait
     // for it before exiting.
     do_start(topology, true, |ctx, topology| {
-        terminate(ctx, topology, None)
+        terminate(ctx, topology, TerminateReason::Unknown)
     })
     .await
 }
@@ -256,12 +256,12 @@ async fn exec(mut ctx: Context, topology: Topology) {
     };
 
     let mut oom_prevented = false;
-    let mut terminate_reason = None;
+    let mut terminate_reason = TerminateReason::Unknown;
 
     while let Some(envelope) = ctx.recv().await {
         msg!(match &envelope {
             TerminateSystem(reason) => {
-                terminate_reason = Some(reason.clone());
+                terminate_reason = reason.clone();
                 break;
             }
         });
@@ -318,7 +318,7 @@ async fn exec(mut ctx: Context, topology: Topology) {
     }
 }
 
-async fn terminate(ctx: Context, topology: Topology, reason: Option<TerminateReason>) {
+async fn terminate(ctx: Context, topology: Topology, reason: TerminateReason) {
     let mut stop_order_list = topology
         .locals()
         .map(|group| group.stop_order)
@@ -337,7 +337,7 @@ async fn terminate_groups(
     ctx: &Context,
     topology: &Topology,
     stop_order: i8,
-    reason: Option<TerminateReason>,
+    reason: TerminateReason,
 ) {
     let futures = topology
         .locals()
@@ -360,7 +360,7 @@ async fn terminate_group(
     addr: Addr,
     name: String,
     started_at: Instant,
-    reason: Option<TerminateReason>,
+    reason: TerminateReason,
 ) {
     // Terminate::default
 
@@ -481,9 +481,6 @@ mod tests {
         .expect("cannot start");
 
         let reason = rx.recv().await.expect("failed to receive terminate reason");
-        assert_eq!(
-            reason,
-            Some(TerminateReason::Signal(SignalKind::UnixTerminate))
-        );
+        assert_eq!(reason, TerminateReason::Signal(SignalKind::UnixTerminate));
     }
 }

@@ -93,14 +93,9 @@ async fn terminate_with_reason() {
             while let Some(envelope) = ctx.recv().await {
                 msg!(match envelope {
                     msg @ Terminate => {
-                        ctx.send(TerminateResponse(
-                            msg.reason.expect("should receive reason"),
-                        ))
-                        .await
-                        .unwrap();
+                        ctx.send(TerminateResponse(msg.reason)).await.unwrap();
                         break;
                     }
-                    _ => unreachable!(),
                 });
             }
         });
