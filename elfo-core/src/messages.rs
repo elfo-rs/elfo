@@ -2,7 +2,9 @@ use std::{fmt::Display, sync::Arc};
 
 use derive_more::Constructor;
 
-use crate::{actor::ActorMeta, actor_status::ActorStatus, config::AnyConfig, message};
+use crate::{
+    actor::ActorMeta, actor_status::ActorStatus, config::AnyConfig, message, signal::SignalKind,
+};
 
 /// A helper type for using in generic code (e.g. as an associated type) to
 /// indicate a message that cannot be constructed.
@@ -81,12 +83,40 @@ pub struct ConfigUpdated {
 #[non_exhaustive]
 pub struct Terminate {
     pub(crate) closing: bool,
+    #[serde(default)]
+    pub reason: TerminateReason,
 }
 
 impl Terminate {
     /// The message closes a target's mailbox ignoring `TerminationPolicy`.
     pub fn closing() -> Self {
-        Self { closing: true }
+        Self {
+            closing: true,
+            reason: TerminateReason::Unknown,
+        }
+    }
+
+    /// Create terminate message with provided reason
+    pub fn with_reason(mut self, reason: TerminateReason) -> Self {
+        self.reason = reason;
+        self
+    }
+}
+
+#[message(part)]
+#[derive(Default, PartialEq)]
+#[non_exhaustive]
+pub enum TerminateReason {
+    #[default]
+    Unknown,
+    Signal(SignalKind),
+    Oom,
+    Custom(Arc<str>),
+}
+
+impl TerminateReason {
+    pub fn custom(reason: impl Into<Arc<str>>) -> Self {
+        Self::Custom(reason.into())
     }
 }
 
