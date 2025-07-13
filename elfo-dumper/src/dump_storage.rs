@@ -206,7 +206,7 @@ impl Fund {
         }
 
         // If we have already reached the limit, try to find the most filled shard
-        // and take his oldest part.
+        // and take its oldest part.
         if self.part_count >= self.config.max_part_count {
             if let Some(part) = self.clear_most_filled() {
                 return part;
@@ -231,7 +231,10 @@ impl Fund {
 // === Part ===
 
 // -1 since the `VecDeque` always leaves one space empty.
+#[cfg(not(test))]
 const PART_CAPACITY: usize = 8191; // must be `N^2 - 1`
+#[cfg(test)]
+const PART_CAPACITY: usize = 3;
 
 struct Part {
     items: VecDeque<Dump>,
@@ -357,76 +360,161 @@ impl Drop for Drain<'_> {
     }
 }
 
-#[cfg(TODO)] // TODO
 #[cfg(test)]
-#[cfg(feature = "test-util")]
 mod tests {
-    use std::convert::TryFrom;
-
-    use smallbox::smallbox;
-    use tokio::time;
+    use elfo_core::{dumping::Dump, scope::Scope, tracing::TraceId, ActorMeta, Addr};
 
     use super::*;
-    use crate::{actor::ActorMeta, dumping::SequenceNo, scope::Scope, trace_id::TraceId, Addr};
 
-    fn dump_msg(dumper: &Dumper, name: &'static str) {
-        dumper.dump(
-            Direction::In,
-            "class",
-            name,
-            "proto",
-            MessageKind::Regular,
-            smallbox!(42),
-        );
+    fn dump() -> Dump {
+        Dump::builder().finish("payload")
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn it_works() {
+    fn scope(key: &str) -> Scope {
         let meta = Arc::new(ActorMeta {
             group: "group".into(),
-            key: "key".into(),
+            key: key.into(),
         });
         let trace_id = TraceId::try_from(42).unwrap();
-
-        let f = async {
-            let dumper = Dumper::default();
-            let mut drain = dumper.drain(Duration::from_secs(10));
-
-            assert!(drain.next().is_none());
-            assert!(drain.next().is_none());
-
-            dump_msg(&dumper, "1");
-
-            let msg = drain.next().unwrap();
-            assert_eq!(msg.meta, meta);
-            assert_eq!(msg.sequence_no, SequenceNo::try_from(1).unwrap());
-            assert_eq!(msg.timestamp, Timestamp::from_nanos(42));
-            assert_eq!(msg.trace_id, trace_id);
-            assert_eq!(msg.direction, Direction::In);
-            assert_eq!(msg.class, "class");
-            assert_eq!(msg.message_name, "1");
-            assert_eq!(msg.message_protocol, "proto");
-            assert_eq!(msg.message_kind, MessageKind::Regular);
-
-            assert!(drain.next().is_none());
-
-            time::advance(time::Duration::new(0, 100)).await;
-
-            dump_msg(&dumper, "2");
-            dump_msg(&dumper, "3");
-
-            let msg = drain.next().unwrap();
-            assert_eq!(msg.sequence_no, SequenceNo::try_from(2).unwrap());
-            assert_eq!(msg.timestamp, Timestamp::from_nanos(42));
-            assert_eq!(msg.message_name, "2");
-            let msg = drain.next().unwrap();
-            assert_eq!(msg.message_name, "3");
-
-            assert!(drain.next().is_none());
-        };
-
         let scope = Scope::test(Addr::NULL, meta.clone());
         scope.set_trace_id(trace_id);
-        scope.within(f).await;
+        scope
+    }
+
+    const UNLIMITED: Duration = Duration::from_secs(3600);
+
+    #[test]
+    fn classes() {
+        let mut storage = DumpStorage::new();
+        storage.registry("a");
+        storage.registry("b");
+        assert_eq!(storage.classes(), &FxHashSet::from_iter(["a", "b"]));
+    }
+
+    #[test]
+    fn one_part() {
+        let mut storage = DumpStorage::new();
+        let registry = storage.registry("test");
+        assert_eq!(registry.class(), "test");
+
+        scope("one").sync_within(|| {
+            registry.add(dump());
+            registry.add(dump());
+        });
+
+        let mut iter = registry.drain(UNLIMITED);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 1u64);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 2u64);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn many_parts() {
+        let mut storage = DumpStorage::new();
+        let registry = storage.registry("test");
+        assert_eq!(registry.class(), "test");
+
+        scope("one").sync_within(|| {
+            for _ in 0..10 {
+                registry.add(dump());
+            }
+        });
+
+        let mut iter = registry.drain(UNLIMITED);
+        for i in 1..=10 {
+            assert_eq!(u64::from(iter.next().unwrap().sequence_no), i);
+        }
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn drain_timeout() {
+        let mut storage = DumpStorage::new();
+        let registry = storage.registry("test");
+
+        scope("one").sync_within(|| {
+            registry.add(dump());
+            registry.add(dump());
+        });
+
+        // Timeout
+        let mut iter = registry.drain(Duration::from_secs(0));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn drain_continue() {
+        let mut storage = DumpStorage::new();
+        let registry = storage.registry("test");
+
+        scope("one").sync_within(|| {
+            registry.add(dump());
+            registry.add(dump());
+        });
+
+        let mut iter = registry.drain(UNLIMITED);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 1u64);
+        drop(iter);
+
+        let mut iter = registry.drain(UNLIMITED);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 2u64);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn max_part_count() {
+        let mut storage = DumpStorage::new();
+        let registry = storage.registry("test");
+
+        assert_eq!(registry.fund().part_count, 0);
+
+        // Fill without limits.
+        scope("one").sync_within(|| {
+            for _ in 0..(10 * PART_CAPACITY) {
+                registry.add(dump());
+            }
+            registry.add(dump());
+        });
+
+        // Drops oldest filled parts.
+        assert_eq!(registry.fund().part_count, 11);
+        storage.configure(3 * PART_CAPACITY);
+        assert_eq!(registry.fund().part_count, 3);
+
+        let mut iter = registry.drain(UNLIMITED);
+
+        // From the fund (remaining filled parts).
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 25);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 26);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 27);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 28);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 29);
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 30);
+        // From the active part.
+        assert_eq!(u64::from(iter.next().unwrap().sequence_no), 31);
+        assert!(iter.next().is_none());
+
+        // Drops empty parts.
+        storage.configure(2 * PART_CAPACITY);
+        assert_eq!(registry.fund().part_count, 2);
+
+        // Drops oldest filled parts when filling the active one.
+        scope("one").sync_within(|| {
+            for _ in 0..(10 * PART_CAPACITY) {
+                registry.add(dump());
+            }
+        });
+        assert_eq!(registry.fund().part_count, 2);
+
+        // Ensures the active part cannot be removed.
+        storage.configure(0);
+        assert_eq!(registry.fund().part_count, 1);
+
+        scope("one").sync_within(|| {
+            for _ in 0..(10 * PART_CAPACITY) {
+                registry.add(dump());
+            }
+        });
+        assert_eq!(registry.fund().part_count, 2);
     }
 }
