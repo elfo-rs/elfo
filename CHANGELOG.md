@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - test/proxy: add the `Proxy::node_launch_id()` method.
 - logger: add the `format.colorization` parameter to force colors in logs.
 
+### Fixed
+- network: decrease the `elfo_network_rx_flows` metric only in network actors.
+
 [#162]: https://github.com/elfo-rs/elfo/pull/162
 
 ## [0.2.0-alpha.19] - 2025-05-21

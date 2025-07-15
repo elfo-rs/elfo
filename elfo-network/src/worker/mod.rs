@@ -20,7 +20,7 @@ use elfo_utils::{likely, time::Instant, unlikely};
 
 use self::{
     flows_rx::RxFlows,
-    flows_tx::{Acquire, TryAcquire, TxFlows},
+    flows_tx::{Acquire, TryAcquire, TxFlows, TxFlowsAcquirer},
     requests::OutgoingRequests,
 };
 
@@ -109,7 +109,7 @@ impl Worker {
         self.transport = first_message.transport;
 
         let time_origin = Instant::now();
-        let tx_flows = Arc::new(TxFlows::new(first_message.initial_window));
+        let (tx_flows, tx_flows_acquirer) = TxFlows::new(first_message.initial_window);
         let rx_flows = Arc::new(Mutex::new(RxFlows::new(
             self.local.node_no,
             first_message.initial_window,
@@ -121,7 +121,7 @@ impl Worker {
         let (local_tx, local_rx) = kanal::unbounded_async();
         let remote_handle = RemoteHandle {
             tx: local_tx.clone(),
-            tx_flows: tx_flows.clone(),
+            tx_flows: tx_flows_acquirer,
         };
         let remote_group_guard = self.topology.register_remote(
             self.ctx.addr(),
@@ -156,7 +156,7 @@ impl Worker {
             rtt: Rtt::new(5),
             rx: socket.read,
             tx: local_tx.clone(),
-            tx_flows: tx_flows.clone(),
+            tx_flows,
             rx_flows: rx_flows.clone(),
             requests,
         };
@@ -372,7 +372,7 @@ struct SocketReader {
     rtt: Rtt,
     rx: ReadHalf,
     tx: kanal::AsyncSender<KanalItem>,
-    tx_flows: Arc<TxFlows>,
+    tx_flows: TxFlows,
     rx_flows: Arc<Mutex<RxFlows>>,
     requests: Arc<Mutex<OutgoingRequests>>,
 }
@@ -824,7 +824,7 @@ impl KanalItem {
 
 struct RemoteHandle {
     tx: kanal::AsyncSender<KanalItem>,
-    tx_flows: Arc<TxFlows>,
+    tx_flows: TxFlowsAcquirer,
 }
 
 impl remote::RemoteHandle for RemoteHandle {
