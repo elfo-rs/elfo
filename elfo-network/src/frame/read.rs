@@ -115,7 +115,7 @@ impl FramedReadStrategy for LZ4FramedRead {
                         debug_assert!(total_length_estimate > self.compressed_buffer.filled_len());
 
                         // NOTE: Calling `decompress_frame()` above already set the length of the
-                        // buffer to zero. So we will continune the decompression process on the
+                        // buffer to zero. So we will continue the decompression process on the
                         // next call.
                         return Ok(FramedReadState::NeedMoreData {
                             buffer: self

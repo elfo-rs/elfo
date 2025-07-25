@@ -17,6 +17,7 @@
 //! All fields are encoded using LE ordering.
 
 // TODO: checksums.
+// TODO: implement better system for limiting memory usage.
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
@@ -51,9 +52,6 @@ pub(crate) enum DecompressState {
     Done { compressed_size: usize },
 }
 
-// TODO: implement better system for limiting memory usage.
-const MAX_FRAME_SIZE: usize = 200_000_000;
-
 impl LZ4Buffer {
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -85,9 +83,6 @@ impl LZ4Buffer {
 
         let mut input = Cursor::new(raw);
         let frame_size = input.read_u32::<LittleEndian>()? as usize;
-        if frame_size >= MAX_FRAME_SIZE {
-            return Err(eyre!("frame size is too big"));
-        }
 
         if raw.len() < frame_size {
             return Ok(DecompressState::NeedMoreData {
@@ -96,9 +91,6 @@ impl LZ4Buffer {
         }
 
         let decompressed_size = input.read_u32::<LittleEndian>()? as usize;
-        if decompressed_size >= MAX_FRAME_SIZE {
-            return Err(eyre!("decompressed size is too big"));
-        }
 
         if decompressed_size > self.buffer.len() {
             self.buffer.resize(decompressed_size, 0);
