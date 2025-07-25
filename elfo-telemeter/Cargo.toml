@@ -26,7 +26,7 @@ elfo-core = { version = "0.2.0-alpha.19", path = "../elfo-core", features = ["un
 
 stability.workspace = true
 metrics.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["net"] }
 hyper = { version = "1.0.1", features = ["server", "http1"] }
 hyper-util = { version = "0.1.3", features = ["tokio"] }
 http-body-util = "0.1"

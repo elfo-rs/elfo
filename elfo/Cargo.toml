@@ -16,12 +16,12 @@ workspace = true
 
 [features]
 full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter", "elfo-pinger"]
-test-util = ["elfo-test", "elfo-core/test-util", "elfo-configurer/test-util"]
+test-util = ["elfo-test", "elfo-core/test-util", "elfo-configurer?/test-util"]
 network = ["elfo-network"]
-unstable = ["elfo-core/unstable", "elfo-telemeter/unstable", "elfo-test/unstable" ]
+unstable = ["elfo-core/unstable", "elfo-telemeter?/unstable", "elfo-test?/unstable" ]
 unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
-tracing-log = ["elfo-logger/tracing-log"]
-turmoil06 = ["elfo-network/turmoil06"]
+tracing-log = ["elfo-logger?/tracing-log"]
+turmoil06 = ["elfo-network?/turmoil06"]
 
 [dependencies]
 elfo-core = { version = "=0.2.0-alpha.19", path = "../elfo-core" }
