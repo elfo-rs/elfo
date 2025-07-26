@@ -1,33 +1,56 @@
-use derive_more::Display;
+use derive_more::{Display, IsVariant};
 
 use elfo_core::{
     addr::{GroupNo, NodeNo},
     message, MoveOwnership,
 };
 
-use crate::{codec::format::NetworkAddr, config::Transport, socket::Socket};
+use crate::{codec::format::NetworkAddr, socket::Socket};
 
 // Internal.
 
+slotmap::new_key_type! {
+    #[derive(Display)]
+    #[display("{:X}", self.0.as_ffi())]
+    pub(crate) struct ConnId;
+}
+
+impl serde::Serialize for ConnId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.as_ffi().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ConnId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let val = u64::deserialize(deserializer)?;
+        Ok(Self(slotmap::KeyData::from_ffi(val)))
+    }
+}
+
 #[message]
 pub(crate) struct HandleConnection {
+    pub(crate) id: ConnId,
     pub(crate) local: GroupInfo,
     pub(crate) remote: GroupInfo,
     pub(crate) socket: MoveOwnership<Socket>,
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
     // TODO: different windows for rx/tx and routed flows.
-    pub(crate) transport: Option<Transport>,
 }
 
 #[message]
 pub(crate) struct ConnectionFailed {
-    pub(crate) role: ConnectionRole,
-    // `Some` only on the client side.
-    pub(crate) transport: Option<Transport>,
+    pub(crate) id: ConnId,
 }
 
-#[derive(Display)]
+#[derive(Display, Copy, IsVariant, PartialEq, Eq)]
 #[message(part)]
 pub(crate) enum ConnectionRole {
     // Only possible if this node is a server.

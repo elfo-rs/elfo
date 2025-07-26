@@ -249,7 +249,7 @@ impl Configurer {
             configs.retain(|c| {
                 self.versions
                     .get(&c.group_name)
-                    .map_or(true, |v| c.hash != *v)
+                    .is_none_or(|v| c.hash != *v)
             });
         }
 
