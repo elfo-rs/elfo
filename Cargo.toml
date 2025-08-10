@@ -37,6 +37,7 @@ proptest = "1.6"
 criterion = "0.5.1"
 eyre = "0.6.8"
 slotmap = "1.0.7"
+pin-project = "1.0.8"
 
 [workspace.dependencies.derive_more]
 version = "2"

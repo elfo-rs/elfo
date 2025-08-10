@@ -39,6 +39,7 @@ lz4_flex = { version = "0.11.1", default-features = false, features = ["std"] }
 byteorder = "1.4.3"
 turmoil06 = { package = "turmoil", version = "0.6", optional = true }
 slotmap.workspace = true
+pin-project.workspace = true
 
 [dev-dependencies]
 tracing-test = "0.2.4" # TODO: actually unused?

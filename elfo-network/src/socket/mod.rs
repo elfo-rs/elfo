@@ -1,14 +1,15 @@
-use std::{future::Future, time::Duration};
+use std::{future::Future, pin::Pin, task, time::Duration};
 
 use derive_more::{Constructor, Display};
 use eyre::{eyre, Result, WrapErr};
 use futures::{stream::BoxStream, StreamExt};
-use metrics::counter;
-use tokio::io;
+use metrics::{counter, histogram};
+use pin_project::pin_project;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{trace, warn};
 
 use elfo_core::addr::{NodeLaunchId, NodeNo};
-use elfo_utils::likely;
+use elfo_utils::{likely, time::Instant};
 
 use self::idleness::{IdleTrack, IdleTracker};
 use crate::{
@@ -141,7 +142,7 @@ impl ReadHalf {
                 }
             };
 
-            let bytes_read = io::AsyncReadExt::read(&mut self.read, buffer).await?;
+            let bytes_read = self.read.read(buffer).await?;
 
             // Large messages cannot be read in a single `read()` call, so we should
             // additionally update the idle tracker even without waiting until the
@@ -194,19 +195,30 @@ impl WriteHalf {
 
     /// Flushed the internal buffer unconditionally.
     pub(crate) async fn flush(&mut self) -> Result<()> {
+        self.do_flush().measure_iowait().await
+    }
+
+    async fn do_flush(&mut self) -> Result<()> {
         let finalized = self.framing.finalize()?;
         let finalized_len = finalized.len();
-        let mut result = io::AsyncWriteExt::write_all(&mut self.write, finalized)
+
+        let mut result = self
+            .write
+            .write_all(finalized)
             .await
             .context("failed to write frame");
+
         if likely(result.is_ok()) {
-            result = io::AsyncWriteExt::flush(&mut self.write)
+            result = self
+                .write
+                .flush()
                 .await
                 .context("failed to flush the frame");
         }
 
         let stats = self.framing.take_stats();
         let mut total_messages_sent = stats.encode_stats.total_messages_encoding_skipped;
+
         if likely(result.is_ok()) {
             trace!(message = "wrote bytes to socket", count = finalized_len);
 
@@ -292,6 +304,43 @@ pub(crate) async fn listen(
 
 async fn timeout<T>(duration: Duration, fut: impl Future<Output = Result<T>>) -> Result<T> {
     tokio::time::timeout(duration, fut).await?
+}
+
+trait FutureExt: Future + Sized {
+    // Measures the time spent in `Pending` state as IO wait time.
+    fn measure_iowait(self) -> MeasureIowait<Self> {
+        MeasureIowait {
+            inner: self,
+            idle_since: None,
+        }
+    }
+}
+
+impl<F: Future> FutureExt for F {}
+
+#[pin_project]
+struct MeasureIowait<F> {
+    #[pin]
+    inner: F,
+    idle_since: Option<Instant>,
+}
+
+impl<F: Future> Future for MeasureIowait<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
+        let this = self.project();
+        let result = this.inner.poll(cx);
+
+        if result.is_pending() {
+            this.idle_since.get_or_insert_with(Instant::now);
+        } else if let Some(start) = this.idle_since.take() {
+            let elapsed = Instant::now().secs_f64_since(start);
+            histogram!("elfo_network_io_write_waiting_time_seconds", elapsed);
+        }
+
+        result
+    }
 }
 
 #[cfg(test)]
