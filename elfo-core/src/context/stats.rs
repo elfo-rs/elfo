@@ -18,6 +18,8 @@ struct InHandling {
 static STARTUP_LABELS: &[Label] = &[Label::from_static_parts("message", "<Startup>")];
 static EMPTY_MAILBOX_LABELS: &[Label] = &[Label::from_static_parts("message", "<EmptyMailbox>")];
 
+static WAITING_TIME_KEY: Key = Key::from_static_name("elfo_message_waiting_time_seconds");
+
 impl Stats {
     pub(super) fn empty() -> Self {
         Self { in_handling: None }
@@ -30,7 +32,6 @@ impl Stats {
     }
 
     pub(super) fn on_recv(&mut self) {
-        // TODO: emit once for series of `EmptyMailbox`.
         self.emit_handling_time();
     }
 
@@ -38,12 +39,11 @@ impl Stats {
         debug_assert!(self.in_handling.is_none());
 
         let recorder = ward!(metrics::try_recorder());
-        let key = Key::from_static_name("elfo_message_waiting_time_seconds");
         let now = Instant::now();
 
         // Now envelope cannot be forwarded, so use the created time as a start time.
         let value = now.secs_f64_since(envelope.created_time());
-        recorder.record_histogram(&key, value);
+        recorder.record_histogram(&WAITING_TIME_KEY, value);
 
         self.in_handling = Some(InHandling::new(envelope.message().labels(), now));
     }
@@ -63,7 +63,11 @@ impl Stats {
     fn emit_handling_time(&mut self) {
         let in_handling = ward!(self.in_handling.take());
         let recorder = ward!(metrics::try_recorder());
+
+        // TODO: key creation is not optimal because the hash is not cached.
+        //       Consider storing keys in a message's vtable.
         let key = Key::from_static_parts("elfo_message_handling_time_seconds", in_handling.labels);
+
         let value = Instant::now().secs_f64_since(in_handling.start_time);
         recorder.record_histogram(&key, value);
     }
