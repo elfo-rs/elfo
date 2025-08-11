@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use eyre::Result;
-use metrics::{decrement_gauge, increment_gauge};
+use metrics::{decrement_gauge, histogram, increment_gauge};
 use parking_lot::Mutex;
 use tracing::{debug, error, info, trace, warn};
 
@@ -238,14 +238,21 @@ impl SocketWriter {
         // We should use `tokio::task::unconstrained()` here and preempt the (sub)task
         // after sending each batch of messages.
         loop {
-            // TODO: error handling, metrics.
+            // NOTE: We use `unwrap()` for results from all `self.tx` methods because these
+            // errors are unrecoverable anyway, although it's not a good practice.
             let mut item = self.rx.recv().await.unwrap();
             loop {
+                if let Ok(envelope) = &item.envelope {
+                    // NOTE: Consider using `context/stats.rs` once handling time is also added.
+                    histogram!(
+                        "elfo_message_waiting_time_seconds",
+                        Instant::now().secs_f64_since(envelope.created_time())
+                    );
+                }
+
                 let (network_envelope, response_token) = make_network_envelope(item, self.node_no);
                 scope::set_trace_id(network_envelope.trace_id);
 
-                // NOTE: We use `unwrap()` for results from all `self.tx` methods because these
-                // errors are unrecoverable.
                 if let Some(frame_state) = self.tx.feed(&network_envelope).unwrap() {
                     // Envelope was encoded successfylly, so we can store the response token.
                     // Otherwise, it will be dropped with the `Failed` reason.

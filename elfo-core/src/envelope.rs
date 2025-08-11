@@ -160,7 +160,9 @@ impl Envelope {
         &self.header().kind
     }
 
-    pub(crate) fn created_time(&self) -> Instant {
+    #[doc(hidden)]
+    #[inline]
+    pub fn created_time(&self) -> Instant {
         self.header().created_time
     }
 
