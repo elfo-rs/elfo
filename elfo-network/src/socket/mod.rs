@@ -335,7 +335,7 @@ impl<F: Future> Future for MeasureIowait<F> {
         if result.is_pending() {
             this.idle_since.get_or_insert_with(Instant::now);
         } else if let Some(start) = this.idle_since.take() {
-            let elapsed = Instant::now().secs_f64_since(start);
+            let elapsed = start.elapsed_secs_f64();
             histogram!("elfo_network_io_write_waiting_time_seconds", elapsed);
         }
 

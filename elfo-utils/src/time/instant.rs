@@ -21,14 +21,30 @@ impl Instant {
 
     /// Returns the amount of time elapsed since this instant.
     ///
-    /// Prefer `secs_f64_since()` if used for metrics.
+    /// Prefer `elapsed_secs_f64()` if used for metrics.
     pub fn elapsed(&self) -> Duration {
         Self::now().duration_since(*self)
+    }
+
+    /// Returns the number of seconds elapsed since this instant.
+    ///
+    /// This method saturates to zero.
+    pub fn elapsed_secs_f64(&self) -> f64 {
+        Self::now().secs_f64_since(*self)
+    }
+
+    /// Returns the number of nanoseconds elapsed since this instant.
+    ///
+    /// This method saturates to zero.
+    pub fn elapsed_nanos(&self) -> u64 {
+        Self::now().nanos_since(*self)
     }
 
     /// Returns the amount of time elapsed from another instant to this one.
     ///
     /// This method saturates to zero.
+    ///
+    /// Prefer `secs_f64_since()` if used for metrics.
     #[inline]
     pub fn duration_since(&self, earlier: Self) -> Duration {
         with_clock(|c| c.delta(earlier.0, self.0))

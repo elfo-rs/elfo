@@ -184,7 +184,7 @@ impl Worker {
                     }
 
                     let envelope = make_system_envelope(internode::Ping {
-                        payload: Instant::now().nanos_since(time_origin),
+                        payload: time_origin.elapsed_nanos(),
                     });
                     let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
                 }
@@ -246,7 +246,7 @@ impl SocketWriter {
                     // NOTE: Consider using `context/stats.rs` once handling time is also added.
                     histogram!(
                         "elfo_message_waiting_time_seconds",
-                        Instant::now().secs_f64_since(envelope.created_time())
+                        envelope.created_time().elapsed_secs_f64(),
                     );
                 }
 
@@ -580,7 +580,7 @@ impl SocketReader {
                 }));
             }
             msg @ internode::Pong => {
-                let time_ns = Instant::now().nanos_since(self.time_origin) - msg.payload;
+                let time_ns = self.time_origin.elapsed_nanos() - msg.payload;
                 self.rtt.push(Duration::from_nanos(time_ns));
             }
             _ => return false,

@@ -68,7 +68,7 @@ impl Stats {
         //       Consider storing keys in a message's vtable.
         let key = Key::from_static_parts("elfo_message_handling_time_seconds", in_handling.labels);
 
-        let value = Instant::now().secs_f64_since(in_handling.start_time);
+        let value = in_handling.start_time.elapsed_secs_f64();
         recorder.record_histogram(&key, value);
     }
 }

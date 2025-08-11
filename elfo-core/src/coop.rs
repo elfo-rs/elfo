@@ -101,7 +101,7 @@ pub async fn consume_budget() {
         let budget = cell.get();
 
         match budget {
-            Budget::ByTime(busy_since) => Instant::now().nanos_since(busy_since) >= MAX_TIME_NS,
+            Budget::ByTime(busy_since) => busy_since.elapsed_nanos() >= MAX_TIME_NS,
             Budget::ByCount(0) => true,
             Budget::ByCount(left) => {
                 cell.set(Budget::ByCount(left - 1));
