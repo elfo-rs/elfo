@@ -13,11 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - logger: add the `format.colorization` parameter to force colors in logs.
 - network: emit the `elfo_network_io_write_waiting_seconds` metric.
 - network: emit the `elfo_message_waiting_time_seconds` metric for all messages.
+- core/messages: add `Terminate::reason` ([#167]).
+
+### Changed
+- network: revise connection management ([#163]).
+- core: make `NodeLaunchId` based on `NonZeroU64`.
 
 ### Fixed
 - network: decrease the `elfo_network_rx_flows` metric only in network actors.
+- network: don't limit the size of LZ4 frames implicitly.
+- network: fix `Display` instance for `Transport` ([#168]).
+- core/topology: `Topology::locals()` excludes non-mounted groups ([#164]).
+- core: enabling the `unstable` feature doesn't enable `elfo-telemeter` ([#169]).
+- telemeter: explicitly specify a dependency on `tokio/net` ([#169]).
 
 [#162]: https://github.com/elfo-rs/elfo/pull/162
+[#163]: https://github.com/elfo-rs/elfo/pull/163
+[#164]: https://github.com/elfo-rs/elfo/pull/164
+[#167]: https://github.com/elfo-rs/elfo/pull/167
+[#168]: https://github.com/elfo-rs/elfo/pull/168
+[#169]: https://github.com/elfo-rs/elfo/pull/169
 
 ## [0.2.0-alpha.19] - 2025-05-21
 ### Added
