@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use fxhash::FxHashMap;
+use ahash::AHashMap;
 use metrics::{Key, Unit};
 use sketches_ddsketch::{Config as DDSketchConfig, DDSketch};
 use tracing::warn;
@@ -39,9 +39,9 @@ pub struct Snapshot {
     /// Metrics ouside the actor system.
     pub global: Metrics,
     /// Metrics aggregated per group.
-    pub groupwise: FxHashMap<String, Metrics>,
+    pub groupwise: AHashMap<String, Metrics>,
     /// Metrics aggregated per actor.
-    pub actorwise: FxHashMap<Arc<ActorMeta>, Metrics>,
+    pub actorwise: AHashMap<Arc<ActorMeta>, Metrics>,
 }
 
 impl Snapshot {
@@ -90,11 +90,11 @@ impl Snapshot {
 #[derive(Default, Clone)]
 pub struct Metrics {
     /// Monotonically increasing counters.
-    pub counters: FxHashMap<Key, u64>,
+    pub counters: AHashMap<Key, u64>,
     /// Numerical values that can arbitrarily go up and down.
-    pub gauges: FxHashMap<Key, (f64, GaugeEpoch)>,
+    pub gauges: AHashMap<Key, (f64, GaugeEpoch)>,
     /// Summaries of samples, used to calculate of quantiles.
-    pub histograms: FxHashMap<Key, Distribution>,
+    pub histograms: AHashMap<Key, Distribution>,
 }
 
 /// Summaries of samples, used to calculate of quantiles.

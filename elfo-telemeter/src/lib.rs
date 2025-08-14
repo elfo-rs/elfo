@@ -61,3 +61,11 @@ pub fn init() -> Blueprint {
 
     blueprint
 }
+
+fn ahash<T: std::hash::Hash>(value: &T) -> u64 {
+    use ahash::AHasher;
+    use std::hash::Hasher;
+    let mut hasher = AHasher::default();
+    value.hash(&mut hasher);
+    hasher.finish()
+}

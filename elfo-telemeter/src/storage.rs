@@ -2,7 +2,7 @@
 
 use std::{hash::Hash, mem, sync::Arc};
 
-use fxhash::FxHashMap;
+use ahash::AHashMap;
 use metrics::{Key, Unit};
 use parking_lot::{Mutex, MutexGuard};
 use thread_local::ThreadLocal;
@@ -109,7 +109,7 @@ impl ScopeKind for ActorScope {
         debug_assert!(!telemetry_key.is_empty());
 
         // TODO: cache a hash of the telemetry key.
-        let key_hash = fxhash::hash64(&(telemetry_key, key.get_hash()));
+        let key_hash = crate::ahash(&(telemetry_key, key.get_hash()));
         (scope.group(), key_hash)
     }
 
@@ -138,7 +138,7 @@ pub(crate) struct Storage {
     shards: ThreadLocal<Shard>,
     // Shared gauge origins between shards. See `Gauge` for more details.
     gauge_shared: GaugeShared,
-    descriptions: Mutex<FxHashMap<String, Description>>,
+    descriptions: Mutex<AHashMap<String, Description>>,
 }
 
 #[derive(Default)]
@@ -167,7 +167,7 @@ impl<S: ScopeKind> Default for Registries<S> {
     }
 }
 
-type Registry<S, M> = FxHashMap<<S as ScopeKind>::Key, RegEntry<S, M>>;
+type Registry<S, M> = AHashMap<<S as ScopeKind>::Key, RegEntry<S, M>>;
 
 struct RegEntry<S: ScopeKind, M> {
     key: Key,
@@ -193,7 +193,7 @@ struct GaugeShared {
     actorwise: Mutex<GaugeOrigins<ActorScope>>,
 }
 
-type GaugeOrigins<S> = FxHashMap<<S as ScopeKind>::Key, Arc<GaugeOrigin>>;
+type GaugeOrigins<S> = AHashMap<<S as ScopeKind>::Key, Arc<GaugeOrigin>>;
 
 impl Default for Storage {
     fn default() -> Self {
@@ -206,7 +206,7 @@ impl Default for Storage {
 }
 
 impl Storage {
-    pub(crate) fn descriptions(&self) -> MutexGuard<'_, FxHashMap<String, Description>> {
+    pub(crate) fn descriptions(&self) -> MutexGuard<'_, AHashMap<String, Description>> {
         self.descriptions.lock()
     }
 

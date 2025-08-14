@@ -1,4 +1,4 @@
-use fxhash::FxHashMap;
+use ahash::AHashMap;
 use metrics::Label;
 
 use self::openmetrics::OpenMetricsRenderer;
@@ -18,7 +18,7 @@ pub(crate) struct Renderer {
 
 struct RenderOptions<'a> {
     quantiles: &'a [(Quantile, Label)],
-    descriptions: &'a FxHashMap<String, Description>,
+    descriptions: &'a AHashMap<String, Description>,
     global_labels: &'a [Label],
 }
 
@@ -44,7 +44,7 @@ impl Renderer {
     pub(crate) fn render(
         &mut self,
         snapshot: &Snapshot,
-        descriptions: &FxHashMap<String, Description>,
+        descriptions: &AHashMap<String, Description>,
     ) -> String {
         let options = RenderOptions {
             quantiles: &self.quantiles,

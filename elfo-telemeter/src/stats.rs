@@ -1,6 +1,6 @@
 use std::mem;
 
-use fxhash::FxHashMap;
+use ahash::AHashMap;
 use metrics::{gauge, register_gauge, Unit};
 
 pub(crate) fn register() {
@@ -40,7 +40,7 @@ impl StorageStats {
         self.total_size += stats.size;
     }
 
-    pub(crate) fn add_descriptions<K, V>(&mut self, registry: &FxHashMap<K, V>) {
+    pub(crate) fn add_descriptions<K, V>(&mut self, registry: &AHashMap<K, V>) {
         self.total_size += estimate_hashbrown_size::<(K, V)>(registry.capacity());
     }
 
@@ -65,7 +65,7 @@ impl ShardStats {
         }
     }
 
-    pub(crate) fn add_registry<K, V>(&mut self, registry: &FxHashMap<K, V>) {
+    pub(crate) fn add_registry<K, V>(&mut self, registry: &AHashMap<K, V>) {
         self.has_metrics |= !registry.is_empty();
         self.size += estimate_hashbrown_size::<(K, V)>(registry.capacity());
     }
@@ -88,7 +88,7 @@ impl SnapshotStats {
         }
     }
 
-    pub(crate) fn add_registry<K, V>(&mut self, registry: &FxHashMap<K, V>) {
+    pub(crate) fn add_registry<K, V>(&mut self, registry: &AHashMap<K, V>) {
         self.total_size += estimate_hashbrown_size::<(K, V)>(registry.capacity());
     }
 

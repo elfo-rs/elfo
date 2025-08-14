@@ -6,8 +6,8 @@ use std::{
     iter,
 };
 
+use ahash::AHashSet;
 use cow_utils::CowUtils;
-use fxhash::FxHashSet;
 use metrics::{Key, Label};
 
 use super::RenderOptions;
@@ -19,7 +19,7 @@ pub(super) struct OpenMetricsRenderer {
     // The renderer renders new counters with `0` for the first time.
     // See https://www.section.io/blog/beware-prometheus-counters-that-do-not-begin-at-zero/.
     // We store only hashes of `MetricMeta` because `insert()` API is bad for compound values.
-    known_counters: FxHashSet<u64>,
+    known_counters: AHashSet<u64>,
 }
 
 impl OpenMetricsRenderer {
@@ -42,7 +42,7 @@ fn render(
     buffer: &mut String,
     snapshot: &Snapshot,
     options: RenderOptions<'_>,
-    known_counters: &mut FxHashSet<u64>,
+    known_counters: &mut AHashSet<u64>,
 ) {
     for ((kind, original_name), by_labels) in group_by_name(snapshot) {
         let name = &*sanitize_name(original_name);
@@ -70,7 +70,7 @@ fn render(
 
             match value {
                 MetricValue::Counter(value) => {
-                    let value = if known_counters.insert(fxhash::hash64(&meta)) {
+                    let value = if known_counters.insert(crate::ahash(&meta)) {
                         0
                     } else {
                         value
@@ -88,7 +88,7 @@ fn render(
                         }
                     }
 
-                    let (sum, count) = if known_counters.insert(fxhash::hash64(&meta)) {
+                    let (sum, count) = if known_counters.insert(crate::ahash(&meta)) {
                         (0., 0)
                     } else {
                         (
