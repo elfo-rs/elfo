@@ -113,6 +113,13 @@ impl Worker {
         let requests = Arc::new(Mutex::new(OutgoingRequests::default()));
         let socket = first_message.socket.take().unwrap();
 
+        info!(
+            message = "connection picked up",
+            socket = %socket.info,
+            peer = %socket.peer,
+            capabilities = %socket.capabilities,
+        );
+
         // Register `RemoteHandle`. Now we can receive messages from local groups.
         let (local_tx, local_rx) = kanal::unbounded_async();
         let remote_handle = RemoteHandle {
@@ -188,8 +195,14 @@ impl Worker {
                     });
                     let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
                 }
-                HandleConnection => {
-                    info!("duplicate connection, skipping"); // TODO: replace?
+                HandleConnection { socket, .. } => {
+                    let socket = socket.take().unwrap();
+                    info!(
+                        message = "duplicate connection, skipping",
+                        socket = %socket.info,
+                        peer = %socket.peer,
+                        capabilities = %socket.capabilities,
+                    );
                 }
                 StartPusher(addr) => {
                     let pusher = Pusher {
