@@ -290,11 +290,7 @@ impl Storage {
         let registry = M::registry(registries);
 
         let registry = {
-            // Allocate a new empty registry with enough capacity.
-            // It improves tail latency, what's important for near RT actors.
-            let len = registry.lock().len();
-            let empty = Registry::with_capacity_and_hasher(len, <_>::default());
-
+            let empty = Registry::with_hasher(<_>::default());
             let mut registry = registry.lock();
             mem::replace(&mut *registry, empty)
         };
