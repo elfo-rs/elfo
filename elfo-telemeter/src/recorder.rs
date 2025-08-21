@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use metrics::{GaugeValue, Key, Unit};
 
-use elfo_core::scope;
+use elfo_core::{scope, telemetry};
 
 use crate::{
     metrics::{Counter, Gauge, Histogram},
@@ -68,5 +68,15 @@ impl metrics::Recorder for Recorder {
 
     fn record_histogram(&self, key: &Key, value: f64) {
         self.record::<Histogram>(key, value)
+    }
+}
+
+impl telemetry::Recorder for Storage {
+    fn enter(&self) {
+        self.enter();
+    }
+
+    fn exit(&self) {
+        self.exit();
     }
 }
