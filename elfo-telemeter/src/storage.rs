@@ -1,6 +1,6 @@
 #![allow(private_interfaces)]
 
-use std::{hash::Hash, mem, sync::Arc};
+use std::{cell::RefCell, hash::Hash, mem, sync::Arc};
 
 use fxhash::FxHashMap;
 use metrics::{Key, Unit};
@@ -206,7 +206,30 @@ impl Default for Storage {
     }
 }
 
+thread_local! {
+    static SHARD: RefCell<Option<MutexGuard<'static, Shard>>> = const { RefCell::new(None) };
+}
+
 impl Storage {
+    pub(crate) fn enter(&self) {
+        SHARD.with(|cell| {
+            let shard = self.shards.get_or_default().lock();
+
+            // SAFETY: lol
+            let shard = unsafe {
+                std::mem::transmute::<MutexGuard<'_, Shard>, MutexGuard<'static, Shard>>(shard)
+            };
+
+            *cell.borrow_mut() = Some(shard);
+        })
+    }
+
+    pub(crate) fn exit(&self) {
+        SHARD.with(|cell| {
+            *cell.borrow_mut() = None;
+        });
+    }
+
     pub(crate) fn descriptions(&self) -> MutexGuard<'_, FxHashMap<String, Description>> {
         self.descriptions.lock()
     }
@@ -225,8 +248,22 @@ impl Storage {
         S: ScopeKind,
         M: Storable,
     {
-        let mut shard = self.shards.get_or_default().lock();
-        let registries = S::registries(&mut shard);
+        SHARD.with(|cell| {
+            if let Some(shard) = cell.borrow_mut().as_mut() {
+                self.do_upsert::<S, M>(shard, scope, key, value);
+            } else {
+                let mut shard = self.shards.get_or_default().lock();
+                self.do_upsert::<S, M>(&mut shard, scope, key, value);
+            }
+        });
+    }
+
+    fn do_upsert<S, M>(&self, shard: &mut Shard, scope: &S::Scope, key: &Key, value: M::Value)
+    where
+        S: ScopeKind,
+        M: Storable,
+    {
+        let registries = S::registries(shard);
         let reg_key = S::make_key(scope, key);
         let registry = M::registry(registries);
 
@@ -246,9 +283,22 @@ impl Storage {
         }
 
         for shard in self.shards.iter() {
+            self.exit(); // XXX
+
             // TODO: allocate a new empty registry with enough capacity.
             // It improves tail latency, what's important for near RT actors.
-            let mut shard = mem::take(&mut *shard.lock());
+            let mut new = Shard::default();
+
+            let mut shard = if only_compact {
+                let mut g = shard.lock();
+                mem::swap(&mut g.global.histograms, &mut new.global.histograms);
+                mem::swap(&mut g.groupwise.histograms, &mut new.groupwise.histograms);
+                mem::swap(&mut g.actorwise.histograms, &mut new.actorwise.histograms);
+                new
+            } else {
+                mem::replace(&mut *shard.lock(), new)
+            };
+
             let mut stats = ShardStats::new::<Shard>();
 
             self.merge_registries::<GlobalScope>(&mut shard, snapshot, only_compact, &mut stats)

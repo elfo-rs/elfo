@@ -50,10 +50,12 @@ fn subject() -> Blueprint {
                         let bench = move || {
                             msg.barrier.wait();
 
+                            elfo_core::telemetry::enter();
                             let start = Instant::now();
                             for i in 0..msg.iter_count {
                                 (msg.testee)(i as f64);
                             }
+                            elfo_core::telemetry::exit();
                             start.elapsed()
                         };
 

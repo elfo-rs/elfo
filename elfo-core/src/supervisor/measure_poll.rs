@@ -54,6 +54,8 @@ impl<F: Future> Future for MeasurePoll<F> {
         // TODO: introduce a feature flag to disable this.
         let _ebr_guard = EbrGuard::new();
 
+        crate::telemetry::enter();
+
         #[cfg(feature = "unstable-stuck-detection")]
         this.stuck_detector.enter();
 
@@ -72,10 +74,14 @@ impl<F: Future> Future for MeasurePoll<F> {
         #[cfg(feature = "unstable-stuck-detection")]
         this.stuck_detector.exit();
 
+        crate::telemetry::exit();
+
         #[allow(clippy::let_and_return)]
         result
     }
 }
+
+// TODO: Drop to ensure we call exit?
 
 fn publish_alloc_metrics(recorder: &dyn metrics::Recorder) {
     crate::scope::with(|scope| {
