@@ -52,12 +52,15 @@ pub use allocator::AllocatorStats;
 pub fn init() -> Blueprint {
     let storage = Arc::new(Storage::default());
     let recorder = Recorder::new(storage.clone());
+    let recorder_2 = storage.clone();
     let blueprint = actor::new(storage);
 
     match ::metrics::set_boxed_recorder(Box::new(recorder)) {
         Ok(_) => stats::register(),
         Err(err) => error!(error = %err, "failed to set a metric recorder"),
     }
+
+    elfo_core::telemetry::set_recorder(recorder_2);
 
     blueprint
 }

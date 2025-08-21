@@ -74,7 +74,7 @@ mod runtime;
 mod source;
 mod subscription;
 mod supervisor;
-mod telemetry;
+pub mod telemetry;
 mod thread;
 
 #[doc(hidden)]
