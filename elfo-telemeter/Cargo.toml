@@ -23,6 +23,7 @@ unstable = []
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.19", path = "../elfo-core", features = ["unstable"] }
+elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
 
 stability.workspace = true
 metrics.workspace = true
