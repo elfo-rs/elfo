@@ -8,6 +8,7 @@ use parking_lot::{Mutex, MutexGuard};
 use thread_local::ThreadLocal;
 
 use elfo_core::{coop, scope::Scope, ActorMeta, Addr};
+use elfo_utils::CachePadded;
 
 use crate::{
     metrics::{Counter, Gauge, GaugeOrigin, Histogram, MetricKind},
@@ -27,7 +28,7 @@ pub(crate) trait ScopeKind: Sized {
 
     fn get_meta(scope: &Self::Scope) -> &Self::Meta;
     fn make_key(scope: &Self::Scope, key: &Key) -> Self::Key;
-    fn registries(shard: &Shard) -> &Registries<Self>;
+    fn registries(shard: &mut Shard) -> &mut Registries<Self>;
     fn gauge_shared(storage: &Storage) -> &Mutex<GaugeOrigins<Self>>;
     fn snapshot<'s>(snapshot: &'s mut Snapshot, meta: &Self::Meta) -> &'s mut Metrics;
 }
@@ -47,8 +48,8 @@ impl ScopeKind for GlobalScope {
         key.get_hash()
     }
 
-    fn registries(shard: &Shard) -> &Registries<Self> {
-        &shard.global
+    fn registries(shard: &mut Shard) -> &mut Registries<Self> {
+        &mut shard.global
     }
 
     fn gauge_shared(storage: &Storage) -> &Mutex<GaugeOrigins<Self>> {
@@ -77,8 +78,8 @@ impl ScopeKind for GroupScope {
         (scope.group(), key.get_hash())
     }
 
-    fn registries(shard: &Shard) -> &Registries<Self> {
-        &shard.groupwise
+    fn registries(shard: &mut Shard) -> &mut Registries<Self> {
+        &mut shard.groupwise
     }
 
     fn gauge_shared(storage: &Storage) -> &Mutex<GaugeOrigins<Self>> {
@@ -113,8 +114,8 @@ impl ScopeKind for ActorScope {
         (scope.group(), key_hash)
     }
 
-    fn registries(shard: &Shard) -> &Registries<Self> {
-        &shard.actorwise
+    fn registries(shard: &mut Shard) -> &mut Registries<Self> {
+        &mut shard.actorwise
     }
 
     fn gauge_shared(storage: &Storage) -> &Mutex<GaugeOrigins<Self>> {
@@ -135,7 +136,7 @@ impl ScopeKind for ActorScope {
 /// contention, especially if multiple actors use the same telemetry key,
 /// what's common for per-group telemetry or per-actor grouped telemetry.
 pub(crate) struct Storage {
-    shards: ThreadLocal<Shard>,
+    shards: ThreadLocal<CachePadded<Mutex<Shard>>>,
     // Shared gauge origins between shards. See `Gauge` for more details.
     gauge_shared: GaugeShared,
     descriptions: Mutex<FxHashMap<String, Description>>,
@@ -152,9 +153,9 @@ struct Shard {
 // by one thread. Periodically, they are accessed by the telemeter actor for the
 // short period of time in order to replace these registries with empty ones.
 struct Registries<S: ScopeKind> {
-    counters: Mutex<Registry<S, Counter>>,
-    gauges: Mutex<Registry<S, Gauge>>,
-    histograms: Mutex<Registry<S, Histogram>>,
+    counters: Registry<S, Counter>,
+    gauges: Registry<S, Gauge>,
+    histograms: Registry<S, Histogram>,
 }
 
 impl<S: ScopeKind> Default for Registries<S> {
@@ -224,10 +225,10 @@ impl Storage {
         S: ScopeKind,
         M: Storable,
     {
-        let shard = self.shards.get_or_default();
-        let registries = S::registries(shard);
+        let mut shard = self.shards.get_or_default().lock();
+        let registries = S::registries(&mut shard);
         let reg_key = S::make_key(scope, key);
-        let mut registry = M::registry(registries).lock();
+        let registry = M::registry(registries);
 
         let entry = registry.entry(reg_key).or_insert_with(|| {
             let shared = M::shared::<S>(self, reg_key);
@@ -245,13 +246,16 @@ impl Storage {
         }
 
         for shard in self.shards.iter() {
+            // TODO: allocate a new empty registry with enough capacity.
+            // It improves tail latency, what's important for near RT actors.
+            let mut shard = mem::take(&mut *shard.lock());
             let mut stats = ShardStats::new::<Shard>();
 
-            self.merge_registries::<GlobalScope>(shard, snapshot, only_compact, &mut stats)
+            self.merge_registries::<GlobalScope>(&mut shard, snapshot, only_compact, &mut stats)
                 .await;
-            self.merge_registries::<GroupScope>(shard, snapshot, only_compact, &mut stats)
+            self.merge_registries::<GroupScope>(&mut shard, snapshot, only_compact, &mut stats)
                 .await;
-            self.merge_registries::<ActorScope>(shard, snapshot, only_compact, &mut stats)
+            self.merge_registries::<ActorScope>(&mut shard, snapshot, only_compact, &mut stats)
                 .await;
 
             storage_stats.add_shard(&stats);
@@ -264,7 +268,7 @@ impl Storage {
 
     async fn merge_registries<S: ScopeKind>(
         &self,
-        shard: &Shard,
+        shard: &mut Shard,
         snapshot: &mut Snapshot,
         only_compact: bool,
         stats: &mut ShardStats,
@@ -283,21 +287,13 @@ impl Storage {
 
     async fn merge_registry<S: ScopeKind, M: Storable>(
         &self,
-        registries: &Registries<S>,
+        registries: &mut Registries<S>,
         snapshot: &mut Snapshot,
         stats: &mut ShardStats,
     ) {
         let registry = M::registry(registries);
-
-        let registry = {
-            // Allocate a new empty registry with enough capacity.
-            // It improves tail latency, what's important for near RT actors.
-            let len = registry.lock().len();
-            let empty = Registry::with_capacity_and_hasher(len, <_>::default());
-
-            let mut registry = registry.lock();
-            mem::replace(&mut *registry, empty)
-        };
+        // TODO: it's not necessary to replace with default.
+        let registry = mem::take(registry);
 
         stats.add_registry(&registry);
 
@@ -316,14 +312,14 @@ impl Storage {
 // === Storable ===
 
 pub(crate) trait Storable: MetricKind {
-    fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>>;
+    fn registry<S: ScopeKind>(registries: &mut Registries<S>) -> &mut Registry<S, Self>;
     fn shared<S: ScopeKind>(storage: &Storage, key: S::Key) -> Self::Shared;
     fn snapshot<'s>(metrics: &'s mut Metrics, key: &Key) -> &'s mut Self::Output;
 }
 
 impl Storable for Counter {
-    fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>> {
-        &registries.counters
+    fn registry<S: ScopeKind>(registries: &mut Registries<S>) -> &mut Registry<S, Self> {
+        &mut registries.counters
     }
 
     fn shared<S: ScopeKind>(_: &Storage, _: S::Key) -> Self::Shared {}
@@ -335,8 +331,8 @@ impl Storable for Counter {
 }
 
 impl Storable for Gauge {
-    fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>> {
-        &registries.gauges
+    fn registry<S: ScopeKind>(registries: &mut Registries<S>) -> &mut Registry<S, Self> {
+        &mut registries.gauges
     }
 
     fn shared<S: ScopeKind>(storage: &Storage, key: S::Key) -> Self::Shared {
@@ -351,8 +347,8 @@ impl Storable for Gauge {
 }
 
 impl Storable for Histogram {
-    fn registry<S: ScopeKind>(registries: &Registries<S>) -> &Mutex<Registry<S, Self>> {
-        &registries.histograms
+    fn registry<S: ScopeKind>(registries: &mut Registries<S>) -> &mut Registry<S, Self> {
+        &mut registries.histograms
     }
 
     fn shared<S: ScopeKind>(_: &Storage, _: S::Key) -> Self::Shared {}
