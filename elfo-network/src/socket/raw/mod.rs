@@ -102,6 +102,24 @@ impl AsyncWrite for OwnedWriteHalf {
     }
 }
 
+impl OwnedWriteHalf {
+    pub(crate) fn collect_transport_specific_metrics(&mut self) {
+        match self {
+            Self::Tcp(v) => {
+                v.collect_transport_specific_metrics();
+            }
+            #[cfg(unix)]
+            Self::Uds(_) => {
+                // No UDS-specific metrics yet
+            }
+            #[cfg(feature = "turmoil06")]
+            Self::Turmoil06(_) => {
+                // No Turmoil-specific metrics
+            }
+        }
+    }
+}
+
 pub(super) struct Socket {
     pub(super) read: OwnedReadHalf,
     pub(super) write: OwnedWriteHalf,

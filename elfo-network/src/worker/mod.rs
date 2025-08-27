@@ -111,7 +111,11 @@ impl Worker {
             first_message.initial_window,
         )));
         let requests = Arc::new(Mutex::new(OutgoingRequests::default()));
-        let socket = first_message.socket.take().unwrap();
+        let socket = {
+            let mut socket = first_message.socket.take().unwrap();
+            socket.enable_transport_specific_metrics(self.ctx.config().transport_specific_metrics);
+            socket
+        };
 
         info!(
             message = "connection picked up",
@@ -195,6 +199,7 @@ impl Worker {
                     });
                     let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
                 }
+
                 HandleConnection { socket, .. } => {
                     let socket = socket.take().unwrap();
                     info!(

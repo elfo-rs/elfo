@@ -56,6 +56,13 @@ pub struct Config {
     /// `30s` by default.
     #[serde(with = "humantime_serde", default = "default_idle_timeout")]
     pub idle_timeout: Duration,
+    /// Enables transport-specific metrics reporting.
+    ///
+    /// Note: Only Linux/TCP is currently supported. See [`libc::tcp_info`].
+    ///
+    /// `false` by default.
+    #[serde(default = "default_transport_specific_metrics")]
+    pub transport_specific_metrics: bool,
 }
 
 fn default_ping_interval() -> Duration {
@@ -64,6 +71,10 @@ fn default_ping_interval() -> Duration {
 
 fn default_idle_timeout() -> Duration {
     Duration::from_secs(30)
+}
+
+fn default_transport_specific_metrics() -> bool {
+    false
 }
 
 /// How to discover other nodes.
