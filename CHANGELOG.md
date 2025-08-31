@@ -14,8 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - network: emit the `elfo_network_io_write_waiting_seconds` metric.
 - network: emit the `elfo_message_waiting_time_seconds` metric for all messages.
 - core/messages: add `Terminate::reason` ([#167]).
+- core/source: add `SourceHandle::terminate_by_ref()`.
 
 ### Changed
+- **BREAKING** core/source: now `SourceHandle::terminate()` returns a boolean.
 - network: revise connection management ([#163]).
 - core: make `NodeLaunchId` based on `NonZeroU64`.
 

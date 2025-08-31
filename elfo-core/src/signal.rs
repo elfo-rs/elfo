@@ -63,11 +63,11 @@ pub struct Signal<M> {
 #[sealed]
 impl<M: Message> crate::source::SourceHandle for Signal<M> {
     fn is_terminated(&self) -> bool {
-        self.source.lock().is_none()
+        self.source.is_terminated()
     }
 
-    fn terminate(self) {
-        ward!(self.source.lock()).terminate();
+    fn terminate_by_ref(&self) -> bool {
+        self.source.terminate_by_ref()
     }
 }
 

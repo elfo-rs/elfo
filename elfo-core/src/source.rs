@@ -56,7 +56,21 @@ pub trait SourceHandle {
     fn is_terminated(&self) -> bool;
 
     /// Terminates the source. `Drop` is called immediately.
-    fn terminate(self);
+    ///
+    /// Returns `true` if the source was terminated by this call, or `false` if
+    /// it was already terminated.
+    fn terminate(self) -> bool
+    where
+        Self: Sized,
+    {
+        self.terminate_by_ref()
+    }
+
+    /// Terminates the source. `Drop` is called immediately.
+    ///
+    /// Returns `true` if the source was terminated by this call, or `false` if
+    /// it was already terminated.
+    fn terminate_by_ref(&self) -> bool;
 }
 
 // === SourceArc ===
@@ -98,6 +112,19 @@ impl<S: ?Sized> SourceArc<S> {
             inner,
             marker: PhantomData,
         })
+    }
+
+    pub(crate) fn is_terminated(&self) -> bool {
+        self.inner.inner.lock().status() == StreamStatus::Terminated
+    }
+
+    pub(crate) fn terminate_by_ref(&self) -> bool {
+        if let Some(guard) = self.lock() {
+            guard.terminate();
+            true
+        } else {
+            false
+        }
     }
 }
 
