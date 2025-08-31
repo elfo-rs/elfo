@@ -1,10 +1,11 @@
-use std::{fmt, ops::Deref, sync::Arc, time::Duration};
+use std::{fmt, ops::Index, sync::Arc};
 
 use derive_more::{Display, IsVariant};
-
+use slotmap::SlotMap;
 use tokio::time::Instant;
 
 use elfo_core::message;
+use elfo_utils::ward;
 
 use crate::{
     config::Transport,
@@ -34,13 +35,13 @@ macro_rules! _log {
         match $conn {
             ref conn => {
                 tracing::$level!(
+                    message = $text,
                     role = %conn.role(),
                     id = %conn.id(),
-                    state = %conn.state(),
+                    status = %conn.status(),
                     socket = %$crate::connman::OptDisplay(conn.socket_info().map(|s| &s.raw)),
                     capabilities = %$crate::connman::OptDisplay(conn.socket_info().map(|s| &s.capabilities)),
                     $( $( $label = %$value, )* )?
-                    message = $text,
                 )
             }
         }
@@ -100,25 +101,156 @@ impl ConnectTransport {
 #[display("no such connection {_0:?}")]
 pub(crate) struct NoSuchConn(pub ConnId);
 
-pub(crate) enum EstablishDecision<'a> {
-    Proceed(ManagedConnRef<'a>),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EstablishDecision {
+    Proceed,
     Reject,
+}
+
+#[derive(Debug)]
+pub(crate) enum Command {
+    Open(ConnId),
 }
 
 pub(crate) struct ConnMan {
     config: config::Config,
-    conns: slotmap::SlotMap<ConnId, Conn>,
     node_map: Arc<NodeMap>,
+    conns: SlotMap<ConnId, Conn>,
 }
 
+// TODO: revise logging.
+
 impl ConnMan {
-    pub(crate) fn on_connection_failed(
+    pub(crate) fn new(config: config::Config, node_map: Arc<NodeMap>) -> Self {
+        Self {
+            config,
+            node_map,
+            conns: SlotMap::<ConnId, _>::default(),
+        }
+    }
+
+    pub(crate) fn insert_new(
         &mut self,
-        id: ConnId,
-    ) -> Result<ManagedConnRef<'_>, NoSuchConn> {
-        let conn = self.conns.get_mut(id).ok_or(NoSuchConn(id))?;
-        if conn.state.is_failed() {
-            return Ok(ManagedConnRef::new(id, conn));
+        role: ConnectionRole,
+        transport: ConnectTransport,
+    ) -> ConnId {
+        self.conns.insert_with_key(|conn_id| Conn {
+            id: conn_id,
+            role,
+            transport,
+            socket_info: None,
+            state: State::New {
+                connect_at: Instant::now(),
+            },
+        })
+    }
+
+    pub(crate) fn insert_establishing(
+        &mut self,
+        role: ConnectionRole,
+        transport: ConnectTransport,
+    ) -> ConnId {
+        self.conns.insert_with_key(|conn_id| Conn {
+            id: conn_id,
+            role,
+            transport,
+            socket_info: None,
+            state: State::Establishing,
+        })
+    }
+
+    pub(crate) fn abort_by_transport(&mut self, transport: &Transport) -> Vec<ConnId> {
+        let mut conn_ids = Vec::new();
+
+        self.conns.retain(|id, conn| {
+            if conn.status().is_aborting() || &conn.transport.transport != transport {
+                return true;
+            }
+
+            // Failed connections can be removed immediately.
+            if conn.status().is_failed() {
+                return false;
+            }
+
+            conn.switch_state(State::Aborting);
+            conn_ids.push(id);
+            true
+        });
+
+        conn_ids
+    }
+
+    pub(crate) fn get(&self, id: ConnId) -> Option<&Conn> {
+        self.conns.get(id)
+    }
+
+    pub(crate) fn manage_connections(&mut self) -> (Option<Instant>, Vec<Command>) {
+        let now = Instant::now();
+        let mut least_time: Option<Instant> = None;
+        let mut commands = Vec::new();
+
+        for conn_id in self.conns.keys().collect::<Vec<_>>() {
+            let (wake_time, command) = self.manage_connection(conn_id, now);
+
+            // Choose the least time to wake up next among all connections.
+            least_time = match (least_time, wake_time) {
+                (Some(least), Some(wake)) => Some(least.min(wake)),
+                (least, wake) => least.or(wake),
+            };
+
+            if let Some(command) = command {
+                commands.push(command);
+            }
+        }
+
+        (least_time, commands)
+    }
+
+    fn manage_connection(
+        &mut self,
+        conn_id: ConnId,
+        now: Instant,
+    ) -> (Option<Instant>, Option<Command>) {
+        let conn = self.conns.get_mut(conn_id).expect("expected to exist");
+
+        match &conn.state {
+            // New -> Establishing
+            State::New { connect_at } if *connect_at <= now => {
+                debug_assert!(conn.transport().direction.is_outgoing());
+                debug_assert!(conn.socket_info.is_none());
+                conn.switch_state(State::Establishing);
+                (None, Some(Command::Open(conn_id)))
+            }
+            State::New { connect_at } => (Some(*connect_at), None),
+
+            // Failed -> <removed>
+            // <new> -> Establishing
+            State::Failed { reconnect_at } if *reconnect_at <= now => {
+                debug_assert!(conn.transport().direction.is_outgoing());
+                let old = self.conns.remove(conn_id).unwrap();
+                let conn_id = self.insert_establishing(old.role, old.transport);
+                (None, Some(Command::Open(conn_id)))
+            }
+            State::Failed { reconnect_at } => (Some(*reconnect_at), None),
+
+            _ => (None, None),
+        }
+    }
+}
+
+// TODO: forbid more transitions if `Aborting`
+
+impl ConnMan {
+    pub(crate) fn on_connection_failed(&mut self, id: ConnId) {
+        let conn = ward!(self.conns.get_mut(id));
+        if conn.status().is_failed() {
+            return;
+        }
+
+        if conn.status().is_aborting() {
+            log_conn!(info, conn, "connection aborted");
+            self.conns.remove(id);
+            return;
         }
 
         let recon_interval = self.config.reconnect_interval;
@@ -127,39 +259,35 @@ impl ConnMan {
 
         log_conn!(
             info,
-            ManagedConnRef::new(id, conn),
+            conn,
             "connection failed",
             will_reconnect_after = format_args!("{recon_interval:?}"),
         );
 
-        conn.switch_state(id, StateInner::Failed { reconnect_at });
-
-        Ok(ManagedConnRef::new(id, conn))
+        if conn.transport().direction.is_incoming() {
+            log_conn!(
+                info,
+                conn,
+                "can't connect to node which transport is unknown, remote node must connect",
+            );
+            self.conns.remove(id);
+        } else {
+            conn.switch_state(State::Failed { reconnect_at });
+        }
     }
 
     pub(crate) fn on_connection_established(
         &mut self,
         id: ConnId,
         info: SocketInfo,
-    ) -> Result<EstablishDecision<'_>, NoSuchConn> {
-        let conn = self.conns.get(id).ok_or(NoSuchConn(id))?;
-        if info.peer.node_no == self.node_map.this.node_no {
-            log_conn!(
-                info,
-                ManagedConnRef::new(id, conn),
-                "connection to self ignored"
-            );
-            // see comment below.
-            // drop(conn);
-            self.conns.remove(id);
+    ) -> Result<EstablishDecision, NoSuchConn> {
+        let conn = self.conns.get_mut(id).ok_or(NoSuchConn(id))?;
 
+        if info.peer.node_no == self.node_map.this.node_no {
+            log_conn!(info, conn, "connection to self ignored");
+            self.conns.remove(id);
             return Ok(EstablishDecision::Reject);
         }
-
-        // ^^^ Sadly, lack of polonius. This guy refuses to shorten
-        // borrow of `self.conns`, because nuh uh we return that reference
-        // somewhere below, so, `conns.remove(id)` fails.
-        let conn = self.conns.get_mut(id).unwrap();
 
         match &conn.socket_info {
             Some(prev) if prev != &info => {
@@ -167,7 +295,7 @@ impl ConnMan {
                 conn.socket_info = Some(info);
                 log_conn!(
                     info,
-                    ManagedConnRef::new(id, conn),
+                    conn,
                     "socket info is changed",
                     transport = conn.transport().display(),
                     prev = prev.raw,
@@ -180,160 +308,47 @@ impl ConnMan {
             _ => {}
         }
 
-        conn.switch_state(id, StateInner::Established);
+        conn.switch_state(State::Established);
 
-        Ok(EstablishDecision::Proceed(ManagedConnRef::new(id, conn)))
+        Ok(EstablishDecision::Proceed)
     }
 
-    pub(crate) fn on_connection_accepted(
-        &mut self,
-        id: ConnId,
-        role: ConnectionRole,
-    ) -> Result<ManagedConnRef<'_>, NoSuchConn> {
-        let conn = self.conns.get_mut(id).ok_or(NoSuchConn(id))?;
+    pub(crate) fn on_connection_accepted(&mut self, id: ConnId, role: ConnectionRole) {
+        let conn = ward!(self.conns.get_mut(id));
+        // TODO: role can be changed only if it was `Unknown` before.
         conn.role = role;
-        conn.switch_state(id, StateInner::Accepted);
-
-        Ok(ManagedConnRef::new(id, conn))
-    }
-
-    pub(crate) fn open_connections(
-        &mut self,
-    ) -> (Option<Instant>, impl Iterator<Item = (State, ConnId)>) {
-        let now = Instant::now();
-        let mut least_time: Option<Instant> = None;
-        let mut ready = Vec::new();
-
-        for (id, conn) in self.conns.iter_mut() {
-            // Let's think about it as a closure.
-            macro_rules! establishing {
-                ($time:expr) => {{
-                    let time = $time;
-                    let diff = time.duration_since(now);
-                    // tokio timers are 1ms precise anyway.
-                    if diff <= Duration::from_millis(1) {
-                        conn.socket_info = None;
-                        let prev = conn.switch_state(id, StateInner::Establishing);
-                        ready.push((State(prev), id));
-                    } else if let Some(least) = &mut least_time {
-                        *least = (*least).min(time);
-                    } else {
-                        least_time = Some(time);
-                    }
-                }};
-            }
-
-            match conn.state {
-                StateInner::Failed { reconnect_at } => {
-                    establishing!(reconnect_at)
-                }
-                StateInner::New { connect_at } => establishing!(connect_at),
-                _ => {}
-            }
-        }
-
-        let ready = ready
-            .into_iter()
-            .filter_map(|(st, id)| {
-                let conn = self.get(id).unwrap();
-                if conn.transport().direction.is_incoming() {
-                    log_conn!(
-                        info,
-                        conn,
-                        "can't connect to node which transport is unknown, remote node must connect",
-                    );
-                    _ = self.conns.remove(id).unwrap();
-
-                    return None;
-                }
-
-                let id = match st.0 {
-                    StateInner::Failed { .. } => {
-                        self.realloc_id(id).unwrap()
-                    },
-                    _ => id,
-                };
-
-                Some((st, id))
-            })
-            // Simplest way of draining whole iterator, it's needed for
-            // ID reallocation in case of accidental iterator drop.
-            .collect::<Vec<_>>();
-        (least_time, ready.into_iter())
+        conn.switch_state(State::Accepted);
     }
 }
 
-impl ConnMan {
-    pub(crate) fn new(config: config::Config, node_map: Arc<NodeMap>) -> Self {
-        Self {
-            config,
-            conns: slotmap::SlotMap::<ConnId, _>::default(),
-            node_map,
-        }
-    }
+impl Index<ConnId> for ConnMan {
+    type Output = Conn;
 
-    pub(crate) fn insert_new(
-        &mut self,
-        role: ConnectionRole,
-        transport: ConnectTransport,
-    ) -> ConnId {
-        self.conns.insert(Conn {
-            role,
-            transport,
-            socket_info: None,
-            state: StateInner::New {
-                connect_at: Instant::now(),
-            },
-        })
-    }
-
-    pub(crate) fn insert_establishing(
-        &mut self,
-        role: ConnectionRole,
-        transport: ConnectTransport,
-    ) -> ConnId {
-        self.conns.insert(Conn {
-            role,
-            transport,
-            socket_info: None,
-            state: StateInner::Establishing,
-        })
-    }
-
-    pub(crate) fn get(&self, id: ConnId) -> Result<ManagedConnRef<'_>, NoSuchConn> {
-        self.conns
-            .get(id)
-            .map(|conn| ManagedConnRef { id, conn })
-            .ok_or(NoSuchConn(id))
-    }
-
-    /// Reallocate ID for that connection, previous id would be
-    /// no longer accessible.
-    fn realloc_id(&mut self, prev: ConnId) -> Result<ConnId, NoSuchConn> {
-        let prev = self.conns.remove(prev).ok_or(NoSuchConn(prev))?;
-        let id = self.conns.insert(prev);
-
-        Ok(id)
+    #[track_caller]
+    fn index(&self, index: ConnId) -> &Self::Output {
+        self.conns.get(index).expect("no such connection")
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, IsVariant, derive_more::Display)]
-enum StateInner {
-    #[display("New")]
-    New {
-        connect_at: Instant,
-    },
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IsVariant, Display)]
+pub(crate) enum Status {
+    New,
     Establishing,
     Established,
     Accepted,
-    #[display("Failed")]
-    Failed {
-        reconnect_at: Instant,
-    },
+    Failed,
+    Aborting,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
-pub(crate) struct State(StateInner);
+#[derive(Debug)]
+enum State {
+    New { connect_at: Instant },
+    Establishing,
+    Established,
+    Accepted,
+    Failed { reconnect_at: Instant },
+    Aborting,
+}
 
 #[derive(PartialEq, Eq, Clone)]
 pub(crate) struct SocketInfo {
@@ -343,13 +358,18 @@ pub(crate) struct SocketInfo {
 }
 
 pub(crate) struct Conn {
+    id: ConnId,
     role: ConnectionRole,
-    state: StateInner,
+    state: State,
     transport: ConnectTransport,
     socket_info: Option<SocketInfo>,
 }
 
 impl Conn {
+    pub(crate) const fn id(&self) -> ConnId {
+        self.id
+    }
+
     pub(crate) const fn transport(&self) -> &ConnectTransport {
         &self.transport
     }
@@ -358,45 +378,24 @@ impl Conn {
         self.role
     }
 
-    pub(crate) const fn state(&self) -> State {
-        State(self.state)
+    pub(crate) const fn status(&self) -> Status {
+        match &self.state {
+            State::New { .. } => Status::New,
+            State::Establishing => Status::Establishing,
+            State::Established => Status::Established,
+            State::Accepted => Status::Accepted,
+            State::Failed { .. } => Status::Failed,
+            State::Aborting => Status::Aborting,
+        }
     }
 
     pub(crate) fn socket_info(&self) -> Option<&SocketInfo> {
         self.socket_info.as_ref()
     }
 
-    fn switch_state(&mut self, id: ConnId, new: StateInner) -> StateInner {
-        let prev = std::mem::replace(&mut self.state, new);
-        log_conn!(
-            debug,
-            ManagedConnRef { id, conn: &*self },
-            "connection is switched state",
-            from = prev,
-        );
-        prev
-    }
-}
-
-pub(crate) struct ManagedConnRef<'a> {
-    id: ConnId,
-    conn: &'a Conn,
-}
-
-impl Deref for ManagedConnRef<'_> {
-    type Target = Conn;
-
-    fn deref(&self) -> &Self::Target {
-        self.conn
-    }
-}
-
-impl<'a> ManagedConnRef<'a> {
-    fn new(id: ConnId, conn: &'a Conn) -> Self {
-        Self { id, conn }
-    }
-
-    pub(crate) const fn id(&self) -> ConnId {
-        self.id
+    fn switch_state(&mut self, new: State) {
+        let prev_status = self.status();
+        self.state = new;
+        log_conn!(debug, self, "connection switched state", from = prev_status);
     }
 }

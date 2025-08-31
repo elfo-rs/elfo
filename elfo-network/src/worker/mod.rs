@@ -33,7 +33,7 @@ use crate::{
         },
     },
     frame::write::FrameState,
-    protocol::{internode, ConnId, ConnectionFailed, GroupInfo, HandleConnection},
+    protocol::{internode, AbortConnection, ConnId, ConnectionFailed, GroupMeta, HandleConnection},
     rtt::Rtt,
     socket::{ReadError, ReadHalf, WriteHalf},
     NetworkContext,
@@ -74,15 +74,15 @@ impl Drop for FailGuard {
 pub(crate) struct Worker {
     ctx: NetworkContext,
     topology: Topology,
-    local: GroupInfo,
-    remote: GroupInfo,
+    local: GroupMeta,
+    remote: GroupMeta,
 }
 
 impl Worker {
     pub(super) fn new(
         ctx: NetworkContext,
-        local: GroupInfo,
-        remote: GroupInfo,
+        local: GroupMeta,
+        remote: GroupMeta,
         topology: Topology,
     ) -> Self {
         Self {
@@ -203,6 +203,12 @@ impl Worker {
                         peer = %socket.peer,
                         capabilities = %socket.capabilities,
                     );
+                }
+                AbortConnection { id, .. } => {
+                    if id == first_message.id {
+                        info!("connection aborted due to internal request");
+                        break;
+                    }
                 }
                 StartPusher(addr) => {
                     let pusher = Pusher {

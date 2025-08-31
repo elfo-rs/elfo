@@ -22,7 +22,7 @@ use elfo_core::{
 
 use crate::{
     config::Config,
-    protocol::{ConnectionFailed, GroupInfo, HandleConnection},
+    protocol::{AbortConnection, ConnectionFailed, GroupMeta, HandleConnection},
 };
 
 pub mod config;
@@ -40,7 +40,7 @@ mod worker;
 #[derive(PartialEq, Eq, Hash, Clone)]
 enum ActorKey {
     Discovery,
-    Worker { local: GroupInfo, remote: GroupInfo },
+    Worker { local: GroupMeta, remote: GroupMeta },
 }
 
 impl Display for ActorKey {
@@ -60,7 +60,7 @@ impl Display for ActorKey {
 
 type NetworkContext = Context<Config, ActorKey>;
 
-/// TODO
+/// Creates a blueprint for the internode network layer.
 pub fn new(topology: &Topology) -> Blueprint {
     let topology = topology.clone();
 
@@ -72,6 +72,10 @@ pub fn new(topology: &Topology) -> Blueprint {
                 // TODO: send to all connections.
                 UpdateConfig => Outcome::Unicast(ActorKey::Discovery),
                 msg @ HandleConnection => Outcome::Unicast(ActorKey::Worker {
+                    local: msg.local.clone(),
+                    remote: msg.remote.clone(),
+                }),
+                msg @ AbortConnection => Outcome::GentleUnicast(ActorKey::Worker {
                     local: msg.local.clone(),
                     remote: msg.remote.clone(),
                 }),

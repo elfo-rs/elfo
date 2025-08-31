@@ -3,20 +3,30 @@ use std::{future::Future, mem, sync::Arc, time::Duration};
 use advise_timer::NewTimerSetup;
 use eyre::{bail, eyre, Result, WrapErr};
 use futures::StreamExt;
-use tracing::{debug, error, info, warn};
+use slotmap::SecondaryMap;
+use tracing::{error, info, warn};
 
 use elfo_core::{
-    message, msg, scope, tracing::TraceId, AnyMessage, Envelope, Message, MoveOwnership,
-    RestartPolicy, _priv::MessageKind, addr::GroupNo, messages::ConfigUpdated, stream::Stream,
-    time::Delay, RestartParams, Topology, UnattachedSource,
+    message, msg, scope,
+    stream::{Stream, StreamItem},
+    tracing::TraceId,
+    AnyMessage, Envelope, Message, MoveOwnership, RestartPolicy, SourceHandle, UnattachedSource,
+    _priv::MessageKind,
+    addr::GroupNo,
+    messages::ConfigUpdated,
+    time::Delay,
+    RestartParams, Topology,
 };
+use elfo_utils::ward;
 
 use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     config::{self, Transport},
-    connman::{self, log_conn, ConnMan, ConnectTransport, EstablishDecision, ManagedConnRef},
+    connman::{self, log_conn, Command, ConnMan, ConnectTransport, EstablishDecision},
     node_map::{NodeInfo, NodeMap},
-    protocol::{internode, ConnId, ConnectionFailed, ConnectionRole, GroupInfo, HandleConnection},
+    protocol::{
+        internode, AbortConnection, ConnId, ConnectionFailed, ConnectionRole, HandleConnection,
+    },
     socket::{self, ReadError, Socket},
     NetworkContext,
 };
@@ -33,7 +43,7 @@ mod diff;
 const INITIAL_WINDOW_SIZE: i32 = 100_000;
 
 #[message]
-struct OpenConnectionsTick;
+struct ManageConnectionsTick;
 
 #[message]
 enum ConnectionAllocation {
@@ -65,13 +75,13 @@ pub(super) struct Discovery {
     ctx: NetworkContext,
     node_map: Arc<NodeMap>,
     connman: ConnMan,
+    // Stream handles for connections driven by this actor.
+    // It's used for all control connections and establishing data connections.
+    streams: SecondaryMap<ConnId, Box<dyn SourceHandle + Send>>,
     advise_timer: AdviseTimer,
 }
 
-// TODO: move control connections to dedicated actors.
 // TODO: detect duplicate nodes.
-// TODO: discover tick.
-// TODO: status of in-progress connections
 // TODO: launch_id changed.
 // TODO: graceful termination.
 
@@ -80,16 +90,17 @@ impl Discovery {
         let cfg = ctx.config().clone();
         let node_map = Arc::new(NodeMap::new(&topology));
         Self {
+            ctx,
             connman: ConnMan::new(
                 connman::Config {
                     reconnect_interval: cfg.discovery.attempt_interval,
                 },
                 Arc::clone(&node_map),
             ),
-            node_map,
+            streams: <_>::default(),
             advise_timer: AdviseTimer::new(),
+            node_map,
             cfg,
-            ctx,
         }
     }
 
@@ -106,8 +117,8 @@ impl Discovery {
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
-                OpenConnectionsTick => {
-                    self.open_connections();
+                ManageConnectionsTick => {
+                    self.manage_connections();
                 }
 
                 ConfigUpdated => self.on_update_config(),
@@ -132,12 +143,13 @@ impl Discovery {
         Ok(())
     }
 
-    fn open_connections(&mut self) {
-        let (next_check_advise, connections) = self.connman.open_connections();
+    fn manage_connections(&mut self) {
+        let (next_check_advise, commands) = self.connman.manage_connections();
+
         if let Some(advise) = next_check_advise {
             match self.advise_timer.feed(advise) {
                 NewTimerSetup::Do { at } => {
-                    self.ctx.attach(Delay::until(at, OpenConnectionsTick));
+                    self.ctx.attach(Delay::until(at, ManageConnectionsTick));
                     info!(
                         after = ?advise.duration_since(Instant::now()),
                         "scheduled next connection opening",
@@ -147,19 +159,45 @@ impl Discovery {
             }
         }
 
-        let capabilities = self.get_capabilities();
-        for (prev_state, id) in connections {
-            let conn = self.connman.get(id).unwrap();
-            log_conn!(
-                info,
-                conn,
-                "opening connection",
-                prev_state = prev_state,
-                addr = conn.transport().display(),
-            );
+        for command in commands {
+            match command {
+                Command::Open(conn_id) => self.open_existing_connection(conn_id),
+            }
+        }
+    }
 
-            let stream = Self::open_existing_connection(capabilities, &self.node_map, conn);
-            self.ctx.attach(stream);
+    fn abort_connection(&mut self, conn_id: ConnId) {
+        // Firstly, check if a connection is driven by this actor.
+        if let Some(handle) = self.streams.remove(conn_id) {
+            if handle.terminate_by_ref() {
+                self.connman.on_connection_failed(conn_id);
+                // A connection is driven by this actor, so we don't need to notify a worker.
+                return;
+            }
+        }
+
+        let conn = ward!(self.connman.get(conn_id));
+
+        if let ConnectionRole::Data {
+            local_group_no,
+            remote_group_no,
+        } = conn.role()
+        {
+            let remote_node_no = ward!(conn.socket_info()).peer.node_no;
+
+            let local = ward!(self.node_map.local_group_meta(local_group_no));
+            let remote = ward!(self
+                .node_map
+                .remote_group_meta(remote_node_no, remote_group_no));
+
+            _ = self.ctx.unbounded_send_to(
+                self.ctx.group(),
+                AbortConnection {
+                    id: conn_id,
+                    local,
+                    remote,
+                },
+            );
         }
     }
 
@@ -178,7 +216,7 @@ impl Discovery {
     }
 
     fn on_update_config(&mut self) {
-        // TODO: Update listeners.
+        // TODO: update listeners.
         let cfg = self.ctx.config().clone();
         let old = mem::replace(&mut self.cfg, cfg);
 
@@ -201,14 +239,14 @@ impl Discovery {
                 self.discover(transport);
             }
 
-            // FIXME: handle removal.
-            if !removed.is_empty() {
-                warn!(
-                    ?removed,
-                    "got removal of several discovery.predefined entries, this is not supported as of now"
-                );
+            for transport in removed {
+                for conn_id in self.connman.abort_by_transport(&transport) {
+                    self.abort_connection(conn_id);
+                }
             }
         }
+
+        self.manage_connections();
     }
 
     async fn listen(&mut self) -> Result<()> {
@@ -244,6 +282,7 @@ impl Discovery {
             self.discover(transport);
             idx += 1;
         }
+        self.manage_connections();
     }
 
     fn discover(&mut self, transport: Transport) {
@@ -253,29 +292,27 @@ impl Discovery {
     fn open_new_connection(&mut self, transport: Transport, role: ConnectionRole) {
         self.connman
             .insert_new(role, ConnectTransport::outgoing(transport));
-        self.open_connections();
     }
 
-    fn open_existing_connection(
-        capabilities: socket::Capabilities,
-        node_map: &NodeMap,
-        conn: ManagedConnRef<'_>,
-    ) -> UnattachedSource<Stream<Result<impl Message, impl Message>>> {
-        let node_no = node_map.this.node_no;
-        let launch_id = node_map.this.launch_id;
+    fn open_existing_connection(&mut self, conn_id: ConnId) {
+        let conn = ward!(self.connman.get(conn_id));
+        let capabilities = self.get_capabilities();
+
+        let node_no = self.node_map.this.node_no;
+        let launch_id = self.node_map.this.launch_id;
 
         let id = conn.id();
         let role = conn.role();
         let transport = conn.transport().clone();
 
-        Stream::once(async move {
-            debug!(
-                message = "connecting to peer",
-                addr = %transport.display(),
-                role = %role,
-                capabilities = %capabilities,
-            );
+        log_conn!(
+            debug,
+            conn,
+            "connecting to peer",
+            addr = transport.display(),
+        );
 
+        let stream = Stream::once(async move {
             match socket::connect(&transport.transport, node_no, launch_id, capabilities).await {
                 Ok(socket) => Ok(ConnectionEstablished {
                     socket: socket.into(),
@@ -293,7 +330,8 @@ impl Discovery {
                     Err(ConnectionFailed { id })
                 }
             }
-        })
+        });
+        self.attach_conn_stream(conn_id, stream);
     }
 
     fn on_connection_established(&mut self, msg: ConnectionEstablished) {
@@ -318,7 +356,7 @@ impl Discovery {
             )
             .unwrap()
         {
-            EstablishDecision::Proceed(conn) => conn,
+            EstablishDecision::Proceed => &self.connman[conn_id],
             EstablishDecision::Reject => return,
         };
         let role = conn.role();
@@ -327,7 +365,7 @@ impl Discovery {
         let node_map = self.node_map.clone();
         let idle_timeout = self.cfg.idle_timeout;
 
-        self.ctx.attach(Stream::once(async move {
+        let stream = Stream::once(async move {
             let info = socket.info.clone();
             let peer = socket.peer;
 
@@ -343,15 +381,16 @@ impl Discovery {
                     );
                     ConnectionFailed { id }
                 })
-        }));
+        });
+        self.attach_conn_stream(conn_id, stream);
     }
 
     fn on_connection_accepted(&mut self, msg: ConnectionAccepted) {
         let socket = msg.socket.take().unwrap();
-        let id = msg.id;
+        let conn_id = msg.id;
 
         match msg.remote_msg {
-            RemoteSwitchMessage::Control(remote) => {
+            RemoteSwitchMessage::Control(params) => {
                 {
                     let mut nodes = self.node_map.nodes.lock();
                     nodes.insert(
@@ -359,19 +398,19 @@ impl Discovery {
                         NodeInfo {
                             node_no: socket.peer.node_no,
                             launch_id: socket.peer.launch_id,
-                            groups: remote.groups.clone(),
+                            groups: params.groups.clone(),
                         },
                     );
 
                     // TODO: check launch_id.
                 }
 
-                self.control_maintenance(socket, id);
+                self.control_maintenance(socket, conn_id);
 
-                let conn = self
-                    .connman
-                    .on_connection_accepted(id, ConnectionRole::Control)
-                    .unwrap();
+                self.connman
+                    .on_connection_accepted(conn_id, ConnectionRole::Control);
+
+                let conn = self.connman.get(conn_id).unwrap();
 
                 // Only initiator (client) can start new connections,
                 // because he knows the transport address.
@@ -384,9 +423,9 @@ impl Discovery {
                 let transport = transport.transport.clone();
 
                 // Open connections for all interesting pairs of groups.
-                infer_connections(&remote.groups, &this_node.groups)
+                infer_connections(&params.groups, &this_node.groups)
                     .map(|(remote_group_no, local_group_no)| (local_group_no, remote_group_no))
-                    .chain(infer_connections(&this_node.groups, &remote.groups))
+                    .chain(infer_connections(&this_node.groups, &params.groups))
                     .collect::<Vec<_>>()
                     .into_iter()
                     .for_each(|(local_group_no, remote_group_no)| {
@@ -399,86 +438,54 @@ impl Discovery {
                         // TODO: connect without DNS resolving here.
                         self.open_new_connection(transport.clone(), role);
                     });
+
+                self.manage_connections();
             }
-            RemoteSwitchMessage::Data(remote) => {
-                let local_group_no = remote.your_group_no;
-                let local_group_name = self
+            RemoteSwitchMessage::Data(params) => {
+                let local = self.node_map.local_group_meta(params.your_group_no);
+                let remote = self
                     .node_map
-                    .this
-                    .groups
-                    .iter()
-                    .find(|g| g.group_no == local_group_no)
-                    .map(|g| g.name.clone())
-                    .ok_or("group not found");
+                    .remote_group_meta(socket.peer.node_no, params.my_group_no);
 
-                let remote_group_no = remote.my_group_no;
-                let remote_group_name = self
-                    .node_map
-                    .nodes
-                    .lock()
-                    .get(&socket.peer.node_no)
-                    .ok_or("node not found")
-                    .and_then(|n| {
-                        n.groups
-                            .iter()
-                            .find(|g| g.group_no == remote_group_no)
-                            .map(|g| g.name.clone())
-                            .ok_or("group not found")
-                    });
+                self.connman.on_connection_accepted(
+                    conn_id,
+                    ConnectionRole::Data {
+                        local_group_no: params.your_group_no,
+                        remote_group_no: params.my_group_no,
+                    },
+                );
 
-                self.connman
-                    .on_connection_accepted(
-                        id,
-                        ConnectionRole::Data {
-                            local_group_no,
-                            remote_group_no,
-                        },
-                    )
-                    .unwrap();
-                let failed = ConnectionFailed { id };
+                let (local, remote) = match (local, remote) {
+                    (Some(local), Some(remote)) => (local, remote),
+                    (local, remote) => {
+                        // TODO: it should be error once connection manager is implemented.
+                        info!(
+                            message = "control and data connections contradict each other",
+                            socket = %socket.info,
+                            peer = %socket.peer,
+                            local_group = ?local,
+                            remote_group = ?remote,
+                        );
 
-                let (local_group_name, remote_group_name) =
-                    match (local_group_name, remote_group_name) {
-                        (Ok(local_group_name), Ok(remote_group_name)) => {
-                            (local_group_name, remote_group_name)
-                        }
-                        (local_group, remote_group) => {
-                            // TODO: it should be error once connection manager is implemented.
-                            info!(
-                                message = "control and data connections contradict each other",
-                                socket = %socket.info,
-                                peer = %socket.peer,
-                                ?local_group,
-                                ?remote_group,
-                            );
-
-                            _ = self.ctx.unbounded_send_to(self.ctx.addr(), failed);
-                            return;
-                        }
-                    };
+                        self.connman.on_connection_failed(conn_id);
+                        return;
+                    }
+                };
 
                 let res = self.ctx.try_send_to(
                     self.ctx.group(),
                     HandleConnection {
-                        id,
-                        local: GroupInfo {
-                            node_no: self.node_map.this.node_no,
-                            group_no: remote.your_group_no,
-                            group_name: local_group_name,
-                        },
-                        remote: GroupInfo {
-                            node_no: socket.peer.node_no,
-                            group_no: remote.my_group_no,
-                            group_name: remote_group_name,
-                        },
+                        id: conn_id,
+                        local,
+                        remote,
                         socket: socket.into(),
-                        initial_window: remote.initial_window,
+                        initial_window: params.initial_window,
                     },
                 );
 
                 if let Err(err) = res {
                     error!(message = "cannot start connection handler", error = %err);
-                    let _ = self.ctx.unbounded_send_to(self.ctx.addr(), failed);
+                    self.connman.on_connection_failed(conn_id);
                 }
             }
         }
@@ -486,12 +493,12 @@ impl Discovery {
 
     fn on_connection_failed(&mut self, msg: ConnectionFailed) {
         let ConnectionFailed { id } = msg;
-        self.connman.on_connection_failed(id).unwrap();
-        self.open_connections();
+        self.connman.on_connection_failed(id);
+        self.manage_connections();
     }
 
-    fn control_maintenance(&mut self, mut socket: Socket, id: ConnId) {
-        self.ctx.attach(Stream::once(async move {
+    fn control_maintenance(&mut self, mut socket: Socket, conn_id: ConnId) {
+        let stream = Stream::once(async move {
             let err = control_maintenance(&mut socket).await.unwrap_err();
 
             info!(
@@ -501,8 +508,20 @@ impl Discovery {
                 reason = format!("{err:#}"), // TODO: use `AsRef<dyn Error>`
             );
 
-            ConnectionFailed { id }
-        }));
+            ConnectionFailed { id: conn_id }
+        });
+        self.attach_conn_stream(conn_id, stream);
+    }
+
+    fn attach_conn_stream<M: StreamItem>(
+        &mut self,
+        conn_id: ConnId,
+        stream: UnattachedSource<Stream<M>>,
+    ) {
+        let handle = self.ctx.attach(stream);
+        if let Some(prev) = self.streams.insert(conn_id, Box::new(handle)) {
+            debug_assert!(prev.is_terminated());
+        }
     }
 }
 

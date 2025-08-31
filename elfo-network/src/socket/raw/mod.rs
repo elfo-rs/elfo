@@ -37,6 +37,13 @@ pub(crate) enum SocketInfo {
     Turmoil06(turmoil::SocketInfo),
 }
 
+impl SocketInfo {
+    #[cfg(test)]
+    pub(crate) fn tcp(local: std::net::SocketAddr, peer: std::net::SocketAddr) -> Self {
+        Self::Tcp(tcp::SocketInfo::new(local, peer))
+    }
+}
+
 pub(super) enum OwnedReadHalf {
     Tcp(tcp::OwnedReadHalf),
     #[cfg(unix)]

@@ -7,23 +7,28 @@ use elfo_core::{
 
 use crate::{codec::format::NetworkAddr, socket::Socket};
 
-// Internal.
-
 slotmap::new_key_type! {
     #[derive(Display)]
-    #[display("{:X}", self.0.as_ffi())]
+    #[display("{:?}", self.0)] // <index>v<version>
     pub(crate) struct ConnId;
 }
 
 #[message]
 pub(crate) struct HandleConnection {
     pub(crate) id: ConnId,
-    pub(crate) local: GroupInfo,
-    pub(crate) remote: GroupInfo,
+    pub(crate) local: GroupMeta,
+    pub(crate) remote: GroupMeta,
     pub(crate) socket: MoveOwnership<Socket>,
     /// Initial window size of every flow.
     pub(crate) initial_window: i32,
     // TODO: different windows for rx/tx and routed flows.
+}
+
+#[message]
+pub(crate) struct AbortConnection {
+    pub(crate) id: ConnId,
+    pub(crate) local: GroupMeta,
+    pub(crate) remote: GroupMeta,
 }
 
 #[message]
@@ -46,7 +51,7 @@ pub(crate) enum ConnectionRole {
 
 #[message(part)]
 #[derive(PartialEq, Eq, Hash)]
-pub(crate) struct GroupInfo {
+pub(crate) struct GroupMeta {
     pub(crate) node_no: NodeNo,
     pub(crate) group_no: GroupNo,
     pub(crate) group_name: String,

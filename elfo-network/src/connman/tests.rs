@@ -1,91 +1,174 @@
-use std::time::Duration;
-use tokio::time;
+use std::{sync::Arc, time::Duration};
+
+use tokio::time::{self, Instant};
+
+use elfo_core::addr::{NodeLaunchId, NodeNo};
 
 use crate::{
     config::Transport,
-    connman::{Config, ConnId, ConnMan, ConnectTransport, StateInner},
+    connman::{Command, Config, ConnMan, ConnectTransport, EstablishDecision, SocketInfo, Status},
     node_map::NodeMap,
     protocol::ConnectionRole,
+    socket,
 };
-
-const RECON_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Assert that expression matches the pattern. Optionally,
 /// part of the pattern could be returned:
 /// ```
-/// use elfo_utils::assert_matches;
-///
 /// assert_matches!(1, 1);
 /// let x = assert_matches!((1, 2), x = (x, _));
 /// assert_eq!(x, 1);
 /// ```
 macro_rules! assert_matches {
-    ($e:expr, $pat:pat $(,)?) => {
-        assert_matches!($e, $pat => {})
+    ($e:expr, $pat:pat $(if $guard:expr)? $(,)?) => {
+        assert_matches!($e, $pat $(if $guard)? => {})
     };
-    ($e:expr, $pat:pat => $ret:expr $(,)?) => {{
+    ($e:expr, $pat:pat $(if $guard:expr)? => $ret:expr $(,)?) => {{
         // Using `match` for some reason prolongs lifetime of underlying
         // object in $e. For example: `Vec::new().as_slice()` would work here,
         // with let - it wouldn't.
         match $e {
             expr => match expr {
-                $pat => $ret,
+                $pat $(if $guard)? => $ret,
                 _ => panic!("{expr:?} does not matches {}", stringify!($pat)),
             },
         }
     }};
 }
 
+const RECON_INTERVAL: Duration = Duration::from_millis(100);
+const THIS_NODE_NO: u16 = 1;
+const THIS_LAUNCH_ID: u64 = 1;
+
 fn manager() -> ConnMan {
+    let node_map = Arc::new(NodeMap::empty(
+        NodeNo::from_bits(THIS_NODE_NO).unwrap(),
+        NodeLaunchId::from_bits(THIS_LAUNCH_ID).unwrap(),
+    ));
+
     ConnMan::new(
         Config {
             reconnect_interval: RECON_INTERVAL,
         },
-        NodeMap::test().into(),
+        node_map,
     )
 }
 
-fn tcp() -> ConnectTransport {
-    ConnectTransport::outgoing(Transport::Tcp("0.0.0.0:1337".to_owned()))
+fn tcp_outgoing(host: &str) -> ConnectTransport {
+    ConnectTransport::outgoing(Transport::Tcp(format!("{host}:1337")))
 }
 
-fn control() -> ConnectionRole {
-    ConnectionRole::Control
+fn tcp_socket_info(node_no: u16, launch_id: u64) -> SocketInfo {
+    let addr = "192.168.0.0:1234".parse().unwrap(); // doesn't matter for now
+    let raw = socket::SocketInfo::tcp(addr, addr);
+    let peer = socket::Peer {
+        node_no: NodeNo::from_bits(node_no).unwrap(),
+        launch_id: NodeLaunchId::from_bits(launch_id).unwrap(),
+    };
+    let capabilities = socket::Capabilities::new(socket::Compression::empty());
+    SocketInfo {
+        raw,
+        peer,
+        capabilities,
+    }
 }
 
-/// drain connection queue.
+/// Drain connection queue.
 #[track_caller]
-fn cq_of(man: &mut ConnMan) -> Vec<(StateInner, ConnId)> {
-    let (_, cq) = man.open_connections();
+fn cq_of(man: &mut ConnMan) -> (Option<Duration>, Vec<Command>) {
+    let (wake_time, commands) = man.manage_connections();
+    (wake_time.map(|t| t - Instant::now()), commands)
+}
 
-    cq.map(|(st, id)| (st.0, id)).collect()
+#[test]
+fn it_schedules_opening_for_new_connection() {
+    let mut man = manager();
+    let conn_id = man.insert_new(ConnectionRole::Control, tcp_outgoing("peer"));
+    assert_eq!(man[conn_id].status(), Status::New);
+
+    let (wake, cmds) = cq_of(&mut man);
+    assert!(wake.is_none());
+    assert_matches!(cmds.as_slice(), [Command::Open(id)] if *id == conn_id);
+    assert_eq!(man[conn_id].status(), Status::Establishing);
 }
 
 #[tokio::test(start_paused = true)]
-async fn inserting_new_adds_to_connection_queue_immediately() {
+async fn it_reconnects_failed_connection() {
     let mut man = manager();
-    let expected = man.insert_new(control(), tcp());
-    let got = assert_matches!(cq_of(&mut man).as_slice(), [(StateInner::New { .. }, id)] => *id);
+    let prev_id = man.insert_new(ConnectionRole::Control, tcp_outgoing("peer"));
+    assert_eq!(man[prev_id].status(), Status::New);
 
-    assert_eq!(expected, got);
-}
-
-#[tokio::test(start_paused = true)]
-async fn failed_connections_reconnect_after_delay() {
-    let mut man = manager();
-    let prev_id = man.insert_new(control(), tcp());
-
-    man.on_connection_failed(prev_id).unwrap();
+    man.on_connection_failed(prev_id);
+    assert_eq!(man[prev_id].status(), Status::Failed);
 
     // No immediate reconnect.
-    assert_matches!(cq_of(&mut man).as_slice(), []);
+    let (wake, cmds) = cq_of(&mut man);
+    assert_eq!(wake, Some(RECON_INTERVAL));
+    assert!(cmds.is_empty());
 
     time::advance(RECON_INTERVAL).await;
 
     // Reconnect after a while.
-    let failed_id =
-        assert_matches!(cq_of(&mut man).as_slice(), [(StateInner::Failed { .. }, id)] => *id);
-
+    let (wake, cmds) = cq_of(&mut man);
+    assert!(wake.is_none());
     // ID should not be reused.
-    assert_ne!(prev_id, failed_id);
+    assert!(matches!(cmds.as_slice(), [Command::Open(id)] if id != &prev_id));
+}
+
+#[test]
+fn it_rejects_connection_to_self() {
+    let mut man = manager();
+    let conn_id = man.insert_new(ConnectionRole::Control, tcp_outgoing("peer"));
+    assert_eq!(man[conn_id].status(), Status::New);
+
+    let socket_info = tcp_socket_info(THIS_NODE_NO, 100);
+    let decision = man.on_connection_established(conn_id, socket_info).unwrap();
+    assert_eq!(decision, EstablishDecision::Reject);
+    assert!(man.get(conn_id).is_none());
+}
+
+#[test]
+fn it_accepts_connection() {
+    let mut man = manager();
+    let conn_id = man.insert_establishing(ConnectionRole::Control, tcp_outgoing("peer"));
+    assert_eq!(man[conn_id].status(), Status::Establishing);
+
+    let socket_info = tcp_socket_info(2, 100);
+    let decision = man.on_connection_established(conn_id, socket_info).unwrap();
+    assert_eq!(decision, EstablishDecision::Proceed);
+    assert_eq!(man[conn_id].status(), Status::Established);
+    assert!(man[conn_id].socket_info().is_some());
+
+    man.on_connection_accepted(conn_id, ConnectionRole::Control);
+    assert_eq!(man[conn_id].status(), Status::Accepted);
+}
+
+#[test]
+fn it_aborts_connections() {
+    let mut man = manager();
+
+    // A connection that shouldn't be aborted.
+    let good_id = man.insert_establishing(ConnectionRole::Control, tcp_outgoing("good"));
+    assert_eq!(man[good_id].status(), Status::Establishing);
+
+    // A failed connection that should be removed immediately when aborted.
+    let failed_id = man.insert_establishing(ConnectionRole::Control, tcp_outgoing("bad"));
+    assert_eq!(man[failed_id].status(), Status::Establishing);
+    man.on_connection_failed(failed_id);
+    assert_eq!(man[failed_id].status(), Status::Failed);
+
+    // A failed connection that should be switched to `Aborting` until failed.
+    let establishing_id = man.insert_establishing(ConnectionRole::Control, tcp_outgoing("bad"));
+    assert_eq!(man[establishing_id].status(), Status::Establishing);
+
+    let aborted = man.abort_by_transport(&"tcp://bad:1337".parse().unwrap());
+    assert_eq!(aborted, &[establishing_id]);
+    assert_eq!(man[establishing_id].status(), Status::Aborting);
+    // Failed connections are removed immediately.
+    assert!(man.get(failed_id).is_none());
+    assert_eq!(man[good_id].status(), Status::Establishing);
+
+    // Finally the last connection fails and removed immediately.
+    man.on_connection_failed(establishing_id);
+    assert!(man.get(establishing_id).is_none());
 }

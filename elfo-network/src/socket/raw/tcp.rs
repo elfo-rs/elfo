@@ -15,6 +15,12 @@ pub(crate) struct SocketInfo {
     peer: SocketAddr,
 }
 
+impl SocketInfo {
+    pub(crate) fn new(local: SocketAddr, peer: SocketAddr) -> Self {
+        Self { local, peer }
+    }
+}
+
 pub(super) struct Socket {
     pub(super) read: OwnedReadHalf,
     pub(super) write: OwnedWriteHalf,
@@ -22,10 +28,9 @@ pub(super) struct Socket {
 }
 
 fn prepare_stream(stream: TcpStream) -> Result<Socket> {
-    let info = SocketInfo {
-        local: stream.local_addr().wrap_err("cannot get local addr")?,
-        peer: stream.peer_addr().wrap_err("cannot get peer addr")?,
-    };
+    let local = stream.local_addr().wrap_err("cannot get local addr")?;
+    let peer = stream.peer_addr().wrap_err("cannot get peer addr")?;
+    let info = SocketInfo::new(local, peer);
 
     // TODO: settings (keepalive, linger, etc.)
     if let Err(err) = stream.set_nodelay(true) {
