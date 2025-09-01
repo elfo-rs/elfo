@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use derive_more::Display;
 use eyre::{Result, WrapErr};
@@ -8,7 +8,7 @@ use turmoil06::net::{TcpListener, TcpStream};
 
 pub(super) use turmoil06::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
-const PORT: u16 = 0xE1F0;
+const DEFAULT_PORT: u16 = 0xE1F0;
 
 #[derive(Clone, Display, PartialEq, Eq)]
 #[display("turmoil06(local={local}, peer={peer})")] // TODO: use `valuable` after tracing#1570
@@ -39,12 +39,12 @@ fn stringify_addr(addr: SocketAddr) -> String {
     format!("{host}:{port}")
 }
 
-pub(super) async fn connect(host: &str) -> Result<Socket> {
-    prepare_stream(TcpStream::connect((host, PORT)).await?)
+pub(super) async fn connect(addr: &str) -> Result<Socket> {
+    prepare_stream(TcpStream::connect(prepare_addr(addr)).await?)
 }
 
-pub(super) async fn listen(host: &str) -> Result<impl Stream<Item = Socket> + 'static> {
-    let listener = TcpListener::bind((host, PORT)).await?;
+pub(super) async fn listen(addr: &str) -> Result<impl Stream<Item = Socket> + 'static> {
+    let listener = TcpListener::bind(prepare_addr(addr)).await?;
 
     let accept = move |listener: TcpListener| async move {
         loop {
@@ -58,7 +58,7 @@ pub(super) async fn listen(host: &str) -> Result<impl Stream<Item = Socket> + 's
                 Ok(socket) => return Some((socket, listener)),
                 Err(err) => {
                     warn!(
-                        message = "cannot accept TCP connection",
+                        message = "cannot accept turmoil connection",
                         error = %err,
                         // TODO: addr
                     );
@@ -70,4 +70,20 @@ pub(super) async fn listen(host: &str) -> Result<impl Stream<Item = Socket> + 's
     };
 
     Ok(futures::stream::unfold(listener, accept))
+}
+
+fn prepare_addr(addr: &str) -> String {
+    if addr.parse::<SocketAddr>().is_ok() {
+        return addr.to_string();
+    }
+
+    if addr.parse::<IpAddr>().is_ok() {
+        return format!("{addr}:{DEFAULT_PORT}");
+    }
+
+    if addr.contains(':') {
+        addr.to_string()
+    } else {
+        format!("{addr}:{DEFAULT_PORT}")
+    }
 }

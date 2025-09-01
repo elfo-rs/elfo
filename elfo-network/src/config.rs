@@ -92,7 +92,9 @@ pub enum Transport {
     #[cfg(unix)]
     #[display("uds://{}", _0.display())]
     Uds(PathBuf),
-    /// Turmoil v0.6 transport ("turmoil06://host").
+    /// Turmoil v0.6 transport ("turmoil06://host:port").
+    ///
+    /// A port can be omitted, in which case the default port is 57840 (0xE1F0).
     ///
     /// Useful for testing purposes only.
     #[cfg(feature = "turmoil06")]
