@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - logger: add the `format.colorization` parameter to force colors in logs.
 - network: emit the `elfo_network_io_write_waiting_seconds` metric.
 - network: emit the `elfo_message_waiting_time_seconds` metric for all messages.
+- network: emit TCP-specific metrics if configured ([#170]).
 - core/messages: add `Terminate::reason` ([#167]).
 - core/source: add `SourceHandle::terminate_by_ref()`.
 
@@ -36,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#167]: https://github.com/elfo-rs/elfo/pull/167
 [#168]: https://github.com/elfo-rs/elfo/pull/168
 [#169]: https://github.com/elfo-rs/elfo/pull/169
+[#170]: https://github.com/elfo-rs/elfo/pull/170
 
 ## [0.2.0-alpha.19] - 2025-05-21
 ### Added
