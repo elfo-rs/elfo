@@ -4,9 +4,10 @@
 
 use std::{sync::Arc, time::Duration};
 
-use tokio::sync::Notify;
+use serde::Deserialize;
+use tokio::sync::{mpsc, Notify};
 use toml::toml;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use elfo::{
     messages::UpdateConfig,
@@ -19,15 +20,15 @@ use elfo::{
 
 mod common;
 
+#[message]
+struct SimpleMessage(u64);
+
+#[message]
+struct ProducerTick;
+
 #[test]
 fn simple() {
     common::setup_logger();
-
-    #[message]
-    struct SimpleMessage(u64);
-
-    #[message]
-    struct ProducerTick;
 
     fn producer() -> Blueprint {
         ActorGroup::new().exec(move |mut ctx| async move {
@@ -303,4 +304,152 @@ fn remote_actor_terminates_without_waiting_for_response() {
     });
 
     sim.run().unwrap();
+}
+
+#[test]
+fn manual_transport_switch() {
+    common::setup_logger();
+
+    fn producer() -> Blueprint {
+        ActorGroup::new().exec(move |mut ctx| async move {
+            ctx.attach(Interval::new(ProducerTick))
+                .start(Duration::from_secs(1));
+
+            let mut counter = 0;
+            while let Some(envelope) = ctx.recv().await {
+                msg!(match envelope {
+                    ProducerTick => {
+                        let res = ctx.send(SimpleMessage(counter)).await;
+                        info!("sent message #{counter} => {res:?}");
+                        counter += 1;
+                    }
+                })
+            }
+        })
+    }
+
+    fn consumer() -> Blueprint {
+        ActorGroup::new().exec(move |mut ctx| async move {
+            while let Some(envelope) = ctx.recv().await {
+                msg!(match envelope {
+                    SimpleMessage(no) => {
+                        info!("received message #{no}");
+                    }
+                })
+            }
+        })
+    }
+
+    fn client_config(server_port: u16) -> toml::Value {
+        let server_addr = format!("turmoil06://server:{server_port}");
+        toml! {
+            [system.network]
+            discovery.predefined = [server_addr]
+            discovery.attempt_interval = "1s"
+            ping_interval = "1s"
+            idle_timeout = "1s"
+        }
+        .into()
+    }
+
+    let mut sim = turmoil::Builder::new()
+        // TODO: We don't actually use I/O, but otherwise the test panics with:
+        //  "there is no signal driver running"
+        // Need to detect availability of the signal driver in the `Signal` source.
+        .enable_tokio_io()
+        .tick_duration(Duration::from_millis(100))
+        .build();
+
+    sim.host("server", || async {
+        let topology = Topology::empty();
+        let configurers = topology.local("system.configurers").entrypoint();
+        let network = topology.local("system.network");
+        let producers = topology.local("producers");
+        let consumers = topology.remote("consumers");
+
+        producers.route_to(&consumers, |_, _| topology::Outcome::Broadcast);
+
+        network.mount(elfo::batteries::network::new(&topology));
+        configurers.mount(elfo::batteries::configurer::fixture(
+            &topology,
+            toml! {
+                [system.network]
+                listen = [
+                    "turmoil06://0.0.0.0:10000",
+                    "turmoil06://0.0.0.0:11111",
+                ]
+                ping_interval = "1s"
+                idle_timeout = "1s"
+            },
+        ));
+        producers.mount(producer());
+
+        Ok(elfo::init::try_start(topology).await?)
+    });
+
+    let (switch_tx, mut switch_rx) = mpsc::unbounded_channel();
+
+    sim.client("client", async {
+        let topology = Topology::empty();
+        let configurers = topology.local("system.configurers").entrypoint();
+        let network = topology.local("system.network");
+        let consumers = topology.local("consumers");
+
+        let network_addr = network.addr();
+
+        network.mount(elfo::batteries::network::new(&topology));
+        configurers.mount(elfo::batteries::configurer::fixture(
+            &topology,
+            client_config(10000),
+        ));
+        consumers.mount(consumer());
+
+        Ok(elfo::_priv::do_start(topology, false, |ctx, _| async move {
+            while let Some(new_port) = switch_rx.recv().await {
+                debug!("switching to port {new_port}");
+
+                let new_config = client_config(new_port);
+                let network_config = new_config
+                    .get("system")
+                    .unwrap()
+                    .get("network")
+                    .unwrap()
+                    .clone();
+
+                ctx.try_send_to(
+                    network_addr,
+                    UpdateConfig::new(<_>::deserialize(network_config).unwrap()),
+                )
+                .unwrap();
+            }
+        })
+        .await?)
+    });
+
+    let mut steps = 5;
+    let mut expected_src = 10000;
+
+    while steps > 0 {
+        sim.step().unwrap();
+
+        // Switch between ports every time we see `SimpleMessage`.
+        sim.links(|links| {
+            for sent in links.flatten() {
+                let (src, dst) = sent.pair();
+
+                let got = matches!(sent.protocol(),
+                    turmoil::Protocol::Tcp(turmoil::Segment::Data(_, bytes))
+                    if bytes.windows(b"SimpleMessage".len()).any(|w| w == b"SimpleMessage")
+                );
+
+                if got {
+                    steps -= 1;
+                    warn!("SimpleMessage transferred from {src} to {dst}");
+                    assert_eq!(src.port(), expected_src);
+                    expected_src = if expected_src == 10000 { 11111 } else { 10000 };
+                    switch_tx.send(expected_src).unwrap();
+                }
+            }
+        });
+    }
 }
