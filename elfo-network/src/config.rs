@@ -29,6 +29,10 @@ use serde::{
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     /// A list of addresses to listen on.
+    ///
+    /// If changed, all existing connections related to removed transports
+    /// are closed immediately. New listeners are created for added
+    /// transports.
     #[serde(default)]
     pub listen: Vec<Transport>,
     /// How to discover other nodes.
@@ -78,17 +82,29 @@ fn default_transport_specific_metrics() -> bool {
 }
 
 /// How to discover other nodes.
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone)]
+#[serde(default)]
 pub struct DiscoveryConfig {
     /// Predefined list of transports to connect to.
+    ///
+    /// If changed, all existing connections related to removed transports
+    /// are closed immediately. New connections are created for added
+    /// transports.
     pub predefined: Vec<Transport>,
     /// How often to attempt to connect to other nodes.
-    #[serde(with = "humantime_serde", default = "default_attempt_interval")]
+    ///
+    /// `10s` by default.
+    #[serde(with = "humantime_serde")]
     pub attempt_interval: Duration,
 }
 
-fn default_attempt_interval() -> Duration {
-    Duration::from_secs(10)
+impl Default for DiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            predefined: Vec::new(),
+            attempt_interval: Duration::from_secs(10),
+        }
+    }
 }
 
 /// Transport used for communication between nodes.

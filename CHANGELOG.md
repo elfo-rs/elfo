@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **BREAKING** core/source: now `SourceHandle::terminate()` returns a boolean.
 - network: revise connection management ([#163]).
-- network: abort outgoing connections on reconfiguration if related address is removed from the config.
+- network: abort connections on reconfiguration if related address is removed from the config.
 - core: make `NodeLaunchId` based on `NonZeroU64`.
 
 ### Fixed

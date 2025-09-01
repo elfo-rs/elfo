@@ -3,6 +3,7 @@ use std::{future::Future, mem, sync::Arc, time::Duration};
 use advise_timer::NewTimerSetup;
 use eyre::{bail, eyre, Result, WrapErr};
 use futures::StreamExt;
+use fxhash::FxHashMap;
 use slotmap::SecondaryMap;
 use tracing::{error, info, warn};
 
@@ -21,7 +22,7 @@ use elfo_utils::ward;
 
 use crate::{
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
-    config::{self, Transport},
+    config::{Config, DiscoveryConfig, Transport},
     connman::{self, log_conn, Command, ConnMan, ConnectTransport, EstablishDecision},
     node_map::{NodeInfo, NodeMap},
     protocol::{
@@ -71,13 +72,15 @@ enum RemoteSwitchMessage {
 }
 
 pub(super) struct Discovery {
-    cfg: config::Config,
+    cfg: Config,
     ctx: NetworkContext,
     node_map: Arc<NodeMap>,
     connman: ConnMan,
     // Stream handles for connections driven by this actor.
     // It's used for all control connections and establishing data connections.
-    streams: SecondaryMap<ConnId, Box<dyn SourceHandle + Send>>,
+    conn_streams: SecondaryMap<ConnId, Box<dyn SourceHandle + Send>>,
+    // Stream handles for listening sockets.
+    listen_streams: FxHashMap<Transport, Box<dyn SourceHandle + Send>>,
     advise_timer: AdviseTimer,
 }
 
@@ -97,7 +100,8 @@ impl Discovery {
                 },
                 Arc::clone(&node_map),
             ),
-            streams: <_>::default(),
+            conn_streams: <_>::default(),
+            listen_streams: <_>::default(),
             advise_timer: AdviseTimer::new(),
             node_map,
             cfg,
@@ -112,16 +116,15 @@ impl Discovery {
                 Duration::from_secs(30),
             )));
 
-        self.listen().await?;
-        self.discover_all();
+        self.update_listen(<_>::default()).await;
+        self.update_discovery(<_>::default());
+        self.manage_connections();
 
         while let Some(envelope) = self.ctx.recv().await {
             msg!(match envelope {
-                ManageConnectionsTick => {
-                    self.manage_connections();
-                }
+                ManageConnectionsTick => self.manage_connections(),
 
-                ConfigUpdated => self.on_update_config(),
+                ConfigUpdated => self.on_update_config().await,
 
                 // Connection management.
                 //
@@ -168,7 +171,7 @@ impl Discovery {
 
     fn abort_connection(&mut self, conn_id: ConnId) {
         // Firstly, check if a connection is driven by this actor.
-        if let Some(handle) = self.streams.remove(conn_id) {
+        if let Some(handle) = self.conn_streams.remove(conn_id) {
             if handle.terminate_by_ref() {
                 self.connman.on_connection_failed(conn_id);
                 // A connection is driven by this actor, so we don't need to notify a worker.
@@ -215,78 +218,91 @@ impl Discovery {
         socket::Capabilities::new(compression)
     }
 
-    fn on_update_config(&mut self) {
-        // TODO: update listeners.
+    async fn on_update_config(&mut self) {
         let cfg = self.ctx.config().clone();
         let old = mem::replace(&mut self.cfg, cfg);
 
+        self.update_listen(old.listen).await;
         self.update_discovery(old.discovery);
-    }
-
-    fn update_discovery(&mut self, old: config::DiscoveryConfig) {
-        let config::DiscoveryConfig {
-            predefined,
-            attempt_interval: _,
-        } = old;
-
-        {
-            let Diff { new, removed } = Diff::make(
-                predefined.into_iter().collect(),
-                &self.ctx.config().discovery.predefined,
-            );
-
-            for transport in new {
-                self.discover(transport);
-            }
-
-            for transport in removed {
-                for conn_id in self.connman.abort_by_transport(&transport) {
-                    self.abort_connection(conn_id);
-                }
-            }
-        }
-
         self.manage_connections();
     }
 
-    async fn listen(&mut self) -> Result<()> {
+    async fn update_listen(&mut self, old: Vec<Transport>) {
+        let Diff { new, removed } =
+            Diff::make(old.into_iter().collect(), &self.ctx.config().listen);
+
+        for transport in new {
+            self.listen(transport).await;
+        }
+
+        for transport in removed {
+            // Stop listening on this transport.
+            if let Some(handle) = self.listen_streams.remove(&transport) {
+                handle.terminate_by_ref();
+            }
+
+            // Abort all *incoming* connections using this transport.
+            for conn_id in self.connman.abort_by_transport(&transport) {
+                self.abort_connection(conn_id);
+            }
+        }
+    }
+
+    async fn listen(&mut self, transport: Transport) {
         let node_no = self.node_map.this.node_no;
         let launch_id = self.node_map.this.launch_id;
         let capabilities = self.get_capabilities();
 
-        for transport in &self.cfg.listen {
-            let cloned = transport.clone();
-            let stream = socket::listen(transport, node_no, launch_id, capabilities)
-                .await
-                .wrap_err_with(|| eyre!("cannot listen {transport}"))?
-                .map(move |socket| ConnectionEstablished {
-                    socket: socket.into(),
-                    connection: ConnectionAllocation::NonAllocated {
-                        transport: ConnectTransport::incoming(cloned.clone()),
-                    },
-                });
+        let stream = match socket::listen(&transport, node_no, launch_id, capabilities).await {
+            Ok(stream) => stream,
+            Err(err) => {
+                error!(
+                    message = "failed to start listening",
+                    addr = %transport,
+                    error = %err,
+                );
+                return;
+            }
+        };
 
-            info!(message = "listening for connections", addr = %transport);
+        info!(message = "listening for connections", addr = %transport);
 
-            self.ctx.attach(Stream::from_futures03(stream));
+        let transport_2 = transport.clone();
+        let stream = stream.map(move |socket| ConnectionEstablished {
+            socket: socket.into(),
+            connection: ConnectionAllocation::NonAllocated {
+                transport: ConnectTransport::incoming(transport_2.clone()),
+            },
+        });
+
+        let handle = self.ctx.attach(Stream::from_futures03(stream));
+        if let Some(prev) = self.listen_streams.insert(transport, Box::new(handle)) {
+            debug_assert!(prev.is_terminated());
+            prev.terminate_by_ref();
         }
-
-        Ok(())
     }
 
-    fn discover_all(&mut self) {
-        // Nuh uh, borrowing.
-        let mut idx = 0;
-        while idx < self.cfg.discovery.predefined.len() {
-            let transport = self.cfg.discovery.predefined[idx].clone();
-            self.discover(transport);
-            idx += 1;
-        }
-        self.manage_connections();
-    }
+    fn update_discovery(&mut self, old: DiscoveryConfig) {
+        let DiscoveryConfig {
+            predefined,
+            attempt_interval: _,
+        } = old;
 
-    fn discover(&mut self, transport: Transport) {
-        self.open_new_connection(transport, ConnectionRole::Control);
+        let Diff { new, removed } = Diff::make(
+            predefined.into_iter().collect(),
+            &self.ctx.config().discovery.predefined,
+        );
+
+        for transport in new {
+            self.open_new_connection(transport, ConnectionRole::Control);
+        }
+
+        for transport in removed {
+            // Abort all *outgoing* connections using this transport.
+            for conn_id in self.connman.abort_by_transport(&transport) {
+                self.abort_connection(conn_id);
+            }
+        }
     }
 
     fn open_new_connection(&mut self, transport: Transport, role: ConnectionRole) {
@@ -519,8 +535,9 @@ impl Discovery {
         stream: UnattachedSource<Stream<M>>,
     ) {
         let handle = self.ctx.attach(stream);
-        if let Some(prev) = self.streams.insert(conn_id, Box::new(handle)) {
+        if let Some(prev) = self.conn_streams.insert(conn_id, Box::new(handle)) {
             debug_assert!(prev.is_terminated());
+            prev.terminate_by_ref();
         }
     }
 }

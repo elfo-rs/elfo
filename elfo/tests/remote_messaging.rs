@@ -26,27 +26,49 @@ struct SimpleMessage(u64);
 #[message]
 struct ProducerTick;
 
+fn simple_producer() -> Blueprint {
+    ActorGroup::new().exec(move |mut ctx| async move {
+        ctx.attach(Interval::new(ProducerTick))
+            .start(Duration::from_secs(1));
+
+        let mut counter = 0;
+        while let Some(envelope) = ctx.recv().await {
+            msg!(match envelope {
+                ProducerTick => {
+                    let res = ctx.send(SimpleMessage(counter)).await;
+                    info!("sent message #{counter} => {res:?}");
+                    counter += 1;
+                }
+            })
+        }
+    })
+}
+
+fn simple_consumer() -> Blueprint {
+    ActorGroup::new().exec(move |mut ctx| async move {
+        while let Some(envelope) = ctx.recv().await {
+            msg!(match envelope {
+                SimpleMessage(no) => {
+                    info!("received message #{no}");
+                }
+            })
+        }
+    })
+}
+
+fn turmoil_sim() -> turmoil::Sim<'static> {
+    turmoil::Builder::new()
+        // TODO: We don't actually use I/O, but otherwise the test panics with:
+        //  "there is no signal driver running"
+        // Need to detect availability of the signal driver in the `Signal` source.
+        .enable_tokio_io()
+        .tick_duration(Duration::from_millis(100))
+        .build()
+}
+
 #[test]
 fn simple() {
     common::setup_logger();
-
-    fn producer() -> Blueprint {
-        ActorGroup::new().exec(move |mut ctx| async move {
-            ctx.attach(Interval::new(ProducerTick))
-                .start(Duration::from_secs(1));
-
-            let mut counter = 0;
-            while let Some(envelope) = ctx.recv().await {
-                msg!(match envelope {
-                    ProducerTick => {
-                        let res = ctx.send(SimpleMessage(counter)).await;
-                        info!("sent message #{counter} => {res:?}");
-                        counter += 1;
-                    }
-                })
-            }
-        })
-    }
 
     fn consumer(notify: Arc<Notify>) -> Blueprint {
         ActorGroup::new().exec(move |mut ctx| {
@@ -80,13 +102,7 @@ fn simple() {
         })
     }
 
-    let mut sim = turmoil::Builder::new()
-        // TODO: We don't actually use I/O, but otherwise the test panics with:
-        //  "there is no signal driver running"
-        // Need to detect availability of the signal driver in the `Signal` source.
-        .enable_tokio_io()
-        .tick_duration(Duration::from_millis(100))
-        .build();
+    let mut sim = turmoil_sim();
 
     sim.host("server", || async {
         let topology = Topology::empty();
@@ -107,7 +123,7 @@ fn simple() {
                 idle_timeout = "1s"
             },
         ));
-        producers.mount(producer());
+        producers.mount(simple_producer());
 
         Ok(elfo::init::try_start(topology).await?)
     });
@@ -307,38 +323,8 @@ fn remote_actor_terminates_without_waiting_for_response() {
 }
 
 #[test]
-fn manual_transport_switch() {
+fn discovery_predefined_changed() {
     common::setup_logger();
-
-    fn producer() -> Blueprint {
-        ActorGroup::new().exec(move |mut ctx| async move {
-            ctx.attach(Interval::new(ProducerTick))
-                .start(Duration::from_secs(1));
-
-            let mut counter = 0;
-            while let Some(envelope) = ctx.recv().await {
-                msg!(match envelope {
-                    ProducerTick => {
-                        let res = ctx.send(SimpleMessage(counter)).await;
-                        info!("sent message #{counter} => {res:?}");
-                        counter += 1;
-                    }
-                })
-            }
-        })
-    }
-
-    fn consumer() -> Blueprint {
-        ActorGroup::new().exec(move |mut ctx| async move {
-            while let Some(envelope) = ctx.recv().await {
-                msg!(match envelope {
-                    SimpleMessage(no) => {
-                        info!("received message #{no}");
-                    }
-                })
-            }
-        })
-    }
 
     fn client_config(server_port: u16) -> toml::Value {
         let server_addr = format!("turmoil06://server:{server_port}");
@@ -352,13 +338,7 @@ fn manual_transport_switch() {
         .into()
     }
 
-    let mut sim = turmoil::Builder::new()
-        // TODO: We don't actually use I/O, but otherwise the test panics with:
-        //  "there is no signal driver running"
-        // Need to detect availability of the signal driver in the `Signal` source.
-        .enable_tokio_io()
-        .tick_duration(Duration::from_millis(100))
-        .build();
+    let mut sim = turmoil_sim();
 
     sim.host("server", || async {
         let topology = Topology::empty();
@@ -382,7 +362,7 @@ fn manual_transport_switch() {
                 idle_timeout = "1s"
             },
         ));
-        producers.mount(producer());
+        producers.mount(simple_producer());
 
         Ok(elfo::init::try_start(topology).await?)
     });
@@ -402,28 +382,137 @@ fn manual_transport_switch() {
             &topology,
             client_config(10000),
         ));
-        consumers.mount(consumer());
+        consumers.mount(simple_consumer());
 
         Ok(elfo::_priv::do_start(topology, false, |ctx, _| async move {
             while let Some(new_port) = switch_rx.recv().await {
                 debug!("switching to port {new_port}");
 
                 let new_config = client_config(new_port);
-                let network_config = new_config
-                    .get("system")
-                    .unwrap()
-                    .get("network")
-                    .unwrap()
-                    .clone();
+                let network_config = new_config.get("system").and_then(|v| v.get("network"));
 
                 ctx.try_send_to(
                     network_addr,
-                    UpdateConfig::new(<_>::deserialize(network_config).unwrap()),
+                    UpdateConfig::new(<_>::deserialize(network_config.unwrap().clone()).unwrap()),
                 )
                 .unwrap();
             }
         })
         .await?)
+    });
+
+    let mut steps = 5;
+    let mut expected_src = 10000;
+
+    while steps > 0 {
+        sim.step().unwrap();
+
+        // Switch between ports every time we see `SimpleMessage`.
+        sim.links(|links| {
+            for sent in links.flatten() {
+                let (src, dst) = sent.pair();
+
+                let got = matches!(sent.protocol(),
+                    turmoil::Protocol::Tcp(turmoil::Segment::Data(_, bytes))
+                    if bytes.windows(b"SimpleMessage".len()).any(|w| w == b"SimpleMessage")
+                );
+
+                if got {
+                    steps -= 1;
+                    warn!("SimpleMessage transferred from {src} to {dst}");
+                    assert_eq!(src.port(), expected_src);
+                    expected_src = if expected_src == 10000 { 11111 } else { 10000 };
+                    switch_tx.send(expected_src).unwrap();
+                }
+            }
+        });
+    }
+}
+
+#[test]
+fn listen_changed() {
+    common::setup_logger();
+
+    fn server_config(server_port: u16) -> toml::Value {
+        let server_addr = format!("turmoil06://0.0.0.0:{server_port}");
+        toml! {
+            [system.network]
+            listen = [server_addr]
+            discovery.attempt_interval = "1s"
+            ping_interval = "1s"
+            idle_timeout = "1s"
+        }
+        .into()
+    }
+
+    let mut sim = turmoil_sim();
+
+    let (switch_tx, switch_rx) = mpsc::unbounded_channel();
+    let switch_rx = elfo::MoveOwnership::from(switch_rx);
+
+    sim.host("server", move || {
+        let mut switch_rx = switch_rx.take().unwrap();
+        async move {
+            let topology = Topology::empty();
+            let configurers = topology.local("system.configurers").entrypoint();
+            let network = topology.local("system.network");
+            let producers = topology.local("producers");
+            let consumers = topology.remote("consumers");
+
+            let network_addr = network.addr();
+
+            producers.route_to(&consumers, |_, _| topology::Outcome::Broadcast);
+
+            network.mount(elfo::batteries::network::new(&topology));
+            configurers.mount(elfo::batteries::configurer::fixture(
+                &topology,
+                server_config(10000),
+            ));
+            producers.mount(simple_producer());
+
+            Ok(elfo::_priv::do_start(topology, false, |ctx, _| async move {
+                while let Some(new_port) = switch_rx.recv().await {
+                    debug!("switching to port {new_port}");
+
+                    let new_config = server_config(new_port);
+                    let network_config = new_config.get("system").and_then(|v| v.get("network"));
+
+                    ctx.try_send_to(
+                        network_addr,
+                        UpdateConfig::new(
+                            <_>::deserialize(network_config.unwrap().clone()).unwrap(),
+                        ),
+                    )
+                    .unwrap();
+                }
+            })
+            .await?)
+        }
+    });
+
+    sim.client("client", async {
+        let topology = Topology::empty();
+        let configurers = topology.local("system.configurers").entrypoint();
+        let network = topology.local("system.network");
+        let consumers = topology.local("consumers");
+
+        network.mount(elfo::batteries::network::new(&topology));
+        configurers.mount(elfo::batteries::configurer::fixture(
+            &topology,
+            toml! {
+                [system.network]
+                discovery.predefined = [
+                    "turmoil06://server:10000",
+                    "turmoil06://server:11111",
+                ]
+                discovery.attempt_interval = "1s"
+                ping_interval = "1s"
+                idle_timeout = "1s"
+            },
+        ));
+        consumers.mount(simple_consumer());
+
+        Ok(elfo::init::try_start(topology).await?)
     });
 
     let mut steps = 5;
