@@ -73,6 +73,10 @@ impl Socket {
             idle: idle_tracker,
         }
     }
+
+    pub(crate) fn enable_transport_specific_metrics(&mut self, enabled: bool) {
+        self.write.enable_transport_specific_metrics(enabled);
+    }
 }
 
 pub(crate) struct ReadHalf {
@@ -169,11 +173,20 @@ impl ReadHalf {
 pub(crate) struct WriteHalf {
     framing: FramedWrite,
     write: raw::OwnedWriteHalf,
+    transport_metrics_enabled: bool,
 }
 
 impl WriteHalf {
     fn new(framing: FramedWrite, write: raw::OwnedWriteHalf) -> Self {
-        Self { framing, write }
+        Self {
+            framing,
+            write,
+            transport_metrics_enabled: false,
+        }
+    }
+
+    fn enable_transport_specific_metrics(&mut self, enabled: bool) {
+        self.transport_metrics_enabled = enabled;
     }
 
     /// Encodes the message into the internal buffer.
@@ -229,6 +242,10 @@ impl WriteHalf {
             );
 
             total_messages_sent += stats.encode_stats.total_messages_encoded;
+
+            if self.transport_metrics_enabled {
+                self.write.collect_transport_specific_metrics();
+            }
         }
 
         counter!("elfo_network_sent_messages_total", total_messages_sent);
