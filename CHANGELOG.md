@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0-alpha.20] - 2025-09-11
 ### Added
 - test/proxy: add fallible methods for requesting ([#162]).
 - test/proxy: add the `Proxy::node_launch_id()` method.
@@ -747,7 +749,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feuer Frei!
 
 <!-- next-url -->
-[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.19...HEAD
+[Unreleased]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.20...HEAD
+[0.2.0-alpha.20]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.19...elfo-v0.2.0-alpha.20
 [0.2.0-alpha.19]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.18...elfo-v0.2.0-alpha.19
 [0.2.0-alpha.18]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.17...elfo-v0.2.0-alpha.18
 [0.2.0-alpha.17]: https://github.com/elfo-rs/elfo/compare/elfo-v0.2.0-alpha.16...elfo-v0.2.0-alpha.17

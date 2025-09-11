@@ -1,6 +1,6 @@
 [package]
 name = "elfo-macros-impl"
-version = "0.2.0-alpha.19"
+version = "0.2.0-alpha.20"
 description = "Macros for matching and deriving messages, implementation internals"
 keywords = ["elfo", "actor", "distributed", "tokio", "macros"]
 

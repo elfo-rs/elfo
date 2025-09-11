@@ -1,6 +1,6 @@
 [package]
 name = "elfo-logger"
-version = "0.2.0-alpha.19"
+version = "0.2.0-alpha.20"
 description = "Logs events of the elfo system"
 keywords = ["elfo", "actor", "distributed", "tokio", "logging"]
 
@@ -18,7 +18,7 @@ workspace = true
 tracing-log = [ "dep:tracing-log", "log" ]
 
 [dependencies]
-elfo-core = { version = "0.2.0-alpha.19", path = "../elfo-core", features = ["unstable"] }
+elfo-core = { version = "0.2.0-alpha.20", path = "../elfo-core", features = ["unstable"] }
 elfo-utils = { version = "0.2.7", path = "../elfo-utils" }
 
 metrics.workspace = true
@@ -40,7 +40,7 @@ humantime = "2.1.0"
 bytesize.workspace = true
 
 [dev-dependencies]
-elfo-core = { version = "0.2.0-alpha.19", path = "../elfo-core", features = ["test-util"] }
+elfo-core = { version = "0.2.0-alpha.20", path = "../elfo-core", features = ["test-util"] }
 elfo-test = { path = "../elfo-test" }
 
 toml.workspace = true
