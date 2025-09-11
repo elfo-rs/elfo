@@ -12,7 +12,7 @@ rust-version.workspace = true
 
 [dev-dependencies]
 elfo = { path = "../elfo" }
-elfo-utils = { version = "0.2.6", path = "../elfo-utils" }
+elfo-utils = { version = "0.2.7", path = "../elfo-utils" }
 
 metrics.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
