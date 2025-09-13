@@ -410,7 +410,8 @@ where
 
         entry.insert(Object::new(addr, actor));
 
-        let scope = Scope::new(scope::trace_id(), addr, meta, self.scope_shared.clone())
+        let group_scope = self.scope_shared.clone();
+        let scope = Scope::new(scope::trace_id(), addr, meta.clone(), group_scope)
             .with_telemetry(&system_config.telemetry);
 
         #[cfg(feature = "unstable-stuck-detection")]
@@ -418,7 +419,12 @@ where
         #[cfg(not(feature = "unstable-stuck-detection"))]
         let fut = MeasurePoll::new(fut.instrument(span));
 
-        rt.spawn(scope.within(fut));
+        // Finally, start the actor's task.
+        crate::task::Builder::new(scope)
+            .spawn_on(fut, &rt)
+            .expect("spawn an actor's task");
+
+        // Register the actor in the book to make it reachable.
         let object = self.context.book().get_owned(addr).expect("just created");
         Some(object)
     }
