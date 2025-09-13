@@ -44,6 +44,7 @@ pub mod signal;
 pub mod stream;
 #[cfg(feature = "unstable-stuck-detection")]
 pub mod stuck_detection;
+pub mod task;
 pub mod time;
 pub mod topology;
 pub mod tracing;
