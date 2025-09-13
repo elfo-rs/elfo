@@ -23,6 +23,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - run: rustup show active-toolchain -v
     - run: cargo build --all-targets --all-features
+    - run: RUSTFLAGS='--cfg tokio_unstable' cargo build --all-targets --all-features
 
   msrv:
     runs-on: ubuntu-latest

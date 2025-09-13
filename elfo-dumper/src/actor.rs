@@ -7,7 +7,6 @@ use std::{
 use eyre::{Result, WrapErr};
 use fxhash::FxHashSet;
 use parking_lot::Mutex;
-use tokio::task;
 use tracing::{error, info};
 
 use elfo_core::{
@@ -196,8 +195,7 @@ impl Dumper {
                     };
 
                     // Run the background task and wait until it's completed.
-                    let scope = scope::expose();
-                    match task::spawn_blocking(|| scope.sync_within(background)).await {
+                    match elfo_core::task::spawn_blocking(background).await {
                         Ok(Ok(state)) => {
                             serializer = state.0;
                             rule_set = state.1;

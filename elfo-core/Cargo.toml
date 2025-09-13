@@ -56,6 +56,9 @@ unicycle = "0.10.2"
 rmp-serde = { version = "1.1.0", optional = true }
 humantime-serde = "1"
 
+[target.'cfg(tokio_unstable)'.dependencies]
+tokio = { workspace = true, features = ["tracing"] }
+
 [dev-dependencies]
 elfo-utils = { version = "0.2.7", path = "../elfo-utils", features = ["test-util"] }
 
