@@ -20,4 +20,4 @@ proc-macro = true
 [dependencies]
 elfo-macros-impl = { version = "=0.2.0-alpha.20", path = "../elfo-macros-impl" }
 
-syn = { version = "2", features = ["parsing", "printing"] }
+syn = { version = "2.0.52", features = ["parsing", "printing"] }

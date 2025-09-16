@@ -1,9 +1,9 @@
 use std::sync::Arc;
+#[cfg(feature = "tracing-log")]
+use std::sync::OnceLock;
 
 use arc_swap::ArcSwap;
 use fxhash::FxHashMap;
-#[cfg(feature = "tracing-log")]
-use once_cell::sync::OnceCell;
 use tracing::{metadata::LevelFilter, subscriber::Interest, Metadata, Subscriber};
 use tracing_subscriber::{
     filter::Targets,
@@ -30,7 +30,7 @@ impl Default for FilteringConfig {
 struct Inner {
     config: ArcSwap<FilteringConfig>,
     #[cfg(feature = "tracing-log")]
-    log_metadata_name: OnceCell<&'static str>,
+    log_metadata_name: OnceLock<&'static str>,
 }
 
 #[derive(Clone)]
@@ -44,7 +44,7 @@ impl FilteringLayer {
             inner: Arc::new(Inner {
                 config: ArcSwap::new(Arc::new(FilteringConfig::default())),
                 #[cfg(feature = "tracing-log")]
-                log_metadata_name: OnceCell::new(),
+                log_metadata_name: OnceLock::new(),
             }),
         }
     }

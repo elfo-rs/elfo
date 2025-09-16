@@ -29,11 +29,13 @@ jobs:
       RUSTFLAGS: "" # remove -Dwarnings
     steps:
       - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@cargo-hack
+      - uses: taiki-e/install-action@cargo-minimal-versions
       - run: rustup toolchain install ${{ env.MSRV }} --profile minimal
       - run: rustup override set ${{ env.MSRV }}
       - run: rustup show active-toolchain -v
-      - run: cargo build
-      - run: cargo build --all-features
+      - run: cargo minimal-versions check --all --direct
+      - run: cargo minimal-versions check --all --direct --all-features
 
   rustfmt:
     runs-on: ubuntu-latest

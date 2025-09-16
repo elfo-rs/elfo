@@ -25,19 +25,18 @@ metrics.workspace = true
 dashmap.workspace = true
 derive_more.workspace = true
 tokio = { workspace = true, features = ["macros", "fs", "io-util"] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "parking_lot"] }
+bytesize.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+tracing.workspace = true
 arc-swap = "1.2.0"
-once_cell = { version = "1.8.0", features = ["parking_lot"] }
 futures-intrusive = "0.5"
-serde = { version = "1.0.120", features = ["derive"] }
-parking_lot = "0.12"
 sharded-slab = "0.1.7"
-tracing = "0.1.25"
-tracing-subscriber = { version = "0.3.2", features = ["env-filter", "parking_lot"] }
 tracing-log = { version = "0.2", optional = true }
 log = { version = "0.4.20", optional = true }
 fxhash = "0.2.1"
 humantime = "2.1.0"
-bytesize.workspace = true
 
 [dev-dependencies]
 elfo-core = { version = "0.2.0-alpha.20", path = "../elfo-core", features = ["test-util"] }

@@ -25,22 +25,22 @@ metrics.workspace = true
 dashmap.workspace = true
 derive_more.workspace = true
 eyre.workspace = true
-serde = { version = "1.0.120", features = ["derive"] }
+serde.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
+futures.workspace = true
+libc.workspace = true
+parking_lot.workspace = true
+slotmap.workspace = true
+pin-project.workspace = true
+tracing.workspace = true
 static_assertions = "1.1.0"
 fxhash = "0.2.1"
-futures = "0.3.21"
-tokio = { workspace = true, features = ["net", "io-util"] }
-tracing = "0.1.25"
-parking_lot = "0.12"
 humantime-serde = "1"
 kanal = "0.1.1"
 bitflags = "2.3.2"
 lz4_flex = { version = "0.11.1", default-features = false, features = ["std"] }
 byteorder = "1.4.3"
 turmoil06 = { package = "turmoil", version = "0.6", optional = true }
-slotmap.workspace = true
-pin-project.workspace = true
-libc = "0.2.160"
 
 [dev-dependencies]
 tracing-test = "0.2.4" # TODO: actually unused?

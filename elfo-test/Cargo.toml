@@ -23,8 +23,7 @@ elfo-configurer = { version = "0.2.0-alpha.20", path = "../elfo-configurer" }
 
 tokio.workspace = true
 stability.workspace = true
-serde = { version = "1.0.120", features = ["derive", "rc"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+serde.workspace = true
 serde-value = "0.7.0"
 futures-intrusive = "0.5"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-once_cell = { version = "1.8.0" }

@@ -56,15 +56,15 @@ impl MessageVTable {
 
 #[cfg(not(miri))]
 mod vtables_map {
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
 
     use super::*;
 
-    pub(super) struct VTablesMap(Lazy<FxHashMap<Signature, &'static MessageVTable>>);
+    pub(super) struct VTablesMap(LazyLock<FxHashMap<Signature, &'static MessageVTable>>);
 
     impl VTablesMap {
         pub(super) const fn new() -> Self {
-            let inner: Lazy<_> = Lazy::new(|| {
+            let inner: LazyLock<_> = LazyLock::new(|| {
                 MESSAGE_VTABLES_LIST
                     .iter()
                     .map(|vtable| (Signature([vtable.protocol, vtable.name]), *vtable))
