@@ -271,7 +271,8 @@ fn topology() -> elfo::Topology {
     // * `RUST_LOG=info,[{actor_group=aggregators}]`
     //
     // However, it's more useful to control logging in the config file.
-    let logger = elfo::batteries::logger::init();
+    console_subscriber::init();
+    // let logger = elfo::batteries::logger::init();
     // Setup up telemetry (based on the `metrics` crate).
     let telemeter = elfo::batteries::telemeter::init();
 
@@ -279,7 +280,7 @@ fn topology() -> elfo::Topology {
     let producers = topology.local("producers");
     let aggregators = topology.local("aggregators");
     let reporters = topology.local("reporters");
-    let loggers = topology.local("system.loggers");
+    // let loggers = topology.local("system.loggers");
     let telemeters = topology.local("system.telemeters");
     let dumpers = topology.local("system.dumpers");
     let pingers = topology.local("system.pingers");
@@ -295,7 +296,7 @@ fn topology() -> elfo::Topology {
     producers.mount(producer::new());
     aggregators.mount(aggregator::new());
     reporters.mount(reporter::new());
-    loggers.mount(logger);
+    // loggers.mount(logger);
     telemeters.mount(telemeter);
     dumpers.mount(elfo::batteries::dumper::new());
     pingers.mount(elfo::batteries::pinger::new(&topology));

@@ -14,7 +14,8 @@ rust-version.workspace = true
 elfo = { path = "../elfo", features = ["full"] }
 elfo-telemeter = { path = "../elfo-telemeter" } # for `AllocatorStats`
 
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "tracing"] }
+console-subscriber = "0.4.1"
 metrics.workspace = true
 toml.workspace = true
 derive_more.workspace = true
