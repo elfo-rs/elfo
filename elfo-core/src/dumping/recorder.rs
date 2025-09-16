@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
-use once_cell::sync::OnceCell;
+use std::sync::{Arc, OnceLock};
 
 use super::Dump;
 
-static MAKE_RECORDER: OnceCell<MakeRecorder> = OnceCell::new();
+static MAKE_RECORDER: OnceLock<MakeRecorder> = OnceLock::new();
 
 type MakeRecorder = Box<dyn Fn(&'static str) -> Arc<dyn Recorder> + Sync + Send>;
 

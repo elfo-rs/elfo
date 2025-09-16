@@ -4,14 +4,13 @@ use std::{
     panic::Location,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, LazyLock,
     },
     thread,
     time::Duration,
 };
 
 use futures_intrusive::timer::{LocalTimer, StdClock, TimerService};
-use once_cell::sync::Lazy;
 use serde::{de::Deserializer, Deserialize};
 use serde_value::Value;
 use tokio::{sync::oneshot, task};
@@ -168,8 +167,8 @@ impl Proxy {
     #[track_caller]
     pub fn recv(&mut self) -> impl Future<Output = Envelope> + '_ {
         // We use a separate timer here to avoid interaction with the tokio's timer.
-        static STD_CLOCK: Lazy<StdClock> = Lazy::new(StdClock::new);
-        static TIMER_SERVICE: Lazy<Arc<TimerService>> = Lazy::new(|| {
+        static STD_CLOCK: LazyLock<StdClock> = LazyLock::new(StdClock::new);
+        static TIMER_SERVICE: LazyLock<Arc<TimerService>> = LazyLock::new(|| {
             let timer_service = Arc::new(TimerService::new(&*STD_CLOCK));
             thread::spawn({
                 let timer_service = timer_service.clone();

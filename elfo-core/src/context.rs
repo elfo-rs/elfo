@@ -1,8 +1,13 @@
-use std::{future::poll_fn, marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
+use std::{
+    future::poll_fn,
+    marker::PhantomData,
+    pin::Pin,
+    sync::{Arc, LazyLock},
+    task::Poll,
+};
 
 use futures::{pin_mut, Stream};
 use idr_ebr::EbrGuard;
-use once_cell::sync::Lazy;
 use tracing::{info, trace};
 
 use elfo_utils::unlikely;
@@ -34,7 +39,7 @@ use self::stats::Stats;
 
 mod stats;
 
-static DUMPER: Lazy<Dumper> = Lazy::new(|| Dumper::new(INTERNAL_CLASS));
+static DUMPER: LazyLock<Dumper> = LazyLock::new(|| Dumper::new(INTERNAL_CLASS));
 
 /// An actor execution context.
 pub struct Context<C = (), K = Singleton> {

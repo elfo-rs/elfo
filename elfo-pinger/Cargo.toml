@@ -19,6 +19,6 @@ elfo-core = { version = "0.2.0-alpha.20", path = "../elfo-core", features = ["un
 elfo-utils = { version = "0.2.7", path = "../elfo-utils" }
 
 tokio = { workspace = true, features = ["time"] }
-serde = { version = "1.0.120", features = ["derive"] }
+serde.workspace = true
+tracing.workspace = true
 humantime-serde = "1"
-tracing = "0.1.25"
