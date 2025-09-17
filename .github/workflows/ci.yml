@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
     - run: rustup show active-toolchain -v
     - run: cargo build --all-targets --all-features
 
@@ -28,14 +29,15 @@ jobs:
     env:
       RUSTFLAGS: "" # remove -Dwarnings
     steps:
-      - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@cargo-hack
-      - uses: taiki-e/install-action@cargo-minimal-versions
-      - run: rustup toolchain install ${{ env.MSRV }} --profile minimal
-      - run: rustup override set ${{ env.MSRV }}
-      - run: rustup show active-toolchain -v
-      - run: cargo minimal-versions check --all --direct
-      - run: cargo minimal-versions check --all --direct --all-features
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@cargo-hack
+    - uses: taiki-e/install-action@cargo-minimal-versions
+    - run: rustup toolchain install ${{ env.MSRV }} --profile minimal
+    - run: rustup override set ${{ env.MSRV }}
+    - run: rustup show active-toolchain -v
+    - run: cargo minimal-versions check --all --direct
+    - run: cargo minimal-versions check --all --direct --all-features
 
   rustfmt:
     runs-on: ubuntu-latest
@@ -50,6 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
     - run: rustup show active-toolchain -v
     - run: rustup component add clippy
     - run: cargo clippy --version
@@ -60,6 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
     - uses: taiki-e/install-action@cargo-llvm-cov
     - run: rustup show active-toolchain -v
     - run: cargo llvm-cov test --no-report
@@ -76,12 +80,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: rustup toolchain install nightly --component miri
-      - run: rustup override set nightly
-      - run: rustup show active-toolchain -v
-      - run: cargo miri setup
-      - run: cargo miri test -p elfo-core --all-features -- _miri
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    - run: rustup toolchain install nightly --component miri
+    - run: rustup override set nightly
+    - run: rustup show active-toolchain -v
+    - run: cargo miri setup
+    - run: cargo miri test -p elfo-core --all-features -- _miri
 
   docs:
     needs: build
@@ -90,6 +95,7 @@ jobs:
       RUSTDOCFLAGS: -Dwarnings --cfg docsrs
     steps:
     - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
     - run: rustup toolchain install nightly
     - run: rustup override set nightly
     - run: rustup show active-toolchain -v
