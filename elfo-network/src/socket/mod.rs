@@ -456,6 +456,7 @@ mod tests {
                 payload: NetworkEnvelopePayload::Regular {
                     message: AnyMessage::new(TestSocketMessage("a".repeat(i * 10))),
                 },
+                bounded: true,
             };
 
             feed_frame(&mut client_socket, &envelope);
