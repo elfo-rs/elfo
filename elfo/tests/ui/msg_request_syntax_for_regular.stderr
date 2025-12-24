@@ -2,8 +2,13 @@ error[E0277]: the trait bound `SomeEvent: elfo::Request` is not satisfied
  --> tests/ui/msg_request_syntax_for_regular.rs:8:10
   |
 8 |         (SomeEvent, token) => {}
-  |          ^^^^^^^^^ the trait `elfo::Request` is not implemented for `SomeEvent`
+  |          ^^^^^^^^^ unsatisfied trait bound
   |
+help: the trait `elfo::Request` is not implemented for `SomeEvent`
+ --> tests/ui/msg_request_syntax_for_regular.rs:4:1
+  |
+4 | struct SomeEvent;
+  | ^^^^^^^^^^^^^^^^
   = help: the following other types implement trait `elfo::Request`:
             Ping
             ReloadConfigs
