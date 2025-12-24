@@ -119,7 +119,7 @@ pub async fn consume_budget() {
 mod tests {
     use std::{
         future::Future,
-        pin::{pin, Pin},
+        pin::Pin,
         task::{Context, Poll},
         time::Duration,
     };

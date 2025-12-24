@@ -50,19 +50,14 @@ pub enum Sink {
 }
 
 /// Histogram/summary retention policy.
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Default)]
 pub enum Retention {
     /// Keep all samples forever.
     Forever,
     /// Reset all samples on each scrape.
+    #[default]
     ResetOnScrape,
     // TODO: `SlidingWindow`
-}
-
-impl Default for Retention {
-    fn default() -> Self {
-        Self::ResetOnScrape
-    }
 }
 
 /// A quantile to use for aggregating distribution metrics into a summary
