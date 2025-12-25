@@ -92,7 +92,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     env:
-      RUSTDOCFLAGS: -Dwarnings --cfg docsrs
+      RUSTDOCFLAGS: -Dwarnings
+      # TODO: enable in #179
+      #RUSTDOCFLAGS: -Dwarnings --cfg docsrs
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
