@@ -22,6 +22,7 @@ unstable = ["elfo-core/unstable", "elfo-telemeter?/unstable", "elfo-test?/unstab
 unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
 tracing-log = ["elfo-logger?/tracing-log"]
 turmoil06 = ["elfo-network?/turmoil06"]
+turmoil07 = ["elfo-network?/turmoil07"]
 
 [dependencies]
 elfo-core = { version = "=0.2.0-alpha.20", path = "../elfo-core" }
@@ -51,7 +52,7 @@ tracing.workspace = true
 anyhow = "1.0.38"
 static_assertions = "1.1.0"
 futures-intrusive = "0.5"
-turmoil = "0.6"
+turmoil = "0.7"
 trybuild = "1.0"
 
 [package.metadata.docs.rs]

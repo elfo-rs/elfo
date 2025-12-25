@@ -16,6 +16,7 @@ workspace = true
 
 [features]
 turmoil06 = ["dep:turmoil06"]
+turmoil07 = ["dep:turmoil07"]
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.20", path = "../elfo-core", features = ["unstable", "network"] }
@@ -41,6 +42,7 @@ bitflags = "2.3.2"
 lz4_flex = { version = "0.11.1", default-features = false, features = ["std"] }
 byteorder = "1.4.3"
 turmoil06 = { package = "turmoil", version = "0.6", optional = true }
+turmoil07 = { package = "turmoil", version = "0.7", optional = true }
 
 [dev-dependencies]
 tracing-test = "0.2.4" # TODO: actually unused?

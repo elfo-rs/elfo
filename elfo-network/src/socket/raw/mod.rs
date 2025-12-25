@@ -13,7 +13,9 @@ use crate::config::Transport;
 
 mod tcp;
 #[cfg(feature = "turmoil06")]
-mod turmoil;
+mod turmoil06;
+#[cfg(feature = "turmoil07")]
+mod turmoil07;
 mod uds;
 
 macro_rules! delegate_call {
@@ -24,6 +26,8 @@ macro_rules! delegate_call {
             Self::Uds(v) => Pin::new(v).$method($($args),+),
             #[cfg(feature = "turmoil06")]
             Self::Turmoil06(v) => Pin::new(v).$method($($args),+),
+            #[cfg(feature = "turmoil07")]
+            Self::Turmoil07(v) => Pin::new(v).$method($($args),+),
         }
     }
 }
@@ -34,7 +38,9 @@ pub(crate) enum SocketInfo {
     #[cfg(unix)]
     Uds(uds::SocketInfo),
     #[cfg(feature = "turmoil06")]
-    Turmoil06(turmoil::SocketInfo),
+    Turmoil06(turmoil06::SocketInfo),
+    #[cfg(feature = "turmoil07")]
+    Turmoil07(turmoil07::SocketInfo),
 }
 
 impl SocketInfo {
@@ -49,7 +55,9 @@ pub(super) enum OwnedReadHalf {
     #[cfg(unix)]
     Uds(uds::OwnedReadHalf),
     #[cfg(feature = "turmoil06")]
-    Turmoil06(turmoil::OwnedReadHalf),
+    Turmoil06(turmoil06::OwnedReadHalf),
+    #[cfg(feature = "turmoil07")]
+    Turmoil07(turmoil07::OwnedReadHalf),
 }
 
 impl AsyncRead for OwnedReadHalf {
@@ -67,7 +75,9 @@ pub(super) enum OwnedWriteHalf {
     #[cfg(unix)]
     Uds(uds::OwnedWriteHalf),
     #[cfg(feature = "turmoil06")]
-    Turmoil06(turmoil::OwnedWriteHalf),
+    Turmoil06(turmoil06::OwnedWriteHalf),
+    #[cfg(feature = "turmoil07")]
+    Turmoil07(turmoil07::OwnedWriteHalf),
 }
 
 impl AsyncWrite for OwnedWriteHalf {
@@ -98,6 +108,8 @@ impl AsyncWrite for OwnedWriteHalf {
             Self::Uds(v) => v.is_write_vectored(),
             #[cfg(feature = "turmoil06")]
             Self::Turmoil06(v) => v.is_write_vectored(),
+            #[cfg(feature = "turmoil07")]
+            Self::Turmoil07(v) => v.is_write_vectored(),
         }
     }
 }
@@ -114,6 +126,10 @@ impl OwnedWriteHalf {
             }
             #[cfg(feature = "turmoil06")]
             Self::Turmoil06(_) => {
+                // No Turmoil-specific metrics
+            }
+            #[cfg(feature = "turmoil07")]
+            Self::Turmoil07(_) => {
                 // No Turmoil-specific metrics
             }
         }
@@ -148,12 +164,23 @@ impl From<uds::Socket> for Socket {
 }
 
 #[cfg(feature = "turmoil06")]
-impl From<turmoil::Socket> for Socket {
-    fn from(socket: turmoil::Socket) -> Self {
+impl From<turmoil06::Socket> for Socket {
+    fn from(socket: turmoil06::Socket) -> Self {
         Self {
             read: OwnedReadHalf::Turmoil06(socket.read),
             write: OwnedWriteHalf::Turmoil06(socket.write),
             info: SocketInfo::Turmoil06(socket.info),
+        }
+    }
+}
+
+#[cfg(feature = "turmoil07")]
+impl From<turmoil07::Socket> for Socket {
+    fn from(socket: turmoil07::Socket) -> Self {
+        Self {
+            read: OwnedReadHalf::Turmoil07(socket.read),
+            write: OwnedWriteHalf::Turmoil07(socket.write),
+            info: SocketInfo::Turmoil07(socket.info),
         }
     }
 }
@@ -164,7 +191,9 @@ pub(super) async fn connect(addr: &Transport) -> Result<Socket> {
         #[cfg(unix)]
         Transport::Uds(addr) => uds::connect(addr).await.map(Into::into),
         #[cfg(feature = "turmoil06")]
-        Transport::Turmoil06(addr) => turmoil::connect(addr).await.map(Into::into),
+        Transport::Turmoil06(addr) => turmoil06::connect(addr).await.map(Into::into),
+        #[cfg(feature = "turmoil07")]
+        Transport::Turmoil07(addr) => turmoil07::connect(addr).await.map(Into::into),
     }
 }
 
@@ -174,6 +203,8 @@ pub(super) async fn listen(addr: &Transport) -> Result<BoxStream<'static, Socket
         #[cfg(unix)]
         Transport::Uds(addr) => Box::pin(uds::listen(addr)?.map(Into::into)),
         #[cfg(feature = "turmoil06")]
-        Transport::Turmoil06(addr) => Box::pin(turmoil::listen(addr).await?.map(Into::into)),
+        Transport::Turmoil06(addr) => Box::pin(turmoil06::listen(addr).await?.map(Into::into)),
+        #[cfg(feature = "turmoil07")]
+        Transport::Turmoil07(addr) => Box::pin(turmoil07::listen(addr).await?.map(Into::into)),
     })
 }

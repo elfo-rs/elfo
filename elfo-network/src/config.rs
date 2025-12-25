@@ -127,6 +127,14 @@ pub enum Transport {
     #[cfg(feature = "turmoil06")]
     #[display("turmoil06://{_0}")]
     Turmoil06(String),
+    /// Turmoil v0.7 transport ("turmoil07://host:port").
+    ///
+    /// A port can be omitted, in which case the default port is 57840 (0xE1F0).
+    ///
+    /// Useful for testing purposes only.
+    #[cfg(feature = "turmoil07")]
+    #[display("turmoil07://{_0}")]
+    Turmoil07(String),
 }
 
 impl FromStr for Transport {
@@ -153,6 +161,8 @@ impl FromStr for Transport {
             }
             #[cfg(feature = "turmoil06")]
             "turmoil06" => Ok(Transport::Turmoil06(addr.into())),
+            #[cfg(feature = "turmoil07")]
+            "turmoil07" => Ok(Transport::Turmoil07(addr.into())),
             proto => bail!("unknown protocol: {proto}"),
         }
     }
@@ -273,6 +283,13 @@ mod tests {
         assert_eq!(
             Transport::from_str("turmoil06://alice").unwrap(),
             Transport::Turmoil06("alice".into())
+        );
+
+        // Turmoil07
+        #[cfg(feature = "turmoil07")]
+        assert_eq!(
+            Transport::from_str("turmoil07://alice").unwrap(),
+            Transport::Turmoil07("alice".into())
         );
     }
 

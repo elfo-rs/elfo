@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Added
+- network: add the `turmoil` v0.7 transport (the `turmoil07` feature).
 
 ## [0.2.0-alpha.20] - 2025-09-11
 ### Added

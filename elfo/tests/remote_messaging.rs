@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 #![cfg(feature = "network")]
-#![cfg(feature = "turmoil06")]
+#![cfg(feature = "turmoil07")]
 
 use std::{sync::Arc, time::Duration};
 
@@ -118,7 +118,7 @@ fn simple() {
             &topology,
             toml! {
                 [system.network]
-                listen = ["turmoil06://0.0.0.0"]
+                listen = ["turmoil07://0.0.0.0"]
                 ping_interval = "1s"
                 idle_timeout = "1s"
             },
@@ -139,7 +139,7 @@ fn simple() {
             &topology,
             toml! {
                 [system.network]
-                discovery.predefined = ["turmoil06://server"]
+                discovery.predefined = ["turmoil07://server"]
                 discovery.attempt_interval = "1s"
                 ping_interval = "1s"
                 idle_timeout = "1s"
@@ -275,7 +275,7 @@ fn remote_actor_terminates_without_waiting_for_response() {
             &topology,
             toml! {
                 [system.network]
-                listen = ["turmoil06://0.0.0.0"]
+                listen = ["turmoil07://0.0.0.0"]
                 ping_interval = "1s"
                 idle_timeout = "1s"
             },
@@ -304,7 +304,7 @@ fn remote_actor_terminates_without_waiting_for_response() {
             &topology,
             toml! {
                 [system.network]
-                discovery.predefined = ["turmoil06://server"]
+                discovery.predefined = ["turmoil07://server"]
                 ping_interval = "1s"
                 idle_timeout = "1s"
             },
@@ -327,7 +327,7 @@ fn discovery_predefined_changed() {
     common::setup_logger();
 
     fn client_config(server_port: u16) -> toml::Value {
-        let server_addr = format!("turmoil06://server:{server_port}");
+        let server_addr = format!("turmoil07://server:{server_port}");
         toml! {
             [system.network]
             discovery.predefined = [server_addr]
@@ -355,8 +355,8 @@ fn discovery_predefined_changed() {
             toml! {
                 [system.network]
                 listen = [
-                    "turmoil06://0.0.0.0:10000",
-                    "turmoil06://0.0.0.0:11111",
+                    "turmoil07://0.0.0.0:10000",
+                    "turmoil07://0.0.0.0:11111",
                 ]
                 ping_interval = "1s"
                 idle_timeout = "1s"
@@ -434,7 +434,7 @@ fn listen_changed() {
     common::setup_logger();
 
     fn server_config(server_port: u16) -> toml::Value {
-        let server_addr = format!("turmoil06://0.0.0.0:{server_port}");
+        let server_addr = format!("turmoil07://0.0.0.0:{server_port}");
         toml! {
             [system.network]
             listen = [server_addr]
@@ -502,8 +502,8 @@ fn listen_changed() {
             toml! {
                 [system.network]
                 discovery.predefined = [
-                    "turmoil06://server:10000",
-                    "turmoil06://server:11111",
+                    "turmoil07://server:10000",
+                    "turmoil07://server:11111",
                 ]
                 discovery.attempt_interval = "1s"
                 ping_interval = "1s"
