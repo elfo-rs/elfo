@@ -5,7 +5,7 @@ use crate::{
     request_table::ResponseToken,
 };
 
-#[stability::unstable]
+#[instability::unstable]
 pub trait RemoteHandle: Send + Sync + 'static {
     fn send(&self, recipient: Addr, envelope: Envelope) -> SendResult;
     fn try_send(&self, recipient: Addr, envelope: Envelope) -> Result<(), TrySendError<Envelope>>;
@@ -17,13 +17,14 @@ pub trait RemoteHandle: Send + Sync + 'static {
     fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestError>);
 }
 
-#[stability::unstable]
+#[instability::unstable]
 pub enum SendResult {
     Ok,
     Err(SendError<Envelope>),
     Wait(SendNotified, Envelope),
 }
 
+#[instability::unstable]
 pub use self::notifier::*;
 mod notifier {
     use std::{
@@ -36,7 +37,7 @@ mod notifier {
     use futures_intrusive::sync::{SharedSemaphore, SharedSemaphoreAcquireFuture};
     use pin_project::pin_project;
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub struct SendNotify {
         semaphore: SharedSemaphore,
         waiters: AtomicUsize,
@@ -52,20 +53,20 @@ mod notifier {
     }
 
     impl SendNotify {
-        #[stability::unstable]
+        #[instability::unstable]
         pub fn notified(&self) -> SendNotified {
             self.waiters.fetch_add(1, Ordering::SeqCst);
             SendNotified(self.semaphore.acquire(1))
         }
 
-        #[stability::unstable]
+        #[instability::unstable]
         pub fn notify(&self) {
             let waiters = self.waiters.swap(0, Ordering::SeqCst);
             self.semaphore.release(waiters);
         }
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[pin_project]
     pub struct SendNotified(#[pin] SharedSemaphoreAcquireFuture);
 

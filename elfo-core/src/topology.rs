@@ -13,7 +13,6 @@ use crate::{
     demux::Demux,
     envelope::Envelope,
     group::Blueprint,
-    object::Object,
     runtime::RuntimeManager,
 };
 
@@ -62,7 +61,7 @@ pub struct LocalActorGroup {
 }
 
 /// Represents a connection between two groups.
-#[stability::unstable]
+#[instability::unstable]
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Connection {
@@ -70,7 +69,7 @@ pub struct Connection {
     pub to: ConnectionTo,
 }
 
-// TODO: #[stability::unstable]
+// TODO: #[instability::unstable]
 #[derive(Debug, Clone)]
 pub enum ConnectionTo {
     Local(Addr),
@@ -79,7 +78,7 @@ pub enum ConnectionTo {
 }
 
 impl ConnectionTo {
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn into_remote(self) -> Option<String> {
         match self {
             Self::Local(_) => None,
@@ -108,6 +107,7 @@ impl Topology {
     }
 
     /// Returns the current node number.
+    #[instability::unstable]
     pub fn node_no(&self) -> NodeNo {
         self.node_no
     }
@@ -115,6 +115,7 @@ impl Topology {
     /// Sets the current node number. Otherwise, it's randomly generated.
     ///
     /// See [`NodeNo`] for details.
+    #[instability::unstable]
     pub fn set_node_no(&mut self, node_no: NodeNo) {
         self.node_no = node_no;
     }
@@ -124,7 +125,7 @@ impl Topology {
         self.launch_id
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn add_dedicated_rt<F: Fn(&crate::ActorMeta) -> bool + Send + Sync + 'static>(
         &self,
         filter: F,
@@ -180,7 +181,7 @@ impl Topology {
         inner.locals.clone().into_iter().filter(|g| g.is_mounted)
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn connections(&self) -> impl Iterator<Item = Connection> + '_ {
         let inner = self.inner.read();
         inner.connections.clone().into_iter()
@@ -321,7 +322,7 @@ cfg_network!({
     use arc_swap::ArcSwap;
     use fxhash::FxHashMap;
 
-    use crate::remote::RemoteHandle;
+    use crate::{object::Object, remote::RemoteHandle};
 
     /// Contains nodes available for routing between one specific local group
     /// and set of remote ones with the same group name.
@@ -329,7 +330,7 @@ cfg_network!({
 
     // TODO: remove `Clone` here, possible footgun in the future.
     /// Represents remote group(s).
-    #[stability::unstable]
+    #[instability::unstable]
     #[derive(Debug, Clone)]
     #[non_exhaustive]
     pub struct RemoteActorGroup {
@@ -341,7 +342,7 @@ cfg_network!({
     impl Topology {
         /// # Panics
         /// If the name isn't used in the topology.
-        #[stability::unstable]
+        #[instability::unstable]
         pub fn register_remote(
             &self,
             network_actor_addr: Addr,
@@ -417,7 +418,7 @@ cfg_network!({
         }
 
         /// Returns an iterator over all remote groups.
-        #[stability::unstable]
+        #[instability::unstable]
         pub fn remotes(&self) -> impl Iterator<Item = RemoteActorGroup> + '_ {
             let inner = self.inner.read();
             inner.remotes.clone().into_iter()
@@ -498,7 +499,7 @@ cfg_network!({
     // Nothing for now, reserved for future use.
     pub struct NodeDiscovery(());
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub struct RegisterRemoteGroupGuard<'a> {
         book: &'a AddressBook,
         handle_addr: Addr,
@@ -508,6 +509,7 @@ cfg_network!({
         nodes: Option<Nodes>,
     }
 
+    #[instability::unstable]
     impl RegisterRemoteGroupGuard<'_> {
         pub fn handle_addr(&self) -> Addr {
             self.handle_addr

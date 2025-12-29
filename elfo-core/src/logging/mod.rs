@@ -1,12 +1,5 @@
+#[instability::unstable]
+pub use self::control::{CheckResult, LoggingControl};
+
 pub mod config;
-
 mod control;
-
-// TODO: use `stability` instead.
-#[doc(hidden)]
-pub mod _priv {
-    #[cfg(feature = "unstable")] // TODO: patch `stability`
-    pub use super::control::{CheckResult, LoggingControl};
-    #[cfg(not(feature = "unstable"))]
-    pub(crate) use super::control::{CheckResult, LoggingControl};
-}

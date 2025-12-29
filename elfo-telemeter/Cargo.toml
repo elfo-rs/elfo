@@ -24,7 +24,7 @@ unstable = []
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.20", path = "../elfo-core", features = ["unstable"] }
 
-stability.workspace = true
+instability.workspace = true
 metrics.workspace = true
 tokio = { workspace = true, features = ["net"] }
 thread_local.workspace = true

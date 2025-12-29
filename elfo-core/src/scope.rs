@@ -14,7 +14,7 @@ use crate::{
     addr::{Addr, NodeLaunchId, NodeNo},
     config::SystemConfig,
     dumping::DumpingControl,
-    logging::_priv::LoggingControl,
+    logging::LoggingControl,
     permissions::{AtomicPermissions, Permissions},
     telemetry::config::TelemetryConfig,
     tracing::TraceId,
@@ -72,11 +72,13 @@ impl Scope {
         self.group.addr
     }
 
+    #[instability::unstable]
     #[inline]
     pub fn node_no(&self) -> NodeNo {
         self.group.node_no
     }
 
+    #[instability::stable(since = "v0.2.0")]
     #[inline]
     pub fn node_launch_id(&self) -> NodeLaunchId {
         self.group.node_launch_id
@@ -90,7 +92,7 @@ impl Scope {
 
     /// Private API for now.
     #[inline]
-    #[stability::unstable]
+    #[instability::unstable]
     #[doc(hidden)]
     pub fn telemetry_meta(&self) -> &Arc<ActorMeta> {
         &self.actor.telemetry_meta
@@ -115,29 +117,29 @@ impl Scope {
     }
 
     /// Private API for now.
-    #[inline]
-    #[stability::unstable]
     #[doc(hidden)]
+    #[instability::unstable]
+    #[inline]
     pub fn logging(&self) -> &LoggingControl {
         &self.group.logging
     }
 
     /// Private API for now.
-    #[inline]
-    #[stability::unstable]
     #[doc(hidden)]
+    #[instability::unstable]
+    #[inline]
     pub fn dumping(&self) -> &DumpingControl {
         &self.group.dumping
     }
 
     #[doc(hidden)]
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn increment_allocated_bytes(&self, by: usize) {
         self.actor.allocated_bytes.fetch_add(by, Ordering::Relaxed);
     }
 
     #[doc(hidden)]
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn increment_deallocated_bytes(&self, by: usize) {
         self.actor
             .deallocated_bytes
@@ -327,12 +329,14 @@ pub fn try_meta() -> Option<Arc<ActorMeta>> {
 ///
 /// # Panics
 /// This function will panic if called ouside the actor system.
+#[instability::unstable]
 #[inline]
 pub fn node_no() -> NodeNo {
     with(|scope| scope.node_no())
 }
 
 /// Returns the node number if inside the actor system.
+#[instability::unstable]
 #[inline]
 pub fn try_node_no() -> Option<NodeNo> {
     try_with(|scope| scope.node_no())
@@ -344,7 +348,7 @@ thread_local! {
 
 /// A mode of (de)serialization.
 /// Useful to alternate a behavior depending on a context.
-#[stability::unstable]
+#[instability::unstable]
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SerdeMode {
@@ -360,7 +364,7 @@ pub enum SerdeMode {
 ///
 /// # Panics
 /// If the provided function panics.
-#[stability::unstable]
+#[instability::unstable]
 #[inline]
 pub fn with_serde_mode<R>(mode: SerdeMode, f: impl FnOnce() -> R) -> R {
     // We use a guard here to restore the current serde mode even on panics.
@@ -377,7 +381,7 @@ pub fn with_serde_mode<R>(mode: SerdeMode, f: impl FnOnce() -> R) -> R {
 }
 
 /// Returns the current serde mode.
-#[stability::unstable]
+#[instability::unstable]
 #[inline]
 pub fn serde_mode() -> SerdeMode {
     SERDE_MODE.with(Cell::get)

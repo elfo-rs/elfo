@@ -10,7 +10,7 @@ use super::flow_control::RxFlowControl;
 use crate::{codec::format::NetworkAddr, protocol::internode};
 
 // TODO: add `kind="Routed|Direct"` to the `elfo_network_rx_flows`.
-// TODO: add `stability="Stable|Unstable"` to the `elfo_network_rx_flows`.
+// TODO: add `instability="Stable|Unstable"` to the `elfo_network_rx_flows`.
 
 // For direct messages:
 // * acquire_direct(true)

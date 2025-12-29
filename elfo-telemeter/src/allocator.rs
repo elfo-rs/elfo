@@ -11,7 +11,7 @@ use std::alloc::{GlobalAlloc, Layout};
 /// Setting this as the global allocator provides two counters:
 /// `elfo_allocated_bytes_total` and `elfo_deallocated_bytes_total`, tracking
 /// total allocated and deallocated memory in bytes.
-#[stability::unstable]
+#[instability::unstable]
 pub struct AllocatorStats<A> {
     inner: A,
 }

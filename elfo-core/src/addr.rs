@@ -17,7 +17,6 @@ use serde::{Deserialize, Serialize};
 /// NOTE: It's 16-bit unsigned integer, which requires manual management for
 /// bigger-than-small clusters and will be replaced with [`NodeLaunchId`]
 /// totally in the future in order to simplify the management.
-#[stability::unstable]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(Display, Serialize, Deserialize)]
 pub struct NodeNo(NonZeroU16);
@@ -27,6 +26,7 @@ impl NodeNo {
         Self::from_bits((random_u64() as u16).max(1)).unwrap()
     }
 
+    #[instability::unstable]
     #[inline]
     pub const fn from_bits(bits: u16) -> Option<Self> {
         match NonZeroU16::new(bits) {
@@ -35,6 +35,7 @@ impl NodeNo {
         }
     }
 
+    #[instability::unstable]
     #[inline]
     pub const fn into_bits(self) -> u16 {
         self.0.get()
@@ -49,7 +50,7 @@ impl NodeNo {
 /// * To distinguish between different launches of the same node.
 /// * To detect reusing of the same node no.
 /// * To improve [`Addr`] uniqueness in the cluster.
-#[stability::unstable]
+#[instability::stable(since = "v0.2.0")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
 pub struct NodeLaunchId(NonZeroU64);
 
@@ -58,13 +59,13 @@ impl NodeLaunchId {
         Self::from_bits(random_u64().max(1)).unwrap()
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn from_bits(bits: u64) -> Option<Self> {
         NonZeroU64::new(bits).map(Self)
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn into_bits(self) -> u64 {
         self.0.get()
@@ -77,7 +78,7 @@ impl NodeLaunchId {
 ///
 /// Cannot be `0`, it's reserved to represent `Addr::NULL` unambiguously.
 /// XORed with random [`NodeLaunchId`] if the `network` feature is enabled.
-#[stability::unstable]
+#[instability::stable(since = "v0.2.0")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[derive(Display, Serialize, Deserialize)]
 pub struct GroupNo(NonZeroU8);
@@ -102,13 +103,13 @@ impl GroupNo {
         NonZeroU8::new(no).map(Self)
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn from_bits(bits: u8) -> Option<Self> {
         NonZeroU8::new(bits).map(Self)
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn into_bits(self) -> u8 {
         self.0.get()
@@ -198,7 +199,7 @@ impl fmt::Display for Addr {
 }
 
 impl Addr {
-    #[stability::unstable]
+    #[instability::unstable]
     pub const NULL: Addr = Addr(0);
 
     #[cfg(feature = "network")]
@@ -213,20 +214,20 @@ impl Addr {
     pub(crate) fn new_local(slot_key: Key, group_no: GroupNo, _launch_id: NodeLaunchId) -> Self {
         let slot_key = u64::from(slot_key);
         debug_assert!(slot_key < (1 << GROUP_NO_SHIFT));
-        Self::new_local_inner(slot_key as u64, group_no)
+        Self::new_local_inner(slot_key, group_no)
     }
 
     fn new_local_inner(slot_key: u64, group_no: GroupNo) -> Self {
         Self((u64::from(group_no.into_bits()) << GROUP_NO_SHIFT) | slot_key)
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn from_bits(bits: u64) -> Option<Self> {
         Some(Self(bits)).filter(|addr| addr.is_null() ^ addr.group_no().is_some())
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn into_bits(self) -> u64 {
         self.0
@@ -248,13 +249,13 @@ impl Addr {
         self.node_no().is_some()
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn node_no(self) -> Option<NodeNo> {
         NodeNo::from_bits((self.0 >> NODE_NO_SHIFT) as u16)
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn group_no(self) -> Option<GroupNo> {
         GroupNo::from_bits((self.0 >> GROUP_NO_SHIFT) as u8)
@@ -277,7 +278,7 @@ impl Addr {
     }
 
     #[cfg(feature = "network")]
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn into_remote(self, node_no: NodeNo) -> Self {
         if self.is_local() {
@@ -287,7 +288,7 @@ impl Addr {
         }
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn into_local(self) -> Self {
         Self(self.0 & ((1 << NODE_NO_SHIFT) - 1))

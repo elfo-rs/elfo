@@ -11,7 +11,7 @@ use super::{
     sequence_no::{SequenceNo, SequenceNoGenerator},
 };
 
-#[stability::unstable]
+#[instability::unstable]
 #[derive(Default)]
 pub struct DumpingControl {
     config: Mutex<DumpingConfig>,
@@ -77,7 +77,7 @@ impl DumpingControl {
         self.sequence_no_gen.generate()
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn check(&self, class: &'static str) -> CheckResult {
         if let Some(per_class) = find_class(&self.classes.load(), class) {
             per_class.check()
@@ -107,7 +107,7 @@ impl DumpingControl {
     }
 }
 
-#[stability::unstable]
+#[instability::unstable]
 pub enum CheckResult {
     Passed,
     NotInterested,

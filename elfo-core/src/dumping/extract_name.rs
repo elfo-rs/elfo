@@ -170,7 +170,7 @@ impl Serializer for NameExtractor {
 /// * for structs it returns the struct's name;
 /// * for enums it returns `EnumName::VariantName`;
 /// * fallback to [`extract_name_by_type`].
-#[stability::unstable]
+#[instability::unstable]
 pub fn extract_name<S>(value: &S) -> MessageName
 where
     S: Serialize + ?Sized,
@@ -189,7 +189,7 @@ where
 /// * paths are stripped;
 ///
 /// Prefer [`extract_name`] if possible.
-#[stability::unstable]
+#[instability::unstable]
 pub fn extract_name_by_type<T: ?Sized>() -> MessageName {
     let s = std::any::type_name::<T>();
 

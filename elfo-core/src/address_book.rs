@@ -3,7 +3,7 @@ use std::sync::Arc;
 use idr_ebr::{EbrGuard, Idr};
 
 use crate::{
-    addr::{Addr, GroupNo, IdrConfig, NodeLaunchId, NodeNo},
+    addr::{Addr, GroupNo, IdrConfig, NodeLaunchId},
     object::{BorrowedObject, Object, OwnedObject},
 };
 
@@ -58,12 +58,14 @@ impl AddressBook {
     }
 
     #[inline]
-    pub fn get<'g>(&self, mut addr: Addr, guard: &'g EbrGuard) -> Option<BorrowedObject<'g>> {
+    pub fn get<'g>(&self, addr: Addr, guard: &'g EbrGuard) -> Option<BorrowedObject<'g>> {
         // If the address is remote, replace it with a remote handler's address.
         #[cfg(feature = "network")]
-        if addr.is_remote() {
-            addr = self.remote.get(addr).unwrap_or(Addr::NULL);
-        }
+        let addr = if addr.is_remote() {
+            self.remote.get(addr).unwrap_or(Addr::NULL)
+        } else {
+            addr
+        };
 
         self.local
             .get(addr.slot_key(self.launch_id)?, guard)
@@ -73,12 +75,14 @@ impl AddressBook {
     }
 
     #[inline]
-    pub fn get_owned(&self, mut addr: Addr) -> Option<OwnedObject> {
+    pub fn get_owned(&self, addr: Addr) -> Option<OwnedObject> {
         // If the address is remote, replace it with a remote handler's address.
         #[cfg(feature = "network")]
-        if addr.is_remote() {
-            addr = self.remote.get(addr).unwrap_or(Addr::NULL);
-        }
+        let addr = if addr.is_remote() {
+            self.remote.get(addr).unwrap_or(Addr::NULL)
+        } else {
+            addr
+        };
 
         self.local
             .get_owned(addr.slot_key(self.launch_id)?)
@@ -122,6 +126,8 @@ impl VacantEntry<'_> {
 cfg_network!({
     use arc_swap::ArcSwap;
     use fxhash::FxHashMap;
+
+    use crate::addr::NodeNo;
 
     #[derive(Clone, Default)]
     struct RemoteToHandleMapInner {

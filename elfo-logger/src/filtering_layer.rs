@@ -10,7 +10,7 @@ use tracing_subscriber::{
     layer::{Context, Layer},
 };
 
-use elfo_core::{logging::_priv::CheckResult, scope};
+use elfo_core::{logging::CheckResult, scope};
 
 use crate::{config::LoggingTargetConfig, stats};
 

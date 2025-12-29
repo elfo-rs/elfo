@@ -87,7 +87,7 @@ impl<R, C> ActorGroup<R, C> {
     /// actors are stopped gracefully.
     ///
     /// `0` by default.
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn stop_order(mut self, stop_order: i8) -> Self {
         self.stop_order = stop_order;
         self

@@ -186,7 +186,7 @@ impl<M: Message> Interval<M> {
     ///
     /// This method is unstable, because it accepts [`tokio::time::Instant`],
     /// which will be replaced in the future to support other runtimes.
-    #[stability::unstable]
+    #[instability::unstable]
     #[track_caller]
     pub fn start_at(&self, when: Instant, period: Duration) {
         assert_ne!(period, NEVER, "period must be non-zero");

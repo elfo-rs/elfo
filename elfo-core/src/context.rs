@@ -975,7 +975,7 @@ impl<C, K> Context<C, K> {
     }
 
     #[doc(hidden)]
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn book(&self) -> &AddressBook {
         &self.book
     }

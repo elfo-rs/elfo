@@ -63,7 +63,7 @@ impl AnyConfig {
     /// This method is unstable because it relies on the specific implementation
     /// using `serde_value`. `AnyConfig::deserialize` should be used instead
     /// where possible.
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn from_value(value: Value) -> Self {
         Self {
             raw: Arc::new(value),

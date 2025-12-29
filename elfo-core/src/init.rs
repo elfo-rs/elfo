@@ -148,7 +148,7 @@ pub async fn check_only(topology: Topology) -> Result<()> {
 ///
 /// It's called automatically by `(try_)start()` and `check_only()`,
 /// but still provided in order to being called manually in service tests.
-#[stability::unstable]
+#[instability::unstable]
 pub fn check_messages_uniqueness() -> Result<()> {
     message::check_uniqueness().map_err(|duplicates| {
         let errors = duplicates

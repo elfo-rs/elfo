@@ -3,7 +3,7 @@
 
 use serde::{Serialize, Serializer};
 
-#[cfg(feature = "unstable")] // TODO: patch `stability`, again.
+#[instability::unstable]
 pub use self::{
     control::{CheckResult, DumpingControl},
     dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName},
@@ -13,19 +13,8 @@ pub use self::{
     recorder::{set_make_recorder, Recorder},
     sequence_no::SequenceNo,
 };
-#[cfg(not(feature = "unstable"))] // TODO: patch `stability`, again.
-pub(crate) use self::{
-    control::{CheckResult, DumpingControl},
-    dump::{Direction, Dump, ErasedMessage, MessageKind, MessageName},
-    dumper::{Dumper, DumpingPermit},
-    extract_name::{extract_name, extract_name_by_type},
-    raw::Raw,
-    recorder::{set_make_recorder, Recorder},
-    sequence_no::SequenceNo,
-};
 
-#[cfg_attr(docsrs, doc(cfg(feature = "unstable")))]
-#[stability::unstable]
+#[instability::unstable]
 pub const INTERNAL_CLASS: &str = "internal";
 
 pub mod config;

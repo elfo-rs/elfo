@@ -5,7 +5,7 @@ use elfo_utils::{CachePadded, RateLimit, RateLimiter};
 use super::config::LoggingConfig;
 
 #[derive(Default)]
-#[stability::unstable]
+#[instability::unstable]
 pub struct LoggingControl {
     limiters: [CachePadded<RateLimiter>; 5],
 }
@@ -17,6 +17,7 @@ impl LoggingControl {
         }
     }
 
+    #[instability::unstable]
     pub fn check(&self, meta: &Metadata<'_>) -> CheckResult {
         let limiter = &self.limiters[log_level_to_value(*meta.level())];
         if limiter.acquire() {
@@ -27,6 +28,7 @@ impl LoggingControl {
     }
 }
 
+#[instability::unstable]
 pub enum CheckResult {
     Passed,
     NotInterested,

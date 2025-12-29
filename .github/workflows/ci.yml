@@ -58,6 +58,9 @@ jobs:
     - run: cargo clippy --version
     - run: cargo clippy
     - run: cargo clippy --all-targets --all-features
+    # Check the core w/o feature unification.
+    - run: cargo clippy -p elfo-core
+    - run: cargo clippy -p elfo-core --features network
 
   test:
     runs-on: ubuntu-latest

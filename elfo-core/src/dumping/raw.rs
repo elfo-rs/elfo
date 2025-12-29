@@ -10,7 +10,7 @@ use serde_json::value::RawValue;
 ///
 /// Otherwise, the dump is serialized as JSON string.
 #[derive(Debug)]
-#[stability::unstable]
+#[instability::unstable]
 pub struct Raw<T>(pub T);
 
 impl<T: AsRef<str>> Serialize for Raw<T> {
@@ -27,6 +27,7 @@ impl<T: AsRef<str>> Serialize for Raw<T> {
     }
 }
 
+#[cfg_attr(not(feature = "unstable"), allow(dead_code))]
 fn replace_newline(raw: &str) -> Cow<'_, str> {
     if raw.contains('\n') {
         Cow::from(raw.replace('\n', " "))
@@ -35,6 +36,7 @@ fn replace_newline(raw: &str) -> Cow<'_, str> {
     }
 }
 
+#[cfg_attr(not(feature = "unstable"), allow(dead_code))]
 fn as_raw_json(raw: &str) -> Option<&RawValue> {
     let raw = raw.trim();
     serde_json::from_str(raw).ok()

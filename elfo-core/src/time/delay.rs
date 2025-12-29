@@ -90,7 +90,7 @@ impl<M: Message> Delay<M> {
     ///
     /// This method is unstable, because it accepts [`tokio::time::Instant`],
     /// which will be replaced in the future to support other runtimes.
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn until(when: Instant, message: M) -> UnattachedSource<Self> {
         let source = DelaySource {
             message: Some(message),

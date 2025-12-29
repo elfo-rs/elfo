@@ -306,7 +306,7 @@ fn testers(tx: oneshot::Sender<ProxyCreated>) -> Blueprint {
 }
 
 #[doc(hidden)]
-#[stability::unstable]
+#[instability::unstable]
 pub async fn proxy_with_route<F>(
     blueprint: Blueprint,
     route_filter: F,

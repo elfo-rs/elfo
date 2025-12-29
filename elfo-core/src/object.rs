@@ -50,7 +50,7 @@ impl Object {
         }
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     #[inline]
     pub fn addr(&self) -> Addr {
         self.addr
@@ -60,12 +60,14 @@ impl Object {
     // Only if the object is full, it gets an owned link to the object
     // (because an EBR guard cannot be hold over the async boundary)
     // and sends the envelope asynchronously.
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn send(
         this: BorrowedObject<'_>,
         recipient: Addr,
         envelope: Envelope,
     ) -> impl Future<Output = SendResult> + 'static {
+        let _ = recipient; // suppress a warning if the "network" feature is disabled
+
         match &this.kind {
             ObjectKind::Actor(handle) => match handle.try_send(envelope) {
                 Ok(()) => SendFut::Ready(Ok(())),
@@ -113,12 +115,14 @@ impl Object {
         }
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn try_send(
         &self,
         recipient: Addr,
         envelope: Envelope,
     ) -> Result<(), TrySendError<Envelope>> {
+        let _ = recipient; // suppress a warning if the "network" feature is disabled
+
         match &self.kind {
             ObjectKind::Actor(handle) => handle.try_send(envelope),
             ObjectKind::Group(handle) => {
@@ -131,12 +135,14 @@ impl Object {
         }
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn unbounded_send(
         &self,
         recipient: Addr,
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>> {
+        let _ = recipient; // suppress a warning if the "network" feature is disabled
+
         match &self.kind {
             ObjectKind::Actor(handle) => handle.unbounded_send(envelope),
             ObjectKind::Group(handle) => {
@@ -149,7 +155,7 @@ impl Object {
         }
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestError>) {
         match &self.kind {
             ObjectKind::Actor(handle) => handle.request_table().resolve(token, response),
@@ -159,7 +165,7 @@ impl Object {
         }
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn visit_group(&self, envelope: Envelope, visitor: &mut dyn GroupVisitor) {
         let ObjectKind::Group(handle) = &self.kind else {
             panic!("route() called on a non-group object");

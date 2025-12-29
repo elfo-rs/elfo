@@ -8,12 +8,13 @@ use super::{
 };
 
 #[derive(Clone)]
-#[stability::unstable]
+#[instability::unstable]
 pub struct Dumper {
     recorder: Option<Arc<dyn Recorder>>,
 }
 
 impl Dumper {
+    #[instability::unstable]
     pub fn new(class: &'static str) -> Self {
         Self {
             recorder: recorder::make_recorder(class),
@@ -21,7 +22,7 @@ impl Dumper {
     }
 
     #[inline]
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn acquire(&self) -> Option<DumpingPermit<'_>> {
         let r = self.recorder.as_deref().filter(|r| r.enabled())?;
         Some(DumpingPermit { recorder: r })
@@ -37,13 +38,13 @@ impl Dumper {
 }
 
 #[must_use]
-#[stability::unstable]
+#[instability::unstable]
 pub struct DumpingPermit<'a> {
     recorder: &'a dyn Recorder,
 }
 
 impl DumpingPermit<'_> {
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn record(self, dump: Dump) {
         self.recorder.record(dump);
     }

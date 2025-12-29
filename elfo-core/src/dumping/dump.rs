@@ -12,7 +12,7 @@ use crate::{actor::ActorMeta, envelope, scope, thread::ThreadId, tracing::TraceI
 // === Dump ===
 
 #[doc(hidden)]
-#[stability::unstable]
+#[instability::unstable]
 pub struct Dump {
     pub meta: Arc<ActorMeta>,
     pub sequence_no: SequenceNo,
@@ -27,14 +27,14 @@ pub struct Dump {
 }
 
 #[doc(hidden)]
-#[stability::unstable]
+#[instability::unstable]
 pub type ErasedMessage = SmallBox<dyn ErasedSerialize + Send, [usize; 24]>;
 
 assert_impl_all!(Dump: Send);
 assert_eq_size!(Dump, [u8; 320]);
 
 impl Dump {
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn builder() -> DumpBuilder {
         DumpBuilder {
             timestamp: None,
@@ -61,7 +61,7 @@ impl Dump {
 
 // === DumpBuilder ===
 
-#[stability::unstable]
+#[instability::unstable]
 pub struct DumpBuilder {
     timestamp: Option<SystemTime>,
     direction: Direction,
@@ -71,37 +71,37 @@ pub struct DumpBuilder {
 }
 
 impl DumpBuilder {
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn timestamp(&mut self, timestamp: impl Into<SystemTime>) -> &mut Self {
         self.timestamp = Some(timestamp.into());
         self
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn direction(&mut self, direction: Direction) -> &mut Self {
         self.direction = direction;
         self
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn message_name(&mut self, name: impl Into<MessageName>) -> &mut Self {
         self.message_name = Some(name.into());
         self
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn message_protocol(&mut self, protocol: &'static str) -> &mut Self {
         self.message_protocol = protocol;
         self
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn message_kind(&mut self, kind: MessageKind) -> &mut Self {
         self.message_kind = kind;
         self
     }
 
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn finish<M>(&mut self, message: M) -> Dump
     where
         M: Serialize + Send + 'static,
@@ -141,7 +141,7 @@ impl DumpBuilder {
 // === Direction ===
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[stability::unstable]
+#[instability::unstable]
 pub enum Direction {
     In,
     Out,
@@ -150,7 +150,7 @@ pub enum Direction {
 // === MessageName ===
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-#[stability::unstable]
+#[instability::unstable]
 pub struct MessageName(&'static str, Option<&'static str>);
 
 impl<'a> PartialEq<&'a str> for MessageName {
@@ -223,7 +223,7 @@ impl From<&MessageName> for Cow<'static, str> {
 
 impl MessageName {
     #[doc(hidden)]
-    #[stability::unstable]
+    #[instability::unstable]
     pub fn to_str<'a>(&self, buffer: &'a mut String) -> &'a str {
         if let Some(variant) = self.1 {
             buffer.clear();
@@ -240,7 +240,7 @@ impl MessageName {
 // === MessageKind ===
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[stability::unstable]
+#[instability::unstable]
 pub enum MessageKind {
     Regular,
     Request(u64),

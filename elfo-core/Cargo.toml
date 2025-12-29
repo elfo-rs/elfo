@@ -24,7 +24,7 @@ unstable-stuck-detection = ["dep:thread_local"]
 elfo-macros = { version = "0.2.0-alpha.20", path = "../elfo-macros" }
 elfo-utils = { version = "0.2.7", path = "../elfo-utils" }
 
-stability.workspace = true
+instability.workspace = true
 metrics.workspace = true
 dashmap.workspace = true
 derive_more.workspace = true
@@ -49,6 +49,7 @@ arc-swap = "1.2.0"
 erased-serde = "0.4.0"
 pin-project.workspace = true
 sealed = "0.6"
+# TODO: must be optional
 serde_json = { version = "1.0.64", features = ["raw_value"] }
 regex = "1.6.0"
 unicycle = "0.10.2"

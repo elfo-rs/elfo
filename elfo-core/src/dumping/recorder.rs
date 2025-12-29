@@ -6,13 +6,13 @@ static MAKE_RECORDER: OnceLock<MakeRecorder> = OnceLock::new();
 
 type MakeRecorder = Box<dyn Fn(&'static str) -> Arc<dyn Recorder> + Sync + Send>;
 
-#[stability::unstable]
+#[instability::unstable]
 pub trait Recorder: Send + Sync {
     fn enabled(&self) -> bool;
     fn record(&self, dump: Dump);
 }
 
-#[stability::unstable]
+#[instability::unstable]
 pub fn set_make_recorder(make_recorder: MakeRecorder) -> bool {
     MAKE_RECORDER.set(make_recorder).is_ok()
 }

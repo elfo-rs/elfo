@@ -22,7 +22,7 @@ elfo-core = { version = "0.2.0-alpha.20", path = "../elfo-core" }
 elfo-configurer = { version = "0.2.0-alpha.20", path = "../elfo-configurer" }
 
 tokio.workspace = true
-stability.workspace = true
+instability.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 serde.workspace = true
 serde-value = "0.7.0"
