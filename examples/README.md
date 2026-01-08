@@ -28,6 +28,6 @@ Shows how to write functional tests for your actors.
 
 Run it as `cargo test --bin test --features test-util`.
 
-## tokio-broadcast
+## tokio_broadcast
 
 Demonstrates how to attach other channels to an actor's context, e.g. `tokio::sync::broadcast`.

@@ -48,5 +48,5 @@ path = "test.rs"
 required-features = ["test-util"]
 
 [[bin]]
-name = "tokio-broadcast"
-path = "tokio-broadcast.rs"
+name = "tokio_broadcast"
+path = "tokio_broadcast.rs"
