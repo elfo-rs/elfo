@@ -17,6 +17,7 @@ workspace = true
 [features]
 test-util = ["tokio/test-util"]
 network = ["rmp-serde"]
+tokio-tracing = ["tokio/tracing"]
 unstable = []
 unstable-stuck-detection = ["dep:thread_local"]
 
@@ -55,9 +56,6 @@ regex = "1.6.0"
 unicycle = "0.10.2"
 rmp-serde = { version = "1.1.0", optional = true }
 humantime-serde = "1"
-
-[target.'cfg(tokio_unstable)'.dependencies]
-tokio = { workspace = true, features = ["tracing"] }
 
 [dev-dependencies]
 elfo-utils = { version = "0.2.7", path = "../elfo-utils", features = ["test-util"] }

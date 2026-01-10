@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - ReleaseDate
 ### Added
 - network: add the `turmoil` v0.7 transport (the `turmoil07` feature).
-- core: integration with `tokio-console` if `cfg(tokio_unstable)` is set.
+- core: integration with `tokio-console` if the `tokio_unstable` cfg and `tokio-tracing` feature are enabled. See actoromicon for details.
 - core/task: expose unstable `task::spawn_blocking` and `task::Builder`.
 
 ## [0.2.0-alpha.20] - 2025-09-11
