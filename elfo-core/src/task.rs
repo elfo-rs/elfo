@@ -8,14 +8,15 @@ use crate::scope::{self, Scope};
 
 /// A factory which is used to configure the properties of a new task.
 ///
-/// This is a stable wrapper over [`tokio::task::Builder`].
+/// This is a wrapper based on [`tokio::task::Builder`].
 ///
 /// Features:
 /// * Spawning tasks inside a given scope (or the current scope by default). It
 ///   means that logs/metrics/dumps will be associated with specific actor, that
 ///   is especially useful for blocking tasks (e.g. for I/O operations).
-/// * If compiled with the `tokio_unstable` feature, it will set the task name
-///   in order to make it easier to identify tasks in `tokio-console`.
+/// * Sets the task name according to the scope in order to make it easier to
+///   identify such tasks in `tokio-console`. It requires `--cfg tokio_unstable`
+///   and the `tokio-tracing` feature to be enabled.
 ///
 /// Note: this is an unstable API.
 ///
@@ -61,10 +62,10 @@ impl Builder {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        #[cfg(not(tokio_unstable))]
+        #[cfg(not(all(tokio_unstable, feature = "tokio-tracing")))]
         return Ok(handle.spawn(self.scope.within(f)));
 
-        #[cfg(tokio_unstable)]
+        #[cfg(all(tokio_unstable, feature = "tokio-tracing"))]
         tokio::task::Builder::new()
             .name(&self.scope.meta().to_string())
             .spawn_on(self.scope.within(f), handle)
@@ -91,10 +92,10 @@ impl Builder {
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        #[cfg(not(tokio_unstable))]
+        #[cfg(not(all(tokio_unstable, feature = "tokio-tracing")))]
         return Ok(handle.spawn_blocking(|| self.scope.sync_within(f)));
 
-        #[cfg(tokio_unstable)]
+        #[cfg(all(tokio_unstable, feature = "tokio-tracing"))]
         tokio::task::Builder::new()
             .name(&self.scope.meta().to_string())
             .spawn_blocking_on(|| self.scope.sync_within(f), handle)
