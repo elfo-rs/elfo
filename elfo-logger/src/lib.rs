@@ -13,7 +13,7 @@ use futures_intrusive::{buffer::GrowingHeapBuf, channel::GenericChannel};
 use fxhash::FxBuildHasher;
 use parking_lot::RawMutex;
 use sharded_slab::Pool;
-use tracing::{span::Id as SpanId, Metadata, Subscriber};
+use tracing::{span::Id as SpanId, Metadata};
 use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 
 use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
@@ -45,6 +45,7 @@ struct Shared {
     spans: DashMap<SpanId, SpanData, FxBuildHasher>,
 }
 
+// TODO: store once instead of here and `Registry`.
 #[derive(Constructor)]
 struct SpanData {
     parent_id: Option<SpanId>,
@@ -60,7 +61,8 @@ struct PreparedEvent {
     payload_id: StringId,
 }
 
-fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
+// TODO: revise names of layers.
+pub fn new() -> (Blueprint, FilteringLayer, PrintingLayer) {
     let shared = Shared {
         channel: GenericChannel::with_capacity(CHANNEL_CAPACITY),
         pool: Pool::default(),
@@ -68,11 +70,11 @@ fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
     };
 
     let shared = Arc::new(shared);
-    let printing_layer = PrintingLayer::new(shared.clone());
-    let filtering_layer = FilteringLayer::new();
-    let blueprint = Logger::blueprint(shared, filtering_layer.clone());
+    let filter = FilteringLayer::new();
+    let transmit = PrintingLayer::new(shared.clone());
+    let blueprint = Logger::blueprint(shared, filter.clone());
 
-    (printing_layer, filtering_layer, blueprint)
+    (blueprint, filter, transmit)
 }
 
 /// Initializes `tracing` subscriber and returns a blueprint.
@@ -90,19 +92,22 @@ fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
 /// loggers.mount(logger);
 /// ```
 pub fn init() -> Blueprint {
-    // TODO: log instead of panicking.
-    let (printer, filter, blueprint) = new();
-    let registry = Registry::default();
+    let (blueprint, filter, transmit) = new();
 
-    if env::var(EnvFilter::DEFAULT_ENV).is_ok() {
-        let filter = EnvFilter::try_from_default_env().expect("invalid env");
-        let subscriber = registry.with(filter).with(printer);
-        install_subscriber(subscriber);
-    } else {
-        let subscriber = registry.with(filter).with(printer);
-        install_subscriber(subscriber);
-    };
+    // TODO: the `env-filter` feature.
+    // TODO: log instead of panicking?
+    let env_filter = env::var(EnvFilter::DEFAULT_ENV)
+        .ok()
+        .map(|_| EnvFilter::try_from_default_env().expect("invalid env"));
 
+    let subscriber = Registry::default()
+        .with(transmit)
+        .with(filter)
+        .with(env_filter);
+
+    tracing::subscriber::set_global_default(subscriber).expect("cannot set global subscriber");
+
+    // TODO: remove test log at all?
     #[cfg(feature = "tracing-log")]
     {
         if let Err(e) = tracing_log::LogTracer::init() {
@@ -117,8 +122,4 @@ pub fn init() -> Blueprint {
     }
 
     blueprint
-}
-
-fn install_subscriber(s: impl Subscriber + Send + Sync) {
-    tracing::subscriber::set_global_default(s).expect("cannot set global subscriber");
 }
