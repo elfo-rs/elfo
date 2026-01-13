@@ -35,7 +35,7 @@ parking_lot.workspace = true
 # TODO: avoid the `rc` feature here?
 serde = { workspace = true, features = ["rc"] }
 tracing.workspace = true
-idr-ebr = "0.3.0"
+idr-ebr = "0.3.2"
 futures-intrusive = "0.5"
 cordyceps = "0.3.2"
 smallbox = "0.8.0"

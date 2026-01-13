@@ -27,7 +27,7 @@ readme = "README.md"
 rust-version = "1.85.0" # update CI if changed
 
 [workspace.dependencies]
-tokio = "1.37"
+tokio = "1.38"
 instability = "0.3.10"
 metrics = "0.17.1"
 dashmap = "6.0.1"
