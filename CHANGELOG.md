@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - network: add the `turmoil` v0.7 transport (the `turmoil07` feature).
 
+### Fixed
+- telemeter: set correct content-type to support latest Prometheus versions ([#181]).
+
+[#181]: https://github.com/elfo-rs/elfo/issues/181
+
 ## [0.2.0-alpha.20] - 2025-09-11
 ### Added
 - test/proxy: add fallible methods for requesting ([#162]).

@@ -16,12 +16,18 @@ async fn it_works() -> Result<()> {
     // Get metrics with GZIP compression
 
     let client = reqwest::Client::builder().gzip(true).build()?;
-    let content = client
-        .get("http://127.0.0.1:9042/metrics")
-        .send()
-        .await?
-        .text()
-        .await?;
+    let response = client.get("http://127.0.0.1:9042/metrics").send().await?;
+
+    // Verify Content-Type header
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("text/plain; charset=utf-8")
+    );
+
+    let content = response.text().await?;
 
     let some_expected_parts = [
         r#"elfo_actor_status_changes_total{actor_group="system.init",status="Initializing"}"#,
@@ -43,14 +49,14 @@ async fn it_works() -> Result<()> {
 
     // Get metrics without compression
 
-    let content = reqwest::Client::builder()
+    let response = reqwest::Client::builder()
         .gzip(false)
         .build()?
         .get("http://127.0.0.1:9042/metrics")
         .send()
-        .await?
-        .text()
         .await?;
+
+    let content = response.text().await?;
 
     println!("Metrics content (second request):\n{content}");
 

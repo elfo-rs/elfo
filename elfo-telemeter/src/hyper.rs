@@ -9,7 +9,7 @@ use std::{
 use http_body_util::Full;
 use hyper::{
     body::Body,
-    header::{HeaderMap, ACCEPT_ENCODING, CONTENT_ENCODING},
+    header::{HeaderMap, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_TYPE},
     server::conn,
     service, Method, Request, Response, StatusCode,
 };
@@ -89,43 +89,51 @@ async fn handle(req: Request<impl Body>, ctx: Context) -> Result<Response<ResBod
             .unwrap());
     }
 
-    let use_gzip = use_gzip(req.headers());
-
-    ctx.request_to(ctx.addr(), Render)
-        .resolve()
-        .await
-        .map(|Rendered(text)| {
-            let builder = Response::builder();
-
-            let gzipped = if use_gzip {
-                match try_gzip(text.as_bytes()) {
-                    Ok(gzipped) => Some(gzipped),
-                    Err(err) => {
-                        warn!(error = %err, "failed to gzip metrics, sending uncompressed");
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-
-            if let Some(gzipped) = gzipped {
-                builder
-                    .header(CONTENT_ENCODING, "gzip")
-                    .body(into_res_body(gzipped))
-            } else {
-                builder.body(into_res_body(text.into_bytes()))
-            }
-            .unwrap()
-        })
-        .or_else(|err| {
+    // Actually make a request to the telemeter actor to render metrics.
+    let text = match ctx.request_to(ctx.addr(), Render).resolve().await {
+        Ok(Rendered(text)) => text,
+        Err(err) => {
             warn!(error = %err, "failed to render metrics for HTTP response");
 
-            Ok(Response::builder()
+            return Ok(Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(<_>::default())
-                .unwrap())
-        })
+                .unwrap());
+        }
+    };
+
+    let builder = Response::builder();
+
+    // We must set the Content-Type header. Otherwise, the prometheus rejects
+    // responses printing "Failed to determine correct type of scrape target".
+    //
+    // Formally, we format metrics according to openmetrics v1, but still use simple
+    // "text/plain" to avoid overcomplications to support older prometheus versions.
+    //
+    // Prometheus: https://github.com/prometheus/prometheus/blob/21fb899c3292829ec49b5fef63b3291bdc8a519d/config/config.go#L564-L570
+    // VictoriaMetrics: https://github.com/VictoriaMetrics/VictoriaMetrics/blob/1b7f0172d2c7d1c90eef5b235ba8459e4ac5522c/lib/promscrape/client.go#L133
+    let builder = builder.header(CONTENT_TYPE, "text/plain; charset=utf-8");
+
+    let gzipped = if use_gzip(req.headers()) {
+        match try_gzip(text.as_bytes()) {
+            Ok(gzipped) => Some(gzipped),
+            Err(err) => {
+                warn!(error = %err, "failed to gzip metrics, sending uncompressed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Ok(if let Some(gzipped) = gzipped {
+        builder
+            .header(CONTENT_ENCODING, "gzip")
+            .body(into_res_body(gzipped))
+    } else {
+        builder.body(into_res_body(text.into_bytes()))
+    }
+    .unwrap())
 }
 
 fn use_gzip(headers: &HeaderMap) -> bool {
