@@ -81,7 +81,7 @@ async fn main() {
 
     let senders = topology.local("senders");
     let receivers = topology.local("receivers");
-    let loggers = topology.local("loggers");
+    let loggers = topology.local("system.loggers");
     let configurers = topology.local("system.configurers").entrypoint();
 
     let (broadcast_tx, _rx) = broadcast::channel(42);

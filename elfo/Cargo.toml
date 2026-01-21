@@ -18,6 +18,7 @@ workspace = true
 full = ["elfo-configurer", "elfo-logger", "elfo-dumper", "elfo-telemeter", "elfo-pinger"]
 test-util = ["elfo-test", "elfo-core/test-util", "elfo-configurer?/test-util"]
 network = ["elfo-network"]
+tokio-tracing = ["elfo-core/tokio-tracing"]
 unstable = ["elfo-core/unstable", "elfo-telemeter?/unstable", "elfo-test?/unstable" ]
 unstable-stuck-detection = ["elfo-core/unstable-stuck-detection"]
 tracing-log = ["elfo-logger?/tracing-log"]

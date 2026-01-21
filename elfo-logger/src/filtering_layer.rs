@@ -5,10 +5,7 @@ use std::sync::OnceLock;
 use arc_swap::ArcSwap;
 use fxhash::FxHashMap;
 use tracing::{metadata::LevelFilter, subscriber::Interest, Metadata, Subscriber};
-use tracing_subscriber::{
-    filter::Targets,
-    layer::{Context, Layer},
-};
+use tracing_subscriber::{filter::Targets, layer};
 
 use elfo_core::{logging::CheckResult, scope};
 
@@ -33,8 +30,7 @@ struct Inner {
     log_metadata_name: OnceLock<&'static str>,
 }
 
-#[derive(Clone)]
-pub(crate) struct FilteringLayer {
+pub struct FilteringLayer {
     inner: Arc<Inner>,
 }
 
@@ -46,6 +42,12 @@ impl FilteringLayer {
                 #[cfg(feature = "tracing-log")]
                 log_metadata_name: OnceLock::new(),
             }),
+        }
+    }
+
+    pub(crate) fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
         }
     }
 
@@ -64,10 +66,8 @@ impl FilteringLayer {
             tracing::callsite::rebuild_interest_cache();
         }
     }
-}
 
-impl<S: Subscriber> Layer<S> for FilteringLayer {
-    fn register_callsite(&self, meta: &'static Metadata<'static>) -> Interest {
+    fn interested(&self, meta: &Metadata<'_>) -> Interest {
         let config = self.inner.config.load();
         if config.targets.would_enable(meta.target(), meta.level()) {
             // Not `::always()`, because actor can impose its own limits.
@@ -78,7 +78,7 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
         }
     }
 
-    fn enabled(&self, meta: &Metadata<'_>, _cx: Context<'_, S>) -> bool {
+    fn enabled(&self, meta: &Metadata<'_>) -> bool {
         // We don't need to recheck `.targets` here, because `.register_callsite()`
         // would already eliminate logs that would be filtered by it.
         let level = *meta.level();
@@ -127,6 +127,34 @@ impl<S: Subscriber> Layer<S> for FilteringLayer {
         })
         // `INFO` is a global cap for non-actor logs.
         .unwrap_or(level <= LevelFilter::INFO)
+    }
+}
+
+impl<S: Subscriber> layer::Layer<S> for FilteringLayer {
+    fn register_callsite(&self, meta: &'static Metadata<'static>) -> Interest {
+        self.interested(meta)
+    }
+
+    fn enabled(&self, meta: &Metadata<'_>, _cx: layer::Context<'_, S>) -> bool {
+        self.enabled(meta)
+    }
+
+    // TODO: global max level and `max_level_hint()`.
+}
+
+// TODO: check either `rebuild_interest_cache` work here or not.
+impl<S> layer::Filter<S> for FilteringLayer {
+    fn callsite_enabled(&self, meta: &'static Metadata<'static>) -> Interest {
+        self.interested(meta)
+    }
+
+    fn enabled(&self, meta: &Metadata<'_>, _cx: &layer::Context<'_, S>) -> bool {
+        // Even though we are implementing `callsite_enabled`, we must still provide a
+        // working implementation of `enabled`, as returning `Interest::always()` or
+        // `Interest::never()` will *allow* caching, but will not *guarantee* it.
+        // Other filters may still return `Interest::sometimes()`, so we may be
+        // asked again in `enabled`.
+        !self.interested(meta).is_never() && self.enabled(meta)
     }
 
     // TODO: global max level and `max_level_hint()`.

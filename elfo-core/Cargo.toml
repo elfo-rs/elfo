@@ -17,6 +17,7 @@ workspace = true
 [features]
 test-util = ["tokio/test-util"]
 network = ["rmp-serde"]
+tokio-tracing = ["tokio/tracing"]
 unstable = []
 unstable-stuck-detection = ["dep:thread_local"]
 
