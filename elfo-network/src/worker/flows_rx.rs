@@ -4,7 +4,7 @@ use fxhash::FxHashMap;
 use metrics::{decrement_gauge, increment_gauge};
 use tracing::{debug, info};
 
-use elfo_core::{addr::NodeNo, Addr, Envelope};
+use elfo_core::{addr::NodeNo, errors::RequestError, Addr, Envelope, ResponseToken};
 
 use super::flow_control::RxFlowControl;
 use crate::{codec::format::NetworkAddr, protocol::internode};
@@ -41,11 +41,24 @@ impl Drop for RxFlows {
     }
 }
 
+#[derive(Debug)]
+pub(super) enum RxFlowEvent {
+    Message {
+        envelope: Envelope,
+        bounded: bool,
+    },
+    Response {
+        token: ResponseToken,
+        response: Result<Envelope, RequestError>,
+    },
+}
+
 struct RxFlowData {
     control: RxFlowControl,
-    /// If actor's mailbox is full, the message is queued here.
+    /// If actor's mailbox is full, the events are queued here.
     /// The second element of the tuple is `true` if message was routed.
-    queue: Option<VecDeque<(Envelope, bool)>>,
+    queue: Option<VecDeque<(RxFlowEvent, bool)>>,
+
     /// The number of routed envelopes in `queue`.
     routed: i32,
 }
@@ -115,7 +128,7 @@ impl RxFlows {
             })
     }
 
-    pub(super) fn dequeue(&mut self, addr: Addr) -> Option<(Envelope, bool)> {
+    pub(super) fn dequeue(&mut self, addr: Addr) -> Option<(RxFlowEvent, bool)> {
         debug_assert!(addr.is_local());
 
         let flow = self.map.get_mut(&addr)?;
@@ -173,10 +186,6 @@ pub(super) struct RxFlow<'a> {
 }
 
 impl RxFlow<'_> {
-    pub(super) fn is_stable(&self) -> bool {
-        self.flow.queue.is_none()
-    }
-
     pub(super) fn acquire_direct(&mut self, tx_knows: bool) {
         self.flow.control.do_acquire(tx_knows);
     }
@@ -191,19 +200,93 @@ impl RxFlow<'_> {
             })
     }
 
-    pub(super) fn enqueue(self, envelope: Envelope, routed: bool) {
+    /// Enqueue response to the event queue. Returns `Err` if response must be
+    /// processed in real-time.
+    pub(super) fn try_enqueue_response(
+        self,
+        token: ResponseToken,
+        response: Result<Envelope, RequestError>,
+    ) -> Result<(), (ResponseToken, Result<Envelope, RequestError>)> {
+        let Some(queue) = self.flow.queue.as_mut() else {
+            return Err((token, response));
+        };
+
+        queue.push_back((RxFlowEvent::Response { token, response }, false));
+
+        Ok(())
+    }
+
+    /// Enqueue unbounded send. Returns `Err` if message must be processed in real-time.
+    pub(super) fn try_enqueue_unbounded(
+        self,
+        envelope: Envelope,
+        routed: bool,
+    ) -> Result<(), Envelope> {
+        let Some(queue) = self.flow.queue.as_mut() else {
+            return Err(envelope);
+        };
+
+        queue.push_back((
+            RxFlowEvent::Message {
+                envelope,
+                bounded: false,
+            },
+            routed,
+        ));
+
+        if routed {
+            self.flow.routed += 1;
+        }
+
+        Ok(())
+    }
+
+    /// Enqueue send. Returns `Err(..)` if there's no pusher.
+    pub(super) fn try_enqueue_send(
+        mut self,
+        envelope: Envelope,
+        routed: bool,
+    ) -> Result<(), Envelope> {
+        let Some(queue) = self.flow.queue.as_mut() else {
+            return Err(envelope);
+        };
+
+        queue.push_back((
+            RxFlowEvent::Message {
+                envelope,
+                bounded: true,
+            },
+            routed,
+        ));
+        self.acquire_direct(!routed);
+
+        Ok(())
+    }
+
+    /// Enqueue send. Returns `true` if pusher must be spawned.
+    pub(super) fn enqueue_send(self, envelope: Envelope, routed: bool) -> bool {
+        let mut spawn_pusher = false;
         let addr = self.addr;
 
         self.flow
             .queue
             .get_or_insert_with(|| {
                 info!(addr = %addr, "destination actor is full, queueing");
+                spawn_pusher = true;
                 VecDeque::new()
             })
-            .push_back((envelope, routed));
+            .push_back((
+                RxFlowEvent::Message {
+                    envelope,
+                    bounded: true,
+                },
+                routed,
+            ));
 
         if routed {
             self.flow.routed += 1;
         }
+
+        spawn_pusher
     }
 }

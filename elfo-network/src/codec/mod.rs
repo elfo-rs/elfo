@@ -29,6 +29,7 @@ mod tests {
             payload: NetworkEnvelopePayload::Regular {
                 message: AnyMessage::new(message),
             },
+            bounded: true,
         }
     }
 
