@@ -34,17 +34,28 @@ assert_impl_all!(Dump: Send);
 assert_eq_size!(Dump, [u8; 320]);
 
 impl Dump {
-    #[doc(hidden)]
     #[instability::unstable]
-    pub fn builder(sequence_no: SequenceNo) -> DumpBuilder {
+    pub fn builder() -> DumpBuilder {
         DumpBuilder {
             timestamp: None,
             direction: Direction::Out,
             message_name: None,
             message_protocol: "",
             message_kind: MessageKind::Regular,
-            sequence_no,
         }
+    }
+
+    pub(crate) fn message(
+        message: &impl Message,
+        kind: &envelope::MessageKind,
+        direction: Direction,
+    ) -> Self {
+        Self::builder()
+            .direction(direction)
+            .message_name(message.name())
+            .message_protocol(message.protocol())
+            .message_kind(MessageKind::from_message_kind(kind))
+            .do_finish(message._erase())
     }
 }
 
@@ -57,42 +68,41 @@ pub struct DumpBuilder {
     message_name: Option<MessageName>,
     message_protocol: &'static str,
     message_kind: MessageKind,
-    sequence_no: SequenceNo,
 }
 
 impl DumpBuilder {
     #[instability::unstable]
-    pub fn timestamp(mut self, timestamp: impl Into<SystemTime>) -> Self {
+    pub fn timestamp(&mut self, timestamp: impl Into<SystemTime>) -> &mut Self {
         self.timestamp = Some(timestamp.into());
         self
     }
 
     #[instability::unstable]
-    pub fn direction(mut self, direction: Direction) -> Self {
+    pub fn direction(&mut self, direction: Direction) -> &mut Self {
         self.direction = direction;
         self
     }
 
     #[instability::unstable]
-    pub fn message_name(mut self, name: impl Into<MessageName>) -> Self {
+    pub fn message_name(&mut self, name: impl Into<MessageName>) -> &mut Self {
         self.message_name = Some(name.into());
         self
     }
 
     #[instability::unstable]
-    pub fn message_protocol(mut self, protocol: &'static str) -> Self {
+    pub fn message_protocol(&mut self, protocol: &'static str) -> &mut Self {
         self.message_protocol = protocol;
         self
     }
 
     #[instability::unstable]
-    pub fn message_kind(mut self, kind: MessageKind) -> Self {
+    pub fn message_kind(&mut self, kind: MessageKind) -> &mut Self {
         self.message_kind = kind;
         self
     }
 
     #[instability::unstable]
-    pub fn finish<M>(mut self, message: M) -> Dump
+    pub fn finish<M>(&mut self, message: M) -> Dump
     where
         M: Serialize + Send + 'static,
     {
@@ -104,12 +114,18 @@ impl DumpBuilder {
         self.do_finish(smallbox!(message))
     }
 
-    fn do_finish(mut self, message: ErasedMessage) -> Dump {
-        let (meta, trace_id) = scope::with(|scope| (scope.meta().clone(), scope.trace_id()));
+    fn do_finish(&mut self, message: ErasedMessage) -> Dump {
+        let (meta, trace_id, sequence_no) = scope::with(|scope| {
+            (
+                scope.meta().clone(),
+                scope.trace_id(),
+                scope.dumping().next_sequence_no(),
+            )
+        });
 
         Dump {
             meta,
-            sequence_no: self.sequence_no,
+            sequence_no,
             timestamp: self.timestamp.unwrap_or_else(SystemTime::now),
             trace_id,
             thread_id: crate::thread::id(),
@@ -119,19 +135,6 @@ impl DumpBuilder {
             message_kind: self.message_kind,
             message,
         }
-    }
-
-    pub(crate) fn finish_with_message(
-        self,
-        message: &impl Message,
-        kind: &envelope::MessageKind,
-        direction: Direction,
-    ) -> Dump {
-        self.direction(direction)
-            .message_name(message.name())
-            .message_protocol(message.protocol())
-            .message_kind(MessageKind::from_message_kind(kind))
-            .do_finish(message._erase())
     }
 }
 

@@ -268,7 +268,7 @@ mod tests {
     use fxhash::FxHashMap;
     use tracing::{level_filters::LevelFilter, Level};
 
-    use elfo_core::{dumping::SequenceNo, scope::Scope, tracing::TraceId, ActorMeta, Addr};
+    use elfo_core::{scope::Scope, tracing::TraceId, ActorMeta, Addr};
     use elfo_utils::time::SystemTime;
 
     use super::*;
@@ -301,11 +301,10 @@ mod tests {
 
         let scope = test_scope("group", "key");
         scope.set_trace_id(TraceId::try_from(1).unwrap());
-        let seq_no = SequenceNo::try_from(sequence_no).unwrap();
         let mut dump = scope.sync_within(|| {
-            let builder = Dump::builder(seq_no)
-                .timestamp(SystemTime::from_unix_time_nanos(2))
-                .message_protocol("some");
+            let mut builder = Dump::builder();
+            builder.timestamp(SystemTime::from_unix_time_nanos(2));
+            builder.message_protocol("some");
 
             if is_good {
                 builder.finish(Some {
@@ -316,6 +315,7 @@ mod tests {
             }
         });
 
+        dump.sequence_no = sequence_no.try_into().unwrap();
         dump.thread_id = 0;
         dump
     }

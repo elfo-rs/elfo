@@ -20,7 +20,7 @@ use crate::{
     config::AnyConfig,
     coop,
     demux::Demux,
-    dumping::{Direction, Dumper, INTERNAL_CLASS},
+    dumping::{Direction, Dump, Dumper, INTERNAL_CLASS},
     envelope::{Envelope, MessageKind},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     mailbox::RecvResult,
@@ -256,9 +256,9 @@ impl<C, K> Context<C, K> {
         self.stats.on_sent_message(&message); // TODO: only if successful?
 
         trace!("> {:?}", message);
-        DUMPER.record_m(&message, |builder| {
-            builder.finish_with_message(&message, &kind, Direction::Out)
-        });
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
+        }
 
         let envelope = Envelope::new(message, kind);
         let addrs = self.demux.filter(&envelope);
@@ -341,9 +341,9 @@ impl<C, K> Context<C, K> {
         self.stats.on_sent_message(&message); // TODO: only if successful?
 
         trace!("> {:?}", message);
-        DUMPER.record_m(&message, |builder| {
-            builder.finish_with_message(&message, &kind, Direction::Out)
-        });
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
+        }
 
         let envelope = Envelope::new(message, kind);
         let addrs = self.demux.filter(&envelope);
@@ -432,9 +432,9 @@ impl<C, K> Context<C, K> {
         self.stats.on_sent_message(&message); // TODO: only if successful?
 
         trace!("> {:?}", message);
-        DUMPER.record_m(&message, |builder| {
-            builder.finish_with_message(&message, &kind, Direction::Out)
-        });
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
+        }
 
         let envelope = Envelope::new(message, kind);
         let addrs = self.demux.filter(&envelope);
@@ -619,9 +619,9 @@ impl<C, K> Context<C, K> {
         self.stats.on_sent_message(&message); // TODO: only if successful?
 
         trace!(to = %recipient, "> {:?}", message);
-        DUMPER.record_m(&message, |builder| {
-            builder.finish_with_message(&message, &kind, Direction::Out)
-        });
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
+        }
 
         let guard = EbrGuard::new();
         let entry = self.book.get(recipient, &guard);
@@ -658,9 +658,9 @@ impl<C, K> Context<C, K> {
         };
 
         trace!(to = %recipient, "> {:?}", message);
-        DUMPER.record_m(&message, |builder| {
-            builder.finish_with_message(&message, &kind, Direction::Out)
-        });
+        if let Some(permit) = DUMPER.acquire_m(&message) {
+            permit.record(Dump::message(&message, &kind, Direction::Out));
+        }
 
         let envelope = Envelope::new(message, kind);
         let guard = EbrGuard::new();
@@ -910,9 +910,10 @@ impl<C, K> Context<C, K> {
 
         let message = envelope.message();
         trace!("< {:?}", message);
-        DUMPER.record_m(&*message, |builder| {
-            builder.finish_with_message(&*message, envelope.message_kind(), Direction::In)
-        });
+        if let Some(permit) = DUMPER.acquire_m(&*message) {
+            let kind = envelope.message_kind();
+            permit.record(Dump::message(&*message, kind, Direction::In));
+        }
 
         // We should change the status after dumping the original message
         // in order to see `ActorStatusReport` after that message.
@@ -1222,9 +1223,9 @@ fn prepare_response<R: Request>(
 
     // TODO: increase a counter.
     trace!("< {:?}", message);
-    DUMPER.record_m(&message, |builder| {
-        builder.finish_with_message(&message, &kind, Direction::In)
-    });
+    if let Some(permit) = DUMPER.acquire_m(&message) {
+        permit.record(Dump::message(&message, &kind, Direction::In));
+    }
 
     Ok(message.into())
 }
