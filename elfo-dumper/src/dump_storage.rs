@@ -362,12 +362,25 @@ impl Drop for Drain<'_> {
 
 #[cfg(test)]
 mod tests {
-    use elfo_core::{dumping::Dump, scope::Scope, tracing::TraceId, ActorMeta, Addr};
+    use std::cell::Cell;
+
+    use elfo_core::{
+        dumping::{Dump, SequenceNo},
+        scope::Scope,
+        tracing::TraceId,
+        ActorMeta, Addr,
+    };
 
     use super::*;
 
+    thread_local! {
+        static DUMP_SEQUENCER: Cell<u64> = const { Cell::new(1) };
+    }
+
     fn dump() -> Dump {
-        Dump::builder().finish("payload")
+        let seq_no = DUMP_SEQUENCER.replace(DUMP_SEQUENCER.get() + 1);
+        let seq_no = SequenceNo::try_from(seq_no).unwrap();
+        Dump::builder(seq_no).finish("payload")
     }
 
     fn scope(key: &str) -> Scope {

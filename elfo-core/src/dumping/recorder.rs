@@ -8,7 +8,6 @@ type MakeRecorder = Box<dyn Fn(&'static str) -> Arc<dyn Recorder> + Sync + Send>
 
 #[instability::unstable]
 pub trait Recorder: Send + Sync {
-    fn enabled(&self) -> bool;
     fn record(&self, dump: Dump);
 }
 
