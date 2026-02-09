@@ -50,3 +50,8 @@ required-features = ["test-util"]
 [[bin]]
 name = "tokio-broadcast"
 path = "tokio-broadcast.rs"
+
+[[bin]]
+name = "multi_runtime"
+path = "multi_runtime.rs"
+required-features = ["unstable"]
