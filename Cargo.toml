@@ -61,3 +61,7 @@ undocumented_unsafe_blocks = "warn"
 
 [profile.release]
 debug = 1
+
+# TODO: remove after a new release of hotpath-rs
+[patch.crates-io]
+hotpath = { git = "https://github.com/pawurb/hotpath-rs", branch = "main" }

@@ -16,9 +16,10 @@ workspace = true
 
 [features]
 test-util = ["tokio/test-util"]
-network = ["rmp-serde"]
+network = ["dep:rmp-serde"]
 unstable = []
 unstable-stuck-detection = ["dep:thread_local"]
+hotpath = ["hotpath/hotpath", "dep:quanta"] # TODO: we shouldn't force hotpath/hotpath
 
 [dependencies]
 elfo-macros = { version = "0.2.0-alpha.20", path = "../elfo-macros" }
@@ -55,6 +56,8 @@ regex = "1.6.0"
 unicycle = "0.10.2"
 rmp-serde = { version = "1.1.0", optional = true }
 humantime-serde = "1"
+hotpath = { version = "0.10.1", optional = true }
+quanta = { version = "0.12", optional = true } # required for hotpath
 
 [dev-dependencies]
 elfo-utils = { version = "0.2.7", path = "../elfo-utils", features = ["test-util"] }

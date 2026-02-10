@@ -42,3 +42,13 @@ macro_rules! cfg_network {
         )*
     }
 }
+
+macro_rules! cfg_hotpath {
+    // Force `{..}` to make rustfmt work.
+    ({$($item:item)*}) => {
+        $(
+            #[cfg(feature = "hotpath")]
+            $item
+        )*
+    }
+}

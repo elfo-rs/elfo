@@ -137,11 +137,11 @@ impl Actor {
         status_subscription: Arc<SubscriptionManager>,
     ) -> Self {
         Actor {
-            status_kind: AtomicActorStatusKind::from(ActorStatusKind::Initializing),
+            mailbox: Mailbox::new(mailbox_config, &meta),
             meta,
             termination_policy,
-            mailbox: Mailbox::new(mailbox_config),
             request_table: RequestTable::new(addr),
+            status_kind: AtomicActorStatusKind::from(ActorStatusKind::Initializing),
             control: RwLock::new(Control {
                 status: ActorStatus::INITIALIZING,
                 restart_policy: None,

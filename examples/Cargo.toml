@@ -28,6 +28,7 @@ humantime-serde = "1"
 test-util = ["elfo/test-util"]
 network = ["elfo/network"]
 unstable = ["elfo/unstable"]
+hotpath = ["elfo/hotpath"]
 
 [[bin]]
 name = "usage"

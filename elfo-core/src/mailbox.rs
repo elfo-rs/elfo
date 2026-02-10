@@ -40,6 +40,7 @@ use crate::{
     envelope::{Envelope, EnvelopeHeader},
     errors::{SendError, TrySendError},
     tracing::TraceId,
+    ActorMeta,
 };
 
 // === MailboxConfig ===
@@ -128,6 +129,9 @@ pub(crate) struct Mailbox {
 
     /// Use `Mutex` here for synchronization on close/configure.
     control: Mutex<Control>,
+
+    #[cfg(feature = "hotpath")]
+    hotpath: Hotpath,
 }
 
 struct Control {
@@ -138,8 +142,11 @@ struct Control {
 }
 
 impl Mailbox {
-    pub(crate) fn new(config: &config::MailboxConfig) -> Self {
+    pub(crate) fn new(config: &config::MailboxConfig, meta: &ActorMeta) -> Self {
         let capacity = clamp_capacity(config.capacity);
+
+        #[cfg(not(feature = "hotpath"))]
+        let _ = meta;
 
         Self {
             queue: MpscQueue::new_with_stub(Envelope::stub()),
@@ -149,6 +156,8 @@ impl Mailbox {
                 closed_trace_id: None,
                 capacity,
             }),
+            #[cfg(feature = "hotpath")]
+            hotpath: Hotpath::new(meta, capacity),
         }
     }
 
@@ -182,7 +191,7 @@ impl Mailbox {
         };
 
         permit.forget();
-        self.queue.enqueue(envelope);
+        self.enqueue(envelope);
         self.rx_notify.notify_one();
         Ok(())
     }
@@ -191,7 +200,7 @@ impl Mailbox {
         match self.tx_semaphore.try_acquire() {
             Ok(permit) => {
                 permit.forget();
-                self.queue.enqueue(envelope);
+                self.enqueue(envelope);
                 self.rx_notify.notify_one();
                 Ok(())
             }
@@ -202,7 +211,7 @@ impl Mailbox {
 
     pub(crate) fn unbounded_send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
         if !self.tx_semaphore.is_closed() {
-            self.queue.enqueue(envelope);
+            self.enqueue(envelope);
             self.rx_notify.notify_one();
             Ok(())
         } else {
@@ -217,7 +226,7 @@ impl Mailbox {
             // by one consumer. However, it's not enough to create a dedicated
             // `MailboxConsumer` because users can steal `Context` to another
             // task/thread and create a race with the `drop_all()` method.
-            if let Some(envelope) = self.queue.dequeue() {
+            if let Some(envelope) = self.dequeue() {
                 self.tx_semaphore.add_permits(1);
                 return RecvResult::Data(envelope);
             }
@@ -231,7 +240,7 @@ impl Mailbox {
     }
 
     pub(crate) fn try_recv(&self) -> Option<RecvResult> {
-        match self.queue.dequeue() {
+        match self.dequeue() {
             Some(envelope) => {
                 self.tx_semaphore.add_permits(1);
                 Some(RecvResult::Data(envelope))
@@ -262,20 +271,34 @@ impl Mailbox {
 
     #[cold]
     pub(crate) fn drop_all(&self) {
-        while self.queue.dequeue().is_some() {}
+        while self.dequeue().is_some() {}
     }
 
     #[cold]
     fn on_close(&self) -> RecvResult {
         // Some messages may be in the queue after the channel is closed.
-        match self.queue.dequeue() {
+        match self.dequeue() {
             Some(envelope) => RecvResult::Data(envelope),
             None => {
                 let control = self.control.lock();
                 let trace_id = control.closed_trace_id.expect("called before close()");
+                #[cfg(feature = "hotpath")]
+                self.hotpath.on_close();
                 RecvResult::Closed(trace_id)
             }
         }
+    }
+
+    fn enqueue(&self, envelope: Envelope) {
+        #[cfg(feature = "hotpath")]
+        self.hotpath.on_enqueue(&envelope);
+        self.queue.enqueue(envelope);
+    }
+
+    fn dequeue(&self) -> Option<Envelope> {
+        #[cfg(feature = "hotpath")]
+        self.hotpath.on_dequeue();
+        self.queue.dequeue()
     }
 }
 
@@ -287,3 +310,55 @@ pub(crate) enum RecvResult {
 fn clamp_capacity(capacity: usize) -> usize {
     capacity.min(Semaphore::MAX_PERMITS)
 }
+
+cfg_hotpath!({
+    use hotpath::channels as hp;
+
+    use crate::Message as _;
+
+    // NOTE: this is an unbounded channel.
+    struct Hotpath(hp::RegisteredChannel);
+
+    impl Hotpath {
+        fn new(meta: &ActorMeta, capacity: usize) -> Self {
+            Self(hp::register_channel::<Envelope>(
+                "elfo",
+                Some(meta.to_string()),
+                hp::ChannelType::Bounded(capacity),
+            ))
+        }
+
+        fn on_enqueue(&self, envelope: &Envelope) {
+            let _ = self.0.stats_tx.send(hp::ChannelEvent::MessageSent {
+                id: self.0.id,
+                log: Some(envelope.message().name().into()),
+                timestamp: Self::now(),
+                // TODO: should we use `envelope.created_time()`?
+            });
+        }
+
+        fn on_dequeue(&self) {
+            let _ = self.0.stats_tx.send(hp::ChannelEvent::MessageReceived {
+                id: self.0.id,
+                timestamp: Self::now(),
+            });
+        }
+
+        fn on_close(&self) {
+            let _ = self
+                .0
+                .stats_tx
+                .send(hp::ChannelEvent::Closed { id: self.0.id });
+        }
+
+        #[cfg(target_os = "linux")]
+        fn now() -> quanta::Instant {
+            quanta::Instant::now()
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        fn now() -> std::time::Instant {
+            std::time::Instant::now()
+        }
+    }
+});
