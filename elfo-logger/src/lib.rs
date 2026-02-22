@@ -13,7 +13,7 @@ use futures_intrusive::{buffer::GrowingHeapBuf, channel::GenericChannel};
 use fxhash::FxBuildHasher;
 use parking_lot::RawMutex;
 use sharded_slab::Pool;
-use tracing::{span::Id as SpanId, Metadata, Subscriber};
+use tracing::{span::Id as SpanId, Metadata};
 use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 
 use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
@@ -45,6 +45,7 @@ struct Shared {
     spans: DashMap<SpanId, SpanData, FxBuildHasher>,
 }
 
+// TODO: store once instead of here and `Registry`.
 #[derive(Constructor)]
 struct SpanData {
     parent_id: Option<SpanId>,
@@ -60,7 +61,31 @@ struct PreparedEvent {
     payload_id: StringId,
 }
 
-fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
+// TODO: revise names of layers.
+
+/// Creates a new logger blueprint with filtering and printing layers.
+///
+/// It's useful when you want to set a tracing subscriber on your own, for
+/// example, to integrate with `console-subscriber` or to use custom layers.
+///
+/// # Example
+/// ```
+/// # use elfo_core as elfo;
+///
+/// // Usually, it's `elfo::batteries::logger::new`.
+/// let (blueprint, filter, transmitter) = elfo_logger::new();
+///
+/// tracing_subscriber::registry()
+///     .with(console_subscriber::spawn())
+///     .with(transmitter.with_filter(filter))
+///     .init();
+///
+/// let topology = elfo::Topology::empty();
+/// let loggers = topology.local("system.loggers");
+///
+/// loggers.mount(logger);
+/// ```
+pub fn new() -> (Blueprint, FilteringLayer, PrintingLayer) {
     let shared = Shared {
         channel: GenericChannel::with_capacity(CHANNEL_CAPACITY),
         pool: Pool::default(),
@@ -68,14 +93,19 @@ fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
     };
 
     let shared = Arc::new(shared);
-    let printing_layer = PrintingLayer::new(shared.clone());
-    let filtering_layer = FilteringLayer::new();
-    let blueprint = Logger::blueprint(shared, filtering_layer.clone());
+    let filter = FilteringLayer::new();
+    let transmitter = PrintingLayer::new(shared.clone());
+    let blueprint = Logger::blueprint(shared, filter.clone());
 
-    (printing_layer, filtering_layer, blueprint)
+    (blueprint, filter, transmitter)
 }
 
 /// Initializes `tracing` subscriber and returns a blueprint.
+///
+/// It install a subscriber with following layers:
+/// * [`EnvFilter`], if `RUST_LOG` is set.
+/// * [`FilteringLayer`] to filter events based on [elfo configuration].
+/// * [`PrintingLayer`] to send events to the logger actor.
 ///
 /// # Example
 /// ```
@@ -85,24 +115,28 @@ fn new() -> (PrintingLayer, FilteringLayer, Blueprint) {
 /// let logger = elfo_logger::init();
 ///
 /// let topology = elfo::Topology::empty();
-/// let loggers = topology.local("loggers");
+/// let loggers = topology.local("system.loggers");
 ///
 /// loggers.mount(logger);
 /// ```
+///
+/// [elfo configuration]: elfo_core::config::system::logging::LoggingConfig
 pub fn init() -> Blueprint {
-    // TODO: log instead of panicking.
-    let (printer, filter, blueprint) = new();
-    let registry = Registry::default();
+    let (blueprint, filter, transmitter) = new();
 
-    if env::var(EnvFilter::DEFAULT_ENV).is_ok() {
-        let filter = EnvFilter::try_from_default_env().expect("invalid env");
-        let subscriber = registry.with(filter).with(printer);
-        install_subscriber(subscriber);
-    } else {
-        let subscriber = registry.with(filter).with(printer);
-        install_subscriber(subscriber);
-    };
+    // TODO: the `env-filter` feature.
+    let env_filter = env::var(EnvFilter::DEFAULT_ENV)
+        .ok()
+        .map(|_| EnvFilter::try_from_default_env().expect("invalid env"));
 
+    let subscriber = Registry::default()
+        .with(transmitter)
+        .with(filter)
+        .with(env_filter);
+
+    tracing::subscriber::set_global_default(subscriber).expect("cannot set global subscriber");
+
+    // TODO: remove test log at all?
     #[cfg(feature = "tracing-log")]
     {
         if let Err(e) = tracing_log::LogTracer::init() {
@@ -117,8 +151,4 @@ pub fn init() -> Blueprint {
     }
 
     blueprint
-}
-
-fn install_subscriber(s: impl Subscriber + Send + Sync) {
-    tracing::subscriber::set_global_default(s).expect("cannot set global subscriber");
 }

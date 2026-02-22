@@ -28,6 +28,12 @@ Shows how to write functional tests for your actors.
 
 Run it as `cargo test --bin test --features test-util`.
 
+## tokio_console
+
+Shows how to enable `tokio-console` support.
+
+Run it as `RUSTFLAGS='--cfg tokio_unstable' cargo run --bin tokio_console --features tokio-tracing`.
+
 ## tokio_broadcast
 
 Demonstrates how to attach other channels to an actor's context, e.g. `tokio::sync::broadcast`.
