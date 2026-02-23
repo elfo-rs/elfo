@@ -19,16 +19,16 @@ use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
 use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
 use elfo_utils::time::SystemTime;
 
-use crate::{actor::Logger, filtering_layer::FilteringLayer, printing_layer::PrintingLayer};
+use crate::{actor::Logger, capture_layer::CaptureLayer, scope_filter::ScopeFilter};
 
 pub use crate::actor::ReopenLogFile;
 
 pub mod config;
 
 mod actor;
-mod filtering_layer;
+mod capture_layer;
 mod formatters;
-mod printing_layer;
+mod scope_filter;
 mod stats;
 mod theme;
 
@@ -61,9 +61,8 @@ struct PreparedEvent {
     payload_id: StringId,
 }
 
-// TODO: revise names of layers.
-
-/// Creates a new logger blueprint with filtering and printing layers.
+/// Creates a new logger blueprint and returns [`ScopeFilter`] and
+/// [`CaptureLayer`] to install on a tracing subscriber.
 ///
 /// It's useful when you want to set a tracing subscriber on your own, for
 /// example, to integrate with `console-subscriber` or to use custom layers.
@@ -73,11 +72,11 @@ struct PreparedEvent {
 /// # use elfo_core as elfo;
 ///
 /// // Usually, it's `elfo::batteries::logger::new`.
-/// let (blueprint, filter, transmitter) = elfo_logger::new();
+/// let (blueprint, scope_filter, capture_layer) = elfo_logger::new();
 ///
 /// tracing_subscriber::registry()
 ///     .with(console_subscriber::spawn())
-///     .with(transmitter.with_filter(filter))
+///     .with(capture.with_filter(filter))
 ///     .init();
 ///
 /// let topology = elfo::Topology::empty();
@@ -85,7 +84,7 @@ struct PreparedEvent {
 ///
 /// loggers.mount(logger);
 /// ```
-pub fn new() -> (Blueprint, FilteringLayer, PrintingLayer) {
+pub fn new() -> (Blueprint, ScopeFilter, CaptureLayer) {
     let shared = Shared {
         channel: GenericChannel::with_capacity(CHANNEL_CAPACITY),
         pool: Pool::default(),
@@ -93,19 +92,19 @@ pub fn new() -> (Blueprint, FilteringLayer, PrintingLayer) {
     };
 
     let shared = Arc::new(shared);
-    let filter = FilteringLayer::new();
-    let transmitter = PrintingLayer::new(shared.clone());
-    let blueprint = Logger::blueprint(shared, filter.clone());
+    let scope_filter = ScopeFilter::new();
+    let capture_layer = CaptureLayer::new(shared.clone());
+    let blueprint = Logger::blueprint(shared, scope_filter.clone());
 
-    (blueprint, filter, transmitter)
+    (blueprint, scope_filter, capture_layer)
 }
 
 /// Initializes `tracing` subscriber and returns a blueprint.
 ///
 /// It install a subscriber with following layers:
 /// * [`EnvFilter`], if `RUST_LOG` is set.
-/// * [`FilteringLayer`] to filter events based on [elfo configuration].
-/// * [`PrintingLayer`] to send events to the logger actor.
+/// * [`ScopeFilter`] to filter events based on [elfo configuration].
+/// * [`CaptureLayer`] to send events to the logger actor.
 ///
 /// # Example
 /// ```
@@ -122,7 +121,7 @@ pub fn new() -> (Blueprint, FilteringLayer, PrintingLayer) {
 ///
 /// [elfo configuration]: elfo_core::config::system::logging::LoggingConfig
 pub fn init() -> Blueprint {
-    let (blueprint, filter, transmitter) = new();
+    let (blueprint, scope_filter, capture_layer) = new();
 
     // TODO: the `env-filter` feature.
     let env_filter = env::var(EnvFilter::DEFAULT_ENV)
@@ -130,8 +129,8 @@ pub fn init() -> Blueprint {
         .map(|_| EnvFilter::try_from_default_env().expect("invalid env"));
 
     let subscriber = Registry::default()
-        .with(transmitter)
-        .with(filter)
+        .with(capture_layer)
+        .with(scope_filter)
         .with(env_filter);
 
     tracing::subscriber::set_global_default(subscriber).expect("cannot set global subscriber");
@@ -145,7 +144,7 @@ pub fn init() -> Blueprint {
                 "can't integrate with log adapter, logs produced via `log` crate might be not available",
             );
         } else {
-            // Required to initialize `tracing-log` logs detection in `filtering_layer`.
+            // Required to initialize `tracing-log` logs detection in `scope_filter`.
             log::error!("initialized tracing_log adapter");
         }
     }

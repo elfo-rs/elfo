@@ -12,11 +12,11 @@ use elfo_core::{logging::CheckResult, scope};
 use crate::{config::LoggingTargetConfig, stats};
 
 #[derive(PartialEq)]
-struct FilteringConfig {
+struct ScopeFilterConfig {
     targets: Targets,
 }
 
-impl Default for FilteringConfig {
+impl Default for ScopeFilterConfig {
     fn default() -> Self {
         Self {
             targets: Targets::new().with_default(LevelFilter::TRACE),
@@ -25,20 +25,20 @@ impl Default for FilteringConfig {
 }
 
 struct Inner {
-    config: ArcSwap<FilteringConfig>,
+    config: ArcSwap<ScopeFilterConfig>,
     #[cfg(feature = "tracing-log")]
     log_metadata_name: OnceLock<&'static str>,
 }
 
-pub struct FilteringLayer {
+pub struct ScopeFilter {
     inner: Arc<Inner>,
 }
 
-impl FilteringLayer {
+impl ScopeFilter {
     pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(Inner {
-                config: ArcSwap::new(Arc::new(FilteringConfig::default())),
+                config: ArcSwap::new(Arc::new(ScopeFilterConfig::default())),
                 #[cfg(feature = "tracing-log")]
                 log_metadata_name: OnceLock::new(),
             }),
@@ -61,7 +61,7 @@ impl FilteringLayer {
                     .map(|(target, target_config)| (target, target_config.max_level)),
             );
 
-        let config = Arc::new(FilteringConfig { targets });
+        let config = Arc::new(ScopeFilterConfig { targets });
         let old_config = self.inner.config.swap(Arc::clone(&config));
         if config != old_config {
             tracing::callsite::rebuild_interest_cache();
@@ -131,7 +131,7 @@ impl FilteringLayer {
     }
 }
 
-impl<S: Subscriber> layer::Layer<S> for FilteringLayer {
+impl<S: Subscriber> layer::Layer<S> for ScopeFilter {
     fn register_callsite(&self, meta: &'static Metadata<'static>) -> Interest {
         self.interested(meta)
     }
@@ -144,7 +144,7 @@ impl<S: Subscriber> layer::Layer<S> for FilteringLayer {
 }
 
 // TODO: check either `rebuild_interest_cache` work here or not.
-impl<S> layer::Filter<S> for FilteringLayer {
+impl<S> layer::Filter<S> for ScopeFilter {
     fn callsite_enabled(&self, meta: &'static Metadata<'static>) -> Interest {
         self.interested(meta)
     }
