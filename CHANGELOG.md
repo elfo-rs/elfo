@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - ReleaseDate
 ### Added
 - network: add the `turmoil` v0.7 transport (the `turmoil07` feature).
-- core: integration with `tokio-console` if the `tokio_unstable` cfg and `tokio-tracing` feature are enabled. See actoromicon for details.
-- core/task: expose unstable `task::spawn_blocking` and `task::Builder`.
+- core: integration with `tokio-console` if the `tokio_unstable` cfg and `tokio-tracing` feature are enabled. See actoromicon for details ([#173]).
+- core/task: expose unstable `task::spawn_blocking` and `task::Builder` ([#173]).
+
+### Changed
+- logger: move `EnvFilter` under the `env-filter` feature (enabled by default) ([#173]).
 
 ### Fixed
 - telemeter: set correct content-type to support latest Prometheus versions ([#181]).
 
 [#181]: https://github.com/elfo-rs/elfo/issues/181
+[#173]: https://github.com/elfo-rs/elfo/pull/173
 
 ## [0.2.0-alpha.20] - 2025-09-11
 ### Added
