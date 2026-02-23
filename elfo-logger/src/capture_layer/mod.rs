@@ -11,11 +11,11 @@ use crate::{stats, PreparedEvent, Shared, SpanData, StringId};
 
 mod visitor;
 
-pub struct PrintingLayer {
+pub struct CaptureLayer {
     shared: Arc<Shared>,
 }
 
-impl PrintingLayer {
+impl CaptureLayer {
     pub(crate) fn new(shared: Arc<Shared>) -> Self {
         Self { shared }
     }
@@ -32,7 +32,7 @@ impl PrintingLayer {
     }
 }
 
-impl<S: Subscriber> Layer<S> for PrintingLayer {
+impl<S: Subscriber> Layer<S> for CaptureLayer {
     fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
         let parent_id = if attrs.is_root() {
             None

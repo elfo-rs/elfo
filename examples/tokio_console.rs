@@ -30,7 +30,7 @@ async fn main() {
     let topology = elfo::Topology::empty();
 
     let logger = {
-        let (blueprint, filter, transmitter) = elfo::batteries::logger::new();
+        let (blueprint, scope_filter, layer) = elfo::batteries::logger::new();
 
         let env_filter = env::var(EnvFilter::DEFAULT_ENV)
             .ok()
@@ -38,7 +38,7 @@ async fn main() {
 
         tracing_subscriber::registry()
             .with(console_subscriber::spawn())
-            .with(transmitter.with_filter(filter).with_filter(env_filter))
+            .with(layer.with_filter(scope_filter).with_filter(env_filter))
             .init();
 
         blueprint

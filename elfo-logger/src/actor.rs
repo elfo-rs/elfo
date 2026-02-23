@@ -21,17 +21,17 @@ use elfo_core::{
 
 use crate::{
     config::{Colorization, Config, Sink},
-    filtering_layer::FilteringLayer,
     formatters::Formatter,
     line_buffer::LineBuffer,
     line_transaction::{FailOnUnfit, Line as _, LineFactory, TruncateOnUnfit},
+    scope_filter::ScopeFilter,
     theme, PreparedEvent, Shared,
 };
 
 pub(crate) struct Logger {
     ctx: Context<Config>,
     shared: Arc<Shared>,
-    filtering_layer: FilteringLayer,
+    scope_filter: ScopeFilter,
 
     buffer: LineBuffer,
 }
@@ -45,7 +45,7 @@ pub struct ReopenLogFile {}
 impl Logger {
     // TODO: rename it?
     #[allow(clippy::new_ret_no_self)]
-    pub(crate) fn blueprint(shared: Arc<Shared>, filtering_layer: FilteringLayer) -> Blueprint {
+    pub(crate) fn blueprint(shared: Arc<Shared>, scope_filter: ScopeFilter) -> Blueprint {
         ActorGroup::new()
             .config::<Config>()
             .termination_policy(TerminationPolicy::manually())
@@ -54,11 +54,11 @@ impl Logger {
                 Duration::from_secs(30),
             )))
             .stop_order(105)
-            .exec(move |ctx| Logger::new(ctx, shared.clone(), filtering_layer.clone()).main())
+            .exec(move |ctx| Logger::new(ctx, shared.clone(), scope_filter.clone()).main())
     }
 
-    fn new(ctx: Context<Config>, shared: Arc<Shared>, filtering_layer: FilteringLayer) -> Self {
-        filtering_layer.configure(&ctx.config().targets);
+    fn new(ctx: Context<Config>, shared: Arc<Shared>, scope_filter: ScopeFilter) -> Self {
+        scope_filter.configure(&ctx.config().targets);
         let buffer = LineBuffer::with_capacity(1024, {
             let cfg = ctx.config();
             cfg.max_line_size.0 as _
@@ -67,7 +67,7 @@ impl Logger {
         Self {
             ctx,
             shared,
-            filtering_layer,
+            scope_filter,
             buffer,
         }
     }
@@ -110,7 +110,7 @@ impl Logger {
                         ConfigUpdated => {
                             file = open_file(self.ctx.config()).await;
                             use_colors = can_use_colors(self.ctx.config());
-                            self.filtering_layer.configure(&self.ctx.config().targets);
+                            self.scope_filter.configure(&self.ctx.config().targets);
                             self.buffer.configure(self.ctx.config().max_line_size.0 as _);
                         },
                         Terminate => {
