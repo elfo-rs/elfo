@@ -406,6 +406,11 @@ where
             sv.context.book().remove(addr);
         };
 
+        // tokio-console complains about futures larger than 1KiB even if tokio boxes
+        // such futures by itself, so we reduce noise in the console this way =(
+        #[cfg(all(tokio_unstable, feature = "tokio-tracing"))]
+        let fut = Box::pin(fut);
+
         let rt = self.rt_manager.get(&meta);
 
         entry.insert(Object::new(addr, actor));
