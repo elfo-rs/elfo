@@ -37,8 +37,8 @@ jobs:
     - run: rustup toolchain install ${{ env.MSRV }} --profile minimal
     - run: rustup override set ${{ env.MSRV }}
     - run: rustup show active-toolchain -v
-    - run: cargo minimal-versions check --all --direct
-    - run: cargo minimal-versions check --all --direct --all-features
+    - run: cargo minimal-versions check --workspace --ignore-private --direct
+    - run: cargo minimal-versions check --workspace --ignore-private --direct --all-features
 
   rustfmt:
     runs-on: ubuntu-latest
