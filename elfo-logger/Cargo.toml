@@ -15,7 +15,9 @@ rust-version.workspace = true
 workspace = true
 
 [features]
-tracing-log = [ "dep:tracing-log", "log" ]
+default = ["env-filter"]
+env-filter = ["tracing-subscriber/env-filter"]
+tracing-log = ["dep:tracing-log", "log"]
 
 [dependencies]
 elfo-core = { version = "0.2.0-alpha.20", path = "../elfo-core", features = ["unstable"] }
@@ -25,7 +27,7 @@ metrics.workspace = true
 dashmap.workspace = true
 derive_more.workspace = true
 tokio = { workspace = true, features = ["macros", "fs", "io-util"] }
-tracing-subscriber = { workspace = true, features = ["env-filter", "parking_lot"] }
+tracing-subscriber = { workspace = true, features = ["parking_lot"] }
 bytesize.workspace = true
 parking_lot.workspace = true
 serde.workspace = true

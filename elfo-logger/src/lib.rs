@@ -5,7 +5,7 @@
 #[macro_use]
 extern crate elfo_utils;
 
-use std::{env, sync::Arc};
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use derive_more::Constructor;
@@ -14,7 +14,7 @@ use fxhash::FxBuildHasher;
 use parking_lot::RawMutex;
 use sharded_slab::Pool;
 use tracing::{span::Id as SpanId, Metadata};
-use tracing_subscriber::{prelude::*, registry::Registry, EnvFilter};
+use tracing_subscriber::{prelude::*, registry::Registry};
 
 use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
 use elfo_utils::time::SystemTime;
@@ -102,7 +102,8 @@ pub fn new() -> (Blueprint, ScopeFilter, CaptureLayer) {
 /// Initializes `tracing` subscriber and returns a blueprint.
 ///
 /// It install a subscriber with following layers:
-/// * [`EnvFilter`], if `RUST_LOG` is set.
+/// * [`EnvFilter`], if `RUST_LOG` is set and the `env-filter` feature is
+///   enabled (it's by default).
 /// * [`ScopeFilter`] to filter events based on [elfo configuration].
 /// * [`CaptureLayer`] to send events to the logger actor.
 ///
@@ -119,19 +120,23 @@ pub fn new() -> (Blueprint, ScopeFilter, CaptureLayer) {
 /// loggers.mount(logger);
 /// ```
 ///
+/// [`EnvFilter`]: tracing_subscriber::EnvFilter
 /// [elfo configuration]: elfo_core::config::system::logging::LoggingConfig
 pub fn init() -> Blueprint {
     let (blueprint, scope_filter, capture_layer) = new();
 
-    // TODO: the `env-filter` feature.
-    let env_filter = env::var(EnvFilter::DEFAULT_ENV)
-        .ok()
-        .map(|_| EnvFilter::try_from_default_env().expect("invalid env"));
+    let subscriber = Registry::default().with(capture_layer).with(scope_filter);
 
-    let subscriber = Registry::default()
-        .with(capture_layer)
-        .with(scope_filter)
-        .with(env_filter);
+    #[cfg(feature = "env-filter")]
+    let subscriber = {
+        use tracing_subscriber::EnvFilter;
+
+        let env_filter = std::env::var(EnvFilter::DEFAULT_ENV)
+            .ok()
+            .map(|_| EnvFilter::try_from_default_env().expect("invalid env"));
+
+        subscriber.with(env_filter)
+    };
 
     tracing::subscriber::set_global_default(subscriber).expect("cannot set global subscriber");
 
