@@ -30,6 +30,18 @@ struct Inner {
     log_metadata_name: OnceLock<&'static str>,
 }
 
+/// A tracing layer that filters events based on the current scope's permissions
+/// and the configured targets.
+///
+/// For details see:
+/// * [Actor configuration] for per-group logging levels and rate limits.
+/// * [The logger's configuration] for limiting targets.
+///
+/// It implements both `Layer` and `Filter` traits, so it can be used either
+/// as a layer of a subscriber or as a filter of another layer.
+///
+/// [Actor configuration]: elfo_core::config::system::logging::LoggingConfig
+/// [The logger's configuration]: crate::config::Config::targets
 pub struct ScopeFilter {
     inner: Arc<Inner>,
 }

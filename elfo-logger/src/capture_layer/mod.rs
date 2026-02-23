@@ -11,6 +11,7 @@ use crate::{stats, PreparedEvent, Shared, SpanData, StringId};
 
 mod visitor;
 
+/// A tracing layer that captures spans and events, and sends them to the actor.
 pub struct CaptureLayer {
     shared: Arc<Shared>,
 }
