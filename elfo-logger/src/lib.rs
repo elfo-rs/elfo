@@ -19,9 +19,9 @@ use tracing_subscriber::{prelude::*, registry::Registry};
 use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
 use elfo_utils::time::SystemTime;
 
-use crate::{actor::Logger, capture_layer::CaptureLayer, scope_filter::ScopeFilter};
+use crate::actor::Logger;
 
-pub use crate::actor::ReopenLogFile;
+pub use crate::{actor::ReopenLogFile, capture_layer::CaptureLayer, scope_filter::ScopeFilter};
 
 pub mod config;
 
