@@ -30,7 +30,7 @@ Run it as `cargo test --bin test --features test-util`.
 
 ## tokio_console
 
-Shows how to enable `tokio-console` support.
+Shows how to enable `tokio-console` support. [The Actoromicon](https://actoromicon.rs/ch05-05-tokio-console.html).
 
 Run it as `RUSTFLAGS='--cfg tokio_unstable' cargo run --bin tokio_console --features tokio-tracing`.
 
@@ -40,7 +40,7 @@ Demonstrates how to attach other channels to an actor's context, e.g. `tokio::sy
 
 ## multi_runtime
 
-This example demonstrates how to use multiple tokio runtimes within one elfo system in order to isolate different actor groups.
+This example demonstrates how to use multiple tokio runtimes within one elfo system in order to isolate different actor groups. [The Actoromicon](https://actoromicon.rs/ch08-02-multiple-runtimes.html).
 
 Run it as `cargo run --bin multi_runtime --features unstable`.
 

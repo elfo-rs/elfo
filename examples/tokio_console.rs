@@ -1,4 +1,11 @@
-//! How to enable `tokio-console` support.
+//! How to enable `tokio-console` support. [The Actoromicon].
+//!
+//! Run it as
+//! ```sh
+//! RUSTFLAGS='--cfg tokio_unstable' cargo run --bin tokio_console --features tokio-tracing
+//! ```
+//!
+//! [The Actoromicon]: https://actoromicon.rs/ch05-05-tokio-console.html
 
 use std::{env, time::Duration};
 

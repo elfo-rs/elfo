@@ -1,5 +1,12 @@
-// This example demonstrates how to use multiple tokio runtimes within
-// one elfo system in order to isolate different actor groups.
+//! This example demonstrates how to use multiple tokio runtimes within
+//! one elfo system to isolate different actor groups. [The Actoromicon].
+//!
+//! Run it as
+//! ```sh
+//! cargo run --bin multi_runtime --features unstable
+//! ```
+//!
+//! [The Actoromicon]: https://actoromicon.rs/ch08-02-multiple-runtimes.html
 
 use std::time::{Duration, Instant};
 
@@ -96,7 +103,7 @@ fn start_runtime(name: &str, workers: usize) -> rt::Runtime {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let name = name.to_string();
-    let worker_idx: AtomicUsize = AtomicUsize::new(0);
+    let worker_idx = AtomicUsize::new(0);
 
     rt::Builder::new_multi_thread()
         .worker_threads(workers)
@@ -106,10 +113,10 @@ fn start_runtime(name: &str, workers: usize) -> rt::Runtime {
             format!("{name}#{idx}")
         })
         .on_thread_start(|| {
-            // Here is a good place to set up thread affinity and scheduler
-            // policy (e.g. `SCHED_FIFO`).
+            // A good place to configure thread affinity and set scheduler
+            // policy, e.g. `SCHED_FIFO`.
             //
-            // Count threads in order to disntinguish between workers and
+            // Count threads in order to distinguish between workers and
             // blocking ones: first `workers` threads are workers, the rest are
             // blocking threads.
         })
