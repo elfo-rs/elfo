@@ -15,7 +15,10 @@ pub use crate::{
     actor_status::{ActorStatus, ActorStatusKind},
     addr::Addr,
     config::Config,
-    context::{Context, RequestBuilder},
+    context::{
+        builder::{SendFn, SendMsg},
+        Context, RequestBuilder,
+    },
     envelope::Envelope,
     group::{ActorGroup, Blueprint, TerminationPolicy},
     local::{Local, MoveOwnership},
