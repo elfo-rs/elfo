@@ -305,8 +305,7 @@ impl<C, K> Context<C, K> {
     }
 
     /// Sends a message using the [inter-group routing] system.
-    /// Ignores the capacity of the recipient's mailbox and doesn't change its
-    /// size, thus it doesn't affect other senders.
+    /// Affects other senders.
     ///
     /// Usually this method shouldn't be used because it can lead to high memory
     /// usage and even OOM if the recipient works too slowly.
@@ -567,8 +566,7 @@ impl<C, K> Context<C, K> {
     }
 
     /// Sends a message to the specified recipient.
-    /// Ignores the capacity of the recipient's mailbox and doesn't change its
-    /// size, thus it doesn't affect other senders.
+    /// Affects other senders.
     ///
     /// Usually this method shouldn't be used because it can lead to high memory
     /// usage and even OOM if the recipient works too slowly.

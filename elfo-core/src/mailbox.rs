@@ -201,13 +201,24 @@ impl Mailbox {
     }
 
     pub(crate) fn unbounded_send(&self, envelope: Envelope) -> Result<(), SendError<Envelope>> {
-        if !self.tx_semaphore.is_closed() {
-            self.queue.enqueue(envelope);
-            self.rx_notify.notify_one();
-            Ok(())
-        } else {
-            Err(SendError(envelope))
+        // NOTE: see `recv` below. Every `recv` add 1 permit even if send was unbounded,
+        // thus, as an effect, mailbox's capacity gets larger for everyone every
+        // time we do unbounded send, so we do this to mitigate a problem a bit
+        // before more proper solution.
+        //
+        // TODO: instead semaphore should support loaning the permits.
+        match self.tx_semaphore.try_acquire() {
+            Ok(permit) => {
+                permit.forget();
+            }
+            Err(TryAcquireError::Closed) => return Err(SendError(envelope)),
+            Err(TryAcquireError::NoPermits) => {}
         }
+
+        self.queue.enqueue(envelope);
+        self.rx_notify.notify_one();
+
+        Ok(())
     }
 
     pub(crate) async fn recv(&self) -> RecvResult {
