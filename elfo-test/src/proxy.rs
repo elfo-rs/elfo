@@ -53,6 +53,28 @@ impl Proxy {
         self.scope.node_launch_id()
     }
 
+    /// See [`Context::unbounded_send()`] for details.
+    #[track_caller]
+    pub fn unbounded_send<M: Message>(&self, message: M) {
+        self.scope.clone().sync_within(|| {
+            let name = message.name();
+            if let Err(err) = self.context.unbounded_send(message) {
+                panic!("cannot send {name} ({err}) unboundedly")
+            }
+        })
+    }
+
+    /// See [`Context::unbounded_send_to()`] for details.
+    #[track_caller]
+    pub fn unbounded_send_to<M: Message>(&self, recipient: Addr, message: M) {
+        self.scope.clone().sync_within(|| {
+            let name = message.name();
+            if let Err(err) = self.context.unbounded_send_to(recipient, message) {
+                panic!("cannot send {name} ({err}) unboundedly")
+            }
+        })
+    }
+
     /// See [`Context::send()`] for details.
     #[track_caller]
     pub fn send<M: Message>(&self, message: M) -> impl Future<Output = ()> + '_ {

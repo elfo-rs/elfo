@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - network: add the `turmoil` v0.7 transport (the `turmoil07` feature).
 
+### Changed
+- **BREAKING** core/context: make `unbounded_send`/`unbounded_send_to` to first try to take a permit from the semaphore, thus unbounded sends will affect other senders.
+
 ## [0.2.0-alpha.20] - 2025-09-11
 ### Added
 - test/proxy: add fallible methods for requesting ([#162]).
