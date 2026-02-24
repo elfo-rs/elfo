@@ -1,3 +1,10 @@
+//! Shows how to write functional tests for your actors.
+//!
+//! Run it as
+//! ```sh
+//! cargo test --bin test --features test-util
+//! ```
+
 use elfo::prelude::*;
 use serde::Deserialize;
 
