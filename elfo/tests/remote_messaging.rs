@@ -67,6 +67,188 @@ fn turmoil_sim() -> turmoil::Sim<'static> {
 }
 
 #[test]
+fn network_send_then_respond_maintains_ordering() {
+    common::setup_logger();
+
+    #[message]
+    struct StartTest;
+
+    /// Same as Fill, but by master actor.
+    #[message]
+    struct MasterFill;
+
+    #[message]
+    struct BeforeResponse;
+
+    #[message]
+    struct TheResponse;
+
+    #[message(ret = ())]
+    struct Ack;
+
+    /// Message which will simply occupy a place in the mailbox.
+    #[message]
+    struct Fill;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Expect {
+        Escape,
+        MasterFill,
+        BeforeResponse,
+        TheResponse,
+    }
+
+    fn fill_mailbox(ctx: &Context) {
+        while ctx.try_send_to(ctx.addr(), Fill).is_ok() {}
+    }
+
+    fn slave(notify: Arc<Notify>) -> Blueprint {
+        ActorGroup::new().exec(move |mut ctx| {
+            let notify = notify.clone();
+            ctx.set_mailbox_capacity(2);
+
+            async move {
+                let mut expect = Expect::Escape;
+
+                // 1. Start test.
+                let master = {
+                    let envelope = ctx.recv().await.unwrap();
+                    assert_msg!(envelope, StartTest);
+                    envelope.sender()
+                };
+
+                // 2. Fill mailbox initially.
+                fill_mailbox(&ctx);
+
+                // 3. Send request, which result we'll append
+                let pruned = ctx.pruned();
+                ctx.attach(Stream::generate(|_| async move {
+                    () = pruned.request_to(master, Ack).resolve().await.unwrap();
+                    _ = pruned.unbounded_send_to(pruned.addr(), TheResponse);
+                }));
+                // ^^ Pusher([MasterFill, BeforeResponse, Respond(TheResponse)])
+
+                // 4. Check if received messages are [MasterFill, BeforeResponse, TheResponse].
+                while let Some(envelope) = ctx.recv().await {
+                    msg!(match envelope {
+                        Fill => {
+                            // Mailbox was full of `Fill`s, then we dequeued one fill, then we can add one fill
+                            // back, but if we aren't able, then MasterFill is at the back of mailbox, and here we go.
+                            match expect {
+                                Expect::Escape => {
+                                    // The time is mocked, and master actor needs a time window to win a race.
+                                    tokio::time::sleep(Duration::from_millis(10)).await;
+                                    if ctx.try_send_to(ctx.addr(), Fill).is_err() {
+                                        expect = Expect::MasterFill;
+                                    }
+                                }
+                                // We no longer append anything here.
+                                Expect::MasterFill => {}
+                                _ => unreachable!(),
+                            }
+                        }
+                        // Then plain
+                        MasterFill => {
+                            assert_eq!(expect, Expect::MasterFill);
+                            expect = Expect::BeforeResponse;
+                        }
+
+                        BeforeResponse => {
+                            assert_eq!(expect, Expect::BeforeResponse);
+                            expect = Expect::TheResponse;
+                        }
+
+                        TheResponse => {
+                            assert_eq!(expect, Expect::TheResponse);
+                            break;
+                        }
+                    })
+                }
+
+                notify.notify_one();
+            }
+        })
+    }
+
+    fn master() -> Blueprint {
+        ActorGroup::new().exec(move |mut ctx| {
+            async move {
+                // Wait for elfo-network to establish connection.
+                while ctx.send(StartTest).await.is_err() {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+
+                let envelope = ctx.recv().await.unwrap();
+                let slave = envelope.sender();
+                let (Ack, ack) = elfo_test::extract_request(envelope);
+
+                // Start pusher on the remote side.
+                ctx.send_to(slave, MasterFill).await.unwrap();
+
+                ctx.send_to(slave, BeforeResponse).await.unwrap();
+                ctx.respond(ack, ());
+            }
+        })
+    }
+
+    let mut sim = turmoil_sim();
+
+    sim.host("master", || async {
+        let topology = Topology::empty();
+        let configurers = topology.local("system.configurers").entrypoint();
+        let network = topology.local("system.network");
+
+        let masters = topology.local("masters");
+        let slaves = topology.remote("slaves");
+
+        masters.route_to(&slaves, |_, _| topology::Outcome::Broadcast);
+
+        network.mount(elfo::batteries::network::new(&topology));
+        configurers.mount(elfo::batteries::configurer::fixture(
+            &topology,
+            toml! {
+                [system.network]
+                listen = ["turmoil06://0.0.0.0"]
+                ping_interval = "1s"
+                idle_timeout = "1s"
+            },
+        ));
+        masters.mount(master());
+
+        Ok(elfo::init::try_start(topology).await?)
+    });
+
+    sim.client("slave", async {
+        let topology = Topology::empty();
+        let configurers = topology.local("system.configurers").entrypoint();
+        let network = topology.local("system.network");
+        let slaves = topology.local("slaves");
+
+        network.mount(elfo::batteries::network::new(&topology));
+        configurers.mount(elfo::batteries::configurer::fixture(
+            &topology,
+            toml! {
+                [system.network]
+                discovery.predefined = ["turmoil06://master"]
+                discovery.attempt_interval = "1s"
+                ping_interval = "1s"
+                idle_timeout = "1s"
+            },
+        ));
+
+        let notify = Arc::new(Notify::new());
+        slaves.mount(slave(notify.clone()));
+
+        Ok(elfo::_priv::do_start(topology, false, |_, _| async move {
+            notify.notified().await;
+        })
+        .await?)
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
 fn simple() {
     common::setup_logger();
 

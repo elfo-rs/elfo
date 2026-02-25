@@ -650,6 +650,7 @@ async fn send_regular<M: Message>(
         payload: NetworkEnvelopePayload::Regular {
             message: AnyMessage::new(message),
         },
+        bounded: false,
     };
 
     let send_future = socket.write.send(&envelope);
