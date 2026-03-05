@@ -6,7 +6,7 @@
 //! cargo run --bin multi_runtime --features unstable
 //! ```
 //!
-//! [The Actoromicon]: https://actoromicon.rs/ch08-02-multiple-runtimes.html
+//! [The Actoromicon]: https://actoromicon.rs/ch07-02-multiple-runtimes.html
 
 use std::time::{Duration, Instant};
 

@@ -5,7 +5,7 @@
 //! RUSTFLAGS='--cfg tokio_unstable' cargo run --bin tokio_console --features tokio-tracing
 //! ```
 //!
-//! [The Actoromicon]: https://actoromicon.rs/ch05-05-tokio-console.html
+//! [The Actoromicon]: https://actoromicon.rs/ch04-05-tokio-console.html
 
 use std::{env, time::Duration};
 

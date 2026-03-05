@@ -129,7 +129,7 @@ impl Topology {
     ///
     /// Check [The Actoromicon] for details.
     ///
-    /// [The Actoromicon]: https://actoromicon.rs/ch08-02-multiple-runtimes.html
+    /// [The Actoromicon]: https://actoromicon.rs/ch07-02-multiple-runtimes.html
     #[instability::unstable]
     pub fn add_dedicated_rt<F: Fn(&crate::ActorMeta) -> bool + Send + Sync + 'static>(
         &self,

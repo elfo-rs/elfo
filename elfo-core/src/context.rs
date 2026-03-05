@@ -214,7 +214,7 @@ impl<C, K> Context<C, K> {
     /// # }
     /// ```
     ///
-    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
+    /// [inter-group routing]: https://actoromicon.rs/ch03-01-routing.html
     pub async fn send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::regular(self.actor_addr);
         self.do_send_async(message, kind).await
@@ -247,7 +247,7 @@ impl<C, K> Context<C, K> {
     /// # }
     /// ```
     ///
-    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
+    /// [inter-group routing]: https://actoromicon.rs/ch03-01-routing.html
     pub fn try_send<M: Message>(&self, message: M) -> Result<(), TrySendError<M>> {
         // XXX: avoid duplication with `unbounded_send()` and `send()`.
 
@@ -333,7 +333,7 @@ impl<C, K> Context<C, K> {
     /// # }
     /// ```
     ///
-    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
+    /// [inter-group routing]: https://actoromicon.rs/ch03-01-routing.html
     pub fn unbounded_send<M: Message>(&self, message: M) -> Result<(), SendError<M>> {
         let kind = MessageKind::regular(self.actor_addr);
 
@@ -396,7 +396,7 @@ impl<C, K> Context<C, K> {
     /// }
     /// ```
     ///
-    /// [inter-group routing]: https://actoromicon.rs/ch04-01-routing.html
+    /// [inter-group routing]: https://actoromicon.rs/ch03-01-routing.html
     #[inline]
     pub fn request<R: Request>(&self, request: R) -> RequestBuilder<'_, C, K, R, Any> {
         RequestBuilder::new(self, request)

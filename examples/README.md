@@ -4,6 +4,10 @@ This directory contains a collection of examples that demonstrate the use of the
 
 Run `cargo run --bin <name>` to execute specific example if not specified something other.
 
+## hello_world
+
+A basic example described in [The Actoromicon](https://actoromicon.rs/ch01-02-hello-world.html).
+
 ## usage
 
 Describes common concepts of `elfo`, also how to work with configuration, combine actors together, enable metrics, logs and dumps.
@@ -30,7 +34,7 @@ Run it as `cargo test --bin test --features test-util`.
 
 ## tokio_console
 
-Shows how to enable `tokio-console` support. [The Actoromicon](https://actoromicon.rs/ch05-05-tokio-console.html).
+Shows how to enable `tokio-console` support. [The Actoromicon](https://actoromicon.rs/ch04-05-tokio-console.html).
 
 Run it as `RUSTFLAGS='--cfg tokio_unstable' cargo run --bin tokio_console --features tokio-tracing`.
 
@@ -40,7 +44,7 @@ Demonstrates how to attach other channels to an actor's context, e.g. `tokio::sy
 
 ## multi_runtime
 
-This example demonstrates how to use multiple tokio runtimes within one elfo system in order to isolate different actor groups. [The Actoromicon](https://actoromicon.rs/ch08-02-multiple-runtimes.html).
+This example demonstrates how to use multiple tokio runtimes within one elfo system in order to isolate different actor groups. [The Actoromicon](https://actoromicon.rs/ch07-02-multiple-runtimes.html).
 
 Run it as `cargo run --bin multi_runtime --features unstable`.
 

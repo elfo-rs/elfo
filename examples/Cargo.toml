@@ -33,6 +33,10 @@ tokio-tracing = ["elfo/tokio-tracing"]
 unstable = ["elfo/unstable"]
 
 [[bin]]
+name = "hello_world"
+path = "hello_world.rs"
+
+[[bin]]
 name = "usage"
 path = "usage/main.rs"
 

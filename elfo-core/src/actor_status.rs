@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // === ActorStatus ===
 
 /// Represents the current status of an actor.
-/// See [The Actoromicon](https://actoromicon.rs/ch03-01-actor-lifecycle.html) for details.
+/// See [The Actoromicon](https://actoromicon.rs/ch02-01-actor-lifecycle.html) for details.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActorStatus {
     pub(crate) kind: ActorStatusKind,

@@ -1,5 +1,5 @@
 //! Includes structs and functions to work with dumping.
-//! For more details see [The Actoromicon](https://actoromicon.rs/ch05-03-dumping.md.html).
+//! For more details see [The Actoromicon](https://actoromicon.rs/ch04-03-dumping.md.html).
 
 use serde::{Serialize, Serializer};
 

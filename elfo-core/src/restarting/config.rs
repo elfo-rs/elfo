@@ -25,7 +25,7 @@ use crate::restarting::restart_policy::{RestartParams, RestartPolicy};
 ///
 /// [`ActorGroup::restart_policy()`]: crate::ActorGroup::restart_policy
 /// [`Context::set_restart_policy()`]: crate::Context::set_restart_policy
-/// [The Actoromicon]: https://actoromicon.rs/ch04-02-supervision.html#restart
+/// [The Actoromicon]: https://actoromicon.rs/ch03-02-supervision.html#restart
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct RestartPolicyConfig(pub Option<WhenConfig>);
 

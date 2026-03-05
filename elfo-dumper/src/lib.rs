@@ -5,7 +5,7 @@
 //! For more details about dumping see [The Actoromicon].
 //!
 //! [Configuration]: crate::config::Config
-//! [The Actoromicon]: https://actoromicon.rs/ch05-03-dumping.html
+//! [The Actoromicon]: https://actoromicon.rs/ch04-03-dumping.html
 
 use std::sync::Arc;
 
