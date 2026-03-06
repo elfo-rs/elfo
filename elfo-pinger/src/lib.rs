@@ -3,6 +3,8 @@
 //!
 //! [Configuration]: config::Config
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use std::time::Duration;
 
 use elfo_core::{ActorGroup, Blueprint, RestartParams, RestartPolicy, Topology};

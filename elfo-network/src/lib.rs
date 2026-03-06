@@ -3,6 +3,8 @@
 //!
 //! [Configuration]: config::Config
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 #[macro_use]
 extern crate static_assertions;
 #[macro_use]

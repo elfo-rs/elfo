@@ -12,6 +12,8 @@
 //!
 //! [Configuration]: config::Config
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use std::sync::Arc;
 
 use tracing::error;

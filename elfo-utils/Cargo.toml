@@ -27,3 +27,7 @@ crossbeam-utils = "0.8"
 
 [dev-dependencies]
 criterion.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

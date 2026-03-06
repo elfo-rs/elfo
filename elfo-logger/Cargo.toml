@@ -46,3 +46,7 @@ elfo-test = { path = "../elfo-test" }
 
 toml.workspace = true
 tempdir = "0.3.7"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

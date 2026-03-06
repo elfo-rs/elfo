@@ -27,3 +27,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 serde.workspace = true
 serde-value = "0.7.0"
 futures-intrusive = "0.5"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
