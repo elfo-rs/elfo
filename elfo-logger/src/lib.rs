@@ -2,6 +2,8 @@
 //!
 //! [Configuration]: config::Config
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 #[macro_use]
 extern crate elfo_utils;
 

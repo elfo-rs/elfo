@@ -95,14 +95,12 @@ jobs:
   docs:
     needs: build
     runs-on: ubuntu-latest
-    env:
-      RUSTDOCFLAGS: -Dwarnings
-      # TODO: enable in #179
-      #RUSTDOCFLAGS: -Dwarnings --cfg docsrs
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@cargo-hack
     - run: rustup toolchain install nightly
     - run: rustup override set nightly
     - run: rustup show active-toolchain -v
+    - run: cargo hack rustdoc --exclude examples --exclude benches --all-features -- --cfg docsrs
     - run: cargo doc --all-features

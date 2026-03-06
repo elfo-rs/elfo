@@ -22,3 +22,7 @@ tokio = { workspace = true, features = ["time"] }
 serde.workspace = true
 tracing.workspace = true
 humantime-serde = "1"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

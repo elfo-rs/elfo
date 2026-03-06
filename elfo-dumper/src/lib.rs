@@ -7,6 +7,8 @@
 //! [Configuration]: crate::config::Config
 //! [The Actoromicon]: https://actoromicon.rs/ch04-03-dumping.html
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use std::sync::Arc;
 
 use parking_lot::Mutex;

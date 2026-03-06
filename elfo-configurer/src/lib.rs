@@ -1,6 +1,8 @@
 //! Loads and validates configs from a file or a fixture.
 //! Usually, it's used as an entrypoint in the topology.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use std::{
     future::Future,
     path::{Path, PathBuf},

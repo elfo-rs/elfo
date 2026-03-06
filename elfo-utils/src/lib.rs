@@ -1,5 +1,7 @@
 //! A collection of utilities to share among elfo-* crates.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub use self::{
     likely::*,
     rate_limiter::{RateLimit, RateLimiter},
