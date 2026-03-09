@@ -1,6 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use eyre::Result;
+use flows_rx::RxFlowEvent;
+use futures::future::{ready, Either};
 use metrics::{decrement_gauge, histogram, increment_gauge};
 use parking_lot::Mutex;
 use tracing::{debug, error, info, trace, warn};
@@ -197,7 +199,7 @@ impl Worker {
                     let envelope = make_system_envelope(internode::Ping {
                         payload: time_origin.elapsed_nanos(),
                     });
-                    let _ = local_tx.try_send(KanalItem::simple(NetworkAddr::NULL, envelope));
+                    let _ = local_tx.try_send(KanalItem::unbounded(NetworkAddr::NULL, envelope));
                 }
 
                 HandleConnection { socket, .. } => {
@@ -379,6 +381,7 @@ fn make_network_envelope(
         recipient: item.recipient,
         trace_id,
         payload,
+        bounded: item.bounded,
     };
 
     (envelope, token)
@@ -421,6 +424,7 @@ impl SocketReader {
             scope::set_trace_id(network_envelope.trace_id);
 
             let (sender, recipient) = (network_envelope.sender, network_envelope.recipient);
+            let bounded = network_envelope.bounded;
             let envelope = ward!(self.make_envelope(network_envelope), continue);
 
             // System messages have a special handling.
@@ -433,9 +437,9 @@ impl SocketReader {
 
             // `NULL` means we should route to the group.
             if recipient == NetworkAddr::NULL {
-                self.handle_routed_message(envelope);
+                self.handle_routed_message(envelope, bounded);
             } else {
-                self.handle_direct_message(recipient.into_local(), envelope);
+                self.handle_direct_message(recipient.into_local(), envelope, bounded);
             }
         }
 
@@ -579,9 +583,18 @@ impl SocketReader {
                     )
                 });
 
-                // Since this is a response to a request which originated from this node,
-                // all the neccessary flows have been already added.
-                object.respond(token, envelope);
+                let mut flows = self.rx_flows.lock();
+                let Some(flow) = flows.get_flow(recipient) else {
+                    // No flow -> no pusher -> realtime processing.
+                    object.respond(token, envelope);
+                    return None;
+                };
+
+                if let Err((token, envelope)) = flow.try_enqueue_response(token, envelope) {
+                    // Since this is a response to a request which originated from this node,
+                    // all the neccessary flows have been already added.
+                    object.respond(token, envelope);
+                }
 
                 return None;
             }
@@ -613,7 +626,7 @@ impl SocketReader {
         true
     }
 
-    fn handle_direct_message(&self, recipient: Addr, envelope: Envelope) {
+    fn handle_direct_message(&self, recipient: Addr, envelope: Envelope, bounded: bool) {
         let book = self.ctx.book();
         let mut flows = self.rx_flows.lock();
 
@@ -625,13 +638,14 @@ impl SocketReader {
             return;
         };
 
-        self.do_handle_message(&mut flows, &object, envelope, false)
+        self.do_handle_message(&mut flows, &object, envelope, false, bounded)
     }
 
-    fn handle_routed_message(&self, envelope: Envelope) {
+    fn handle_routed_message(&self, envelope: Envelope, bounded: bool) {
         struct TrySendGroupVisitor<'a> {
             this: &'a SocketReader,
             flows: &'a mut RxFlows,
+            bounded: bool,
         }
 
         impl GroupVisitor for TrySendGroupVisitor<'_> {
@@ -644,12 +658,12 @@ impl SocketReader {
             fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
                 let envelope = envelope.duplicate();
                 self.this
-                    .do_handle_message(self.flows, object, envelope, true);
+                    .do_handle_message(self.flows, object, envelope, true, self.bounded);
             }
 
             fn visit_last(&mut self, object: &OwnedObject, envelope: Envelope) {
                 self.this
-                    .do_handle_message(self.flows, object, envelope, true);
+                    .do_handle_message(self.flows, object, envelope, true, self.bounded);
             }
         }
 
@@ -659,6 +673,7 @@ impl SocketReader {
         let mut visitor = TrySendGroupVisitor {
             this: self,
             flows: &mut flows,
+            bounded,
         };
 
         let guard = EbrGuard::new();
@@ -678,26 +693,31 @@ impl SocketReader {
         object: &Object,
         envelope: Envelope,
         routed: bool,
+        bounded: bool,
     ) {
         if routed {
             flows.acquire_routed(false);
         }
 
         let flow = flows.get_flow(object.addr());
-
-        // Check whether the flow is unstable or not.
-        // If the recipient is unstable (i.e. already has pending messages), enqueue and
-        // return. The envelope will be handled by the corresponding pusher.
-        // Unexisted flows (new ones or already closed) are considered stable.
-        if flow.as_ref().is_some_and(|f| !f.is_stable()) {
-            let mut flow = flow.unwrap();
-            flow.acquire_direct(!routed);
-            flow.enqueue(envelope, routed);
+        let enqueue_result = match (flow, bounded) {
+            (Some(flow), true) => flow.try_enqueue_send(envelope, routed),
+            (Some(flow), false) => flow.try_enqueue_unbounded(envelope, routed),
+            (None, _) => Err(envelope),
+        };
+        // The flow is stable - real-time processing.
+        let Err(envelope) = enqueue_result else {
             return;
-        }
+        };
 
-        // TODO: use `unbounded_send` if the envelope has been sent unboundedly.
-        let result = object.try_send(Addr::NULL, envelope);
+        let result = if bounded {
+            object.try_send(Addr::NULL, envelope)
+        } else {
+            // TODO: malicious client checks?
+            object
+                .unbounded_send(Addr::NULL, envelope)
+                .map_err(|SendError(e)| TrySendError::Closed(e))
+        };
 
         // If the recipient has gone, close the flow and return.
         if matches!(result, Err(TrySendError::Closed(_))) {
@@ -712,7 +732,7 @@ impl SocketReader {
         }
 
         // The recipient is alive, so we should add a new flow if it doesn't exist yet.
-        let mut flow = ward!(flow, flows.get_or_create_flow(object.addr()));
+        let mut flow = flows.get_or_create_flow(object.addr());
         flow.acquire_direct(!routed);
 
         match result {
@@ -724,22 +744,21 @@ impl SocketReader {
                 }
             }
             Err(TrySendError::Full(envelope)) => {
-                flow.enqueue(envelope, routed);
-
-                // Start a pusher for this actor.
-                let msg = StartPusher(object.addr().into());
-                if let Err(err) = self.ctx.try_send_to(self.ctx.addr(), msg) {
-                    error!(error = %err, "failed to start a pusher");
+                if flow.enqueue_send(envelope, routed) {
+                    let msg = StartPusher(object.addr().into());
+                    if let Err(e) = self.ctx.try_send_to(self.ctx.addr(), msg) {
+                        error!(error = %e, "failed to start a pusher");
+                    }
                 }
             }
-            Err(TrySendError::Closed(_)) => unreachable!(),
+            Err(TrySendError::Closed(..)) => unreachable!(),
         }
     }
 
     fn send_back(&self, message: Option<impl Message>) {
         if let Some(envelope) = message.map(make_system_envelope) {
             self.tx
-                .try_send(KanalItem::simple(NetworkAddr::NULL, envelope))
+                .try_send(KanalItem::unbounded(NetworkAddr::NULL, envelope))
                 .unwrap();
         }
     }
@@ -765,11 +784,11 @@ impl Pusher {
         increment_gauge!("elfo_network_pushers", 1.);
 
         loop {
-            let Some((envelope, routed)) = self.rx_flows.lock().dequeue(self.actor_addr) else {
+            let Some((event, routed)) = self.rx_flows.lock().dequeue(self.actor_addr) else {
                 break;
             };
 
-            if !self.push(envelope, routed).await {
+            if !self.push(event, routed).await {
                 let mut flows = self.rx_flows.lock();
                 let (close, update) = flows.close(self.actor_addr);
                 self.send_back(close);
@@ -786,37 +805,78 @@ impl Pusher {
         PusherStopped
     }
 
-    async fn push(&self, envelope: Envelope, routed: bool) -> bool {
-        let fut = {
-            let guard = EbrGuard::new();
-            let object = ward!(self.ctx.book().get(self.actor_addr, &guard), return false);
+    fn handle_send_outcome(&self, outcome: Result<(), SendError<Envelope>>, routed: bool) -> bool {
+        if outcome.is_err() {
+            return false;
+        }
 
-            // TODO: use `unbounded_send` if the envelope has been sent unboundedly.
-            Object::send(object, Addr::NULL, envelope)
+        let mut flows = self.rx_flows.lock();
+        let Some(mut flow) = flows.get_flow(self.actor_addr) else {
+            return false;
         };
 
-        if fut.await.is_ok() {
-            let mut flows = self.rx_flows.lock();
+        self.send_back(flow.release_direct());
 
-            let Some(mut flow) = flows.get_flow(self.actor_addr) else {
-                return false;
-            };
-
-            self.send_back(flow.release_direct());
-
-            if routed {
-                self.send_back(flows.release_routed());
-            }
-            true
-        } else {
-            false
+        if routed {
+            self.send_back(flows.release_routed());
         }
+
+        true
+    }
+
+    // Sadly we live in rust.
+    fn blocking_send(
+        &self,
+        envelope: Envelope,
+    ) -> impl Future<Output = Result<(), SendError<Envelope>>> + Send + 'static {
+        let guard = EbrGuard::new();
+        let Some(object) = self.ctx.book().get(self.actor_addr, &guard) else {
+            return Either::Left(ready(Ok(())));
+        };
+
+        let send = Object::send(object, Addr::NULL, envelope);
+        Either::Right(send)
+    }
+
+    async fn push(&self, event: RxFlowEvent, routed: bool) -> bool {
+        // Sadly we live in rust, `EbrGuard: !Send`, thus writing
+        let outcome = match event {
+            RxFlowEvent::Message {
+                envelope,
+                bounded: false,
+            } => {
+                let guard = EbrGuard::new();
+                let object = ward!(self.ctx.book().get(self.actor_addr, &guard), return false);
+
+                object.unbounded_send(Addr::NULL, envelope)
+            }
+            RxFlowEvent::Message {
+                envelope,
+                bounded: true,
+            } => {
+                self.blocking_send(envelope).await
+                //                          ^^^^^^ This await
+                //                          will fail to compile.
+                // And there's no prettier and shorter way than just to copy-paste code for
+                // guard.
+            }
+            RxFlowEvent::Response { token, response } => {
+                let guard = EbrGuard::new();
+                let object = ward!(self.ctx.book().get(self.actor_addr, &guard), return false);
+
+                object.respond(token, response);
+
+                Ok(())
+            }
+        };
+
+        self.handle_send_outcome(outcome, routed)
     }
 
     fn send_back(&self, message: Option<impl Message>) {
         if let Some(envelope) = message.map(make_system_envelope) {
             self.tx
-                .try_send(KanalItem::simple(NetworkAddr::NULL, envelope))
+                .try_send(KanalItem::unbounded(NetworkAddr::NULL, envelope))
                 .unwrap();
         }
     }
@@ -833,15 +893,26 @@ impl Drop for Pusher {
 struct KanalItem {
     recipient: NetworkAddr,
     envelope: Result<Envelope, RequestError>,
+    bounded: bool,
     token: Option<ResponseToken>,
 }
 
 impl KanalItem {
-    fn simple(recipient: NetworkAddr, envelope: Envelope) -> Self {
+    fn unbounded(recipient: NetworkAddr, envelope: Envelope) -> Self {
         Self {
             recipient,
             envelope: Ok(envelope),
             token: None,
+            bounded: false,
+        }
+    }
+
+    fn bounded(recipient: NetworkAddr, envelope: Envelope) -> Self {
+        Self {
+            recipient,
+            envelope: Ok(envelope),
+            token: None,
+            bounded: true,
         }
     }
 }
@@ -857,7 +928,7 @@ impl remote::RemoteHandle for RemoteHandle {
 
         match self.tx_flows.acquire(recipient) {
             Acquire::Done => {
-                let mut item = Some(KanalItem::simple(recipient, envelope));
+                let mut item = Some(KanalItem::bounded(recipient, envelope));
                 match self.tx.try_send_option(&mut item) {
                     Ok(true) => remote::SendResult::Ok,
                     Ok(false) => unreachable!(),
@@ -876,7 +947,7 @@ impl remote::RemoteHandle for RemoteHandle {
 
         match self.tx_flows.try_acquire(recipient) {
             TryAcquire::Done => {
-                let mut item = Some(KanalItem::simple(recipient, envelope));
+                let mut item = Some(KanalItem::bounded(recipient, envelope));
                 match self.tx.try_send_option(&mut item) {
                     Ok(true) => Ok(()),
                     Ok(false) => unreachable!(),
@@ -896,7 +967,7 @@ impl remote::RemoteHandle for RemoteHandle {
         let recipient = NetworkAddr::from_remote(recipient);
 
         if likely(self.tx_flows.do_acquire(recipient)) {
-            let mut item = Some(KanalItem::simple(recipient, envelope));
+            let mut item = Some(KanalItem::unbounded(recipient, envelope));
             match self.tx.try_send_option(&mut item) {
                 Ok(true) => Ok(()),
                 Ok(false) => unreachable!(),
@@ -917,6 +988,7 @@ impl remote::RemoteHandle for RemoteHandle {
             recipient,
             envelope,
             token: Some(token),
+            bounded: false,
         });
 
         if likely(self.tx_flows.do_acquire(recipient)) {

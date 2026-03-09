@@ -8,9 +8,9 @@ use elfo_core::{errors::RequestError, tracing::TraceId, AnyMessage, RequestId};
 use elfo_utils::likely;
 
 use crate::codec::format::{
-    NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE, KIND_MASK,
-    KIND_REGULAR, KIND_REQUEST_ALL, KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED,
-    KIND_RESPONSE_OK,
+    NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE,
+    FLAG_IS_UNBOUNDED_SEND, KIND_MASK, KIND_REGULAR, KIND_REQUEST_ALL, KIND_REQUEST_ANY,
+    KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
 };
 
 #[derive(Default)]
@@ -266,5 +266,6 @@ fn do_decode(frame: &mut Cursor<&[u8]>) -> Result<NetworkEnvelope, DecodeError> 
         recipient,
         trace_id,
         payload,
+        bounded: flags & FLAG_IS_UNBOUNDED_SEND == 0,
     })
 }
