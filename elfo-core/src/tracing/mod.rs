@@ -1,5 +1,5 @@
 //! Includes `TraceId` and useful utilities around it.
-//! For more details see [The Actoromicon](https://actoromicon.rs/ch04-04-tracing.html).
+//! [The Actoromicon](https://actoromicon.rs/ch04-04-tracing.html).
 
 use std::cell::RefCell;
 

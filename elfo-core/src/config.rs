@@ -1,4 +1,5 @@
 //! Contains useful utilities for working with configuration.
+//! [The Actoromicon](https://actoromicon.rs/ch03-02-configuration.html).
 //!
 //! Also contains [`system`] to describe system configuration.
 
