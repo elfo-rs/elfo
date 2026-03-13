@@ -72,13 +72,15 @@ struct PreparedEvent {
 /// # Example
 /// ```
 /// # use elfo_core as elfo;
+/// # mod console_subscriber { pub fn spawn() -> Option<elfo_logger::CaptureLayer> { None } }
+/// use tracing_subscriber::prelude::*;
 ///
 /// // Usually, it's `elfo::batteries::logger::new`.
-/// let (blueprint, scope_filter, capture_layer) = elfo_logger::new();
+/// let (logger, scope_filter, capture_layer) = elfo_logger::new();
 ///
 /// tracing_subscriber::registry()
 ///     .with(console_subscriber::spawn())
-///     .with(capture.with_filter(filter))
+///     .with(capture_layer.with_filter(scope_filter))
 ///     .init();
 ///
 /// let topology = elfo::Topology::empty();
