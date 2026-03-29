@@ -6,8 +6,9 @@ use elfo_core::{errors::RequestError, scope, Message};
 use elfo_utils::likely;
 
 use crate::codec::format::{
-    NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE, KIND_REGULAR, KIND_REQUEST_ALL,
-    KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
+    NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE, FLAG_IS_UNBOUNDED_SEND,
+    KIND_REGULAR, KIND_REQUEST_ALL, KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED,
+    KIND_RESPONSE_OK,
 };
 
 #[derive(Debug, Display, From)]
@@ -104,6 +105,9 @@ fn do_encode(
     let mut flags = 0;
     if is_last_response {
         flags |= FLAG_IS_LAST_RESPONSE;
+    }
+    if !envelope.bounded {
+        flags |= FLAG_IS_UNBOUNDED_SEND;
     }
     dst.write_u8(flags | kind)?;
 

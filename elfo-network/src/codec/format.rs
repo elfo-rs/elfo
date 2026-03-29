@@ -44,6 +44,7 @@ use elfo_utils::likely;
 
 // Flags are shifted by 4 bits to the left because of the kind.
 pub(crate) const FLAG_IS_LAST_RESPONSE: u8 = 1 << 7;
+pub(crate) const FLAG_IS_UNBOUNDED_SEND: u8 = 1 << 6;
 
 pub(crate) const KIND_MASK: u8 = 0xF;
 pub(crate) const KIND_REGULAR: u8 = 0;
@@ -56,6 +57,7 @@ pub(crate) const KIND_RESPONSE_IGNORED: u8 = 5;
 #[derive(Debug)]
 pub(crate) struct NetworkEnvelope {
     pub(crate) sender: NetworkAddr,
+    pub(crate) bounded: bool,
     pub(crate) recipient: NetworkAddr,
     pub(crate) trace_id: TraceId,
     pub(crate) payload: NetworkEnvelopePayload,
