@@ -6,7 +6,7 @@ use std::{
 };
 
 use derive_more::From;
-use futures::future::{join_all, BoxFuture};
+use futures::future::{BoxFuture, join_all};
 use idr_ebr::{BorrowedEntry, OwnedEntry};
 use pin_project::pin_project;
 use smallvec::SmallVec;
@@ -65,7 +65,7 @@ impl Object {
         this: BorrowedObject<'_>,
         recipient: Addr,
         envelope: Envelope,
-    ) -> impl Future<Output = SendResult> + 'static {
+    ) -> impl Future<Output = SendResult> + use<> {
         let _ = recipient; // suppress a warning if the "network" feature is disabled
 
         match &this.kind {

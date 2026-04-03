@@ -6,13 +6,14 @@ use std::{
     task::Poll,
 };
 
-use futures::{pin_mut, Stream};
+use futures::{Stream, pin_mut};
 use idr_ebr::EbrGuard;
 use tracing::{info, trace};
 
 use elfo_utils::unlikely;
 
 use crate::{
+    ActorStatusKind,
     actor::{Actor, ActorStartInfo},
     actor_status::ActorStatus,
     addr::Addr,
@@ -32,7 +33,6 @@ use crate::{
     routers::Singleton,
     scope,
     source::{SourceHandle, Sources, UnattachedSource},
-    ActorStatusKind,
 };
 
 use self::stats::Stats;

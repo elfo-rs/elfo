@@ -1,11 +1,10 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::{
-    parenthesized,
+    Data, DeriveInput, Ident, LitStr, Path, Token, Type, parenthesized,
     parse::{Error as ParseError, Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
-    Data, DeriveInput, Ident, LitStr, Path, Token, Type,
 };
 
 use crate::errors::emit_error;

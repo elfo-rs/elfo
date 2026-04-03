@@ -207,10 +207,10 @@ impl Fund {
 
         // If we have already reached the limit, try to find the most filled shard
         // and take its oldest part.
-        if self.part_count >= self.config.max_part_count {
-            if let Some(part) = self.clear_most_filled() {
-                return part;
-            }
+        if self.part_count >= self.config.max_part_count
+            && let Some(part) = self.clear_most_filled()
+        {
+            return part;
         }
 
         // Otherwise, we have only active parts or the limit hasn't reached,
@@ -362,7 +362,7 @@ impl Drop for Drain<'_> {
 
 #[cfg(test)]
 mod tests {
-    use elfo_core::{dumping::Dump, scope::Scope, tracing::TraceId, ActorMeta, Addr};
+    use elfo_core::{ActorMeta, Addr, dumping::Dump, scope::Scope, tracing::TraceId};
 
     use super::*;
 

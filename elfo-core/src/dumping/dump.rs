@@ -2,12 +2,12 @@ use std::{borrow::Cow, fmt, sync::Arc};
 
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Serialize;
-use smallbox::{smallbox, SmallBox};
+use smallbox::{SmallBox, smallbox};
 
 use elfo_utils::time::SystemTime;
 
 use super::{extract_name::extract_name, sequence_no::SequenceNo};
-use crate::{actor::ActorMeta, envelope, scope, thread::ThreadId, tracing::TraceId, Message};
+use crate::{Message, actor::ActorMeta, envelope, scope, thread::ThreadId, tracing::TraceId};
 
 // === Dump ===
 

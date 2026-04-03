@@ -1,35 +1,36 @@
 use std::{future::Future, mem, sync::Arc, time::Duration};
 
 use advise_timer::NewTimerSetup;
-use eyre::{bail, eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, bail, eyre};
 use futures::StreamExt;
 use fxhash::FxHashMap;
 use slotmap::SecondaryMap;
 use tracing::{error, info, warn};
 
 use elfo_core::{
-    message, msg, scope,
-    stream::{Stream, StreamItem},
-    tracing::TraceId,
-    AnyMessage, Envelope, Message, MoveOwnership, RestartPolicy, SourceHandle, UnattachedSource,
     _priv::MessageKind,
+    AnyMessage, Envelope, Message, MoveOwnership, RestartParams, RestartPolicy, SourceHandle,
+    Topology, UnattachedSource,
     addr::GroupNo,
+    message,
     messages::ConfigUpdated,
+    msg, scope,
+    stream::{Stream, StreamItem},
     time::Delay,
-    RestartParams, Topology,
+    tracing::TraceId,
 };
 use elfo_utils::ward;
 
 use crate::{
+    NetworkContext,
     codec::format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     config::{Config, DiscoveryConfig, Transport},
-    connman::{self, log_conn, Command, ConnMan, ConnectTransport, EstablishDecision},
+    connman::{self, Command, ConnMan, ConnectTransport, EstablishDecision, log_conn},
     node_map::{NodeInfo, NodeMap},
     protocol::{
-        internode, AbortConnection, ConnId, ConnectionFailed, ConnectionRole, HandleConnection,
+        AbortConnection, ConnId, ConnectionFailed, ConnectionRole, HandleConnection, internode,
     },
     socket::{self, ReadError, Socket},
-    NetworkContext,
 };
 
 use tokio::time::Instant;
@@ -171,12 +172,12 @@ impl Discovery {
 
     fn abort_connection(&mut self, conn_id: ConnId) {
         // Firstly, check if a connection is driven by this actor.
-        if let Some(handle) = self.conn_streams.remove(conn_id) {
-            if handle.terminate_by_ref() {
-                self.connman.on_connection_failed(conn_id);
-                // A connection is driven by this actor, so we don't need to notify a worker.
-                return;
-            }
+        if let Some(handle) = self.conn_streams.remove(conn_id)
+            && handle.terminate_by_ref()
+        {
+            self.connman.on_connection_failed(conn_id);
+            // A connection is driven by this actor, so we don't need to notify a worker.
+            return;
         }
 
         let conn = ward!(self.connman.get(conn_id));
@@ -189,9 +190,10 @@ impl Discovery {
             let remote_node_no = ward!(conn.socket_info()).peer.node_no;
 
             let local = ward!(self.node_map.local_group_meta(local_group_no));
-            let remote = ward!(self
-                .node_map
-                .remote_group_meta(remote_node_no, remote_group_no));
+            let remote = ward!(
+                self.node_map
+                    .remote_group_meta(remote_node_no, remote_group_no)
+            );
 
             _ = self.ctx.unbounded_send_to(
                 self.ctx.group(),

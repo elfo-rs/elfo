@@ -10,7 +10,7 @@
 use std::{env, time::Duration};
 
 use elfo::{config::AnyConfig, prelude::*, time::Interval};
-use tracing_subscriber::{prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, prelude::*};
 
 #[message]
 struct Tick;

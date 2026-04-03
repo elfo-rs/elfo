@@ -1,6 +1,6 @@
 use std::{
     fmt, mem,
-    sync::{atomic, Arc},
+    sync::{Arc, atomic},
 };
 
 use futures_intrusive::sync::ManualResetEvent;
@@ -10,18 +10,18 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::{
+    Addr,
     actor_status::{ActorStatus, ActorStatusKind, AtomicActorStatusKind},
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
-    mailbox::{config::MailboxConfig, Mailbox, RecvResult},
+    mailbox::{Mailbox, RecvResult, config::MailboxConfig},
     messages::{ActorStatusReport, Terminate},
     msg,
     request_table::RequestTable,
     restarting::RestartPolicy,
     scope,
     subscription::SubscriptionManager,
-    Addr,
 };
 
 // === ActorMeta ===

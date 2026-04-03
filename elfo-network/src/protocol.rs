@@ -1,8 +1,9 @@
 use derive_more::{Display, IsVariant};
 
 use elfo_core::{
+    MoveOwnership,
     addr::{GroupNo, NodeNo},
-    message, MoveOwnership,
+    message,
 };
 
 use crate::{codec::format::NetworkAddr, socket::Socket};

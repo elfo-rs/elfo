@@ -42,7 +42,7 @@ cordyceps = "0.3.2"
 smallbox = "0.8.0"
 static_assertions = "1.1.0"
 fxhash = "0.2.1"
-linkme = "0.3"
+linkme = "0.3.30"
 smallvec = { version = "1.6.1", features = ["union"] }
 slotmap.workspace = true
 serde-value = "0.7.0"

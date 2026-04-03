@@ -3,22 +3,22 @@ use std::{
     future::{self, Future},
     panic::Location,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, LazyLock,
+        atomic::{AtomicUsize, Ordering},
     },
     thread,
     time::Duration,
 };
 
 use futures_intrusive::timer::{LocalTimer, StdClock, TimerService};
-use serde::{de::Deserializer, Deserialize};
+use serde::{Deserialize, de::Deserializer};
 use serde_value::Value;
 use tokio::{sync::oneshot, task};
 
 use elfo_core::{
+    _priv::do_start,
     ActorGroup, Addr, Blueprint, Context, Envelope, Local, Message, MoveOwnership, Request,
     ResponseToken,
-    _priv::do_start,
     addr::NodeLaunchId,
     errors::{RequestError, TrySendError},
     message, msg,

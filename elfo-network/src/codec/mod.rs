@@ -4,12 +4,12 @@ pub(crate) mod format;
 
 #[cfg(test)]
 mod tests {
-    use elfo_core::{message, tracing::TraceId, Message, _priv::AnyMessage};
+    use elfo_core::{_priv::AnyMessage, Message, message, tracing::TraceId};
     use std::convert::TryFrom;
 
     use super::{
-        decode::{decode, DecodeState},
-        encode::{encode, EncodeError},
+        decode::{DecodeState, decode},
+        encode::{EncodeError, encode},
         format::{NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload},
     };
 

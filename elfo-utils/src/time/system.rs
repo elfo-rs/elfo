@@ -60,7 +60,7 @@ impl From<SystemTime> for StdSystemTime {
 }
 
 #[cfg(any(test, feature = "test-util"))]
-pub use mock::{with_system_time_mock, SystemTimeMock};
+pub use mock::{SystemTimeMock, with_system_time_mock};
 
 #[cfg(any(test, feature = "test-util"))]
 mod mock {

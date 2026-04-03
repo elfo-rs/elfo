@@ -1,6 +1,6 @@
 use std::{
     fmt,
-    num::{NonZeroU16, NonZeroU64, NonZeroU8},
+    num::{NonZeroU8, NonZeroU16, NonZeroU64},
 };
 
 use derive_more::Display;

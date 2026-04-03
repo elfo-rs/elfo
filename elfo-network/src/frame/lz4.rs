@@ -22,7 +22,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
 
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 
 pub(crate) struct LZ4Buffer {
     /// This buffer stores decompressed data after `decompress_frame` method

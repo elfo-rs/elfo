@@ -3,7 +3,7 @@
 use serde::Serialize;
 use static_assertions::*;
 
-use elfo::{message, set_protocol, Message, Request};
+use elfo::{Message, Request, message, set_protocol};
 
 #[message]
 struct SimpleMessage {}

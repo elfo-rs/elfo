@@ -47,14 +47,18 @@ async fn it_doesnt_start_actors() {
     let proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     // TODO: simplify such tests.
-    assert!(AssertUnwindSafe(proxy.send(GentleUni(42)))
-        .catch_unwind()
-        .await
-        .is_err());
-    assert!(AssertUnwindSafe(proxy.send(GentleMulti(vec![42, 48])))
-        .catch_unwind()
-        .await
-        .is_err());
+    assert!(
+        AssertUnwindSafe(proxy.send(GentleUni(42)))
+            .catch_unwind()
+            .await
+            .is_err()
+    );
+    assert!(
+        AssertUnwindSafe(proxy.send(GentleMulti(vec![42, 48])))
+            .catch_unwind()
+            .await
+            .is_err()
+    );
     proxy.send(Start(42)).await;
     proxy.send(GentleUni(42)).await;
     proxy.send(GentleMulti(vec![42, 48])).await;

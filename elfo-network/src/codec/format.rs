@@ -35,10 +35,10 @@
 use derive_more::Display;
 
 use elfo_core::{
+    AnyMessage, Message, RequestId,
     addr::{Addr, NodeNo},
     errors::RequestError,
     tracing::TraceId,
-    AnyMessage, Message, RequestId,
 };
 use elfo_utils::likely;
 

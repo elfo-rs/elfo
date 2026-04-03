@@ -6,7 +6,7 @@ use std::{
 
 use derive_more::Display;
 use eyre::Result;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{StreamExt, stream::BoxStream};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::config::Transport;

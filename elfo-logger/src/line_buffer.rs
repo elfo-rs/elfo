@@ -218,7 +218,7 @@ fn safe_truncate(text: &mut String, to: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{safe_truncate, LineBuffer, TruncatingWrite, TRUNCATED_MARKER};
+    use super::{LineBuffer, TRUNCATED_MARKER, TruncatingWrite, safe_truncate};
     use crate::line_transaction::Line as _;
 
     fn put_msg(mut line: TruncatingWrite<'_>, meta: &str, payload: &str, fields: &str) {

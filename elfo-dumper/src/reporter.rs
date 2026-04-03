@@ -5,7 +5,7 @@ use std::{
 use fxhash::FxHashMap;
 use metrics::counter;
 use tokio::time::Instant;
-use tracing::{debug, error, info, trace, warn, Level};
+use tracing::{Level, debug, error, info, trace, warn};
 
 use elfo_core::dumping::{Dump, MessageName};
 use elfo_utils::ward;

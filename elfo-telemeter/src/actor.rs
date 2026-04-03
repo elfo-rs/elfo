@@ -3,8 +3,8 @@ use std::{sync::Arc, time::Duration};
 use tracing::{error, info};
 
 use elfo_core::{
-    message, messages::ConfigUpdated, msg, stream::Stream, time::Interval, ActorGroup, Blueprint,
-    Context, RestartParams, RestartPolicy, SourceHandle,
+    ActorGroup, Blueprint, Context, RestartParams, RestartPolicy, SourceHandle, message,
+    messages::ConfigUpdated, msg, stream::Stream, time::Interval,
 };
 
 use crate::{

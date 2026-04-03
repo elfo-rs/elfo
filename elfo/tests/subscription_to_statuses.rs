@@ -4,11 +4,11 @@
 use std::time::Duration;
 
 use elfo::{
+    ActorStatus, ActorStatusKind,
     messages::{ActorStatusReport, SubscribeToActorStatuses},
     prelude::*,
     routers::{MapRouter, Outcome},
     test::Proxy,
-    ActorStatus, ActorStatusKind,
 };
 use elfo_core::{RestartParams, RestartPolicy};
 

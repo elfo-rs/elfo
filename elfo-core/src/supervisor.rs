@@ -5,12 +5,13 @@ use futures::future::BoxFuture;
 use fxhash::FxBuildHasher;
 use metrics::{decrement_gauge, increment_gauge};
 use parking_lot::RwLock;
-use tracing::{debug, error, error_span, info, warn, Instrument, Span};
+use tracing::{Instrument, Span, debug, error, error_span, info, warn};
 
 use elfo_utils::CachePadded;
 
 use self::{error_chain::ErrorChain, measure_poll::MeasurePoll};
 use crate::{
+    ResponseToken,
     actor::{Actor, ActorMeta, ActorStartInfo},
     actor_status::ActorStatus,
     addr::{Addr, NodeLaunchId, NodeNo},
@@ -29,7 +30,6 @@ use crate::{
     scope::{self, Scope, ScopeGroupShared},
     subscription::SubscriptionManager,
     tracing::TraceId,
-    ResponseToken,
 };
 
 mod error_chain;

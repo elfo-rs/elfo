@@ -8,16 +8,17 @@ use std::{
 
 use http_body_util::Full;
 use hyper::{
+    Method, Request, Response, StatusCode,
     body::Body,
-    header::{HeaderMap, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_TYPE},
+    header::{ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_TYPE, HeaderMap},
     server::conn,
-    service, Method, Request, Response, StatusCode,
+    service,
 };
 use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::{net::TcpListener, time::timeout};
 use tracing::{debug, info, warn};
 
-use elfo_core::{scope, tracing::TraceId, Context};
+use elfo_core::{Context, scope, tracing::TraceId};
 
 use crate::protocol::{Render, Rendered, ServerFailed};
 

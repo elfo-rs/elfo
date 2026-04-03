@@ -15,8 +15,8 @@ use parking_lot::Mutex;
 use tracing::error;
 
 use elfo_core::{
-    dumping::{self, Recorder},
     Blueprint,
+    dumping::{self, Recorder},
 };
 
 use self::dump_storage::DumpStorage;

@@ -3,9 +3,9 @@
 #![allow(clippy::never_loop)]
 
 use elfo::{
+    TerminationPolicy,
     messages::{Terminate, TerminateReason},
     prelude::*,
-    TerminationPolicy,
 };
 
 #[message]

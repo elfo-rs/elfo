@@ -7,7 +7,7 @@ use metrics::{Key, Unit};
 use parking_lot::{Mutex, MutexGuard};
 use thread_local::ThreadLocal;
 
-use elfo_core::{coop, scope::Scope, ActorMeta, Addr};
+use elfo_core::{ActorMeta, Addr, coop, scope::Scope};
 
 use crate::{
     metrics::{Counter, Gauge, GaugeOrigin, Histogram, MetricKind},

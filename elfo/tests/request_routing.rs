@@ -6,10 +6,10 @@ use std::time::Duration;
 use tracing::info;
 
 use elfo::{
+    _priv::do_start,
+    RestartParams, RestartPolicy, Topology,
     prelude::*,
     routers::{MapRouter, Outcome},
-    RestartParams, RestartPolicy, Topology,
-    _priv::do_start,
 };
 use elfo_core::config::AnyConfig;
 

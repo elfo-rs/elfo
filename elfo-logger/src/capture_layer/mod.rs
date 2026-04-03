@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use tracing::{span, Event, Subscriber};
+use tracing::{Event, Subscriber, span};
 use tracing_subscriber::layer::{Context, Layer};
 
 use elfo_core::scope;
 use elfo_utils::time::SystemTime;
 
 use self::visitor::Visitor;
-use crate::{stats, PreparedEvent, Shared, SpanData, StringId};
+use crate::{PreparedEvent, Shared, SpanData, StringId, stats};
 
 mod visitor;
 

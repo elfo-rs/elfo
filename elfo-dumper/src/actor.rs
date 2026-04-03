@@ -10,6 +10,7 @@ use parking_lot::Mutex;
 use tracing::{error, info};
 
 use elfo_core::{
+    ActorGroup, Blueprint, Context, RestartParams, RestartPolicy, TerminationPolicy,
     dumping::INTERNAL_CLASS,
     message,
     messages::{ConfigUpdated, Terminate, UpdateConfig},
@@ -18,12 +19,11 @@ use elfo_core::{
     scope::{self, SerdeMode},
     signal::{Signal, SignalKind},
     time::Interval,
-    ActorGroup, Blueprint, Context, RestartParams, RestartPolicy, TerminationPolicy,
 };
 use elfo_utils::ward;
 
 use crate::{
-    config::{dump_path::TemplateVariables, Config},
+    config::{Config, dump_path::TemplateVariables},
     dump_storage::{Drain, DumpRegistry, DumpStorage},
     file_registry::{FileHandle, FileRegistry},
     reporter::{Report, Reporter},

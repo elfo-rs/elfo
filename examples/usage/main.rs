@@ -187,7 +187,7 @@ mod reporter {
         prelude::*,
         time::Interval,
     };
-    use metrics::{increment_counter, register_counter, Unit};
+    use metrics::{Unit, increment_counter, register_counter};
     use serde::{Deserialize, Serialize};
 
     use crate::protocol::*;

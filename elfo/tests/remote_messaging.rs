@@ -5,17 +5,18 @@
 use std::{sync::Arc, time::Duration};
 
 use serde::Deserialize;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{Notify, mpsc};
 use toml::toml;
 use tracing::{debug, info, warn};
 
 use elfo::{
+    Topology,
     messages::UpdateConfig,
     prelude::*,
     routers::{MapRouter, Outcome, Singleton},
     stream::Stream,
     time::Interval,
-    topology, Topology,
+    topology,
 };
 
 mod common;

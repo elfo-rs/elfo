@@ -2,12 +2,12 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use derive_more::{Display, From};
 use tracing::error;
 
-use elfo_core::{errors::RequestError, scope, Message};
+use elfo_core::{Message, errors::RequestError, scope};
 use elfo_utils::likely;
 
 use crate::codec::format::{
-    NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE, KIND_REGULAR, KIND_REQUEST_ALL,
-    KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
+    FLAG_IS_LAST_RESPONSE, KIND_REGULAR, KIND_REQUEST_ALL, KIND_REQUEST_ANY, KIND_RESPONSE_FAILED,
+    KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK, NetworkEnvelope, NetworkEnvelopePayload,
 };
 
 #[derive(Debug, Display, From)]

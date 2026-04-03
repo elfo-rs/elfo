@@ -6,7 +6,7 @@ use elfo_core::{
     topology::Topology,
 };
 
-use crate::protocol::{internode::GroupInfo, GroupMeta};
+use crate::protocol::{GroupMeta, internode::GroupInfo};
 
 // TODO: move to discovery?
 

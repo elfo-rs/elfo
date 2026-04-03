@@ -6,8 +6,8 @@ use std::fmt;
 
 use regex::Regex;
 use serde::{
-    de::{Deserializer, Error},
     Deserialize,
+    de::{Deserializer, Error},
 };
 
 /// Telemetry configuration.

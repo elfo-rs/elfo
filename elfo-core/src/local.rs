@@ -3,9 +3,9 @@ use std::{fmt, ops::Deref, sync::Arc};
 use derive_more::From;
 use parking_lot::Mutex;
 use serde::{
+    Deserialize, Serialize,
     de::{self, Deserializer},
     ser::{self, Serializer},
-    Deserialize, Serialize,
 };
 
 /// Used to send values that cannot be serialized.

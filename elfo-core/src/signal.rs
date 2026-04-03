@@ -17,11 +17,11 @@ use tokio::signal::unix;
 use tokio::signal::windows;
 
 use crate::{
+    Addr,
     envelope::{Envelope, MessageKind},
     message::Message,
     source::{SourceArc, SourceStream, UnattachedSource},
     tracing::TraceId,
-    Addr,
 };
 
 /// A source that emits a message once a signal is received.

@@ -87,7 +87,7 @@ fn with_clock<R>(f: impl FnOnce(&Clock) -> R) -> R {
 }
 
 #[cfg(any(test, feature = "test-util"))]
-pub use mock::{with_instant_mock, InstantMock};
+pub use mock::{InstantMock, with_instant_mock};
 
 #[cfg(any(test, feature = "test-util"))]
 mod mock {

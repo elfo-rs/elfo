@@ -10,7 +10,7 @@ pub use self::{
     dumper::{Dumper, DumpingPermit},
     extract_name::{extract_name, extract_name_by_type},
     raw::Raw,
-    recorder::{set_make_recorder, Recorder},
+    recorder::{Recorder, set_make_recorder},
     sequence_no::SequenceNo,
 };
 

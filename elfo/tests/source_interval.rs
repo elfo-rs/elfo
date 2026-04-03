@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use elfo::{config::AnyConfig, prelude::*, scope, test::Proxy, time::Interval};
-use tokio::time::{sleep, Instant};
+use tokio::time::{Instant, sleep};
 
 fn ms(millis: u64) -> Duration {
     Duration::from_millis(millis)

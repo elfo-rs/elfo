@@ -1,6 +1,6 @@
 use std::{fs::File, io::Write, sync::Arc};
 
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use fxhash::FxHashMap;
 use parking_lot::Mutex;
 use tokio::{

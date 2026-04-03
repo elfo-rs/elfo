@@ -29,7 +29,8 @@ where
     A: GlobalAlloc,
 {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = self.inner.alloc(layout);
+        // SAFETY: the inner allocator is sound, delegated by the caller's contract.
+        let ptr = unsafe { self.inner.alloc(layout) };
         if !ptr.is_null() {
             elfo_core::scope::try_with(|scope| {
                 // TODO: a separate counter for messaging.
@@ -40,7 +41,8 @@ where
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.inner.dealloc(ptr, layout);
+        // SAFETY: `ptr` was returned by a prior call to `alloc` with the same `layout`.
+        unsafe { self.inner.dealloc(ptr, layout) };
         elfo_core::scope::try_with(|scope| {
             // TODO: a separate counter for messaging.
             scope.increment_deallocated_bytes(layout.size());
@@ -48,7 +50,8 @@ where
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = self.inner.alloc_zeroed(layout);
+        // SAFETY: the inner allocator is sound, delegated by the caller's contract.
+        let ptr = unsafe { self.inner.alloc_zeroed(layout) };
         if !ptr.is_null() {
             elfo_core::scope::try_with(|scope| {
                 scope.increment_allocated_bytes(layout.size());
@@ -58,7 +61,8 @@ where
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let ptr = self.inner.realloc(ptr, layout, new_size);
+        // SAFETY: `ptr` was returned by a prior call to `alloc`/`realloc` with `layout`.
+        let ptr = unsafe { self.inner.realloc(ptr, layout, new_size) };
         if !ptr.is_null() {
             elfo_core::scope::try_with(|scope| {
                 scope.increment_deallocated_bytes(layout.size());

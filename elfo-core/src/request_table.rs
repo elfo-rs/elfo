@@ -2,13 +2,13 @@ use std::{fmt, marker::PhantomData, sync::Arc};
 
 use idr_ebr::EbrGuard;
 use parking_lot::Mutex;
-use slotmap::{new_key_type, Key, SlotMap};
+use slotmap::{Key, SlotMap, new_key_type};
 use smallvec::SmallVec;
 use tokio::sync::Notify;
 
 use crate::{
-    address_book::AddressBook, envelope::Envelope, errors::RequestError, message::AnyMessage,
-    tracing::TraceId, Addr,
+    Addr, address_book::AddressBook, envelope::Envelope, errors::RequestError, message::AnyMessage,
+    tracing::TraceId,
 };
 
 // === RequestId ===

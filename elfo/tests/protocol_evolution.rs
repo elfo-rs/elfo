@@ -3,9 +3,9 @@
 
 use std::collections::HashMap;
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{Result, anyhow, ensure};
 
-use elfo::{_priv::AnyMessage, prelude::*, Message};
+use elfo::{_priv::AnyMessage, Message, prelude::*};
 
 fn parse<A: Message + PartialEq, B: Message + PartialEq>(input: A, expected: B) -> Result<()> {
     let mut buf = Vec::new();

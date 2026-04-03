@@ -107,7 +107,7 @@ impl CachedTruncatedTime {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use crate::{scope::Scope, ActorMeta, Addr};
+    use crate::{ActorMeta, Addr, scope::Scope};
 
     use super::*;
 

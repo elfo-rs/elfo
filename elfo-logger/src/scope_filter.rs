@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use arc_swap::ArcSwap;
 use fxhash::FxHashMap;
-use tracing::{metadata::LevelFilter, subscriber::Interest, Metadata, Subscriber};
+use tracing::{Metadata, Subscriber, metadata::LevelFilter, subscriber::Interest};
 use tracing_subscriber::{filter::Targets, layer};
 
 use elfo_core::{logging::CheckResult, scope};

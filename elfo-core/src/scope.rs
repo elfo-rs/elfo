@@ -4,8 +4,8 @@ use std::{
     cell::Cell,
     future::Future,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 

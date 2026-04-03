@@ -11,19 +11,19 @@ use std::{
 
 use futures::future;
 use fxhash::FxHashMap;
-use serde::{de::Deserializer, Deserialize};
+use serde::{Deserialize, de::Deserializer};
 use serde_value::Value;
 use tokio::{fs, select, time};
 use tracing::{error, info, warn};
 
 use elfo_core::{
+    ActorGroup, ActorStatus, Addr, Blueprint, Context, RestartParams, RestartPolicy, Topology,
     config::AnyConfig,
     messages::{
         EntrypointError, StartEntrypoint, StartEntrypointRejected, UpdateConfig, ValidateConfig,
     },
     msg, scope,
     signal::{Signal, SignalKind},
-    ActorGroup, ActorStatus, Addr, Blueprint, Context, RestartParams, RestartPolicy, Topology,
 };
 
 pub use self::protocol::*;

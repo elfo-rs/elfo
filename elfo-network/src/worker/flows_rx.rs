@@ -4,7 +4,7 @@ use fxhash::FxHashMap;
 use metrics::{decrement_gauge, increment_gauge};
 use tracing::{debug, info};
 
-use elfo_core::{addr::NodeNo, Addr, Envelope};
+use elfo_core::{Addr, Envelope, addr::NodeNo};
 
 use super::flow_control::RxFlowControl;
 use crate::{codec::format::NetworkAddr, protocol::internode};

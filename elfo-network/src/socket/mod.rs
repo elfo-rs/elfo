@@ -1,8 +1,8 @@
 use std::{future::Future, pin::Pin, task, time::Duration};
 
 use derive_more::{Constructor, Display};
-use eyre::{eyre, Result, WrapErr};
-use futures::{stream::BoxStream, StreamExt};
+use eyre::{Result, WrapErr, eyre};
+use futures::{StreamExt, stream::BoxStream};
 use metrics::{counter, histogram};
 use pin_project::pin_project;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -23,8 +23,8 @@ use crate::{
 
 pub(crate) use self::{
     capabilities::{
-        compression::{Algorithms, Compression},
         Capabilities,
+        compression::{Algorithms, Compression},
     },
     raw::SocketInfo,
 };
@@ -138,8 +138,7 @@ impl ReadHalf {
                     let (protocol, name) = decoded.payload.protocol_and_name();
                     trace!(
                         message = "framed read strategy decoded single envelope",
-                        protocol,
-                        name,
+                        protocol, name,
                     );
                     // One of the envelopes inside the frame was decoded.
                     break decoded;

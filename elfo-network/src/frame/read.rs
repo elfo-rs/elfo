@@ -1,4 +1,4 @@
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 
 use crate::{
     codec::{
@@ -7,7 +7,7 @@ use crate::{
         format::NetworkEnvelope,
     },
     frame::{
-        buffers::{ReadBuffer, COMPRESSED_DATA_BUFFER_CAPACITY, DECOMPRESSED_DATA_BUFFER_CAPACITY},
+        buffers::{COMPRESSED_DATA_BUFFER_CAPACITY, DECOMPRESSED_DATA_BUFFER_CAPACITY, ReadBuffer},
         lz4::{DecompressState, DecompressStats, LZ4Buffer},
     },
 };

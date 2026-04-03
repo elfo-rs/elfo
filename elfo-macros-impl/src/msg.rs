@@ -3,7 +3,7 @@ use std::{char, collections::HashMap};
 use proc_macro2::Span;
 use quote::quote_spanned;
 use syn::{
-    parse_macro_input, spanned::Spanned, Arm, ExprMatch, Ident, Pat, PatIdent, PatWild, Path, Token,
+    Arm, ExprMatch, Ident, Pat, PatIdent, PatWild, Path, Token, parse_macro_input, spanned::Spanned,
 };
 
 use crate::errors::emit_error;
@@ -45,16 +45,16 @@ fn extract_path_to_type(path: &Path) -> Path {
     //        ^- must be uppercased
     //
     // Yep, it's crazy, but it seems to be a good assumption for now.
-    if let Some(prev) = ident_rev_it.nth(1) {
-        if is_type_ident(&prev.ident) {
-            let mut path = path.clone();
-            path.segments.pop().unwrap();
+    if let Some(prev) = ident_rev_it.nth(1)
+        && is_type_ident(&prev.ident)
+    {
+        let mut path = path.clone();
+        path.segments.pop().unwrap();
 
-            // Convert `Pair::Punctuated` to `Pair::End`.
-            let (last, _) = path.segments.pop().unwrap().into_tuple();
-            path.segments.push(last);
-            return path;
-        }
+        // Convert `Pair::Punctuated` to `Pair::End`.
+        let (last, _) = path.segments.pop().unwrap().into_tuple();
+        path.segments.push(last);
+        return path;
     }
 
     path.clone()

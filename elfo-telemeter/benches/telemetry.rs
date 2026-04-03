@@ -9,7 +9,7 @@ use std::{
 };
 
 use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
+    BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
 use metrics::{counter, histogram, increment_gauge};
 use tokio::{
@@ -20,9 +20,9 @@ use tokio::{
 use toml::toml;
 
 use elfo_core::{
-    message, msg,
+    ActorGroup, Blueprint, Local, Topology, message, msg,
     routers::{MapRouter, Outcome},
-    scope, ActorGroup, Blueprint, Local, Topology,
+    scope,
 };
 
 // === Harness ===

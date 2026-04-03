@@ -22,9 +22,9 @@ members = [
 repository = "https://github.com/elfo-rs/elfo"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 license = "MIT"
-edition = "2021"
+edition = "2024"
 readme = "README.md"
-rust-version = "1.85.0" # update CI if changed
+rust-version = "1.88.0" # update CI if changed
 
 [workspace.dependencies]
 tokio = "1.38"

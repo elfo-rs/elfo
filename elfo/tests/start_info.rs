@@ -4,10 +4,10 @@
 use std::{num::NonZeroU64, time::Duration};
 
 use elfo::{
+    RestartParams, RestartPolicy,
     messages::UpdateConfig,
     prelude::*,
     routers::{MapRouter, Outcome, Singleton},
-    RestartParams, RestartPolicy,
 };
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use derive_more::{Display, Error};
-use serde::{ser, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser};
 
 use super::dump::MessageName;
 

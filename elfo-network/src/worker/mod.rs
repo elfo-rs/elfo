@@ -6,15 +6,15 @@ use parking_lot::Mutex;
 use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
-    addr::{Addr, NodeNo},
-    message, Local, Message,
     _priv::{AnyMessage, EbrGuard, GroupVisitor, MessageKind, Object, OwnedObject},
+    Context, Envelope, Local, Message, ResponseToken, Topology,
+    addr::{Addr, NodeNo},
     errors::{RequestError, SendError, TrySendError},
+    message,
     messages::{ConfigUpdated, Impossible},
     msg, remote, scope,
     stream::Stream,
     time::Interval,
-    Context, Envelope, ResponseToken, Topology,
 };
 use elfo_utils::{likely, time::Instant, unlikely};
 
@@ -25,18 +25,18 @@ use self::{
 };
 
 use crate::{
+    NetworkContext,
     codec::{
         decode::EnvelopeDetails,
         format::{
-            NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload, KIND_REQUEST_ALL,
-            KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK,
+            KIND_REQUEST_ALL, KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED,
+            KIND_RESPONSE_OK, NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload,
         },
     },
     frame::write::FrameState,
-    protocol::{internode, AbortConnection, ConnId, ConnectionFailed, GroupMeta, HandleConnection},
+    protocol::{AbortConnection, ConnId, ConnectionFailed, GroupMeta, HandleConnection, internode},
     rtt::Rtt,
     socket::{ReadError, ReadHalf, WriteHalf},
-    NetworkContext,
 };
 
 mod flow_control;

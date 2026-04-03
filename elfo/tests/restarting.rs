@@ -10,9 +10,9 @@ use std::{
 use toml::toml;
 
 use elfo::{
+    RestartParams, RestartPolicy,
     prelude::*,
     routers::{MapRouter, Outcome, Singleton},
-    RestartParams, RestartPolicy,
 };
 
 #[tokio::test]

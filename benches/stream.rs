@@ -3,9 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
-use elfo::{message, stream::Stream, Context};
+use elfo::{Context, message, stream::Stream};
 
 mod common;
 

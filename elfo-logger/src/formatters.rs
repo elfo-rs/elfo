@@ -2,7 +2,7 @@ use std::{fmt::Write, hash::Hash, marker::PhantomData, sync::Arc};
 
 use tracing::Level;
 
-use elfo_core::{tracing::TraceId, ActorMeta};
+use elfo_core::{ActorMeta, tracing::TraceId};
 use elfo_utils::time::SystemTime;
 
 pub(crate) trait Formatter<T: ?Sized> {

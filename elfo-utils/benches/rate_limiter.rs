@@ -5,7 +5,7 @@ use std::{
     time::Instant,
 };
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 use elfo_utils::{RateLimit, RateLimiter};
 

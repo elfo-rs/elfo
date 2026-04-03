@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use smallvec::SmallVec;
 
-use crate::{envelope::Envelope, Addr};
+use crate::{Addr, envelope::Envelope};
 
 const OPTIMAL_COUNT: usize = 5;
 type Addrs = SmallVec<[Addr; OPTIMAL_COUNT]>;

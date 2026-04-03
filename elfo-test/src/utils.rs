@@ -1,4 +1,4 @@
-use elfo_core::{msg, Envelope, Message, Request, ResponseToken};
+use elfo_core::{Envelope, Message, Request, ResponseToken, msg};
 
 /// Extracts message with the provided type from [`Envelope`], panics otherwise.
 #[track_caller]
@@ -29,7 +29,7 @@ pub fn extract_request<R: Request>(envelope: Envelope) -> (R, ResponseToken<R>) 
 
 #[cfg(test)]
 mod tests {
-    use elfo_core::{_priv::MessageKind, message, scope::Scope, ActorMeta, Addr};
+    use elfo_core::{_priv::MessageKind, ActorMeta, Addr, message, scope::Scope};
 
     use super::*;
 

@@ -4,8 +4,8 @@ use tokio::{select, time};
 use tracing::{debug, info, warn};
 
 use elfo_core::{
-    message, messages::Ping, scope, time::Interval, topology::LocalActorGroup, ActorStatus, Addr,
-    Context, Topology,
+    ActorStatus, Addr, Context, Topology, message, messages::Ping, scope, time::Interval,
+    topology::LocalActorGroup,
 };
 use elfo_utils::ward;
 

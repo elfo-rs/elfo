@@ -34,7 +34,7 @@ use crate::{
     scope::{Scope, ScopeGroupShared},
     signal::{Signal, SignalKind},
     subscription::SubscriptionManager,
-    topology::{Topology, SYSTEM_INIT_GROUP_NO},
+    topology::{SYSTEM_INIT_GROUP_NO, Topology},
     tracing::TraceId,
 };
 
@@ -437,7 +437,7 @@ mod tests {
 
     use tokio::sync::mpsc;
 
-    use crate::{config::AnyConfig, ActorGroup, TerminationPolicy};
+    use crate::{ActorGroup, TerminationPolicy, config::AnyConfig};
 
     #[tokio::test]
     async fn terminate() {

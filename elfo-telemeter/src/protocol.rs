@@ -7,7 +7,7 @@ use metrics::{Key, Unit};
 use sketches_ddsketch::{Config as DDSketchConfig, DDSketch};
 use tracing::warn;
 
-use elfo_core::{message, ActorMeta, Local};
+use elfo_core::{ActorMeta, Local, message};
 
 use crate::stats::SnapshotStats;
 

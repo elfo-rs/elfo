@@ -15,10 +15,10 @@ use futures_intrusive::{buffer::GrowingHeapBuf, channel::GenericChannel};
 use fxhash::FxBuildHasher;
 use parking_lot::RawMutex;
 use sharded_slab::Pool;
-use tracing::{span::Id as SpanId, Metadata};
+use tracing::{Metadata, span::Id as SpanId};
 use tracing_subscriber::{prelude::*, registry::Registry};
 
-use elfo_core::{tracing::TraceId, ActorMeta, Blueprint};
+use elfo_core::{ActorMeta, Blueprint, tracing::TraceId};
 use elfo_utils::time::SystemTime;
 
 use crate::actor::Logger;

@@ -55,7 +55,7 @@ pub(crate) fn bench_singleton<R>(
 where
     R: std::future::Future<Output = Duration> + Send,
 {
-    use elfo::{config::AnyConfig, prelude::*, MoveOwnership, Topology};
+    use elfo::{MoveOwnership, Topology, config::AnyConfig, prelude::*};
 
     #[message(ret = Duration)]
     struct Start;

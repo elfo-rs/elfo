@@ -8,7 +8,7 @@ mod system;
 pub use self::{instant::*, system::*};
 
 #[cfg(any(test, feature = "test-util"))]
-pub use mock::{with_mock, TimeMock};
+pub use mock::{TimeMock, with_mock};
 
 #[cfg(any(test, feature = "test-util"))]
 mod mock {

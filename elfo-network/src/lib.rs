@@ -16,10 +16,10 @@ use std::{
 };
 
 use elfo_core::{
+    ActorGroup, Blueprint, Context, Topology,
     messages::UpdateConfig,
     msg,
     routers::{MapRouter, Outcome},
-    ActorGroup, Blueprint, Context, Topology,
 };
 
 use crate::{

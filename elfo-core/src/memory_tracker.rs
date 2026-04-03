@@ -228,24 +228,28 @@ fn it_works() {
     }));
 
     let memory_tracker = MemoryTracker::new(0.5);
-    assert!(memory_tracker
-        .as_ref()
-        .unwrap()
-        .check()
-        .unwrap()
-        .is_passed());
+    assert!(
+        memory_tracker
+            .as_ref()
+            .unwrap()
+            .check()
+            .unwrap()
+            .is_passed()
+    );
 
     mock_stats::set(Ok(MemoryStats {
         total: 1000,
         used: 200,
         available: 500,
     }));
-    assert!(memory_tracker
-        .as_ref()
-        .unwrap()
-        .check()
-        .unwrap()
-        .is_passed());
+    assert!(
+        memory_tracker
+            .as_ref()
+            .unwrap()
+            .check()
+            .unwrap()
+            .is_passed()
+    );
 
     let expected_stats = MemoryStats {
         total: 1000,

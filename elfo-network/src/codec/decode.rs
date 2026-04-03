@@ -1,16 +1,16 @@
 use std::{convert::TryFrom, io::Cursor};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use eyre::{ensure, eyre, Error, WrapErr};
+use eyre::{Error, WrapErr, ensure, eyre};
 use tracing::error;
 
-use elfo_core::{errors::RequestError, tracing::TraceId, AnyMessage, RequestId};
+use elfo_core::{AnyMessage, RequestId, errors::RequestError, tracing::TraceId};
 use elfo_utils::likely;
 
 use crate::codec::format::{
-    NetworkAddr, NetworkEnvelope, NetworkEnvelopePayload, FLAG_IS_LAST_RESPONSE, KIND_MASK,
-    KIND_REGULAR, KIND_REQUEST_ALL, KIND_REQUEST_ANY, KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED,
-    KIND_RESPONSE_OK,
+    FLAG_IS_LAST_RESPONSE, KIND_MASK, KIND_REGULAR, KIND_REQUEST_ALL, KIND_REQUEST_ANY,
+    KIND_RESPONSE_FAILED, KIND_RESPONSE_IGNORED, KIND_RESPONSE_OK, NetworkAddr, NetworkEnvelope,
+    NetworkEnvelopePayload,
 };
 
 #[derive(Default)]

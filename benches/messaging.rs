@@ -3,16 +3,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use criterion::{criterion_group, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group};
 use derive_more::Display;
 
 use elfo::{
+    Addr, Local,
     config::AnyConfig,
     messages::UpdateConfig,
     prelude::*,
     routers::{MapRouter, Outcome},
     topology::Topology,
-    Addr, Local,
 };
 
 #[path = "common.rs"]

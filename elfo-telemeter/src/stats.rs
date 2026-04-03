@@ -1,7 +1,7 @@
 use std::mem;
 
 use fxhash::FxHashMap;
-use metrics::{gauge, register_gauge, Unit};
+use metrics::{Unit, gauge, register_gauge};
 
 pub(crate) fn register() {
     register_gauge!(
@@ -107,11 +107,7 @@ impl SnapshotStats {
 fn estimate_hashbrown_size<T>(capacity: usize) -> usize {
     // https://github.com/rust-lang/hashbrown/blob/v0.12.3/src/raw/mod.rs#L185
     let buckets = if capacity < 8 {
-        if capacity < 4 {
-            4
-        } else {
-            8
-        }
+        if capacity < 4 { 4 } else { 8 }
     } else {
         (capacity * 8 / 7).next_power_of_two()
     };

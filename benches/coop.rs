@@ -1,10 +1,10 @@
 use std::{
-    future::{poll_fn, Future},
+    future::{Future, poll_fn},
     pin::pin,
     time::Duration,
 };
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 use elfo::Context;
 use elfo_utils::time::Instant;

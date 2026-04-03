@@ -28,8 +28,8 @@
 use std::ptr::{self, NonNull};
 
 use cordyceps::{
-    mpsc_queue::{Links, MpscQueue},
     Linked,
+    mpsc_queue::{Links, MpscQueue},
 };
 use parking_lot::Mutex;
 use tokio::sync::{Notify, Semaphore, TryAcquireError};
@@ -98,18 +98,20 @@ unsafe impl Linked<Link> for EnvelopeHeader {
     }
 
     unsafe fn from_ptr(ptr: NonNull<Self>) -> Self::Handle {
-        Self::Handle::from_header_ptr(ptr)
+        // SAFETY: `ptr` was produced by `into_ptr`, which wraps a valid `Envelope`.
+        unsafe { Self::Handle::from_header_ptr(ptr) }
     }
 
     unsafe fn links(ptr: NonNull<Self>) -> NonNull<Link> {
         // Using `ptr::addr_of_mut!` permits us to avoid creating a temporary
         // reference without using layout-dependent casts.
-        let links = ptr::addr_of_mut!((*ptr.as_ptr()).link);
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized `EnvelopeHeader`.
+        let links = unsafe { ptr::addr_of_mut!((*ptr.as_ptr()).link) };
 
-        // `NonNull::new_unchecked` is safe to use here, because the pointer that
-        // we offset was not null, implying that the pointer produced by offsetting
+        // SAFETY: `NonNull::new_unchecked` is safe to use here, because the pointer
+        // that we offset was not null, implying that the pointer produced by offsetting
         // it will also not be null.
-        NonNull::new_unchecked(links)
+        unsafe { NonNull::new_unchecked(links) }
     }
 }
 

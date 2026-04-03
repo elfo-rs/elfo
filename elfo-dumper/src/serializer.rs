@@ -266,9 +266,9 @@ impl<W: io::Write> io::Write for LimitedWrite<W> {
 #[cfg(test)]
 mod tests {
     use fxhash::FxHashMap;
-    use tracing::{level_filters::LevelFilter, Level};
+    use tracing::{Level, level_filters::LevelFilter};
 
-    use elfo_core::{scope::Scope, tracing::TraceId, ActorMeta, Addr};
+    use elfo_core::{ActorMeta, Addr, scope::Scope, tracing::TraceId};
     use elfo_utils::time::SystemTime;
 
     use super::*;
@@ -376,9 +376,11 @@ mod tests {
             assert!(serializer.append(&sample, &params).is_none());
 
             // Must be skipped, cannot be serialized.
-            assert!(serializer
-                .append(&dump(1, 1, false), &DumpParams::default())
-                .is_none());
+            assert!(
+                serializer
+                    .append(&dump(1, 1, false), &DumpParams::default())
+                    .is_none()
+            );
         }
 
         let chunk = serializer.append(&sample, &DumpParams::default()).unwrap();
@@ -401,10 +403,12 @@ mod tests {
         let failed_info = report.failed.values().next().unwrap();
         assert_eq!(failed_info.level, Level::WARN);
         assert_eq!(failed_info.count, expected_lines - 1);
-        assert!(failed_info
-            .error
-            .to_string()
-            .contains("key must be a string"));
+        assert!(
+            failed_info
+                .error
+                .to_string()
+                .contains("key must be a string")
+        );
     }
 
     #[test]

@@ -191,74 +191,108 @@ mod vtablefns {
     /// Data behind `ptr` cannot be accessed after this call.
     /// Note that vtable is still can be accessed.
     pub(super) unsafe fn drop_data<M>(ptr: NonNull<MessageRepr>) {
-        ptr::drop_in_place(&mut ptr.cast::<MessageRepr<M>>().as_mut().data);
+        // SAFETY: `ptr` is valid for reads/writes and points to a `MessageRepr<M>`.
+        unsafe { ptr::drop_in_place(&mut ptr.cast::<MessageRepr<M>>().as_mut().data) };
     }
 
+    /// # Safety
+    ///
+    /// `ptr` must be valid for reads and `out_ptr` must be valid for writes.
+    /// Both must point to `MessageRepr<M>`.
     pub(super) unsafe fn clone<M: Message>(
         ptr: NonNull<MessageRepr>,
         out_ptr: NonNull<MessageRepr>,
     ) {
-        ptr::write(
-            out_ptr.cast::<MessageRepr<M>>().as_ptr(),
-            ptr.cast::<MessageRepr<M>>().as_ref().clone(),
-        );
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+        let cloned = unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }.clone();
+        // SAFETY: `out_ptr` is valid for writes and properly aligned for `MessageRepr<M>`.
+        unsafe { ptr::write(out_ptr.cast::<MessageRepr<M>>().as_ptr(), cloned) };
     }
 
+    /// # Safety
+    ///
+    /// `ptr` must be valid for reads and point to a `MessageRepr<M>`.
     pub(super) unsafe fn debug<M: fmt::Debug>(
         ptr: NonNull<MessageRepr>,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
-        let data = &ptr.cast::<MessageRepr<M>>().as_ref().data;
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+        let data = &unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }.data;
         fmt::Debug::fmt(data, f)
     }
 
+    /// # Safety
+    ///
+    /// `ptr` must be valid for reads and point to a `MessageRepr<M>`.
     pub(super) unsafe fn erase<M: Message>(ptr: NonNull<MessageRepr>) -> dumping::ErasedMessage {
-        let data = ptr.cast::<MessageRepr<M>>().as_ref().data.clone();
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+        let data = unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }
+            .data
+            .clone();
         smallbox!(data)
     }
 
     /// # Safety
     ///
     /// The result pointer is valid only during the lifetime of `ptr`.
+    /// `ptr` must be valid for reads and point to a `MessageRepr<M>`.
     pub(super) unsafe fn as_serialize_any<M: Message>(
         ptr: NonNull<MessageRepr>,
     ) -> NonNull<dyn erased_serde::Serialize> {
-        let data = &ptr.cast::<MessageRepr<M>>().as_ref().data;
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+        let data = &unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }.data;
         let ser = data as &dyn erased_serde::Serialize;
-        NonNull::new_unchecked(ser as *const _ as *mut _)
+        // SAFETY: `ser` is a valid reference, so the resulting pointer is non-null.
+        unsafe { NonNull::new_unchecked(ser as *const _ as *mut _) }
     }
 
+    /// # Safety
+    ///
+    /// `out_ptr` must be valid for writes and point to a `MessageRepr<M>`.
     pub(super) unsafe fn deserialize_any<M: Message>(
         deserializer: &mut dyn erased_serde::Deserializer<'_>,
         out_ptr: NonNull<MessageRepr>,
     ) -> Result<(), erased_serde::Error> {
         let data = erased_serde::deserialize::<M>(deserializer)?;
-        ptr::write(
-            out_ptr.cast::<MessageRepr<M>>().as_ptr(),
-            MessageRepr::new(data),
-        );
+        // SAFETY: `out_ptr` is valid for writes and properly aligned for `MessageRepr<M>`.
+        unsafe {
+            ptr::write(
+                out_ptr.cast::<MessageRepr<M>>().as_ptr(),
+                MessageRepr::new(data),
+            )
+        };
         Ok(())
     }
 
     cfg_network!({
+        /// # Safety
+        ///
+        /// `out_ptr` must be valid for writes and point to a `MessageRepr<M>`.
         pub(super) unsafe fn read_msgpack<M: Message>(
             buffer: &[u8],
             out_ptr: NonNull<MessageRepr>,
         ) -> Result<(), decode::Error> {
             let data = decode::from_slice(buffer)?;
-            ptr::write(
-                out_ptr.cast::<MessageRepr<M>>().as_ptr(),
-                MessageRepr::new(data),
-            );
+            // SAFETY: `out_ptr` is valid for writes and properly aligned for `MessageRepr<M>`.
+            unsafe {
+                ptr::write(
+                    out_ptr.cast::<MessageRepr<M>>().as_ptr(),
+                    MessageRepr::new(data),
+                )
+            };
             Ok(())
         }
 
+        /// # Safety
+        ///
+        /// `ptr` must be valid for reads and point to a `MessageRepr<M>`.
         pub(super) unsafe fn write_msgpack<M: Message>(
             ptr: NonNull<MessageRepr>,
             out: &mut Vec<u8>,
             limit: usize,
         ) -> Result<(), encode::Error> {
-            let data = &ptr.cast::<MessageRepr<M>>().as_ref().data;
+            // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+            let data = &unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }.data;
             let mut out = LimitedWrite(out, limit);
             encode::write_named(&mut out, data)
         }

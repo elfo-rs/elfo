@@ -1,12 +1,12 @@
 use std::io::Cursor;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use tokio::io;
 
 use elfo_core::addr::{NodeLaunchId, NodeNo};
 
-use super::{raw, Capabilities};
+use super::{Capabilities, raw};
 
 const THIS_NODE_VERSION: u8 = 0;
 

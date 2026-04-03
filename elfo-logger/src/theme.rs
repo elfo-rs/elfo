@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tracing::Level;
 
-use elfo_core::{tracing::TraceId, ActorMeta};
+use elfo_core::{ActorMeta, tracing::TraceId};
 use elfo_utils::time::SystemTime;
 
 use crate::formatters::*;

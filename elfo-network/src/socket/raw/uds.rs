@@ -8,7 +8,7 @@ use std::{
 
 use eyre::Result;
 use futures::Stream;
-use tokio::net::{unix::pid_t as Pid, UnixListener, UnixStream};
+use tokio::net::{UnixListener, UnixStream, unix::pid_t as Pid};
 use tracing::{debug, warn};
 
 pub(super) use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};

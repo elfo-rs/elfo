@@ -10,7 +10,7 @@
 
 use std::time::{Duration, Instant};
 
-use elfo::{config::AnyConfig, prelude::*, time::Interval, Topology};
+use elfo::{Topology, config::AnyConfig, prelude::*, time::Interval};
 use tokio::runtime as rt;
 
 #[message(ret = ())]

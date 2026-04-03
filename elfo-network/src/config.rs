@@ -9,10 +9,10 @@ use std::path::PathBuf;
 use std::{str::FromStr, time::Duration};
 
 use derive_more::Display;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use serde::{
-    de::{self, Deserializer},
     Deserialize, Serialize,
+    de::{self, Deserializer},
 };
 
 /// The network actors' config.
@@ -231,25 +231,33 @@ mod tests {
     #[test]
     fn transport_parsing() {
         // Missing protocol
-        assert!(Transport::from_str("")
-            .unwrap_err()
-            .to_string()
-            .starts_with("protocol must be specified"));
-        assert!(Transport::from_str("://a/b")
-            .unwrap_err()
-            .to_string()
-            .starts_with("protocol must be specified"));
+        assert!(
+            Transport::from_str("")
+                .unwrap_err()
+                .to_string()
+                .starts_with("protocol must be specified")
+        );
+        assert!(
+            Transport::from_str("://a/b")
+                .unwrap_err()
+                .to_string()
+                .starts_with("protocol must be specified")
+        );
 
         // Unknown protocol
-        assert!(Transport::from_str("foo://a")
-            .unwrap_err()
-            .to_string()
-            .starts_with("unknown protocol"));
+        assert!(
+            Transport::from_str("foo://a")
+                .unwrap_err()
+                .to_string()
+                .starts_with("unknown protocol")
+        );
         #[cfg(not(unix))]
-        assert!(Transport::from_str("uds://a")
-            .unwrap_err()
-            .to_string()
-            .starts_with("unknown protocol"));
+        assert!(
+            Transport::from_str("uds://a")
+                .unwrap_err()
+                .to_string()
+                .starts_with("unknown protocol")
+        );
 
         // TCP
         assert_eq!(

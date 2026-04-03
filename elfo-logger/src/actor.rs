@@ -12,20 +12,20 @@ use tokio::{
 use tracing::Metadata;
 
 use elfo_core::{
-    message,
+    ActorGroup, Blueprint, Context, RestartParams, RestartPolicy, TerminationPolicy, message,
     messages::{ConfigUpdated, Terminate},
     msg,
     signal::{Signal, SignalKind},
-    ActorGroup, Blueprint, Context, RestartParams, RestartPolicy, TerminationPolicy,
 };
 
 use crate::{
+    PreparedEvent, Shared,
     config::{Colorization, Config, Sink},
     formatters::Formatter,
     line_buffer::LineBuffer,
     line_transaction::{FailOnUnfit, Line as _, LineFactory, TruncateOnUnfit},
     scope_filter::ScopeFilter,
-    theme, PreparedEvent, Shared,
+    theme,
 };
 
 pub(crate) struct Logger {
@@ -188,20 +188,20 @@ impl Logger {
             }
         }
 
-        if config.format.with_location {
-            if let Some(location) = extract_location(event.metadata) {
-                let fields_buffer = line.fields_mut();
-                fields_buffer.push('\t');
-                T::Location::fmt(line.fields_mut(), &location);
-            }
+        if config.format.with_location
+            && let Some(location) = extract_location(event.metadata)
+        {
+            let fields_buffer = line.fields_mut();
+            fields_buffer.push('\t');
+            T::Location::fmt(line.fields_mut(), &location);
         }
 
-        if config.format.with_module {
-            if let Some(module) = event.metadata.module_path() {
-                let fields_buffer = line.fields_mut();
-                fields_buffer.push('\t');
-                T::Module::fmt(fields_buffer, module);
-            }
+        if config.format.with_module
+            && let Some(module) = event.metadata.module_path()
+        {
+            let fields_buffer = line.fields_mut();
+            fields_buffer.push('\t');
+            T::Module::fmt(fields_buffer, module);
         }
 
         line.try_commit()
