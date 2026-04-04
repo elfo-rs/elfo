@@ -29,7 +29,14 @@ use elfo_core::{
 
 const SYNC_YIELD_COUNT: usize = 32;
 
-/// A proxy for testing actors.
+/// A handle for driving an actor group in an isolated test topology.
+///
+/// `Proxy` is the central type of this crate. It lets a test send messages to
+/// an actor group, receive the messages it emits, and make requests just as any
+/// other actor in the system would.
+///
+/// Create a proxy with [`proxy`], then use the methods below to interact with
+/// the actor under test.
 pub struct Proxy {
     context: ProxyContext,
     scope: Scope,
@@ -123,7 +130,11 @@ impl Proxy {
             .sync_within(|| self.context.try_send_to(recipient, message))
     }
 
-    /// Same as [`Self::request`], but doesn't unwraps the error.
+    /// Same as [`Self::request`], but returns the error instead of panicking.
+    ///
+    /// Prefer [`request`](Self::request) for happy-path tests. Use this
+    /// variant when you need to assert that a request *fails*, for example
+    /// when testing actor behaviour on invalid input.
     pub fn request_fallible<R: Request>(
         &self,
         request: R,
@@ -148,7 +159,8 @@ impl Proxy {
         })
     }
 
-    /// Same as [`Self::request_to`], but doesn't unwraps the errors.
+    /// Same as [`Self::request_to`], but returns the error instead of
+    /// panicking.
     pub fn request_to_fallible<R: Request>(
         &self,
         recipient: Addr,
@@ -186,6 +198,15 @@ impl Proxy {
     }
 
     /// See [`Context::recv()`] for details.
+    ///
+    /// # Panics
+    ///
+    /// If no message arrives within the configured timeout (default: 150ms).
+    ///
+    /// The timeout runs on the **real wall clock**, so `tokio::time::pause()`
+    /// does not prevent it from firing. Tests using mocked time therefore do
+    /// not need to tune the timeout. To change it, use
+    /// [`Proxy::set_recv_timeout`].
     #[track_caller]
     pub fn recv(&mut self) -> impl Future<Output = Envelope> + '_ {
         // We use a separate timer here to avoid interaction with the tokio's timer.
@@ -219,6 +240,10 @@ impl Proxy {
     }
 
     /// See [`Context::try_recv()`] for details.
+    ///
+    /// Returns the next message immediately if one is available, or `None` if
+    /// the actor's outbox is currently empty. This is most useful after
+    /// [`Proxy::sync`] to assert the **absence** of unexpected output.
     pub async fn try_recv(&mut self) -> Option<Envelope> {
         self.scope
             .clone()
@@ -228,8 +253,10 @@ impl Proxy {
 
     /// Waits until the testable actor handles all previously sent messages.
     ///
-    /// Now it's implemented as multiple calls `yield_now()`,
-    /// but the implementation can be changed in the future.
+    /// Internally this yields the async runtime multiple times. It is **not**
+    /// needed for tests that rely on `recv` or `request` (those already
+    /// synchronize implicitly), but it is useful before calling
+    /// [`Proxy::try_recv`] to assert that the actor produced no output.
     pub async fn sync(&mut self) {
         // TODO: it should probably be `request(Ping).await`.
         for _ in 0..SYNC_YIELD_COUNT {
@@ -238,12 +265,26 @@ impl Proxy {
     }
 
     /// Sets message wait time for `recv` call.
+    ///
+    /// The default timeout is **150ms** measured on the real wall clock.
+    /// Increase this if the actor under test legitimately takes longer to
+    /// produce output. Note that the timeout is independent of
+    /// `tokio::time::pause()`, so mocked-time tests typically do not need
+    /// to change it.
     pub fn set_recv_timeout(&mut self, recv_timeout: Duration) {
         self.recv_timeout = recv_timeout;
     }
 
     /// Creates a subproxy with a different address.
-    /// The main purpose is to test `send_to(..)` and `request_to(..)` calls.
+    ///
+    /// The main purpose is to test `ctx.send_to()` and `ctx.request_to()`
+    /// calls where the actor replies to a specific
+    /// address rather than using the routing system.
+    ///
+    /// The subproxy shares the same underlying actor group but has its own
+    /// address. Messages sent through `subproxy.send()` still reach the
+    /// original actor; only the *return address* (sender) differs, so
+    /// directed replies come back to the subproxy instead of the main proxy.
     pub async fn subproxy(&self) -> Proxy {
         let f = async {
             self.context
@@ -264,6 +305,13 @@ impl Proxy {
     }
 
     /// Waits until the testable actor finishes.
+    ///
+    /// Usually, you want to use this after sending [`Terminate`] to confirm
+    /// that the actor has completed its teardown. Messages the actor emits
+    /// during teardown can still be received via [`Proxy::recv`] after this
+    /// method returns, because the proxy mailbox stays open.
+    ///
+    /// [`Terminate`]: elfo_core::messages::Terminate
     pub async fn finished(&self) {
         let fut = self.context.finished(self.subject_addr);
         self.scope.clone().within(fut).await
@@ -379,8 +427,20 @@ where
     }
 }
 
-/// Creates a proxy for testing actors.
-/// See examples in the repository for more details how to use it.
+/// Creates a [`Proxy`] for testing an actor group in an isolated topology.
+///
+/// `blueprint` is the [`Blueprint`] returned by the actor group's constructor
+/// (e.g. `my_group::new()`). `config` is a deserializable value that will be
+/// used as the actor group's initial configuration.
+///
+/// Note: this function enables test-only logging (via `tracing_subscriber`).
+///
+/// # Example
+///
+/// See the [Functional Testing] chapter of The Actoromicon for a full
+/// walkthrough.
+///
+/// [Functional Testing]: https://actoromicon.rs/ch06-01-functional-testing.html
 pub async fn proxy(blueprint: Blueprint, config: impl for<'de> Deserializer<'de>) -> Proxy {
     proxy_with_route(blueprint, |_| true, config).await
 }
