@@ -11,7 +11,7 @@ readme.workspace = true
 rust-version.workspace = true
 
 [dev-dependencies]
-elfo = { path = "../elfo" }
+elfo = { path = "../elfo", features = ["full"] }
 elfo-utils = { version = "0.2.7", path = "../elfo-utils" }
 
 metrics.workspace = true
@@ -41,6 +41,11 @@ harness = false
 [[bench]]
 name = "messaging_tc"
 path = "messaging_tc.rs"
+harness = false
+
+[[bench]]
+name = "mailbox_sys"
+path = "mailbox_sys.rs"
 harness = false
 
 [[bench]]
