@@ -44,11 +44,6 @@ path = "messaging_tc.rs"
 harness = false
 
 [[bench]]
-name = "mailbox_sys"
-path = "mailbox_sys.rs"
-harness = false
-
-[[bench]]
 name = "coop"
 path = "coop.rs"
 harness = false
