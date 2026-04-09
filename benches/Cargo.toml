@@ -11,7 +11,7 @@ readme.workspace = true
 rust-version.workspace = true
 
 [dev-dependencies]
-elfo = { path = "../elfo" }
+elfo = { path = "../elfo", features = ["full"] }
 elfo-utils = { version = "0.2.7", path = "../elfo-utils" }
 
 metrics.workspace = true
