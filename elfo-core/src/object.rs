@@ -1,7 +1,9 @@
 use std::{
     future::Future,
     mem,
+    ops::Deref,
     pin::Pin,
+    ptr::NonNull,
     task::{self, Poll},
 };
 
@@ -32,6 +34,51 @@ assert_impl_all!(Object: Sync);
 pub(crate) type BorrowedObject<'g> = BorrowedEntry<'g, Object>;
 // Reexported in `_priv`.
 pub type OwnedObject = OwnedEntry<Object>;
+
+// === MappedOwnedObject ===
+
+/// An [`OwnedObject`] projected to one of its fields.
+pub(crate) struct MappedOwnedObject<P> {
+    projected: NonNull<P>,
+    entry: OwnedObject,
+}
+
+// SAFETY: `Object: Sync` is asserted above; `map`'s forces `P` to be borrowed
+// from `&Object`, so `P` is transitively `Send + Sync`.
+unsafe impl<P> Send for MappedOwnedObject<P> {}
+// SAFETY: Same as above.
+unsafe impl<P> Sync for MappedOwnedObject<P> {}
+
+impl<P> MappedOwnedObject<P> {
+    pub(crate) fn map<F>(entry: OwnedObject, proj: F) -> Self
+    where
+        F: FnOnce(&Object) -> &P,
+    {
+        let projected = NonNull::from(proj(&entry));
+        Self { entry, projected }
+    }
+}
+
+impl<P> Deref for MappedOwnedObject<P> {
+    type Target = P;
+
+    #[inline]
+    fn deref(&self) -> &P {
+        // SAFETY: `entry` keeps the object alive and `idr_ebr::OwnedEntry`
+        // pins it at a stable heap address, so `projected` remains valid for the
+        // lifetime of `entry`.
+        unsafe { self.projected.as_ref() }
+    }
+}
+
+impl<P> Clone for MappedOwnedObject<P> {
+    fn clone(&self) -> Self {
+        Self {
+            entry: self.entry.clone(),
+            projected: self.projected,
+        }
+    }
+}
 
 #[derive(From)]
 #[allow(clippy::large_enum_variant)]

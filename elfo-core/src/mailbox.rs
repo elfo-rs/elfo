@@ -25,13 +25,18 @@
 //!             └─────────────────────────────────────────────┘
 //! ```
 
-use std::ptr::{self, NonNull};
+use std::{
+    mem,
+    ops::Deref,
+    ptr::{self, NonNull},
+};
 
 use cordyceps::{
     Linked,
     mpsc_queue::{Links, MpscQueue},
 };
-use parking_lot::Mutex;
+use derive_more::IsVariant;
+use parking_lot::{Mutex, MutexGuard};
 use tokio::sync::{Notify, Semaphore, TryAcquireError};
 
 use elfo_utils::CachePadded;
@@ -105,7 +110,8 @@ unsafe impl Linked<Link> for EnvelopeHeader {
     unsafe fn links(ptr: NonNull<Self>) -> NonNull<Link> {
         // Using `ptr::addr_of_mut!` permits us to avoid creating a temporary
         // reference without using layout-dependent casts.
-        // SAFETY: `ptr` is valid for reads and points to a properly initialized `EnvelopeHeader`.
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized
+        // `EnvelopeHeader`.
         let links = unsafe { ptr::addr_of_mut!((*ptr.as_ptr()).link) };
 
         // SAFETY: `NonNull::new_unchecked` is safe to use here, because the pointer
@@ -137,6 +143,15 @@ struct Control {
     closed_trace_id: Option<TraceId>,
     /// A real capacity of the mailbox.
     capacity: usize,
+    /// State of the single consumer slot.
+    consumer: ConsumerSlot,
+}
+
+/// State of the single consumer slot of a [`Mailbox`].
+#[derive(IsVariant)]
+enum ConsumerSlot {
+    Vacant,
+    Occupied { drain_on_drop: bool },
 }
 
 impl Mailbox {
@@ -150,6 +165,7 @@ impl Mailbox {
             control: Mutex::new(Control {
                 closed_trace_id: None,
                 capacity,
+                consumer: ConsumerSlot::Vacant,
             }),
         }
     }
@@ -223,37 +239,6 @@ impl Mailbox {
         Ok(())
     }
 
-    pub(crate) async fn recv(&self) -> RecvResult {
-        loop {
-            // TODO: it should be possible to use `dequeue_unchecked()` here.
-            // Preliminarily, we should guarantee that it can be called only
-            // by one consumer. However, it's not enough to create a dedicated
-            // `MailboxConsumer` because users can steal `Context` to another
-            // task/thread and create a race with the `drop_all()` method.
-            if let Some(envelope) = self.queue.dequeue() {
-                self.tx_semaphore.add_permits(1);
-                return RecvResult::Data(envelope);
-            }
-
-            if self.tx_semaphore.is_closed() {
-                return self.on_close();
-            }
-
-            self.rx_notify.notified().await;
-        }
-    }
-
-    pub(crate) fn try_recv(&self) -> Option<RecvResult> {
-        match self.queue.dequeue() {
-            Some(envelope) => {
-                self.tx_semaphore.add_permits(1);
-                Some(RecvResult::Data(envelope))
-            }
-            None if self.tx_semaphore.is_closed() => Some(self.on_close()),
-            None => None,
-        }
-    }
-
     #[cold]
     pub(crate) fn close(&self, trace_id: TraceId) -> bool {
         // NOTE: It is important that we take the lock here before actually closing the
@@ -261,7 +246,27 @@ impl Mailbox {
         // possible when we try to `recv()` after the channel is closed, but
         // before the `closed_trace_id` is assigned.
         let mut control = self.control.lock();
+        self.close_inner(&mut control, trace_id)
+    }
 
+    /// Closes the mailbox. Drains the queue inline if no consumer is attached
+    /// (returns `true`); otherwise defers the drain to the consumer's detach
+    /// (returns `false`).
+    #[cold]
+    pub(crate) fn close_and_try_drain(&self, trace_id: TraceId) -> bool {
+        let mut control = self.control.lock();
+        self.close_inner(&mut control, trace_id);
+        if control.consumer.is_vacant() {
+            while self.queue.dequeue().is_some() {}
+            return true;
+        }
+        control.consumer = ConsumerSlot::Occupied {
+            drain_on_drop: true,
+        };
+        false
+    }
+
+    fn close_inner(&self, control: &mut MutexGuard<'_, Control>, trace_id: TraceId) -> bool {
         if self.tx_semaphore.is_closed() {
             return false;
         }
@@ -272,22 +277,79 @@ impl Mailbox {
         self.rx_notify.notify_one();
         true
     }
+}
 
-    #[cold]
-    pub(crate) fn drop_all(&self) {
-        while self.queue.dequeue().is_some() {}
+// === MailboxConsumer ===
+
+/// The unique consumer half of a [`Mailbox`].
+///
+/// Single-consumer is enforced at runtime via `Control::consumer`.
+pub(crate) struct MailboxConsumer<D: Deref<Target = Mailbox>>(D);
+
+impl<D: Deref<Target = Mailbox>> MailboxConsumer<D> {
+    /// Panics if a `MailboxConsumer` is already attached to `inner`.
+    pub(crate) fn new(inner: D) -> Self {
+        let mut control = inner.control.lock();
+        assert!(
+            control.consumer.is_vacant(),
+            "a `MailboxConsumer` is already attached to this mailbox"
+        );
+        control.consumer = ConsumerSlot::Occupied {
+            drain_on_drop: false,
+        };
+        drop(control);
+        Self(inner)
+    }
+
+    pub(crate) async fn recv(&mut self) -> RecvResult {
+        loop {
+            if let Some(envelope) = self.0.queue.dequeue() {
+                self.0.tx_semaphore.add_permits(1);
+                return RecvResult::Data(envelope);
+            }
+
+            if self.0.tx_semaphore.is_closed() {
+                return self.on_close();
+            }
+
+            self.0.rx_notify.notified().await;
+        }
+    }
+
+    pub(crate) fn try_recv(&mut self) -> Option<RecvResult> {
+        match self.0.queue.dequeue() {
+            Some(envelope) => {
+                self.0.tx_semaphore.add_permits(1);
+                Some(RecvResult::Data(envelope))
+            }
+            None if self.0.tx_semaphore.is_closed() => Some(self.on_close()),
+            None => None,
+        }
     }
 
     #[cold]
     fn on_close(&self) -> RecvResult {
         // Some messages may be in the queue after the channel is closed.
-        match self.queue.dequeue() {
+        match self.0.queue.dequeue() {
             Some(envelope) => RecvResult::Data(envelope),
             None => {
-                let control = self.control.lock();
+                let control = self.0.control.lock();
                 let trace_id = control.closed_trace_id.expect("called before close()");
                 RecvResult::Closed(trace_id)
             }
+        }
+    }
+}
+
+impl<D: Deref<Target = Mailbox>> Drop for MailboxConsumer<D> {
+    fn drop(&mut self) {
+        let mut control = self.0.control.lock();
+        let slot = mem::replace(&mut control.consumer, ConsumerSlot::Vacant);
+        if let ConsumerSlot::Occupied {
+            drain_on_drop: true,
+        } = slot
+        {
+            while self.0.queue.dequeue().is_some() {}
         }
     }
 }

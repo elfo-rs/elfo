@@ -15,9 +15,10 @@ use crate::{
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
-    mailbox::{Mailbox, RecvResult, config::MailboxConfig},
+    mailbox::{Mailbox, MailboxConsumer, config::MailboxConfig},
     messages::{ActorStatusReport, Terminate},
     msg,
+    object::{MappedOwnedObject, OwnedObject},
     request_table::RequestTable,
     restarting::RestartPolicy,
     scope,
@@ -104,6 +105,9 @@ impl ActorStartCause {
         matches!(self, ActorStartCause::OnMessage)
     }
 }
+
+/// A [`MailboxConsumer`] projected out of an actor's [`OwnedObject`].
+pub(crate) type OwnedMailboxConsumer = MailboxConsumer<MappedOwnedObject<Mailbox>>;
 
 // === Actor ===
 
@@ -198,12 +202,11 @@ impl Actor {
         Some(envelope)
     }
 
-    pub(crate) async fn recv(&self) -> RecvResult {
-        self.mailbox.recv().await
-    }
-
-    pub(crate) fn try_recv(&self) -> Option<RecvResult> {
-        self.mailbox.try_recv()
+    /// Panics if a consumer is already attached to this actor's mailbox.
+    pub(crate) fn make_consumer(entry: OwnedObject) -> OwnedMailboxConsumer {
+        let mailbox =
+            MappedOwnedObject::map(entry, |obj| &obj.as_actor().expect("actor object").mailbox);
+        MailboxConsumer::new(mailbox)
     }
 
     pub(crate) fn request_table(&self) -> &RequestTable {
@@ -258,9 +261,12 @@ impl Actor {
         drop(control);
 
         if status.kind().is_finished() {
-            self.close();
-            // Drop all messages to release requests immediately.
-            self.mailbox.drop_all();
+            // No-op while the mailbox consumer is alive
+            if !self.mailbox.close_and_try_drain(scope::trace_id()) {
+                error!(
+                    "mailbox cannot be drained after termination, a context outlives the actor; pending requests may hang"
+                );
+            }
             self.finished.set();
         }
 
