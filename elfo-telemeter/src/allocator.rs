@@ -61,7 +61,8 @@ where
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        // SAFETY: `ptr` was returned by a prior call to `alloc`/`realloc` with `layout`.
+        // SAFETY: `ptr` was returned by a prior call to `alloc`/`realloc` with
+        // `layout`.
         let ptr = unsafe { self.inner.realloc(ptr, layout, new_size) };
         if !ptr.is_null() {
             elfo_core::scope::try_with(|scope| {
