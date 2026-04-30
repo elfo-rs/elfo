@@ -26,9 +26,11 @@
 //! ```
 
 use std::{
+    future::poll_fn,
     mem,
     ops::Deref,
     ptr::{self, NonNull},
+    task::Poll,
 };
 
 use cordyceps::{
@@ -36,8 +38,9 @@ use cordyceps::{
     mpsc_queue::{Links, MpscQueue},
 };
 use derive_more::IsVariant;
+use diatomic_waker::DiatomicWaker;
 use parking_lot::{Mutex, MutexGuard};
-use tokio::sync::{Notify, Semaphore, TryAcquireError};
+use tokio::sync::{Semaphore, TryAcquireError};
 
 use elfo_utils::CachePadded;
 
@@ -89,9 +92,10 @@ assert_not_impl_any!(EnvelopeHeader: Unpin);
 
 // SAFETY:
 // * `EnvelopeHeader` is pinned in memory while it is in the queue, the only way
-//   to access inserted `EnvelopeHeader` is by using the `dequeue()` method.
+//   to access inserted `EnvelopeHeader` is by using the `dequeue_unchecked()`
+//   method.
 // * `EnvelopeHeader` cannot be deallocated without prunning the queue, which is
-//   done also by calling `dequeue()` method multiple times.
+//   done also by calling `dequeue_unchecked()` method multiple times.
 // * `EnvelopeHeader` doesn't implement `Unpin` (checked statically above).
 unsafe impl Linked<Link> for EnvelopeHeader {
     // It would be nice to enforce pinning here by using `Pin<Envelope>`.
@@ -130,9 +134,9 @@ pub(crate) struct Mailbox {
     // TODO: replace with a custom semaphore based on `async-event` (10-15% faster).
     tx_semaphore: Semaphore,
 
-    /// A notifier of a receiver about the availability of new messages.
-    // TODO: replace with `diatomic-waker` (3-5% faster).
-    rx_notify: CachePadded<Notify>,
+    /// Wakes the consumer when a new envelope is enqueued or the
+    /// mailbox is closed.
+    rx_waker: CachePadded<DiatomicWaker>,
 
     /// Use `Mutex` here for synchronization on close/configure.
     control: Mutex<Control>,
@@ -161,7 +165,7 @@ impl Mailbox {
         Self {
             queue: MpscQueue::new_with_stub(Envelope::stub()),
             tx_semaphore: Semaphore::new(capacity),
-            rx_notify: CachePadded::new(Notify::new()),
+            rx_waker: CachePadded::new(DiatomicWaker::new()),
             control: Mutex::new(Control {
                 closed_trace_id: None,
                 capacity,
@@ -201,7 +205,7 @@ impl Mailbox {
 
         permit.forget();
         self.queue.enqueue(envelope);
-        self.rx_notify.notify_one();
+        self.rx_waker.notify();
         Ok(())
     }
 
@@ -210,7 +214,7 @@ impl Mailbox {
             Ok(permit) => {
                 permit.forget();
                 self.queue.enqueue(envelope);
-                self.rx_notify.notify_one();
+                self.rx_waker.notify();
                 Ok(())
             }
             Err(TryAcquireError::NoPermits) => Err(TrySendError::Full(envelope)),
@@ -234,7 +238,7 @@ impl Mailbox {
         }
 
         self.queue.enqueue(envelope);
-        self.rx_notify.notify_one();
+        self.rx_waker.notify();
 
         Ok(())
     }
@@ -257,7 +261,8 @@ impl Mailbox {
         let mut control = self.control.lock();
         self.close_inner(&mut control, trace_id);
         if control.consumer.is_vacant() {
-            while self.queue.dequeue().is_some() {}
+            // SAFETY: No other consumer is exist at this time.
+            unsafe { while self.queue.dequeue_unchecked().is_some() {} }
             return true;
         }
         control.consumer = ConsumerSlot::Occupied {
@@ -274,7 +279,7 @@ impl Mailbox {
         control.closed_trace_id = Some(trace_id);
 
         self.tx_semaphore.close();
-        self.rx_notify.notify_one();
+        self.rx_waker.notify();
         true
     }
 }
@@ -302,22 +307,29 @@ impl<D: Deref<Target = Mailbox>> MailboxConsumer<D> {
     }
 
     pub(crate) async fn recv(&mut self) -> RecvResult {
-        loop {
-            if let Some(envelope) = self.0.queue.dequeue() {
-                self.0.tx_semaphore.add_permits(1);
-                return RecvResult::Data(envelope);
+        poll_fn(|cx| {
+            if let Some(result) = self.try_recv() {
+                return Poll::Ready(result);
             }
-
-            if self.0.tx_semaphore.is_closed() {
-                return self.on_close();
+            // SAFETY: `MailboxConsumer` is the sole sink of `rx_waker`.
+            unsafe { self.0.rx_waker.register(cx.waker()) };
+            // Recheck to avoid a lost wake-up between the first `try_recv`
+            // and our `register`.
+            match self.try_recv() {
+                Some(result) => {
+                    // SAFETY: see `register` above.
+                    unsafe { self.0.rx_waker.unregister() };
+                    Poll::Ready(result)
+                }
+                None => Poll::Pending,
             }
-
-            self.0.rx_notify.notified().await;
-        }
+        })
+        .await
     }
 
     pub(crate) fn try_recv(&mut self) -> Option<RecvResult> {
-        match self.0.queue.dequeue() {
+        // SAFETY: sole consumer invariant — see [`MailboxConsumer`].
+        match unsafe { self.0.queue.dequeue_unchecked() } {
             Some(envelope) => {
                 self.0.tx_semaphore.add_permits(1);
                 Some(RecvResult::Data(envelope))
@@ -330,7 +342,8 @@ impl<D: Deref<Target = Mailbox>> MailboxConsumer<D> {
     #[cold]
     fn on_close(&self) -> RecvResult {
         // Some messages may be in the queue after the channel is closed.
-        match self.0.queue.dequeue() {
+        // SAFETY: sole consumer invariant — see [`MailboxConsumer`].
+        match unsafe { self.0.queue.dequeue_unchecked() } {
             Some(envelope) => RecvResult::Data(envelope),
             None => {
                 let control = self.0.control.lock();
@@ -349,7 +362,8 @@ impl<D: Deref<Target = Mailbox>> Drop for MailboxConsumer<D> {
             drain_on_drop: true,
         } = slot
         {
-            while self.0.queue.dequeue().is_some() {}
+            // SAFETY: No other consumer is exist at this time.
+            unsafe { while self.0.queue.dequeue_unchecked().is_some() {} }
         }
     }
 }
