@@ -140,10 +140,15 @@ impl Drop for GuardedMessage {
 // See #68.
 #[tokio::test(start_paused = true)]
 async fn mailbox_must_be_dropped() {
-    let blueprint = ActorGroup::new().exec(|_ctx| async {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        anyhow::bail!("boom!");
-    });
+    let blueprint = ActorGroup::new()
+        .restart_policy(RestartPolicy::on_failure(RestartParams::new(
+            Duration::from_secs(30),
+            Duration::from_secs(30),
+        )))
+        .exec(|_ctx| async move {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            anyhow::bail!("boom!");
+        });
     let proxy = elfo::test::proxy(blueprint, elfo::config::AnyConfig::default()).await;
 
     let msg = GuardedMessage::default();

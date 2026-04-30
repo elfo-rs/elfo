@@ -203,9 +203,11 @@ mod vtablefns {
         ptr: NonNull<MessageRepr>,
         out_ptr: NonNull<MessageRepr>,
     ) {
-        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized
+        // `MessageRepr<M>`.
         let cloned = unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }.clone();
-        // SAFETY: `out_ptr` is valid for writes and properly aligned for `MessageRepr<M>`.
+        // SAFETY: `out_ptr` is valid for writes and properly aligned for
+        // `MessageRepr<M>`.
         unsafe { ptr::write(out_ptr.cast::<MessageRepr<M>>().as_ptr(), cloned) };
     }
 
@@ -216,7 +218,8 @@ mod vtablefns {
         ptr: NonNull<MessageRepr>,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
-        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized
+        // `MessageRepr<M>`.
         let data = &unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }.data;
         fmt::Debug::fmt(data, f)
     }
@@ -225,7 +228,8 @@ mod vtablefns {
     ///
     /// `ptr` must be valid for reads and point to a `MessageRepr<M>`.
     pub(super) unsafe fn erase<M: Message>(ptr: NonNull<MessageRepr>) -> dumping::ErasedMessage {
-        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized
+        // `MessageRepr<M>`.
         let data = unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }
             .data
             .clone();
@@ -239,7 +243,8 @@ mod vtablefns {
     pub(super) unsafe fn as_serialize_any<M: Message>(
         ptr: NonNull<MessageRepr>,
     ) -> NonNull<dyn erased_serde::Serialize> {
-        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized
+        // `MessageRepr<M>`.
         let data = &unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }.data;
         let ser = data as &dyn erased_serde::Serialize;
         // SAFETY: `ser` is a valid reference, so the resulting pointer is non-null.
@@ -254,7 +259,8 @@ mod vtablefns {
         out_ptr: NonNull<MessageRepr>,
     ) -> Result<(), erased_serde::Error> {
         let data = erased_serde::deserialize::<M>(deserializer)?;
-        // SAFETY: `out_ptr` is valid for writes and properly aligned for `MessageRepr<M>`.
+        // SAFETY: `out_ptr` is valid for writes and properly aligned for
+        // `MessageRepr<M>`.
         unsafe {
             ptr::write(
                 out_ptr.cast::<MessageRepr<M>>().as_ptr(),
@@ -273,7 +279,8 @@ mod vtablefns {
             out_ptr: NonNull<MessageRepr>,
         ) -> Result<(), decode::Error> {
             let data = decode::from_slice(buffer)?;
-            // SAFETY: `out_ptr` is valid for writes and properly aligned for `MessageRepr<M>`.
+            // SAFETY: `out_ptr` is valid for writes and properly aligned for
+            // `MessageRepr<M>`.
             unsafe {
                 ptr::write(
                     out_ptr.cast::<MessageRepr<M>>().as_ptr(),
@@ -291,7 +298,8 @@ mod vtablefns {
             out: &mut Vec<u8>,
             limit: usize,
         ) -> Result<(), encode::Error> {
-            // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<M>`.
+            // SAFETY: `ptr` is valid for reads and points to a properly initialized
+            // `MessageRepr<M>`.
             let data = &unsafe { ptr.cast::<MessageRepr<M>>().as_ref() }.data;
             let mut out = LimitedWrite(out, limit);
             encode::write_named(&mut out, data)

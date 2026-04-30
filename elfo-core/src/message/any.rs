@@ -298,11 +298,13 @@ impl Message for AnyMessage {
 
     #[inline(always)]
     unsafe fn _read(ptr: NonNull<MessageRepr>) -> Self {
-        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr`.
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized
+        // `MessageRepr`.
         let vtable = unsafe { (*ptr.as_ptr()).vtable };
         let this = alloc_repr(vtable);
 
-        // SAFETY: `this` was just allocated with the same layout, so it's valid for writes.
+        // SAFETY: `this` was just allocated with the same layout, so it's valid for
+        // writes.
         unsafe {
             ptr::copy_nonoverlapping(
                 ptr.cast::<u8>().as_ptr(),

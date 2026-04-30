@@ -121,7 +121,8 @@ pub trait Message:
     #[doc(hidden)]
     #[inline(always)]
     unsafe fn _read(ptr: NonNull<MessageRepr>) -> Self {
-        // SAFETY: `ptr` is valid for reads and points to a properly initialized `MessageRepr<Self>`.
+        // SAFETY: `ptr` is valid for reads and points to a properly initialized
+        // `MessageRepr<Self>`.
         let data_ref = &unsafe { ptr.cast::<MessageRepr<Self>>().as_ref() }.data;
         // SAFETY: `data_ref` points to a properly initialized `Self`.
         unsafe { ptr::read(data_ref) }
@@ -138,7 +139,8 @@ pub trait Message:
     #[inline(always)]
     unsafe fn _write(self, ptr: NonNull<MessageRepr>) {
         let repr = MessageRepr::new(self);
-        // SAFETY: `ptr` is valid for writes and properly aligned for `MessageRepr<Self>`.
+        // SAFETY: `ptr` is valid for writes and properly aligned for
+        // `MessageRepr<Self>`.
         unsafe { ptr::write(ptr.cast::<MessageRepr<Self>>().as_ptr(), repr) };
     }
 }

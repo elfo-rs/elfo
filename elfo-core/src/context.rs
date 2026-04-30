@@ -14,7 +14,7 @@ use elfo_utils::unlikely;
 
 use crate::{
     ActorStatusKind,
-    actor::{Actor, ActorStartInfo},
+    actor::{Actor, ActorStartInfo, OwnedMailboxConsumer},
     actor_status::ActorStatus,
     addr::Addr,
     address_book::AddressBook,
@@ -27,7 +27,7 @@ use crate::{
     mailbox::RecvResult,
     message::{Message, Request},
     messages, msg,
-    object::{BorrowedObject, Object, OwnedObject},
+    object::{BorrowedObject, MappedOwnedObject, Object},
     request_table::ResponseToken,
     restarting::RestartPolicy,
     routers::Singleton,
@@ -44,7 +44,8 @@ static DUMPER: LazyLock<Dumper> = LazyLock::new(|| Dumper::new(INTERNAL_CLASS));
 /// An actor execution context.
 pub struct Context<C = (), K = Singleton> {
     book: AddressBook,
-    actor: Option<OwnedObject>, // `None` for group's and pruned context.
+    actor: Option<MappedOwnedObject<Actor>>,
+    consumer: Option<OwnedMailboxConsumer>,
     actor_addr: Addr,
     actor_start_info: Option<ActorStartInfo>, // `None` for group's context,
     group_addr: Addr,
@@ -109,7 +110,7 @@ impl<C, K> Context<C, K> {
     /// # }
     /// ```
     pub fn set_status(&self, status: ActorStatus) {
-        ward!(self.actor.as_ref().and_then(|o| o.as_actor())).set_status(status);
+        ward!(self.actor.as_deref()).set_status(status);
     }
 
     /// Gets the actor's status kind.
@@ -130,10 +131,8 @@ impl<C, K> Context<C, K> {
     /// Panics when called on pruned context.
     pub fn status_kind(&self) -> ActorStatusKind {
         self.actor
-            .as_ref()
+            .as_deref()
             .expect("called `status_kind()` on pruned context")
-            .as_actor()
-            .expect("invariant")
             .status_kind()
     }
 
@@ -154,8 +153,7 @@ impl<C, K> Context<C, K> {
     /// # }
     /// ```
     pub fn set_mailbox_capacity(&self, capacity: impl Into<Option<usize>>) {
-        ward!(self.actor.as_ref().and_then(|o| o.as_actor()))
-            .set_mailbox_capacity_override(capacity.into());
+        ward!(self.actor.as_deref()).set_mailbox_capacity_override(capacity.into());
     }
 
     /// Overrides the group's default restart policy, which set in the config.
@@ -175,7 +173,7 @@ impl<C, K> Context<C, K> {
     /// # }
     /// ```
     pub fn set_restart_policy(&self, policy: impl Into<Option<RestartPolicy>>) {
-        ward!(self.actor.as_ref().and_then(|o| o.as_actor())).set_restart_policy(policy.into());
+        ward!(self.actor.as_deref()).set_restart_policy(policy.into());
     }
 
     /// Closes the mailbox, that leads to returning `None` from `recv()` and
@@ -183,7 +181,7 @@ impl<C, K> Context<C, K> {
     ///
     /// Returns `true` if the mailbox has just been closed.
     pub fn close(&self) -> bool {
-        ward!(self.actor.as_ref().and_then(|o| o.as_actor()), return false).close()
+        ward!(self.actor.as_deref(), return false).close()
     }
 
     /// Sends a message using the [inter-group routing] system.
@@ -707,7 +705,7 @@ impl<C, K> Context<C, K> {
             self.pre_recv().await;
 
             let envelope = 'received: {
-                let mailbox_fut = self.actor.as_ref()?.as_actor()?.recv();
+                let mailbox_fut = self.consumer.as_mut()?.recv();
                 pin_mut!(mailbox_fut);
 
                 tokio::select! {
@@ -717,7 +715,7 @@ impl<C, K> Context<C, K> {
                         },
                         RecvResult::Closed(trace_id) => {
                             scope::set_trace_id(trace_id);
-                            let actor = self.actor.as_ref()?.as_actor()?;
+                            let actor = self.actor.as_deref()?;
                             on_input_closed(&mut self.stage, actor);
                             return None;
                         }
@@ -797,18 +795,16 @@ impl<C, K> Context<C, K> {
             self.pre_recv().await;
 
             let envelope = 'received: {
-                let actor = ward!(
-                    self.actor.as_ref().and_then(|o| o.as_actor()),
-                    return Err(TryRecvError::Closed)
-                );
+                let consumer = ward!(self.consumer.as_mut(), return Err(TryRecvError::Closed));
 
                 // TODO: poll mailbox and sources fairly.
-                match actor.try_recv() {
+                match consumer.try_recv() {
                     Some(RecvResult::Data(envelope)) => {
                         break 'received envelope;
                     }
                     Some(RecvResult::Closed(trace_id)) => {
                         scope::set_trace_id(trace_id);
+                        let actor = self.actor.as_deref().expect("actor should be set");
                         on_input_closed(&mut self.stage, actor);
                         return Err(TryRecvError::Closed);
                     }
@@ -879,7 +875,7 @@ impl<C, K> Context<C, K> {
         }
 
         if unlikely(self.stage == Stage::PreRecv) {
-            let actor = ward!(self.actor.as_ref().and_then(|o| o.as_actor()));
+            let actor = ward!(self.actor.as_deref());
             if actor.status_kind().is_initializing() {
                 actor.set_status(ActorStatus::NORMAL);
             }
@@ -960,6 +956,7 @@ impl<C, K> Context<C, K> {
         Context {
             book: self.book.clone(),
             actor: None,
+            consumer: None,
             actor_addr: self.actor_addr,
             actor_start_info: self.actor_start_info.clone(),
             group_addr: self.group_addr,
@@ -982,6 +979,7 @@ impl<C, K> Context<C, K> {
         Context {
             book: self.book,
             actor: self.actor,
+            consumer: self.consumer,
             actor_addr: self.actor_addr,
             actor_start_info: self.actor_start_info,
             group_addr: self.group_addr,
@@ -995,10 +993,15 @@ impl<C, K> Context<C, K> {
     }
 
     pub(crate) fn with_addr(mut self, addr: Addr) -> Self {
-        self.actor = self.book.get_owned(addr);
-        assert!(self.actor.is_some());
+        // Avoids the double-attach panic on re-entry.
+        self.consumer = None;
+        let owned = self.book.get_owned(addr).expect("actor not in book");
         self.actor_addr = addr;
         self.stats = Stats::startup();
+        self.actor = Some(MappedOwnedObject::map(owned.clone(), |obj| {
+            obj.as_actor().expect("actor object")
+        }));
+        self.consumer = Some(Actor::make_consumer(owned));
         self
     }
 
@@ -1016,6 +1019,7 @@ impl<C, K> Context<C, K> {
         Context {
             book: self.book,
             actor: self.actor,
+            consumer: self.consumer,
             actor_addr: self.actor_addr,
             actor_start_info: self.actor_start_info,
             group_addr: self.group_addr,
@@ -1068,6 +1072,7 @@ impl Context {
         Self {
             book,
             actor: None,
+            consumer: None,
             actor_addr: Addr::NULL,
             group_addr: Addr::NULL,
             actor_start_info: None,
@@ -1082,11 +1087,13 @@ impl Context {
 }
 
 // TODO(v0.2): remove this instance.
+// Note: Cloned contexts are send-only.
 impl<C, K: Clone> Clone for Context<C, K> {
     fn clone(&self) -> Self {
         Self {
             book: self.book.clone(),
-            actor: self.book.get_owned(self.actor_addr),
+            actor: self.actor.clone(),
+            consumer: None,
             actor_addr: self.actor_addr,
             actor_start_info: self.actor_start_info.clone(),
             group_addr: self.group_addr,
