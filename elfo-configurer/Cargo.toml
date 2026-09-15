@@ -26,7 +26,10 @@ serde-value = "0.7.0"
 fxhash = "0.2.1"
 
 [dev-dependencies]
+elfo-test = { path = "../elfo-test" }
 serde_json = "1.0.94"
+tempdir.workspace = true
+tracing-subscriber.workspace = true
 
 [features]
 test-util = []

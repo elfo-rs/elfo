@@ -1,5 +1,20 @@
 use serde_value::Value;
 
+pub(crate) fn format_toml_error(content: &str, mut error: toml::de::Error) -> String {
+    // `Display` would include the offending source line, which may contain
+    // secrets, so only the message and a computed location are kept.
+    error.set_input(None);
+    let location = error.span().map_or(String::new(), |span| {
+        let prefix = &content[..span.start];
+        let line = prefix.matches('\n').count() + 1;
+        let last_line = prefix.rsplit_once('\n').map_or(prefix, |(_, last)| last);
+        let column = last_line.chars().count() + 1;
+        format!(" at {line}:{column}")
+    });
+
+    format!("TOML parse error{location}: {}", error.message())
+}
+
 pub(crate) fn lookup_value<'a>(mut value: &'a Value, path: &str) -> Option<&'a Value> {
     for part in path.split('.') {
         match value {
@@ -69,6 +84,23 @@ mod tests {
 
     fn theta_value() -> Value {
         Value::String("iota".to_owned())
+    }
+
+    fn toml_error(content: &str) -> String {
+        format_toml_error(content, toml::from_str::<Value>(content).unwrap_err())
+    }
+
+    #[test]
+    fn toml_error_counts_unicode_columns() {
+        let error = toml_error("value = \"пароль\" @");
+        assert!(error.starts_with("TOML parse error at 1:18: "), "{error}");
+        assert!(!error.contains("пароль"), "{error}");
+    }
+
+    #[test]
+    fn toml_error_at_end_of_file_keeps_location() {
+        let error = toml_error("[database]\npassword =");
+        assert!(error.starts_with("TOML parse error at 2:11: "), "{error}");
     }
 
     #[test]

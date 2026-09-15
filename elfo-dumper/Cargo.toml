@@ -36,7 +36,7 @@ elfo-core = { version = "0.2.0-alpha.21", path = "../elfo-core", features = ["te
 elfo-test = { path = "../elfo-test" }
 
 toml.workspace = true
-tempdir = "0.3.7"
+tempdir.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

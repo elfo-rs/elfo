@@ -19,6 +19,7 @@ async fn it_works() {
 
     let config = toml! {
         path = tmp_path_2
+        credentials = { primary = "startup-secret", replicas = ["nested-startup-secret"] }
     };
 
     let blueprint = elfo_dumper::new();
@@ -30,13 +31,14 @@ async fn it_works() {
         r#""g":"system.configurers","k":"_""#,
         r#"cl":"internal","mn":"UpdateConfig","mp":"elfo-core","mk":"Regular"#,
         r#"d":"In","cl":"internal","mn":"DumpingTick","mp":"elfo-dumper","mk":"Regular"#,
-        "first.dump",
+        r#""m":{"config":"<secret>"}"#,
     ];
 
     println!("First file content:\n{content}");
     for part in some_expected_parts {
         assert!(content.contains(part), "not found: {part}");
     }
+    assert!(!content.contains("startup-secret"));
 
     // Register a new class
 
@@ -49,6 +51,7 @@ async fn it_works() {
 
     let config = toml! {
         path = tmp_path_2
+        credentials = { primary = "reload-secret", replicas = ["nested-reload-secret"] }
     };
 
     proxy.sync().await;
@@ -63,13 +66,14 @@ async fn it_works() {
         r#"d":"Out","cl":"internal","mn":"UpdateConfig","mp":"elfo-core","mk":"Regular"#,
         r#"cl":"internal","mn":"ConfigUpdated","mp":"elfo-core"#,
         r#"d":"In","cl":"internal","mn":"DumpingTick","mp":"elfo-dumper","mk":"Regular"#,
-        "second.dump",
+        r#""m":{"config":"<secret>"}"#,
     ];
 
     println!("Second file content:\n{content}");
     for part in some_expected_parts {
         assert!(content.contains(part), "not found: {part}");
     }
+    assert!(!content.contains("reload-secret"));
 
     // Graceful termination
 

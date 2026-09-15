@@ -4,8 +4,8 @@
 //! Also contains [`system`] to describe system configuration.
 
 use std::{
-    any::{Any, TypeId},
-    fmt, mem,
+    any::{Any, TypeId, type_name},
+    fmt,
     ops::Deref,
     str::FromStr,
     sync::Arc,
@@ -27,10 +27,14 @@ assert_impl_all!((): Config);
 
 // === AnyConfig ===
 
+type RawConfig = Secret<Value>;
+
 /// Holds user-defined config.
 ///
 /// Usually not created directly outside tests sending [`ValidateConfig`] or
 /// [`UpdateConfig`] messages.
+///
+/// Serialized like [`Secret`].
 ///
 /// [`ValidateConfig`]: crate::messages::ValidateConfig
 /// [`UpdateConfig`]: crate::messages::UpdateConfig
@@ -45,9 +49,11 @@ assert_impl_all!((): Config);
 ///     some_param = 10
 /// });
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct AnyConfig {
-    raw: Arc<Value>,
+    raw: Arc<RawConfig>,
+    #[serde(skip)]
     decoded: Option<Local<Decoded>>,
 }
 
@@ -66,8 +72,12 @@ impl AnyConfig {
     /// where possible.
     #[instability::unstable]
     pub fn from_value(value: Value) -> Self {
+        Self::from_raw(value.into())
+    }
+
+    fn from_raw(raw: RawConfig) -> Self {
         Self {
-            raw: Arc::new(value),
+            raw: Arc::new(raw),
             decoded: None,
         }
     }
@@ -92,7 +102,7 @@ impl AnyConfig {
     }
 
     fn do_decode<C: Config>(&self) -> Result<AnyConfig, String> {
-        let mut raw = (*self.raw).clone();
+        let mut raw = Value::clone(&self.raw);
 
         let system_decoded = if let Value::Map(map) = &mut raw {
             if let Some(system_raw) = map.remove(&Value::String("system".into())) {
@@ -124,8 +134,8 @@ impl AnyConfig {
         })
     }
 
-    pub(crate) fn into_value(mut self) -> Value {
-        mem::replace(Arc::make_mut(&mut self.raw), Value::Unit)
+    fn into_value(self) -> Value {
+        Arc::unwrap_or_clone(self.raw).into_inner()
     }
 }
 
@@ -137,20 +147,7 @@ impl Default for AnyConfig {
 
 impl fmt::Debug for AnyConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Configs can contain credentials, so we should never print unknown configs.
-        f.write_str("..")
-    }
-}
-
-impl<'de> Deserialize<'de> for AnyConfig {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Value::deserialize(deserializer).map(Self::from_value)
-    }
-}
-
-impl Serialize for AnyConfig {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.raw.serialize(serializer)
+        fmt::Debug::fmt(&self.raw, f)
     }
 }
 
@@ -298,7 +295,13 @@ impl<T: FromStr> FromStr for Secret<T> {
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Secret<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        T::deserialize(deserializer).map(Self)
+        // serde errors quote the value, and here it's a secret.
+        T::deserialize(deserializer).map(Self).map_err(|_| {
+            de::Error::custom(format_args!(
+                "invalid secret value, expected {}",
+                type_name::<T>()
+            ))
+        })
     }
 }
 
@@ -309,5 +312,91 @@ impl<T: Serialize> Serialize for Secret<T> {
         } else {
             self.0.serialize(serializer)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        messages::{UpdateConfig, ValidateConfig},
+        scope::{SerdeMode, with_serde_mode},
+    };
+
+    #[test]
+    fn config_messages_hide_raw_config_except_on_network() {
+        let raw = RawConfig::deserialize(toml::toml! {
+            credentials = { password = "do-not-log", replicas = ["nested-secret"] }
+        })
+        .unwrap();
+        assert_eq!(format!("{raw:?}"), "<secret>");
+        let config = AnyConfig::from_raw(raw.clone());
+        let update = UpdateConfig::new(config.clone());
+        let validate = ValidateConfig::new(config);
+
+        for mode in [SerdeMode::Normal, SerdeMode::Dumping] {
+            with_serde_mode(mode, || {
+                assert_eq!(serde_json::to_string(&raw).unwrap(), r#""<secret>""#);
+                for message in [
+                    serde_json::to_value(&update).unwrap(),
+                    serde_json::to_value(&validate).unwrap(),
+                ] {
+                    assert_eq!(message, serde_json::json!({ "config": "<secret>" }));
+                }
+            });
+        }
+
+        with_serde_mode(SerdeMode::Network, || {
+            let serialized = serde_json::to_string(&update).unwrap();
+            let restored: UpdateConfig = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(restored.config.into_value(), raw.into_inner());
+        });
+    }
+
+    #[test]
+    fn secret_decode_errors_hide_the_value() {
+        #[derive(Debug, Deserialize)]
+        enum Mode {
+            Fast,
+        }
+
+        #[derive(Debug, Deserialize)]
+        #[expect(dead_code)]
+        struct Sample {
+            password: Secret<u32>,
+            mode: Secret<Mode>,
+            port: u16,
+        }
+
+        let decode = |toml: toml::Table| {
+            AnyConfig::deserialize(toml)
+                .unwrap()
+                .decode::<Sample>()
+                .unwrap_err()
+        };
+
+        let reason = decode(toml::toml! {
+            password = "hunter2"
+            mode = "Fast"
+            port = 5432
+        });
+        assert!(!reason.contains("hunter2"), "{reason}");
+        assert!(reason.contains("expected u32"), "{reason}");
+
+        let reason = decode(toml::toml! {
+            password = 1
+            mode = "hunter2"
+            port = 5432
+        });
+        assert!(!reason.contains("hunter2"), "{reason}");
+        assert!(reason.ends_with(type_name::<Mode>()), "{reason}");
+
+        // Non-secret fields keep the value: it helps to fix the config.
+        let reason = decode(toml::toml! {
+            password = 1
+            mode = "Fast"
+            port = "not-a-secret"
+        });
+        assert!(reason.contains("not-a-secret"), "{reason}");
     }
 }

@@ -18,7 +18,7 @@ use tracing::{error, info, warn};
 
 use elfo_core::{
     ActorGroup, ActorStatus, Addr, Blueprint, Context, RestartParams, RestartPolicy, Topology,
-    config::AnyConfig,
+    config::{AnyConfig, Secret},
     messages::{
         EntrypointError, StartEntrypoint, StartEntrypointRejected, UpdateConfig, ValidateConfig,
     },
@@ -30,6 +30,8 @@ pub use self::protocol::*;
 
 mod helpers;
 mod protocol;
+
+type RawConfig = Secret<Value>;
 
 // How often warn if a group is updating a config too long.
 const WARN_INTERVAL: Duration = Duration::from_secs(5);
@@ -52,7 +54,7 @@ const WARN_INTERVAL: Duration = Duration::from_secs(5);
 /// }));
 /// ```
 pub fn fixture(topology: &Topology, config: impl for<'de> Deserializer<'de>) -> Blueprint {
-    let config = Value::deserialize(config).map_err(|err| err.to_string());
+    let config = RawConfig::deserialize(config).map_err(|err| err.to_string());
     let source = ConfigSource::Fixture(config);
     blueprint(topology, source)
 }
@@ -96,7 +98,7 @@ struct Configurer {
 #[derive(Clone)]
 enum ConfigSource {
     File(PathBuf),
-    Fixture(Result<Value, String>),
+    Fixture(Result<RawConfig, String>),
 }
 
 #[derive(Clone)]
@@ -197,7 +199,7 @@ impl Configurer {
         }
     }
 
-    async fn load_configs(&self) -> Result<Value, Vec<ReloadConfigsError>> {
+    async fn load_configs(&self) -> Result<RawConfig, Vec<ReloadConfigsError>> {
         let config = match &self.source {
             ConfigSource::File(path) => {
                 info!(message = "loading a config", path = %path.to_string_lossy());
@@ -209,22 +211,11 @@ impl Configurer {
             }
         };
 
-        let config = match config {
-            Ok(config) => config,
-            Err(error) => {
-                error!(%error, "invalid config");
-                return Err(vec![ReloadConfigsError {
-                    group: scope::meta().group.clone(),
-                    reason: error,
-                }]);
-            }
-        };
-
-        Deserialize::deserialize(config).map_err(|error| {
+        config.map_err(|error| {
             error!(%error, "invalid config");
             vec![ReloadConfigsError {
                 group: scope::meta().group.clone(),
-                reason: error.to_string(),
+                reason: error,
             }]
         })
     }
@@ -373,19 +364,20 @@ async fn wrap_long_running_future<F: Future>(
     }
 }
 
-async fn load_raw_config(path: impl AsRef<Path>) -> Result<Value, String> {
+async fn load_raw_config(path: impl AsRef<Path>) -> Result<RawConfig, String> {
     let content = fs::read_to_string(path)
         .await
         .map_err(|err| err.to_string())?;
-    toml::from_str(&content).map_err(|err| err.to_string())
+    toml::from_str(&content).map_err(|err| helpers::format_toml_error(&content, err))
 }
 
-fn match_configs(topology: &Topology, config: &Value) -> Vec<ConfigWithMeta> {
+fn match_configs(topology: &Topology, config: &RawConfig) -> Vec<ConfigWithMeta> {
+    let empty = Value::Map(Default::default());
+    let common = helpers::lookup_value(config, "common").unwrap_or(&empty);
+
     let mut configs: Vec<ConfigWithMeta> = topology
         .locals()
         .map(|group| {
-            let empty = Value::Map(Default::default());
-            let common = helpers::lookup_value(config, "common").unwrap_or(&empty);
             let group_config = helpers::lookup_value(config, &group.name).cloned();
             let group_config = helpers::add_defaults(group_config, common);
 
