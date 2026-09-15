@@ -15,7 +15,7 @@ struct SomeEvent(usize);
 fn futures03(c: &mut Criterion) {
     async fn testee(mut ctx: Context, iter_count: u64) -> Duration {
         ctx.attach(Stream::from_futures03(futures::stream::iter(
-            (0..).map(SomeEvent),
+            (0..=usize::MAX).map(SomeEvent),
         )));
 
         let start = Instant::now();
@@ -33,7 +33,7 @@ fn futures03(c: &mut Criterion) {
 fn generate(c: &mut Criterion) {
     async fn testee(mut ctx: Context, iter_count: u64) -> Duration {
         ctx.attach(Stream::generate(move |mut e| async move {
-            for i in 0.. {
+            for i in 0..=usize::MAX {
                 e.emit(SomeEvent(i)).await;
             }
         }));

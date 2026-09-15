@@ -52,6 +52,8 @@ macro_rules! cooldown {
         static LOGGED_TIME: AtomicU64 = AtomicU64::new(0);
 
         let period = $period.as_nanos() as u64;
+        // TODO: use `try_update` when MSRV supports it.
+        #[allow(deprecated)]
         let res = LOGGED_TIME.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |logged_time| {
             let now = UNIX_EPOCH.elapsed().unwrap_or_default().as_nanos() as u64;
             if logged_time + period <= now {

@@ -90,7 +90,10 @@ impl RateLimiter {
         let deadline = now + period;
 
         // GCRA logic.
-        self.vtime
+        // TODO: use `try_update` when MSRV supports it.
+        #[allow(deprecated)]
+        let result = self
+            .vtime
             // It seems to be enough to use `Relaxed` here.
             .fetch_update(Relaxed, Relaxed, |vtime| {
                 if vtime < deadline {
@@ -98,8 +101,8 @@ impl RateLimiter {
                 } else {
                     None
                 }
-            })
-            .is_ok()
+            });
+        result.is_ok()
     }
 }
 

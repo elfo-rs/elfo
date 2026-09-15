@@ -46,6 +46,7 @@ impl AddressBook {
     }
 
     #[cfg(feature = "network")]
+    #[cfg_attr(not(feature = "unstable"), allow(dead_code))]
     pub(crate) fn deregister_remote(
         &self,
         network_actor_addr: Addr,
@@ -160,6 +161,7 @@ cfg_network!({
             });
         }
 
+        #[cfg_attr(not(feature = "unstable"), allow(dead_code))]
         pub(super) fn remove(
             &self,
             network_actor_addr: Addr,
