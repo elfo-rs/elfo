@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - core/context: use static keys for message metrics ([#191]).
+- telemeter: cache actor telemetry keys in the scope ([#191]).
 - logger: use static keys for event counters ([#191]).
 
 ### Fixed
