@@ -3,6 +3,8 @@
 use std::{
     cell::Cell,
     future::Future,
+    hash::{Hash, Hasher},
+    num::NonZeroU64,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -50,16 +52,21 @@ impl Scope {
         meta: Arc<ActorMeta>,
         group: Arc<ScopeGroupShared>,
     ) -> Self {
-        Self {
-            trace_id: Cell::new(trace_id),
-            actor: Arc::new(ScopeActorShared::new(addr, meta)),
-            group,
-        }
+        Self::with_telemetry(trace_id, addr, meta, group, &TelemetryConfig::default())
     }
 
-    pub(crate) fn with_telemetry(mut self, config: &TelemetryConfig) -> Self {
-        self.actor = Arc::new(self.actor.with_telemetry(config));
-        self
+    pub(crate) fn with_telemetry(
+        trace_id: TraceId,
+        addr: Addr,
+        meta: Arc<ActorMeta>,
+        group: Arc<ScopeGroupShared>,
+        config: &TelemetryConfig,
+    ) -> Self {
+        Self {
+            trace_id: Cell::new(trace_id),
+            actor: Arc::new(ScopeActorShared::new(addr, meta, group.addr, config)),
+            group,
+        }
     }
 
     #[inline]
@@ -96,6 +103,14 @@ impl Scope {
     #[doc(hidden)]
     pub fn telemetry_meta(&self) -> &Arc<ActorMeta> {
         &self.actor.telemetry_meta
+    }
+
+    /// Private API for now.
+    #[inline]
+    #[instability::unstable]
+    #[doc(hidden)]
+    pub fn telemetry_key(&self) -> Option<NonZeroU64> {
+        self.actor.telemetry_key
     }
 
     /// Returns the current trace id.
@@ -169,35 +184,44 @@ struct ScopeActorShared {
     addr: Addr,
     meta: Arc<ActorMeta>,
     telemetry_meta: Arc<ActorMeta>,
+    telemetry_key: Option<NonZeroU64>,
+    // TODO: Blocking threads can share the scope with the actor.
     allocated_bytes: AtomicUsize,
     deallocated_bytes: AtomicUsize,
 }
 
-impl ScopeActorShared {
-    fn new(addr: Addr, meta: Arc<ActorMeta>) -> Self {
-        Self {
-            addr,
-            meta: meta.clone(),
-            telemetry_meta: meta,
-            allocated_bytes: AtomicUsize::new(0),
-            deallocated_bytes: AtomicUsize::new(0),
-        }
+fn make_telemetry_key(group: Addr, key: &str) -> Option<NonZeroU64> {
+    if key.is_empty() || group.is_null() {
+        return None;
     }
 
-    fn with_telemetry(&self, config: &TelemetryConfig) -> Self {
-        Self {
-            addr: self.addr,
-            meta: self.meta.clone(),
-            telemetry_meta: config
-                .per_actor_key
-                .key(&self.meta.key)
-                .map(|key| {
-                    Arc::new(ActorMeta {
-                        group: self.meta.group.clone(),
-                        key,
-                    })
+    // TODO: consider switching to rapidhash when upgrading from `metrics-0.17.1`.
+    let mut hasher = metrics::KeyHasher::default();
+    group.hash(&mut hasher);
+    key.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    Some(NonZeroU64::new(hash).unwrap_or(NonZeroU64::MAX))
+}
+
+impl ScopeActorShared {
+    fn new(addr: Addr, meta: Arc<ActorMeta>, group: Addr, config: &TelemetryConfig) -> Self {
+        let telemetry_meta = config
+            .per_actor_key
+            .key(&meta.key)
+            .map(|key| {
+                Arc::new(ActorMeta {
+                    group: meta.group.clone(),
+                    key,
                 })
-                .unwrap_or_else(|| self.meta.clone()),
+            })
+            .unwrap_or_else(|| meta.clone());
+
+        Self {
+            addr,
+            meta,
+            telemetry_key: make_telemetry_key(group, &telemetry_meta.key),
+            telemetry_meta,
             allocated_bytes: AtomicUsize::new(0),
             deallocated_bytes: AtomicUsize::new(0),
         }

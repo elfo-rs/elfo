@@ -33,7 +33,7 @@ impl Recorder {
 
             if perm.is_telemetry_per_actor_key_enabled() {
                 // TODO: get rid of this check.
-                if scope.telemetry_meta().key.is_empty() {
+                if scope.telemetry_key().is_none() {
                     return;
                 }
 
