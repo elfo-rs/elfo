@@ -133,7 +133,7 @@ impl ScopeFilter {
                 CheckResult::Passed => true,
                 CheckResult::NotInterested => false,
                 CheckResult::Limited => {
-                    stats::counter_per_level("elfo_limited_events_total", level);
+                    stats::on_limited_event(level);
                     false
                 }
             }

@@ -37,7 +37,7 @@ pub trait Message:
     #[doc(hidden)] // unstable because depends on `metrics`
     #[inline(always)]
     fn labels(&self) -> &'static [Label] {
-        &self._vtable().labels
+        self._vtable().metric_keys.labels()
     }
 
     #[doc(hidden)] // unstable because will be replaced with `DumpingMode`

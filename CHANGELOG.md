@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+### Changed
+
+- core/context: use static keys for message metrics ([#191]).
+- logger: use static keys for event counters ([#191]).
+
 ### Fixed
 - network: complete requests when response decoding fails ([#193]).
 - core/config: hide `AnyConfig` contents in message dumps ([#190]).
@@ -15,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [#193]: https://github.com/elfo-rs/elfo/pull/193
 [#190]: https://github.com/elfo-rs/elfo/pull/190
+[#191]: https://github.com/elfo-rs/elfo/pull/191
 
 ## [0.2.0-alpha.21] - 2026-03-27
 ### Added
