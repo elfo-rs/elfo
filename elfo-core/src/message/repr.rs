@@ -3,8 +3,10 @@ use std::{
     ptr::{self, NonNull},
 };
 
-use metrics::Label;
+use metrics::{Key, Label};
 use smallbox::smallbox;
+
+use elfo_utils::CachePadded;
 
 use super::Message;
 use crate::dumping;
@@ -100,6 +102,34 @@ pub struct Erased;
 // Protection against footgun.
 assert_not_impl_any!(MessageRepr: Clone);
 
+// === MessageMetricKeys ===
+
+/// Keys cache hashes at runtime. Separate storage keeps the vtable read-only.
+// Reexported in `elfo::_priv`.
+#[doc(hidden)]
+pub struct MessageMetricKeys {
+    sent_messages: Key,
+    handling_time: Key,
+    _cache_align: CachePadded<()>,
+}
+
+impl MessageMetricKeys {
+    #[doc(hidden)]
+    pub const fn new(labels: &'static [Label]) -> Self {
+        Self {
+            sent_messages: Key::from_static_parts("elfo_sent_messages_total", labels),
+            handling_time: Key::from_static_parts("elfo_message_handling_time_seconds", labels),
+            _cache_align: CachePadded::new(()),
+        }
+    }
+
+    #[inline]
+    pub(super) fn labels(&'static self) -> &'static [Label] {
+        // Reuse the metric key's labels to avoid storing another reference.
+        self.sent_messages.labels().as_slice()
+    }
+}
+
 // === MessageVTable ===
 
 /// Message Virtual Table.
@@ -113,7 +143,7 @@ pub struct MessageVTable {
     pub(super) repr_layout: alloc::Layout, // of `MessageRepr<M>`
     pub(super) name: &'static str,
     pub(super) protocol: &'static str,
-    pub(super) labels: [Label; 2],    // protocol + name for `metrics`
+    pub(super) metric_keys: &'static MessageMetricKeys,
     pub(super) dumping_allowed: bool, // TODO: introduce `DumpingMode`.
     #[cfg(feature = "network")]
     pub(super) read_msgpack:
@@ -137,6 +167,7 @@ pub struct MessageVTable {
         out_ptr: NonNull<MessageRepr>,
     ) -> Result<(), erased_serde::Error>,
     pub(super) drop_data: unsafe fn(ptr: NonNull<MessageRepr>),
+    _cache_align: CachePadded<()>,
 }
 
 impl MessageVTable {
@@ -147,16 +178,14 @@ impl MessageVTable {
     pub const fn new<M: Message>(
         name: &'static str,
         protocol: &'static str,
+        metric_keys: &'static MessageMetricKeys,
         dumping_allowed: bool,
     ) -> Self {
         Self {
             repr_layout: alloc::Layout::new::<MessageRepr<M>>(),
             name,
             protocol,
-            labels: [
-                Label::from_static_parts("message", name),
-                Label::from_static_parts("protocol", protocol),
-            ],
+            metric_keys,
             dumping_allowed,
             debug: vtablefns::debug::<M>,
             clone: vtablefns::clone::<M>,
@@ -168,7 +197,18 @@ impl MessageVTable {
             read_msgpack: vtablefns::read_msgpack::<M>,
             #[cfg(feature = "network")]
             write_msgpack: vtablefns::write_msgpack::<M>,
+            _cache_align: CachePadded::new(()),
         }
+    }
+
+    #[inline]
+    pub(crate) fn sent_messages_key(&'static self) -> &'static Key {
+        &self.metric_keys.sent_messages
+    }
+
+    #[inline]
+    pub(crate) fn handling_time_key(&'static self) -> &'static Key {
+        &self.metric_keys.handling_time
     }
 }
 

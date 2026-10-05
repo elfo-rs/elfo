@@ -1,7 +1,7 @@
 use derive_more::Constructor;
 use metrics::{self, Key, Label};
 
-use elfo_utils::time::Instant;
+use elfo_utils::{CachePadded, time::Instant};
 
 use crate::{envelope::Envelope, message::Message};
 
@@ -11,14 +11,27 @@ pub(super) struct Stats {
 
 #[derive(Constructor)]
 struct InHandling {
-    labels: &'static [Label],
+    key: &'static Key,
     start_time: Instant,
 }
 
-static STARTUP_LABELS: &[Label] = &[Label::from_static_parts("message", "<Startup>")];
-static EMPTY_MAILBOX_LABELS: &[Label] = &[Label::from_static_parts("message", "<EmptyMailbox>")];
+const STARTUP_LABELS: &[Label] = &[Label::from_static_parts("message", "<Startup>")];
+const EMPTY_MAILBOX_LABELS: &[Label] = &[Label::from_static_parts("message", "<EmptyMailbox>")];
 
-static WAITING_TIME_KEY: Key = Key::from_static_name("elfo_message_waiting_time_seconds");
+struct Keys {
+    startup: Key,
+    empty_mailbox: Key,
+    waiting_time: Key,
+}
+
+static KEYS: CachePadded<Keys> = CachePadded::new(Keys {
+    startup: Key::from_static_parts("elfo_message_handling_time_seconds", STARTUP_LABELS),
+    empty_mailbox: Key::from_static_parts(
+        "elfo_message_handling_time_seconds",
+        EMPTY_MAILBOX_LABELS,
+    ),
+    waiting_time: Key::from_static_name("elfo_message_waiting_time_seconds"),
+});
 
 impl Stats {
     pub(super) fn empty() -> Self {
@@ -27,7 +40,7 @@ impl Stats {
 
     pub(super) fn startup() -> Self {
         Self {
-            in_handling: Some(InHandling::new(STARTUP_LABELS, Instant::now())),
+            in_handling: Some(InHandling::new(&KEYS.startup, Instant::now())),
         }
     }
 
@@ -43,33 +56,31 @@ impl Stats {
 
         // Now envelope cannot be forwarded, so use the created time as a start time.
         let value = now.secs_f64_since(envelope.created_time());
-        recorder.record_histogram(&WAITING_TIME_KEY, value);
+        recorder.record_histogram(&KEYS.waiting_time, value);
 
-        self.in_handling = Some(InHandling::new(envelope.message().labels(), now));
+        self.in_handling = Some(InHandling::new(
+            envelope.message()._vtable().handling_time_key(),
+            now,
+        ));
     }
 
     pub(super) fn on_empty_mailbox(&mut self) {
         debug_assert!(self.in_handling.is_none());
 
-        self.in_handling = Some(InHandling::new(EMPTY_MAILBOX_LABELS, Instant::now()));
+        self.in_handling = Some(InHandling::new(&KEYS.empty_mailbox, Instant::now()));
     }
 
     pub(super) fn on_sent_message(&self, message: &impl Message) {
         let recorder = ward!(metrics::try_recorder());
-        let key = Key::from_static_parts("elfo_sent_messages_total", message.labels());
-        recorder.increment_counter(&key, 1);
+        recorder.increment_counter(message._vtable().sent_messages_key(), 1);
     }
 
     fn emit_handling_time(&mut self) {
         let in_handling = ward!(self.in_handling.take());
         let recorder = ward!(metrics::try_recorder());
 
-        // TODO: key creation is not optimal because the hash is not cached.
-        //       Consider storing keys in a message's vtable.
-        let key = Key::from_static_parts("elfo_message_handling_time_seconds", in_handling.labels);
-
         let value = in_handling.start_time.elapsed_secs_f64();
-        recorder.record_histogram(&key, value);
+        recorder.record_histogram(in_handling.key, value);
     }
 }
 

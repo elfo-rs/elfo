@@ -64,7 +64,7 @@ impl<S: Subscriber> Layer<S> for CaptureLayer {
         let current_span = ctx.current_span();
         let level = *event.metadata().level();
         let payload_id = ward!(self.prepare(true, |visitor| event.record(visitor)), {
-            stats::counter_per_level("elfo_lost_events_total", level);
+            stats::on_lost_event(level);
             return;
         });
 
@@ -86,9 +86,9 @@ impl<S: Subscriber> Layer<S> for CaptureLayer {
         let is_lost = self.shared.channel.try_send(event).is_err();
         if is_lost {
             self.shared.pool.clear(payload_id);
-            stats::counter_per_level("elfo_lost_events_total", level);
+            stats::on_lost_event(level);
         } else {
-            stats::counter_per_level("elfo_emitted_events_total", level);
+            stats::on_emitted_event(level);
         }
     }
 
