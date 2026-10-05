@@ -219,6 +219,7 @@ impl Storage {
         descriptions.insert(key.name().to_string(), Description { details, unit });
     }
 
+    #[inline]
     pub(crate) fn upsert<S, M>(&self, scope: &S::Scope, key: &Key, value: M::Value)
     where
         S: ScopeKind,
