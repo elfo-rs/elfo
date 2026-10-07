@@ -167,7 +167,6 @@ pub struct MessageVTable {
         out_ptr: NonNull<MessageRepr>,
     ) -> Result<(), erased_serde::Error>,
     pub(super) drop_data: unsafe fn(ptr: NonNull<MessageRepr>),
-    _cache_align: CachePadded<()>,
 }
 
 impl MessageVTable {
@@ -197,7 +196,6 @@ impl MessageVTable {
             read_msgpack: vtablefns::read_msgpack::<M>,
             #[cfg(feature = "network")]
             write_msgpack: vtablefns::write_msgpack::<M>,
-            _cache_align: CachePadded::new(()),
         }
     }
 
