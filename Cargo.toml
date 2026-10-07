@@ -59,6 +59,8 @@ unexpected_cfgs = "allow" # for `docsrs`
 
 [workspace.lints.clippy]
 undocumented_unsafe_blocks = "warn"
+# False positives in derive macros: https://github.com/rust-lang/rust-clippy/issues/17525
+redundant_field_names = "allow"
 
 [profile.release]
 debug = 1
