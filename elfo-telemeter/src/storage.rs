@@ -93,7 +93,7 @@ impl ScopeKind for GroupScope {
 pub(crate) struct ActorScope;
 
 impl ScopeKind for ActorScope {
-    type Key = (/* group */ Addr, KeyHash);
+    type Key = (/* group and actor key */ KeyHash, KeyHash);
     // TODO: replace with EBR?
     type Meta = Arc<ActorMeta>;
     type Scope = Scope;
@@ -105,12 +105,10 @@ impl ScopeKind for ActorScope {
     fn make_key(scope: &Self::Scope, key: &Key) -> Self::Key {
         debug_assert_ne!(scope.group(), Addr::NULL);
 
-        let telemetry_key = &scope.telemetry_meta().key;
-        debug_assert!(!telemetry_key.is_empty());
+        let telemetry_key = scope.telemetry_key().map_or(0, |key| key.get());
+        debug_assert_ne!(telemetry_key, 0);
 
-        // TODO: cache a hash of the telemetry key.
-        let key_hash = fxhash::hash64(&(telemetry_key, key.get_hash()));
-        (scope.group(), key_hash)
+        (telemetry_key, key.get_hash())
     }
 
     fn registries(shard: &Shard) -> &Registries<Self> {
@@ -219,6 +217,7 @@ impl Storage {
         descriptions.insert(key.name().to_string(), Description { details, unit });
     }
 
+    #[inline]
     pub(crate) fn upsert<S, M>(&self, scope: &S::Scope, key: &Key, value: M::Value)
     where
         S: ScopeKind,
