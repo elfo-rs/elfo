@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 #![cfg(feature = "test-util")]
 
-use std::time::Duration;
+use std::{pin::pin, time::Duration};
 
 use tracing::info;
 
@@ -10,6 +10,7 @@ use elfo::{
     RestartParams, RestartPolicy, Topology,
     prelude::*,
     routers::{MapRouter, Outcome},
+    test::extract_request,
 };
 use elfo_core::config::AnyConfig;
 
@@ -171,4 +172,46 @@ async fn multiple_failures() {
     .await
     .expect("cannot start")
     .expect("requester actor failed");
+}
+
+// Checks that a request copied after `Ok` keeps a valid token,
+// and its response doesn't replace `Ok`.
+#[tokio::test]
+async fn token_stays_valid_after_response() {
+    #[message(ret = u64)]
+    struct Query;
+    #[message]
+    struct IgnoredSent;
+
+    // A multicast clones the envelope for each recipient, and one of the clones
+    // can be made after another recipient has answered. `duplicate()` simulates
+    // this deterministically.
+    let blueprint = ActorGroup::new().exec(|mut ctx| async move {
+        let envelope = ctx.recv().await.unwrap();
+        let pending = envelope.duplicate();
+
+        let (Query, token) = extract_request(envelope);
+        ctx.respond(token, 42);
+
+        let (Query, token) = extract_request(pending.duplicate());
+        assert!(!token.is_forgotten());
+        // Ignore the token, so the requester could receive `Ignored` if `Ok` was
+        // replaced.
+        drop(token);
+        drop(pending);
+
+        ctx.send(IgnoredSent).await.unwrap();
+    });
+
+    let mut proxy = elfo::test::proxy(blueprint, AnyConfig::default()).await;
+    let requester = proxy.subproxy().await;
+
+    // Send the request, but leave its result in the request table until
+    // the responder has made the late copy.
+    let mut query = pin!(requester.request(Query));
+    assert!(futures::poll!(&mut query).is_pending());
+
+    // Doesn't arrive if the responder panics.
+    assert_msg!(proxy.recv().await, IgnoredSent);
+    assert_eq!(query.await, 42);
 }

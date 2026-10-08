@@ -268,7 +268,11 @@ impl ResponseToken {
             let object = data.book.get(data.sender, &guard)?;
             let actor = object.as_actor()?;
             let mut requests = actor.request_table().requests.lock();
-            requests.get_mut(data.request_id)?.remainder += 1;
+            let request = requests.get_mut(data.request_id)?;
+            // A completed request must not wait for more responses.
+            if request.remainder > 0 {
+                request.remainder += 1;
+            }
         }
 
         Some(data.clone())
