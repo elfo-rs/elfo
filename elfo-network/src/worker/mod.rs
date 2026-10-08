@@ -487,8 +487,11 @@ impl SocketReader {
             || details.kind == KIND_RESPONSE_IGNORED
         {
             let Some(token) = self.requests.lock().get_token(
-                details.recipient.into_remote(),
+                details.recipient.into_local(),
                 details.request_id.expect("bug: request_id is missing"),
+                // Treat the first undecodable response as the last one from this remote group,
+                // because the rest are likely undecodable too. The request still waits for
+                // responses over other connections.
                 true,
             ) else {
                 warn!(
