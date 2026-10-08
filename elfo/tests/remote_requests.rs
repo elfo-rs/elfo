@@ -6,13 +6,12 @@ use std::time::Duration;
 use toml::toml;
 
 use elfo::{Topology, messages::Ping, prelude::*, topology};
+use elfo_test::extract_request;
 
 mod common;
 
 #[test]
 fn failed_response_decoding_completes_request() {
-    use elfo_test::extract_request;
-
     common::setup_logger();
 
     #[message(ret = ())]
