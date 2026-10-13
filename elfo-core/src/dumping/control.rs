@@ -73,7 +73,8 @@ impl DumpingControl {
         self.classes.store(Arc::new(new_classes));
     }
 
-    pub(crate) fn next_sequence_no(&self) -> SequenceNo {
+    #[doc(hidden)]
+    pub fn next_sequence_no(&self) -> SequenceNo {
         self.sequence_no_gen.generate()
     }
 
