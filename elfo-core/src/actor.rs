@@ -261,13 +261,11 @@ impl Actor {
         drop(control);
 
         if status.kind().is_finished() {
-            let trace_id = scope::trace_id();
+            let (trace_id, addr) = scope::with(|scope| (scope.trace_id(), scope.actor()));
             // No-op while the mailbox consumer is alive
             if let Some(mut consumer) = self.mailbox.close_and_try_take_consumer(trace_id) {
-                while let Some(RecvResult::Data(mut envelope)) = consumer.try_recv() {
-                    if let Some(token) = envelope.take_token() {
-                        token.fail();
-                    }
+                while let Some(RecvResult::Data(envelope)) = consumer.try_recv() {
+                    envelope.reject(addr);
                 }
             } else {
                 error!(

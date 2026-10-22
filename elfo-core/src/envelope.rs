@@ -126,6 +126,16 @@ impl Envelope {
         this
     }
 
+    /// Rejects the final send attempt to the recipient, retaining the envelope
+    /// and failing any request. Use a null address if the recipient is unknown.
+    #[cold]
+    pub(crate) fn reject(mut self, recipient: Addr) -> RejectedEnvelope {
+        if let Some(token) = self.take_token() {
+            token.fail(recipient);
+        }
+        RejectedEnvelope { envelope: self }
+    }
+
     pub(crate) fn stub() -> Self {
         Self::with_trace_id(
             crate::messages::Ping,
@@ -298,7 +308,14 @@ impl Envelope {
         }
     }
 
-    pub(crate) fn take_token(&mut self) -> Option<ResponseToken> {
+    pub(crate) fn token(&self) -> Option<&ResponseToken> {
+        match &self.header().kind {
+            MessageKind::RequestAny(token) | MessageKind::RequestAll(token) => Some(token),
+            _ => None,
+        }
+    }
+
+    fn take_token(&mut self) -> Option<ResponseToken> {
         self.token_mut()
             .map(|token| mem::replace(token, ResponseToken::forgotten()))
     }
@@ -311,6 +328,43 @@ impl Envelope {
 
     pub(crate) unsafe fn from_header_ptr(ptr: NonNull<EnvelopeHeader>) -> Self {
         Self(ptr)
+    }
+}
+
+/// An envelope retained after a rejected send.
+///
+/// For requests, the response token is already forgotten.
+// Reexported in `_priv`.
+#[doc(hidden)]
+#[instability::unstable]
+pub struct RejectedEnvelope {
+    envelope: Envelope,
+}
+
+impl RejectedEnvelope {
+    #[inline]
+    pub(crate) fn message(&self) -> AnyMessageRef<'_> {
+        self.envelope.message()
+    }
+
+    pub(crate) fn downcast<M: Message>(self) -> Result<M, Self> {
+        if !self.envelope.is::<M>() {
+            return Err(self);
+        }
+
+        // SAFETY: The message type was checked.
+        let (message, _) = unsafe { self.envelope.unpack_unchecked::<M>() };
+        Ok(message)
+    }
+
+    pub(crate) fn into_inner(self) -> Envelope {
+        self.envelope
+    }
+}
+
+impl fmt::Debug for RejectedEnvelope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.message().fmt(f)
     }
 }
 

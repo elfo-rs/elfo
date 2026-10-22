@@ -22,12 +22,12 @@ use crate::{
     coop,
     demux::Demux,
     dumping::{Direction, Dump, Dumper, INTERNAL_CLASS},
-    envelope::{Envelope, MessageKind},
+    envelope::{Envelope, MessageKind, RejectedEnvelope},
     errors::{RequestError, SendError, TryRecvError, TrySendError},
     mailbox::RecvResult,
     message::{Message, Request},
     messages, msg,
-    object::{BorrowedObject, MappedOwnedObject, Object},
+    object::{BorrowedObject, MappedOwnedObject, Object, SendFut},
     request_table::{RequestFailure, ResponseToken},
     restarting::RestartPolicy,
     routers::Singleton,
@@ -265,7 +265,7 @@ impl<C, K> Context<C, K> {
         let addrs = self.demux.filter(&envelope);
 
         if addrs.is_empty() {
-            return Err(TrySendError::Closed(e2m(envelope)));
+            return Err(TrySendError::Closed(r2m(envelope.reject(Addr::NULL))));
         }
 
         let guard = EbrGuard::new();
@@ -274,8 +274,8 @@ impl<C, K> Context<C, K> {
             return match self.book.get(addrs[0], &guard) {
                 Some(object) => object
                     .try_send(Addr::NULL, envelope)
-                    .map_err(|err| err.map(e2m)),
-                None => Err(TrySendError::Closed(e2m(envelope))),
+                    .map_err(|err| err.map(r2m)),
+                None => Err(TrySendError::Closed(r2m(envelope.reject(Addr::NULL)))),
             };
         }
 
@@ -292,16 +292,16 @@ impl<C, K> Context<C, K> {
                         unused = Some(err.into_inner());
                     }
                 },
-                None => unused = Some(envelope),
+                None => unused = Some(envelope.reject(Addr::NULL)),
             };
         }
 
         if success {
             Ok(())
         } else if has_full {
-            Err(TrySendError::Full(e2m(unused.unwrap())))
+            Err(TrySendError::Full(r2m(unused.unwrap())))
         } else {
-            Err(TrySendError::Closed(e2m(unused.unwrap())))
+            Err(TrySendError::Closed(r2m(unused.unwrap())))
         }
     }
 
@@ -349,7 +349,7 @@ impl<C, K> Context<C, K> {
         let addrs = self.demux.filter(&envelope);
 
         if addrs.is_empty() {
-            return Err(SendError(e2m(envelope)));
+            return Err(SendError(r2m(envelope.reject(Addr::NULL))));
         }
 
         let guard = EbrGuard::new();
@@ -358,8 +358,8 @@ impl<C, K> Context<C, K> {
             return match self.book.get(addrs[0], &guard) {
                 Some(object) => object
                     .unbounded_send(Addr::NULL, envelope)
-                    .map_err(|err| err.map(e2m)),
-                None => Err(SendError(e2m(envelope))),
+                    .map_err(|err| err.map(r2m)),
+                None => Err(SendError(r2m(envelope.reject(Addr::NULL)))),
             };
         }
 
@@ -372,14 +372,14 @@ impl<C, K> Context<C, K> {
                     Ok(()) => success = true,
                     Err(err) => unused = Some(err.into_inner()),
                 },
-                None => unused = Some(envelope),
+                None => unused = Some(envelope.reject(Addr::NULL)),
             };
         }
 
         if success {
             Ok(())
         } else {
-            Err(SendError(e2m(unused.unwrap())))
+            Err(SendError(r2m(unused.unwrap())))
         }
     }
 
@@ -440,19 +440,25 @@ impl<C, K> Context<C, K> {
         let addrs = self.demux.filter(&envelope);
 
         if addrs.is_empty() {
-            return Err(SendError(e2m(envelope)));
+            return Err(SendError(r2m(envelope.reject(Addr::NULL))));
         }
 
         if addrs.len() == 1 {
             let recipient = addrs[0];
-            return {
+            let result = {
                 let guard = EbrGuard::new();
                 let entry = self.book.get(recipient, &guard);
-                let object = ward!(entry, return Err(SendError(e2m(envelope))));
-                Object::send(object, Addr::NULL, envelope)
+                let object = ward!(
+                    entry,
+                    return Err(SendError(r2m(envelope.reject(Addr::NULL))))
+                );
+                Object::send(object.into(), Addr::NULL, envelope)
+            };
+            return match result {
+                SendFut::Ready(result) => result,
+                SendFut::Pending(pending) => pending.await,
             }
-            .await
-            .map_err(|err| err.map(e2m));
+            .map_err(|err| err.map(r2m));
         }
 
         let mut unused = None;
@@ -460,16 +466,19 @@ impl<C, K> Context<C, K> {
 
         // TODO: send concurrently.
         for (recipient, envelope) in addrs_with_envelope(envelope, &addrs) {
-            let returned_envelope = {
+            let result = {
                 let guard = EbrGuard::new();
                 let entry = self.book.get(recipient, &guard);
                 let object = ward!(entry, {
-                    unused = Some(envelope);
+                    unused = Some(envelope.reject(Addr::NULL));
                     continue;
                 });
-                Object::send(object, Addr::NULL, envelope)
+                Object::send(object.into(), Addr::NULL, envelope)
+            };
+            let returned_envelope = match result {
+                SendFut::Ready(result) => result,
+                SendFut::Pending(pending) => pending.await,
             }
-            .await
             .err()
             .map(|err| err.into_inner());
 
@@ -482,7 +491,7 @@ impl<C, K> Context<C, K> {
         if success {
             Ok(())
         } else {
-            Err(SendError(e2m(unused.unwrap())))
+            Err(SendError(r2m(unused.unwrap())))
         }
     }
 
@@ -519,11 +528,14 @@ impl<C, K> Context<C, K> {
         message: M,
     ) -> Result<(), SendError<M>> {
         let kind = MessageKind::regular(self.actor_addr);
-        self.do_send_to(recipient, message, kind, |object, envelope| {
-            Object::send(object, recipient, envelope)
-        })?
-        .await
-        .map_err(|err| err.map(e2m))
+        let result = self.do_send_to(recipient, message, kind, |object, envelope| {
+            Object::send(object.into(), recipient, envelope)
+        })?;
+        match result {
+            SendFut::Ready(result) => result,
+            SendFut::Pending(pending) => pending.await,
+        }
+        .map_err(|err| err.map(r2m))
     }
 
     /// Tries to send a message to the specified recipient.
@@ -562,7 +574,7 @@ impl<C, K> Context<C, K> {
         self.do_send_to(recipient, message, kind, |object, envelope| {
             object
                 .try_send(recipient, envelope)
-                .map_err(|err| err.map(e2m))
+                .map_err(|err| err.map(r2m))
         })?
     }
 
@@ -603,7 +615,7 @@ impl<C, K> Context<C, K> {
         self.do_send_to(recipient, message, kind, |object, envelope| {
             object
                 .unbounded_send(recipient, envelope)
-                .map_err(|err| err.map(e2m))
+                .map_err(|err| err.map(r2m))
         })?
     }
 
@@ -1041,8 +1053,8 @@ impl<C, K> Context<C, K> {
 }
 
 #[cold]
-fn e2m<M: Message>(envelope: Envelope) -> M {
-    envelope.unpack().expect("invalid message").0
+fn r2m<M: Message>(rejected: RejectedEnvelope) -> M {
+    rejected.downcast().expect("invalid message")
 }
 
 #[cold]
@@ -1159,11 +1171,12 @@ impl<C, K, R: Request, M> RequestBuilder<'_, C, K, R, M> {
             let res = self
                 .context
                 .do_send_to(recipient, self.request, kind, |o, e| {
-                    Object::send(o, recipient, e)
+                    Object::send(o.into(), recipient, e)
                 });
 
             match res {
-                Ok(fut) => fut.await.is_ok(),
+                Ok(SendFut::Ready(result)) => result.is_ok(),
+                Ok(SendFut::Pending(pending)) => pending.await.is_ok(),
                 Err(_) => false,
             }
         } else {
@@ -1191,9 +1204,9 @@ impl<C: 'static, K, R: Request, M> RequestBuilder<'_, C, K, R, M> {
         };
 
         if !self.do_send(kind).await {
-            actor.request_table().cancel_request(request_id);
-            return smallvec::smallvec![Err(RequestFailure::new(Addr::NULL, RequestError::Failed))]
-                .into();
+            let responses = actor.request_table().take_request(request_id);
+            debug_assert!(!responses.is_empty());
+            return responses.into();
         }
 
         actor.request_table().wait(request_id).await.into()
@@ -1239,7 +1252,8 @@ pub struct RequestResolver<F, R, M> {
 impl<F: ResolveFuture, R: Request> RequestResolver<F, R, Any> {
     /// Returns the result together with the recipient's address.
     ///
-    /// The address is null if the recipient is unknown.
+    /// On failure, returns the recipient actor's address if available,
+    /// or a null address otherwise.
     ///
     /// # Examples
     ///
@@ -1274,7 +1288,9 @@ impl<F: ResolveFuture, R: Request> RequestResolver<F, R, Any> {
 impl<F: ResolveFuture, R: Request> RequestResolver<F, R, All> {
     /// Returns each result together with the recipient's address.
     ///
-    /// The address is null if the recipient is unknown.
+    /// On failure, returns the recipient actor's address if available,
+    /// or a null address otherwise.
+    ///
     /// # Examples
     ///
     /// ```

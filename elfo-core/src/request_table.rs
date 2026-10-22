@@ -121,9 +121,12 @@ impl RequestTable {
         ResponseToken::new(self.owner, request_id, trace_id, book)
     }
 
-    pub(crate) fn cancel_request(&self, request_id: RequestId) {
+    /// Removes the request and returns responses collected so far.
+    pub(crate) fn take_request(&self, request_id: RequestId) -> Responses {
         let mut requests = self.requests.lock();
-        requests.remove(request_id);
+        requests
+            .remove(request_id)
+            .map_or_else(Responses::new, |data| data.responses)
     }
 
     pub(crate) async fn wait(&self, request_id: RequestId) -> Responses {
@@ -300,9 +303,9 @@ impl<R> ResponseToken<R> {
         self.data.is_none()
     }
 
-    pub(crate) fn fail(mut self) {
+    /// Fails the request with `addr` as the recipient's address.
+    pub(crate) fn fail(mut self, addr: Addr) {
         debug_assert!(!self.received);
-        let addr = scope::try_with(|scope| scope.actor()).unwrap_or(Addr::NULL);
         self.send_failure(RequestFailure::new(addr, RequestError::Failed));
     }
 

@@ -80,8 +80,6 @@ mod thread;
 
 #[doc(hidden)]
 pub mod _priv {
-    #[cfg(feature = "unstable")]
-    pub use crate::request_table::RequestFailure;
     pub use crate::{
         address_book::AddressBook,
         envelope::{EnvelopeBorrowed, EnvelopeOwned, MessageKind},
@@ -89,6 +87,12 @@ pub mod _priv {
         message::*,
         object::{GroupVisitor, Object, OwnedObject},
         permissions::{AtomicPermissions, Permissions},
+    };
+    #[cfg(feature = "unstable")]
+    pub use crate::{
+        envelope::RejectedEnvelope,
+        object::{ObjectRef, SendFut},
+        request_table::RequestFailure,
     };
     pub use erased_serde;
     pub use idr_ebr::EbrGuard;
