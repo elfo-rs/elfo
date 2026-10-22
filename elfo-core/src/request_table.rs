@@ -1,5 +1,6 @@
 use std::{fmt, marker::PhantomData, sync::Arc};
 
+use derive_more::Constructor;
 use idr_ebr::EbrGuard;
 use parking_lot::Mutex;
 use slotmap::{Key, SlotMap, new_key_type};
@@ -8,7 +9,7 @@ use tokio::sync::Notify;
 
 use crate::{
     Addr, address_book::AddressBook, envelope::Envelope, errors::RequestError, message::AnyMessage,
-    tracing::TraceId,
+    scope, tracing::TraceId,
 };
 
 // === RequestId ===
@@ -47,7 +48,7 @@ pub(crate) struct RequestTable {
 
 assert_impl_all!(RequestTable: Sync);
 
-type Responses = SmallVec<[Result<Envelope, RequestError>; 1]>;
+pub(crate) type Responses = SmallVec<[Result<Envelope, RequestFailure>; 1]>;
 
 #[derive(Default)]
 struct RequestData {
@@ -58,7 +59,7 @@ struct RequestData {
 
 impl RequestData {
     /// Returns `true` if the request is done.
-    fn push(&mut self, response: Result<Envelope, RequestError>) -> bool {
+    fn push(&mut self, response: Result<Envelope, RequestFailure>) -> bool {
         // Extra responses (in `any` case).
         if self.remainder == 0 {
             // TODO: move to `ResponseToken` to avoid sending extra responses over network.
@@ -82,10 +83,7 @@ impl RequestData {
             self.responses.push(response);
         }
         // Priority: `Ok(_)` > `Err(Ignored)` > `Err(Failed)`
-        else if response.is_ok() {
-            debug_assert!(self.responses[0].is_err());
-            self.responses[0] = response;
-        } else if let Err(RequestError::Ignored) = response {
+        else if is_ok || response.as_ref().is_err_and(RequestFailure::is_ignored) {
             debug_assert!(self.responses[0].is_err());
             self.responses[0] = response;
         }
@@ -148,7 +146,7 @@ impl RequestTable {
     pub(crate) fn resolve(
         &self,
         mut token: ResponseToken,
-        response: Result<Envelope, RequestError>,
+        response: Result<Envelope, RequestFailure>,
     ) {
         // Do nothing for forgotten tokens.
         let data = ward!(token.data.take());
@@ -234,12 +232,14 @@ impl ResponseToken {
         self.data.as_ref().map(Arc::strong_count).unwrap() <= 1
     }
 
-    #[doc(hidden)]
-    #[inline]
-    pub fn into_received<T>(mut self) -> ResponseToken<T> {
+    pub(crate) fn mark_received(&mut self) {
+        self.received = true;
+    }
+
+    pub(crate) fn into_typed<T>(mut self) -> ResponseToken<T> {
         ResponseToken {
             data: self.data.take(),
-            received: true,
+            received: self.received,
             marker: PhantomData,
         }
     }
@@ -299,11 +299,14 @@ impl<R> ResponseToken<R> {
     pub fn is_forgotten(&self) -> bool {
         self.data.is_none()
     }
-}
 
-impl<T> Drop for ResponseToken<T> {
-    #[inline]
-    fn drop(&mut self) {
+    pub(crate) fn fail(mut self) {
+        debug_assert!(!self.received);
+        let addr = scope::try_with(|scope| scope.actor()).unwrap_or(Addr::NULL);
+        self.send_failure(RequestFailure::new(addr, RequestError::Failed));
+    }
+
+    fn send_failure(&mut self, failure: RequestFailure) {
         // Do nothing for forgotten tokens.
         let data = ward!(self.data.take());
         let book = data.book.clone();
@@ -314,13 +317,46 @@ impl<T> Drop for ResponseToken<T> {
             received: self.received,
             marker: PhantomData,
         };
-        let err = if self.received {
-            RequestError::Ignored
+
+        object.respond(this, Err(failure));
+    }
+}
+
+impl<T> Drop for ResponseToken<T> {
+    #[inline]
+    fn drop(&mut self) {
+        if self.is_forgotten() {
+            return;
+        }
+        let failure = if self.received {
+            RequestFailure::new(
+                scope::try_with(|scope| scope.actor()).unwrap_or(Addr::NULL),
+                RequestError::Ignored,
+            )
         } else {
-            RequestError::Failed
+            // Sending can fail in a scope that does not belong to the recipient.
+            RequestFailure::new(Addr::NULL, RequestError::Failed)
         };
 
-        object.respond(this, Err(err));
+        self.send_failure(failure);
+    }
+}
+
+// === RequestFailure ===
+
+// TODO: remove this type when request errors are passed in envelopes.
+#[doc(hidden)]
+#[instability::unstable]
+#[derive(Debug, Constructor)]
+pub struct RequestFailure {
+    pub addr: Addr,
+    pub error: RequestError,
+}
+
+impl RequestFailure {
+    #[inline]
+    pub(crate) fn is_ignored(&self) -> bool {
+        self.error.is_ignored()
     }
 }
 

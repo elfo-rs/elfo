@@ -1,5 +1,5 @@
 use std::{
-    future::poll_fn,
+    future::{Future, poll_fn},
     marker::PhantomData,
     pin::Pin,
     sync::{Arc, LazyLock},
@@ -28,14 +28,17 @@ use crate::{
     message::{Message, Request},
     messages, msg,
     object::{BorrowedObject, MappedOwnedObject, Object},
-    request_table::ResponseToken,
+    request_table::{RequestFailure, ResponseToken},
     restarting::RestartPolicy,
     routers::Singleton,
     scope,
     source::{SourceHandle, Sources, UnattachedSource},
 };
 
-use self::stats::Stats;
+use self::{
+    resolve::{ResolveFuture, ResolveOutcome},
+    stats::Stats,
+};
 
 mod stats;
 
@@ -883,11 +886,15 @@ impl<C, K> Context<C, K> {
         }
     }
 
-    fn post_recv(&mut self, envelope: Envelope) -> Option<Envelope>
+    fn post_recv(&mut self, mut envelope: Envelope) -> Option<Envelope>
     where
         C: 'static,
     {
         scope::set_trace_id(envelope.trace_id());
+
+        if let Some(token) = envelope.token_mut() {
+            token.mark_received();
+        }
 
         let envelope = msg!(match envelope {
             (messages::UpdateConfig { config }, token) => {
@@ -1165,65 +1172,184 @@ impl<C, K, R: Request, M> RequestBuilder<'_, C, K, R, M> {
     }
 }
 
-// TODO: add `pub async fn id() { ... }`
-impl<C: 'static, K, R: Request> RequestBuilder<'_, C, K, R, Any> {
-    /// Waits for the response.
-    pub async fn resolve(self) -> Result<R::Response, RequestError> {
+impl<C: 'static, K, R: Request, M> RequestBuilder<'_, C, K, R, M> {
+    async fn do_resolve(self, collect_all: bool) -> ResolveOutcome {
         // TODO: use `context.actor` after removing pruned contexts.
         let this = self.context.actor_addr;
         let object = self.context.book.get_owned(this).expect("invalid addr");
         let actor = object.as_actor().expect("can be called only on actors");
-        let token =
-            actor
-                .request_table()
-                .new_request(self.context.book.clone(), scope::trace_id(), false);
+        let token = actor.request_table().new_request(
+            self.context.book.clone(),
+            scope::trace_id(),
+            collect_all,
+        );
         let request_id = token.request_id();
-        let kind = MessageKind::RequestAny(token);
+        let kind = if collect_all {
+            MessageKind::RequestAll(token)
+        } else {
+            MessageKind::RequestAny(token)
+        };
 
         if !self.do_send(kind).await {
             actor.request_table().cancel_request(request_id);
-            return Err(RequestError::Failed);
+            return smallvec::smallvec![Err(RequestFailure::new(Addr::NULL, RequestError::Failed))]
+                .into();
         }
 
-        let mut responses = actor.request_table().wait(request_id).await;
-        debug_assert_eq!(responses.len(), 1);
-        prepare_response::<R>(responses.pop().expect("missing response"))
+        actor.request_table().wait(request_id).await.into()
+    }
+}
+
+// TODO: add `pub async fn id() { ... }`
+impl<C: 'static, K, R: Request> RequestBuilder<'_, C, K, R, Any> {
+    /// Returns a future that waits for the response.
+    ///
+    /// Use the methods on [`RequestResolver`] to customize the result before
+    /// awaiting.
+    pub fn resolve(self) -> RequestResolver<impl ResolveFuture, R, Any> {
+        RequestResolver {
+            future: self.do_resolve(false),
+            marker: PhantomData,
+        }
     }
 }
 
 impl<C: 'static, K, R: Request> RequestBuilder<'_, C, K, R, All> {
-    /// Waits for the responses.
-    pub async fn resolve(self) -> Vec<Result<R::Response, RequestError>> {
-        // TODO: use `context.actor` after removing pruned contexts.
-        let this = self.context.actor_addr;
-        let object = self.context.book.get_owned(this).expect("invalid addr");
-        let actor = object.as_actor().expect("can be called only on actors");
-        let token =
-            actor
-                .request_table()
-                .new_request(self.context.book.clone(), scope::trace_id(), true);
-        let request_id = token.request_id();
-        let kind = MessageKind::RequestAll(token);
-
-        if !self.do_send(kind).await {
-            actor.request_table().cancel_request(request_id);
-            return vec![Err(RequestError::Failed)];
+    /// Returns a future that waits for the responses.
+    ///
+    /// Use the methods on [`RequestResolver`] to customize the result before
+    /// awaiting.
+    pub fn resolve(self) -> RequestResolver<impl ResolveFuture, R, All> {
+        RequestResolver {
+            future: self.do_resolve(true),
+            marker: PhantomData,
         }
+    }
+}
 
-        actor
-            .request_table()
-            .wait(request_id)
+/// A future that waits for request results.
+#[must_use = "requests do nothing unless you `.await` them"]
+#[pin_project::pin_project]
+pub struct RequestResolver<F, R, M> {
+    #[pin]
+    future: F,
+    marker: PhantomData<(R, M)>,
+}
+
+impl<F: ResolveFuture, R: Request> RequestResolver<F, R, Any> {
+    /// Returns the result together with the recipient's address.
+    ///
+    /// The address is null if the recipient is unknown.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use elfo_core::{Context, message};
+    /// #[message(ret = u64)]
+    /// struct OpenSession;
+    ///
+    /// #[message(ret = ())]
+    /// struct CloseSession {
+    ///     session_id: u64,
+    /// }
+    ///
+    /// # async fn example(ctx: &Context) -> Result<(), elfo_core::errors::RequestError> {
+    /// let (session_id, sender) = ctx.request(OpenSession).resolve().with_sender().await;
+    /// let session_id = session_id?;
+    ///
+    /// // Close the session on the actor that opened it.
+    /// ctx.request_to(sender, CloseSession { session_id })
+    ///     .resolve()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn with_sender(self) -> (Result<R::Response, RequestError>, Addr) {
+        let mut responses = self.future.await.into_inner();
+        debug_assert_eq!(responses.len(), 1);
+        prepare_response_with_sender::<R>(responses.pop().expect("missing response"))
+    }
+}
+
+impl<F: ResolveFuture, R: Request> RequestResolver<F, R, All> {
+    /// Returns each result together with the recipient's address.
+    ///
+    /// The address is null if the recipient is unknown.
+    /// # Examples
+    ///
+    /// ```
+    /// # use elfo_core::{Context, message};
+    /// #[message(ret = usize)]
+    /// struct GetQueueLength;
+    ///
+    /// #[message]
+    /// struct RunJob {
+    ///     job_id: u64,
+    /// }
+    ///
+    /// # async fn example(ctx: &Context) -> Result<(), elfo_core::errors::SendError<RunJob>> {
+    /// let results = ctx.request(GetQueueLength).all().resolve().with_sender().await;
+    /// let worker = results
+    ///     .into_iter()
+    ///     .filter_map(|(result, sender)| result.ok().map(|len| (len, sender)))
+    ///     .min_by_key(|(len, _)| *len);
+    ///
+    /// if let Some((_, sender)) = worker {
+    ///     ctx.send_to(sender, RunJob { job_id: 42 }).await?;
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn with_sender(self) -> Vec<(Result<R::Response, RequestError>, Addr)> {
+        self.future
             .await
+            .into_inner()
             .into_iter()
-            .map(prepare_response::<R>)
+            .map(prepare_response_with_sender::<R>)
             .collect()
     }
 }
 
+impl<F: ResolveFuture, R: Request> Future for RequestResolver<F, R, Any> {
+    type Output = Result<R::Response, RequestError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        self.project().future.poll(cx).map(|outcome| {
+            let mut responses = outcome.into_inner();
+            debug_assert_eq!(responses.len(), 1);
+            prepare_response::<R>(responses.pop().expect("missing response"))
+        })
+    }
+}
+
+impl<F: ResolveFuture, R: Request> Future for RequestResolver<F, R, All> {
+    type Output = Vec<Result<R::Response, RequestError>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        self.project().future.poll(cx).map(|outcome| {
+            outcome
+                .into_inner()
+                .into_iter()
+                .map(prepare_response::<R>)
+                .collect()
+        })
+    }
+}
+
+fn prepare_response_with_sender<R: Request>(
+    response: Result<Envelope, RequestFailure>,
+) -> (Result<R::Response, RequestError>, Addr) {
+    let sender = match &response {
+        Ok(envelope) => envelope.sender(),
+        Err(failure) => failure.addr,
+    };
+    (prepare_response::<R>(response), sender)
+}
+
 fn prepare_response<R: Request>(
-    response: Result<Envelope, RequestError>,
+    response: Result<Envelope, RequestFailure>,
 ) -> Result<R::Response, RequestError> {
-    let envelope = response?;
+    let envelope = response.map_err(|failure| failure.error)?;
     let (message, kind) = envelope.unpack::<R::Wrapper>().expect("invalid response");
 
     // TODO: increase a counter.
@@ -1233,4 +1359,27 @@ fn prepare_response<R: Request>(
     }
 
     Ok(message.into())
+}
+
+mod resolve {
+    use std::future::Future;
+
+    use derive_more::From;
+
+    use crate::request_table::Responses;
+
+    #[doc(hidden)]
+    pub trait ResolveFuture: Future<Output = ResolveOutcome> {}
+
+    #[doc(hidden)]
+    #[derive(From)]
+    pub struct ResolveOutcome(Responses);
+
+    impl<F: Future<Output = ResolveOutcome>> ResolveFuture for F {}
+
+    impl ResolveOutcome {
+        pub(super) fn into_inner(self) -> Responses {
+            self.0
+        }
+    }
 }

@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
-    _priv::{AnyMessage, EbrGuard, GroupVisitor, MessageKind, Object, OwnedObject},
+    _priv::{AnyMessage, EbrGuard, GroupVisitor, MessageKind, Object, OwnedObject, RequestFailure},
     Context, Envelope, Local, Message, ResponseToken, Topology,
     addr::{Addr, NodeNo},
     errors::{RequestError, SendError, TrySendError},
@@ -356,13 +356,13 @@ fn make_network_envelope(
             (sender, trace_id, payload, None)
         }
         // Failed/Ignored Response
-        (Err(err), Some(token)) => {
-            let sender = Addr::NULL;
+        (Err(failure), Some(token)) => {
+            let sender = failure.addr;
             let trace_id = token.trace_id();
 
             let payload = NetworkEnvelopePayload::Response {
                 request_id: token.request_id(),
-                message: Err(err),
+                message: Err(failure.error),
                 is_last: token.is_last(),
             };
 
@@ -481,7 +481,10 @@ impl SocketReader {
             // so we need to introduce the flow which will be used in `sender.respond()`
             // below.
             self.tx_flows.add_flow_if_needed(details.sender);
-            sender.respond(token, Err(RequestError::Failed));
+            sender.respond(
+                token,
+                Err(RequestFailure::new(Addr::NULL, RequestError::Failed)),
+            );
         } else if details.kind == KIND_RESPONSE_OK
             || details.kind == KIND_RESPONSE_FAILED
             || details.kind == KIND_RESPONSE_IGNORED
@@ -574,16 +577,23 @@ impl SocketReader {
                     return None;
                 };
 
-                let envelope = message.map(|message| {
-                    Envelope::with_trace_id(
-                        message,
-                        MessageKind::Response { sender, request_id },
-                        trace_id,
-                    )
-                });
+                // Allow the requester to send subsequent messages to the responder.
+                if message.is_ok() || message.as_ref().is_err_and(|e| e.is_ignored()) {
+                    self.tx_flows.add_flow_if_needed(network_envelope.sender);
+                }
+
+                let envelope = message
+                    .map(|message| {
+                        Envelope::with_trace_id(
+                            message,
+                            MessageKind::Response { sender, request_id },
+                            trace_id,
+                        )
+                    })
+                    .map_err(|error| RequestFailure::new(sender, error));
 
                 // Since this is a response to a request which originated from this node,
-                // all the neccessary flows have been already added.
+                // all the necessary flows have been already added.
                 object.respond(token, envelope);
 
                 return None;
@@ -835,7 +845,7 @@ impl Drop for Pusher {
 
 struct KanalItem {
     recipient: NetworkAddr,
-    envelope: Result<Envelope, RequestError>,
+    envelope: Result<Envelope, RequestFailure>,
     token: Option<ResponseToken>,
 }
 
@@ -910,7 +920,7 @@ impl remote::RemoteHandle for RemoteHandle {
         }
     }
 
-    fn respond(&self, token: ResponseToken, envelope: Result<Envelope, RequestError>) {
+    fn respond(&self, token: ResponseToken, envelope: Result<Envelope, RequestFailure>) {
         debug_assert!(!token.is_forgotten());
         debug_assert!(token.sender().is_remote());
 

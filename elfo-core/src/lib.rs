@@ -15,7 +15,7 @@ pub use crate::{
     actor_status::{ActorStatus, ActorStatusKind},
     addr::Addr,
     config::Config,
-    context::{Context, RequestBuilder},
+    context::{Context, RequestBuilder, RequestResolver},
     envelope::Envelope,
     group::{ActorGroup, Blueprint, TerminationPolicy},
     local::{Local, MoveOwnership},
@@ -80,6 +80,8 @@ mod thread;
 
 #[doc(hidden)]
 pub mod _priv {
+    #[cfg(feature = "unstable")]
+    pub use crate::request_table::RequestFailure;
     pub use crate::{
         address_book::AddressBook,
         envelope::{EnvelopeBorrowed, EnvelopeOwned, MessageKind},

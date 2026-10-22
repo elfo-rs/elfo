@@ -139,6 +139,11 @@ impl Envelope {
         unsafe { self.0.as_ref() }
     }
 
+    fn header_mut(&mut self) -> &mut EnvelopeHeader {
+        // SAFETY: `self.0` is properly initialized.
+        unsafe { self.0.as_mut() }
+    }
+
     #[inline]
     pub fn trace_id(&self) -> TraceId {
         self.header().trace_id
@@ -286,6 +291,18 @@ impl Envelope {
         (message, kind)
     }
 
+    pub(crate) fn token_mut(&mut self) -> Option<&mut ResponseToken> {
+        match &mut self.header_mut().kind {
+            MessageKind::RequestAny(token) | MessageKind::RequestAll(token) => Some(token),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn take_token(&mut self) -> Option<ResponseToken> {
+        self.token_mut()
+            .map(|token| mem::replace(token, ResponseToken::forgotten()))
+    }
+
     pub(crate) fn into_header_ptr(self) -> NonNull<EnvelopeHeader> {
         let ptr = self.0;
         mem::forget(self);
@@ -369,20 +386,18 @@ impl EnvelopeOwned for Envelope {
         // SAFETY: `M` is the correct message type, guaranteed by the caller.
         let (message, kind) = unsafe { self.unpack_unchecked() };
 
-        #[cfg(feature = "network")]
-        if let MessageKind::RequestAny(token) | MessageKind::RequestAll(token) = kind {
-            // The sender thought this is a request, but for the current node it isn't.
-            // Mark the token as received to return `RequestError::Ignored` to the sender.
-            let _ = token.into_received::<()>();
-        }
-
-        // This check is debug-only because it's already checked in `msg!` in
-        // compile-time, which should be the only way to call this consuming method.
+        // With the `network` feature, protocols of nodes can differ: the sender
+        // may think this is a request, but for the current node it isn't.
+        //
+        // Otherwise, this check is debug-only because it's already checked in
+        // `msg!` in compile-time, which should be the only way to call this
+        // consuming method.
         #[cfg(not(feature = "network"))]
         debug_assert!(!matches!(
             kind,
             MessageKind::RequestAny(_) | MessageKind::RequestAll(_)
         ));
+        drop(kind);
 
         message
     }
@@ -399,7 +414,7 @@ impl EnvelopeOwned for Envelope {
             _ => ResponseToken::forgotten(),
         };
 
-        (message, token.into_received())
+        (message, token.into_typed())
     }
 }
 

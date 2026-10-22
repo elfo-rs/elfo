@@ -253,22 +253,23 @@ impl Mailbox {
         self.close_inner(&mut control, trace_id)
     }
 
-    /// Closes the mailbox. Drains the queue inline if no consumer is attached
-    /// (returns `true`); otherwise defers the drain to the consumer's detach
-    /// (returns `false`).
+    /// Closes the mailbox and returns a consumer to drain the queue if no other
+    /// consumer is attached. Otherwise, returns `None` and lets the attached
+    /// consumer drain the queue on detach.
     #[cold]
-    pub(crate) fn close_and_try_drain(&self, trace_id: TraceId) -> bool {
+    pub(crate) fn close_and_try_take_consumer(
+        &self,
+        trace_id: TraceId,
+    ) -> Option<MailboxConsumer<&Self>> {
         let mut control = self.control.lock();
         self.close_inner(&mut control, trace_id);
-        if control.consumer.is_vacant() {
-            // SAFETY: No other consumer is exist at this time.
-            unsafe { while self.queue.dequeue_unchecked().is_some() {} }
-            return true;
-        }
-        control.consumer = ConsumerSlot::Occupied {
-            drain_on_drop: true,
-        };
-        false
+        let prev = mem::replace(
+            &mut control.consumer,
+            ConsumerSlot::Occupied {
+                drain_on_drop: true,
+            },
+        );
+        prev.is_vacant().then(|| MailboxConsumer(self))
     }
 
     fn close_inner(&self, control: &mut MutexGuard<'_, Control>, trace_id: TraceId) -> bool {
@@ -357,14 +358,18 @@ impl<D: Deref<Target = Mailbox>> MailboxConsumer<D> {
 impl<D: Deref<Target = Mailbox>> Drop for MailboxConsumer<D> {
     fn drop(&mut self) {
         let mut control = self.0.control.lock();
-        let slot = mem::replace(&mut control.consumer, ConsumerSlot::Vacant);
-        if let ConsumerSlot::Occupied {
+        let ConsumerSlot::Occupied {
             drain_on_drop: true,
-        } = slot
-        {
-            // SAFETY: No other consumer is exist at this time.
-            unsafe { while self.0.queue.dequeue_unchecked().is_some() {} }
-        }
+        } = control.consumer
+        else {
+            control.consumer = ConsumerSlot::Vacant;
+            return;
+        };
+        drop(control);
+
+        let _guard = Guard::new(|| self.0.control.lock().consumer = ConsumerSlot::Vacant);
+        // SAFETY: The consumer slot stays occupied until `_guard` is dropped.
+        unsafe { while self.0.queue.dequeue_unchecked().is_some() {} }
     }
 }
 
@@ -375,4 +380,20 @@ pub(crate) enum RecvResult {
 
 fn clamp_capacity(capacity: usize) -> usize {
     capacity.min(Semaphore::MAX_PERMITS)
+}
+
+struct Guard<F: FnOnce()>(Option<F>);
+
+impl<F: FnOnce()> Guard<F> {
+    fn new(f: F) -> Self {
+        Self(Some(f))
+    }
+}
+
+impl<F: FnOnce()> Drop for Guard<F> {
+    fn drop(&mut self) {
+        if let Some(f) = self.0.take() {
+            f()
+        }
+    }
 }

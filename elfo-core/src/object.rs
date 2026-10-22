@@ -19,8 +19,8 @@ use crate::{
     actor::Actor,
     addr::Addr,
     envelope::Envelope,
-    errors::{RequestError, SendError, TrySendError},
-    request_table::ResponseToken,
+    errors::{SendError, TrySendError},
+    request_table::{RequestFailure, ResponseToken},
 };
 
 // Reexported in `_priv`.
@@ -203,7 +203,7 @@ impl Object {
     }
 
     #[instability::unstable]
-    pub fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestError>) {
+    pub fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestFailure>) {
         match &self.kind {
             ObjectKind::Actor(handle) => handle.request_table().resolve(token, response),
             ObjectKind::Group(_handle) => unreachable!(),
