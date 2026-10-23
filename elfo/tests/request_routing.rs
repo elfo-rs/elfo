@@ -1,20 +1,20 @@
 #![allow(missing_docs)]
 #![cfg(feature = "test-util")]
 
-use std::time::Duration;
+use std::{pin::pin, time::Duration};
 
+use futures::poll;
 use tracing::info;
 
 use elfo::{
     _priv::do_start,
-    Local, RestartParams, RestartPolicy, Topology,
+    RestartParams, RestartPolicy, Topology,
     errors::RequestError,
     prelude::*,
-    routers::{MapRouter, Outcome, Singleton},
+    routers::{MapRouter, Outcome},
     test::extract_request,
 };
 use elfo_core::{Addr, config::AnyConfig, messages::Ping};
-use elfo_test::extract_message;
 
 mod common;
 
@@ -134,55 +134,186 @@ async fn with_sender() {
 async fn with_sender_on_failed_request() {
     elfo::set_protocol!("with_sender_on_failed_request");
 
+    #[message(part)]
+    #[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display)]
+    enum ActorKind {
+        ClosedMailbox,
+        Ok,
+        Full,
+    }
+
     #[message(ret = ())]
+    struct Spawn(ActorKind);
+
+    #[message(ret = ActorKind)]
     struct Query;
 
-    #[message]
-    struct Started(Local<Addr>);
+    #[message(ret = ())]
+    struct ConfirmMailboxClose;
+
+    #[message(ret = ())]
+    struct ConfirmTermination;
+
+    #[message(ret = ())]
+    struct ConfirmResume;
 
     #[message(ret = ())]
     struct RunTest;
 
-    async fn responder(ctx: Context<()>) {
-        ctx.close();
-        ctx.send(Started(ctx.group().into())).await.unwrap();
+    async fn responder(mut ctx: Context<(), ActorKind>) {
+        match ctx.key() {
+            ActorKind::ClosedMailbox => {
+                // Spawn occupies the only slot while delivery is being tested.
+                ctx.set_mailbox_capacity(Some(1));
+                ctx.request(ConfirmMailboxClose).resolve().await.unwrap();
+                ctx.close();
+                ctx.request(ConfirmTermination).resolve().await.unwrap();
+                return;
+            }
+            ActorKind::Full => {
+                // Spawn occupies the only slot until reading is allowed.
+                ctx.set_mailbox_capacity(Some(1));
+                ctx.request(ConfirmResume).resolve().await.unwrap();
+            }
+            ActorKind::Ok => {}
+        }
+
+        while let Some(envelope) = ctx.recv().await {
+            msg!(match envelope {
+                (Spawn(_), token) => ctx.respond(token, ()),
+                (Query, token) => ctx.respond(token, *ctx.key()),
+                _ => unreachable!(),
+            });
+        }
     }
 
-    async fn requester(mut ctx: Context) {
+    async fn requester(mut ctx: Context, responders_addr: Addr) {
         let (RunTest, done) = extract_request(ctx.recv().await.unwrap());
 
-        let (response, sender) = ctx.request(Query).resolve().with_sender().await;
-        assert!(matches!(response, Err(RequestError::Failed)));
-        assert!(!sender.is_null());
+        let pruned = ctx.pruned();
+        let mut queued = pin!(
+            pruned
+                .request(Spawn(ActorKind::ClosedMailbox))
+                .resolve()
+                .with_sender()
+        );
+        assert!(poll!(queued.as_mut()).is_pending());
 
         let msg = ctx.recv().await.unwrap();
-        let addr = msg.sender();
-        let Started(group) = extract_message(msg);
-        assert_eq!(sender, addr);
+        let closed_addr = msg.sender();
+        let (ConfirmMailboxClose, close) = extract_request(msg);
 
-        // A request to the terminated actor cannot be delivered, so the
-        // responder is unknown even though the destination is.
+        // Closing the mailbox fails sends that are waiting for capacity.
+        let mut routed = pin!(pruned.request(Ping::default()).resolve().with_sender());
+        assert!(poll!(routed.as_mut()).is_pending());
+        let mut group = pin!(
+            pruned
+                .request_to(responders_addr, Ping::default())
+                .resolve()
+                .with_sender()
+        );
+        assert!(poll!(group.as_mut()).is_pending());
+        let mut direct = pin!(
+            pruned
+                .request_to(closed_addr, Ping::default())
+                .resolve()
+                .with_sender()
+        );
+        assert!(poll!(direct.as_mut()).is_pending());
+        ctx.respond(close, ());
+
+        let (routed, group, direct) = futures::join!(routed, group, direct);
+        for (response, sender) in [routed, group, direct] {
+            assert!(matches!(response, Err(RequestError::Failed)));
+            assert_eq!(sender, closed_addr);
+        }
+
+        let (ConfirmTermination, terminate) = extract_request(ctx.recv().await.unwrap());
+        assert!(poll!(queued.as_mut()).is_pending());
+
+        // A direct request to a closed mailbox.
         let (response, sender) = ctx
-            .request_to(addr, Ping::default())
+            .request_to(closed_addr, Ping::default())
             .resolve()
             .with_sender()
             .await;
         assert!(matches!(response, Err(RequestError::Failed)));
-        assert!(sender.is_null());
+        assert_eq!(sender, closed_addr);
 
-        // No recipients, no address.
+        // The same via routing.
         let (response, sender) = ctx.request(Ping::default()).resolve().with_sender().await;
         assert!(matches!(response, Err(RequestError::Failed)));
-        assert_eq!(sender, Addr::NULL);
+        assert_eq!(sender, closed_addr);
 
-        // No recipients in the group, no address either.
+        // Direct via group addr.
         let (response, sender) = ctx
-            .request_to(*group, Ping::default())
+            .request_to(responders_addr, Ping::default())
             .resolve()
             .with_sender()
             .await;
         assert!(matches!(response, Err(RequestError::Failed)));
-        assert!(sender.is_null());
+        assert_eq!(sender, closed_addr);
+
+        let (response, ok_addr) = ctx
+            .request(Spawn(ActorKind::Ok))
+            .resolve()
+            .with_sender()
+            .await;
+        response.unwrap();
+
+        ctx.send(Spawn(ActorKind::Full)).await.unwrap();
+        let msg = ctx.recv().await.unwrap();
+        let full_addr = msg.sender();
+        let (ConfirmResume, resume) = extract_request(msg);
+
+        // All three delivery paths must wait for the full mailbox.
+        let mut routed = pin!(pruned.request(Query).all().resolve().with_sender());
+        assert!(poll!(routed.as_mut()).is_pending());
+        let mut group = pin!(
+            pruned
+                .request_to(responders_addr, Query)
+                .all()
+                .resolve()
+                .with_sender()
+        );
+        assert!(poll!(group.as_mut()).is_pending());
+        let mut direct = pin!(pruned.request_to(full_addr, Query).resolve().with_sender());
+        assert!(poll!(direct.as_mut()).is_pending());
+        ctx.respond(resume, ());
+
+        let (mut routed_responses, mut group_responses, (response, sender)) =
+            futures::join!(routed, group, direct);
+        assert_eq!(response.unwrap(), ActorKind::Full);
+        assert_eq!(sender, full_addr);
+
+        for responses in [&mut routed_responses, &mut group_responses] {
+            responses.sort_by_key(|(response, _)| response.as_ref().ok().copied());
+            assert!(
+                matches!(
+                    responses.as_slice(),
+                    [
+                        (Err(RequestError::Failed), closed),
+                        (Ok(ActorKind::Ok), ok),
+                        (Ok(ActorKind::Full), full),
+                    ] if *closed == closed_addr && *ok == ok_addr && *full == full_addr
+                ),
+                "{responses:?}"
+            );
+        }
+
+        // Any succeeds despite the closed mailbox being visited first.
+        let (response, sender) = ctx.request(Query).resolve().with_sender().await;
+        match response.unwrap() {
+            ActorKind::Ok => assert_eq!(sender, ok_addr),
+            ActorKind::Full => assert_eq!(sender, full_addr),
+            ActorKind::ClosedMailbox => unreachable!(),
+        }
+
+        // The queued request fails on termination with the actor's address.
+        ctx.respond(terminate, ());
+        let (response, sender) = queued.await;
+        assert!(matches!(response, Err(RequestError::Failed)));
+        assert_eq!(sender, closed_addr);
 
         ctx.respond(done, ());
     }
@@ -193,16 +324,23 @@ async fn with_sender_on_failed_request() {
     let requesters = topology.local("requesters");
     let requester_addr = requesters.addr();
     let responders = topology.local("responders");
+    let responders_addr = responders.addr();
     requesters.route_all_to(&responders);
     responders.route_all_to(&requesters);
 
     configurers.mount(elfo_configurer::fixture(&topology, AnyConfig::default()));
-    requesters.mount(ActorGroup::new().exec(requester));
+    requesters.mount(ActorGroup::new().exec(move |ctx| requester(ctx, responders_addr)));
     responders.mount(
         ActorGroup::new()
             .router(MapRouter::new(|envelope| {
                 msg!(match envelope {
-                    Query => Outcome::Unicast(Singleton),
+                    Spawn(key) => Outcome::Unicast(*key),
+                    Ping => Outcome::Unicast(ActorKind::ClosedMailbox),
+                    Query => Outcome::Multicast(vec![
+                        ActorKind::ClosedMailbox,
+                        ActorKind::Ok,
+                        ActorKind::Full,
+                    ]),
                     _ => Outcome::Default,
                 })
             }))
