@@ -220,11 +220,20 @@ pub fn message_impl(
 
             #[#internal::linkme::distributed_slice(#internal::MESSAGE_VTABLES_LIST)]
             #[linkme(crate = #internal::linkme)]
-            static VTABLE: &#internal::MessageVTable = &#internal::MessageVTable::new::<#name>(
-                #name_str,
-                #protocol,
-                #dumping_allowed
-            );
+            static VTABLE: &#internal::MessageVTable = {
+                static TELEMETRY_META: #internal::MessageTelemetryMeta =
+                    #internal::MessageTelemetryMeta::new(#name_str, #protocol);
+
+                static TELEMETRY: #internal::MessageTelemetry =
+                    #internal::MessageTelemetry::new(&TELEMETRY_META);
+
+                &#internal::MessageVTable::new::<#name>(
+                    #name_str,
+                    #protocol,
+                    &TELEMETRY,
+                    #dumping_allowed
+                )
+            };
         }
     });
 

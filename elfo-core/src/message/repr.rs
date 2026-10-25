@@ -3,8 +3,10 @@ use std::{
     ptr::{self, NonNull},
 };
 
-use metrics::Label;
+use metrics::{Key, Label};
 use smallbox::smallbox;
+
+use elfo_utils::CachePadded;
 
 use super::Message;
 use crate::dumping;
@@ -100,6 +102,44 @@ pub struct Erased;
 // Protection against footgun.
 assert_not_impl_any!(MessageRepr: Clone);
 
+// === MessageTelemetryMeta ===
+
+// Reexported in `elfo::_priv`.
+#[doc(hidden)]
+pub struct MessageTelemetryMeta([Label; 2]);
+
+impl MessageTelemetryMeta {
+    #[doc(hidden)]
+    pub const fn new(name: &'static str, protocol: &'static str) -> Self {
+        Self([
+            Label::from_static_parts("message", name),
+            Label::from_static_parts("protocol", protocol),
+        ])
+    }
+}
+
+// === MessageTelemetry ===
+
+// Reexported in `elfo::_priv`.
+#[doc(hidden)]
+pub struct MessageTelemetry {
+    pub(crate) sent_messages: Key,
+    pub(crate) handling_time: Key,
+    _cache_align: CachePadded<()>,
+}
+
+impl MessageTelemetry {
+    #[doc(hidden)]
+    pub const fn new(meta: &'static MessageTelemetryMeta) -> Self {
+        let labels = &meta.0;
+        Self {
+            sent_messages: Key::from_static_parts("elfo_sent_messages_total", labels),
+            handling_time: Key::from_static_parts("elfo_message_handling_time_seconds", labels),
+            _cache_align: CachePadded::new(()),
+        }
+    }
+}
+
 // === MessageVTable ===
 
 /// Message Virtual Table.
@@ -113,8 +153,8 @@ pub struct MessageVTable {
     pub(super) repr_layout: alloc::Layout, // of `MessageRepr<M>`
     pub(super) name: &'static str,
     pub(super) protocol: &'static str,
-    pub(super) labels: [Label; 2],    // protocol + name for `metrics`
-    pub(super) dumping_allowed: bool, // TODO: introduce `DumpingMode`.
+    pub(super) telemetry: &'static MessageTelemetry, // Separate storage keeps the vtable ro.
+    pub(super) dumping_allowed: bool,                // TODO: introduce `DumpingMode`.
     #[cfg(feature = "network")]
     pub(super) read_msgpack:
         unsafe fn(buffer: &[u8], out_ptr: NonNull<MessageRepr>) -> Result<(), decode::Error>,
@@ -147,16 +187,14 @@ impl MessageVTable {
     pub const fn new<M: Message>(
         name: &'static str,
         protocol: &'static str,
+        telemetry: &'static MessageTelemetry,
         dumping_allowed: bool,
     ) -> Self {
         Self {
             repr_layout: alloc::Layout::new::<MessageRepr<M>>(),
             name,
             protocol,
-            labels: [
-                Label::from_static_parts("message", name),
-                Label::from_static_parts("protocol", protocol),
-            ],
+            telemetry,
             dumping_allowed,
             debug: vtablefns::debug::<M>,
             clone: vtablefns::clone::<M>,

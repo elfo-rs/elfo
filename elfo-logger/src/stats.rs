@@ -1,29 +1,69 @@
 use metrics::{Key, Label};
 use tracing::Level;
 
-fn labels_by_level(level: Level) -> &'static [Label] {
-    const fn f(value: &'static str) -> Label {
-        Label::from_static_parts("level", value)
+use elfo_utils::CachePadded;
+
+struct KeysPerLevel([Key; 5]);
+
+impl KeysPerLevel {
+    const fn new(name: &'static str) -> Self {
+        const fn labels(value: &'static str) -> [Label; 1] {
+            [Label::from_static_parts("level", value)]
+        }
+
+        const TRACE: &[Label] = &labels("Trace");
+        const DEBUG: &[Label] = &labels("Debug");
+        const INFO: &[Label] = &labels("Info");
+        const WARN: &[Label] = &labels("Warn");
+        const ERROR: &[Label] = &labels("Error");
+
+        Self([
+            Key::from_static_parts(name, TRACE),
+            Key::from_static_parts(name, DEBUG),
+            Key::from_static_parts(name, INFO),
+            Key::from_static_parts(name, WARN),
+            Key::from_static_parts(name, ERROR),
+        ])
     }
 
-    const TRACE_LABELS: &[Label] = &[f("Trace")];
-    const DEBUG_LABELS: &[Label] = &[f("Debug")];
-    const INFO_LABELS: &[Label] = &[f("Info")];
-    const WARN_LABELS: &[Label] = &[f("Warn")];
-    const ERROR_LABELS: &[Label] = &[f("Error")];
+    fn get(&self, level: Level) -> &Key {
+        let index = match level {
+            Level::TRACE => 0,
+            Level::DEBUG => 1,
+            Level::INFO => 2,
+            Level::WARN => 3,
+            Level::ERROR => 4,
+        };
 
-    match level {
-        Level::TRACE => TRACE_LABELS,
-        Level::DEBUG => DEBUG_LABELS,
-        Level::INFO => INFO_LABELS,
-        Level::WARN => WARN_LABELS,
-        Level::ERROR => ERROR_LABELS,
+        &self.0[index]
     }
 }
 
-pub(crate) fn counter_per_level(name: &'static str, level: Level) {
+struct Stats {
+    emitted: KeysPerLevel,
+    lost: KeysPerLevel,
+    limited: KeysPerLevel,
+}
+
+static STATS: CachePadded<Stats> = CachePadded::new(Stats {
+    emitted: KeysPerLevel::new("elfo_emitted_events_total"),
+    lost: KeysPerLevel::new("elfo_lost_events_total"),
+    limited: KeysPerLevel::new("elfo_limited_events_total"),
+});
+
+fn increment(keys: &KeysPerLevel, level: Level) {
     let recorder = ward!(metrics::try_recorder());
-    let labels = labels_by_level(level);
-    let key = Key::from_static_parts(name, labels);
-    recorder.increment_counter(&key, 1);
+    recorder.increment_counter(keys.get(level), 1);
+}
+
+pub(crate) fn on_emitted_event(level: Level) {
+    increment(&STATS.emitted, level);
+}
+
+pub(crate) fn on_lost_event(level: Level) {
+    increment(&STATS.lost, level);
+}
+
+pub(crate) fn on_limited_event(level: Level) {
+    increment(&STATS.limited, level);
 }

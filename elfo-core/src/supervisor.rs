@@ -416,8 +416,13 @@ where
         entry.insert(Object::new(addr, actor));
 
         let group_scope = self.scope_shared.clone();
-        let scope = Scope::new(scope::trace_id(), addr, meta.clone(), group_scope)
-            .with_telemetry(&system_config.telemetry);
+        let scope = Scope::with_telemetry(
+            scope::trace_id(),
+            addr,
+            meta.clone(),
+            group_scope,
+            &system_config.telemetry,
+        );
 
         #[cfg(feature = "unstable-stuck-detection")]
         let fut = MeasurePoll::new(fut.instrument(span), self.rt_manager.stuck_detector());

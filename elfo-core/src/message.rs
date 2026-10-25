@@ -3,7 +3,6 @@ use std::{
     ptr::{self, NonNull},
 };
 
-use metrics::Label;
 use serde::{Deserialize, Serialize};
 use smallbox::smallbox;
 
@@ -34,12 +33,6 @@ pub trait Message:
         self._vtable().protocol
     }
 
-    #[doc(hidden)] // unstable because depends on `metrics`
-    #[inline(always)]
-    fn labels(&self) -> &'static [Label] {
-        &self._vtable().labels
-    }
-
     #[doc(hidden)] // unstable because will be replaced with `DumpingMode`
     #[inline(always)]
     fn dumping_allowed(&self) -> bool {
@@ -58,6 +51,11 @@ pub trait Message:
     #[inline(always)]
     fn _repr_layout(&self) -> alloc::Layout {
         self._vtable().repr_layout
+    }
+
+    #[doc(hidden)]
+    fn _telemetry(&self) -> &'static MessageTelemetry {
+        self._vtable().telemetry
     }
 
     // NOTE: All methods below MUST be overriden for `AnyMessage`.
