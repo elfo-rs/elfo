@@ -8,10 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 ### Fixed
+- network: complete requests when response decoding fails ([#193]).
 - core/config: hide `AnyConfig` contents in message dumps ([#190]).
 - core/config: hide secret values in `Secret<T>` deserialization errors ([#190]).
 - configurer: hide source text in TOML parse errors ([#190]).
 
+[#193]: https://github.com/elfo-rs/elfo/pull/193
 [#190]: https://github.com/elfo-rs/elfo/pull/190
 
 ## [0.2.0-alpha.21] - 2026-03-27
