@@ -102,31 +102,41 @@ pub struct Erased;
 // Protection against footgun.
 assert_not_impl_any!(MessageRepr: Clone);
 
-// === MessageMetricKeys ===
+// === MessageTelemetryMeta ===
 
-/// Keys cache hashes at runtime. Separate storage keeps the vtable read-only.
 // Reexported in `elfo::_priv`.
 #[doc(hidden)]
-pub struct MessageMetricKeys {
-    sent_messages: Key,
-    handling_time: Key,
+pub struct MessageTelemetryMeta([Label; 2]);
+
+impl MessageTelemetryMeta {
+    #[doc(hidden)]
+    pub const fn new(name: &'static str, protocol: &'static str) -> Self {
+        Self([
+            Label::from_static_parts("message", name),
+            Label::from_static_parts("protocol", protocol),
+        ])
+    }
+}
+
+// === MessageTelemetry ===
+
+// Reexported in `elfo::_priv`.
+#[doc(hidden)]
+pub struct MessageTelemetry {
+    pub(crate) sent_messages: Key,
+    pub(crate) handling_time: Key,
     _cache_align: CachePadded<()>,
 }
 
-impl MessageMetricKeys {
+impl MessageTelemetry {
     #[doc(hidden)]
-    pub const fn new(labels: &'static [Label]) -> Self {
+    pub const fn new(meta: &'static MessageTelemetryMeta) -> Self {
+        let labels = &meta.0;
         Self {
             sent_messages: Key::from_static_parts("elfo_sent_messages_total", labels),
             handling_time: Key::from_static_parts("elfo_message_handling_time_seconds", labels),
             _cache_align: CachePadded::new(()),
         }
-    }
-
-    #[inline]
-    pub(super) fn labels(&'static self) -> &'static [Label] {
-        // Reuse the metric key's labels to avoid storing another reference.
-        self.sent_messages.labels().as_slice()
     }
 }
 
@@ -143,8 +153,8 @@ pub struct MessageVTable {
     pub(super) repr_layout: alloc::Layout, // of `MessageRepr<M>`
     pub(super) name: &'static str,
     pub(super) protocol: &'static str,
-    pub(super) metric_keys: &'static MessageMetricKeys,
-    pub(super) dumping_allowed: bool, // TODO: introduce `DumpingMode`.
+    pub(super) telemetry: &'static MessageTelemetry, // Separate storage keeps the vtable ro.
+    pub(super) dumping_allowed: bool,                // TODO: introduce `DumpingMode`.
     #[cfg(feature = "network")]
     pub(super) read_msgpack:
         unsafe fn(buffer: &[u8], out_ptr: NonNull<MessageRepr>) -> Result<(), decode::Error>,
@@ -177,14 +187,14 @@ impl MessageVTable {
     pub const fn new<M: Message>(
         name: &'static str,
         protocol: &'static str,
-        metric_keys: &'static MessageMetricKeys,
+        telemetry: &'static MessageTelemetry,
         dumping_allowed: bool,
     ) -> Self {
         Self {
             repr_layout: alloc::Layout::new::<MessageRepr<M>>(),
             name,
             protocol,
-            metric_keys,
+            telemetry,
             dumping_allowed,
             debug: vtablefns::debug::<M>,
             clone: vtablefns::clone::<M>,
@@ -197,16 +207,6 @@ impl MessageVTable {
             #[cfg(feature = "network")]
             write_msgpack: vtablefns::write_msgpack::<M>,
         }
-    }
-
-    #[inline]
-    pub(crate) fn sent_messages_key(&'static self) -> &'static Key {
-        &self.metric_keys.sent_messages
-    }
-
-    #[inline]
-    pub(crate) fn handling_time_key(&'static self) -> &'static Key {
-        &self.metric_keys.handling_time
     }
 }
 

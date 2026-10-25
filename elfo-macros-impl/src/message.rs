@@ -221,18 +221,16 @@ pub fn message_impl(
             #[#internal::linkme::distributed_slice(#internal::MESSAGE_VTABLES_LIST)]
             #[linkme(crate = #internal::linkme)]
             static VTABLE: &#internal::MessageVTable = {
-                const METRIC_LABELS: &[#internal::metrics::Label] = &[
-                    #internal::metrics::Label::from_static_parts("message", #name_str),
-                    #internal::metrics::Label::from_static_parts("protocol", #protocol),
-                ];
+                static TELEMETRY_META: #internal::MessageTelemetryMeta =
+                    #internal::MessageTelemetryMeta::new(#name_str, #protocol);
 
-                static METRIC_KEYS: #internal::MessageMetricKeys =
-                    #internal::MessageMetricKeys::new(METRIC_LABELS);
+                static TELEMETRY: #internal::MessageTelemetry =
+                    #internal::MessageTelemetry::new(&TELEMETRY_META);
 
                 &#internal::MessageVTable::new::<#name>(
                     #name_str,
                     #protocol,
-                    &METRIC_KEYS,
+                    &TELEMETRY,
                     #dumping_allowed
                 )
             };

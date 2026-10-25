@@ -59,7 +59,7 @@ impl Stats {
         recorder.record_histogram(&KEYS.waiting_time, value);
 
         self.in_handling = Some(InHandling::new(
-            envelope.message()._vtable().handling_time_key(),
+            &envelope.message()._telemetry().handling_time,
             now,
         ));
     }
@@ -72,7 +72,7 @@ impl Stats {
 
     pub(super) fn on_sent_message(&self, message: &impl Message) {
         let recorder = ward!(metrics::try_recorder());
-        recorder.increment_counter(message._vtable().sent_messages_key(), 1);
+        recorder.increment_counter(&message._telemetry().sent_messages, 1);
     }
 
     fn emit_handling_time(&mut self) {

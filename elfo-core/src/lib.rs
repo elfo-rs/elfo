@@ -91,7 +91,6 @@ pub mod _priv {
     pub use erased_serde;
     pub use idr_ebr::EbrGuard;
     pub use linkme;
-    pub use metrics;
     #[cfg(feature = "network")]
     pub use rmp_serde as rmps;
     pub use serde;

@@ -195,7 +195,7 @@ fn make_telemetry_key(group: Addr, key: &str) -> Option<NonZeroU64> {
         return None;
     }
 
-    // TODO: consider switching to rapidhash when upgrading from `metrics-0.17.1`.
+    // TODO: consider switching to `rapidhash` when upgrading from `metrics-0.17.1`.
     let mut hasher = metrics::KeyHasher::default();
     group.hash(&mut hasher);
     key.hash(&mut hasher);
