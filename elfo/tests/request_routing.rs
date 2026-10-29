@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 #![cfg(feature = "test-util")]
 
-use std::time::Duration;
+use std::{pin::pin, time::Duration};
 
 use tracing::info;
 
@@ -10,6 +10,7 @@ use elfo::{
     RestartParams, RestartPolicy, Topology,
     prelude::*,
     routers::{MapRouter, Outcome},
+    test::extract_request,
 };
 use elfo_core::config::AnyConfig;
 
@@ -171,4 +172,95 @@ async fn multiple_failures() {
     .await
     .expect("cannot start")
     .expect("requester actor failed");
+}
+
+// Clone the request after a successful response, before the requester consumes the result.
+// Dropping the cloned token must not replace that response with `Ignored`.
+#[tokio::test]
+async fn token_stays_valid_after_response() {
+    elfo::set_protocol!("token_stays_valid_after_response");
+
+    #[message(ret = u64)]
+    struct Query;
+    #[message]
+    struct IgnoredSent;
+
+    // A multicast clones the envelope for each recipient, and one of the clones
+    // can be made after another recipient has answered. `duplicate()` simulates
+    // this deterministically.
+    let blueprint = ActorGroup::new().exec(|mut ctx| async move {
+        let envelope = ctx.recv().await.unwrap();
+        let pending = envelope.duplicate();
+
+        let (Query, token) = extract_request(envelope);
+        ctx.respond(token, 42);
+
+        let (Query, token) = extract_request(pending.duplicate());
+        assert!(!token.is_forgotten());
+        // Ignore the token, so the requester could receive `Ignored` if `Ok` was
+        // replaced.
+        drop(token);
+        drop(pending);
+
+        ctx.send(IgnoredSent).await.unwrap();
+    });
+
+    let mut proxy = elfo::test::proxy(blueprint, AnyConfig::default()).await;
+    let requester = proxy.subproxy().await;
+
+    // Send the request, but leave its result in the request table until
+    // the responder has made the late clone.
+    let mut query = pin!(requester.request(Query));
+    assert!(futures::poll!(&mut query).is_pending());
+
+    // Doesn't arrive if the responder panics.
+    assert_msg!(proxy.recv().await, IgnoredSent);
+    assert_eq!(query.await, 42);
+}
+
+// Clone the request after the requester consumes the result and removes the request table entry.
+// The cloned token must remain usable, and responding with it must have no effect.
+#[tokio::test]
+async fn token_stays_valid_after_request_answered() {
+    elfo::set_protocol!("token_stays_valid_after_request_answered");
+
+    #[message(ret = u64)]
+    struct Query;
+    #[message]
+    struct ResponseSent;
+    #[message]
+    struct DuplicateRequest;
+    #[message]
+    struct CloneHandled;
+
+    let blueprint = ActorGroup::new().exec(|mut ctx| async move {
+        let envelope = ctx.recv().await.unwrap();
+        let pending = envelope.duplicate();
+        let (Query, token) = extract_request(envelope);
+        ctx.respond(token, 42);
+        ctx.send(ResponseSent).await.unwrap();
+
+        assert_msg!(ctx.recv().await.unwrap(), DuplicateRequest);
+        let clone = pending.duplicate();
+        assert_eq!(clone.sender(), pending.sender());
+        assert_eq!(clone.request_id(), pending.request_id());
+        assert_eq!(clone.trace_id(), pending.trace_id());
+
+        let (Query, token) = extract_request(clone);
+        assert!(!token.is_forgotten());
+        ctx.respond(token, 43);
+        drop(pending);
+        ctx.send(CloneHandled).await.unwrap();
+    });
+
+    let mut proxy = elfo::test::proxy(blueprint, AnyConfig::default()).await;
+    let requester = proxy.subproxy().await;
+    let mut query = pin!(requester.request(Query));
+    assert!(futures::poll!(&mut query).is_pending());
+    assert_msg!(proxy.recv().await, ResponseSent);
+
+    // Consume the result before the responder creates another clone.
+    assert_eq!(query.await, 42);
+    proxy.send(DuplicateRequest).await;
+    assert_msg!(proxy.recv().await, CloneHandled);
 }

@@ -51,6 +51,9 @@ type Responses = SmallVec<[Result<Envelope, RequestError>; 1]>;
 
 #[derive(Default)]
 struct RequestData {
+    // Outstanding response count. For `all`, a live token keeps it nonzero.
+    // A successful `any` response sets it to zero even while tokens remain;
+    // subsequent clones do not increase it.
     remainder: usize,
     responses: Responses,
     collect_all: bool,
@@ -155,7 +158,7 @@ impl RequestTable {
         let mut requests = self.requests.lock();
 
         // `None` here means the request was with `collect_all = false` and
-        // the response has been recieved already.
+        // the response has been received already.
         let request = ward!(requests.get_mut(data.request_id));
 
         if request.push(response) {
@@ -184,6 +187,9 @@ struct ResponseTokenData {
 }
 
 impl ResponseToken {
+    /// Creates a token for `request_id` without increasing the number of expected responses.
+    ///
+    /// Use [`Self::duplicate`] to clone an existing token.
     #[doc(hidden)]
     #[inline]
     pub fn new(sender: Addr, request_id: RequestId, trace_id: TraceId, book: AddressBook) -> Self {
@@ -244,11 +250,16 @@ impl ResponseToken {
         }
     }
 
+    /// Increments the token reference count.
+    ///
+    /// If the requester is local and the request is still pending,
+    /// also increments the expected response count.
     #[doc(hidden)]
     #[inline]
     pub fn duplicate(&self) -> Self {
+        self.increment_remainder();
         Self {
-            data: self.do_duplicate(),
+            data: self.data.clone(),
             received: self.received,
             marker: PhantomData,
         }
@@ -260,18 +271,22 @@ impl ResponseToken {
         self.data = None;
     }
 
-    fn do_duplicate(&self) -> Option<Arc<ResponseTokenData>> {
-        let data = self.data.as_ref()?;
+    fn increment_remainder(&self) {
+        let data = ward!(self.data.as_ref());
 
-        if data.sender.is_local() {
-            let guard = EbrGuard::new();
-            let object = data.book.get(data.sender, &guard)?;
-            let actor = object.as_actor()?;
-            let mut requests = actor.request_table().requests.lock();
-            requests.get_mut(data.request_id)?.remainder += 1;
+        if !data.sender.is_local() {
+            return;
         }
 
-        Some(data.clone())
+        let guard = EbrGuard::new();
+        let object = ward!(data.book.get(data.sender, &guard));
+        let actor = ward!(object.as_actor());
+        let mut requests = actor.request_table().requests.lock();
+        let request = ward!(requests.get_mut(data.request_id));
+        // A completed request must not wait for more responses.
+        if request.remainder > 0 {
+            request.remainder += 1;
+        }
     }
 }
 
