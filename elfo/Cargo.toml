@@ -53,6 +53,7 @@ tracing.workspace = true
 anyhow = "1.0.38"
 static_assertions = "1.1.0"
 futures-intrusive = "0.5"
+itertools = "0.13"
 turmoil = "0.7"
 trybuild = "1.0"
 
