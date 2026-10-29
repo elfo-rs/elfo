@@ -15,7 +15,7 @@ pub use crate::{
     actor_status::{ActorStatus, ActorStatusKind},
     addr::Addr,
     config::Config,
-    context::{Context, RequestBuilder},
+    context::{Context, RequestBuilder, RequestResolver},
     envelope::Envelope,
     group::{ActorGroup, Blueprint, TerminationPolicy},
     local::{Local, MoveOwnership},
@@ -87,6 +87,12 @@ pub mod _priv {
         message::*,
         object::{GroupVisitor, Object, OwnedObject},
         permissions::{AtomicPermissions, Permissions},
+    };
+    #[cfg(feature = "unstable")]
+    pub use crate::{
+        envelope::RejectedEnvelope,
+        object::{ObjectRef, SendFut},
+        request_table::RequestFailure,
     };
     pub use erased_serde;
     pub use idr_ebr::EbrGuard;

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+- core/context: add `resolve().with_sender()` to get the responder address along with the response ([#194]).
+
 ### Changed
 
 - **BREAKING** core/message: remove `Message::labels()` and the `_priv::metrics` reexport ([#191]).
@@ -17,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - network: complete requests when response decoding fails ([#193]).
+- core/context: dropping a request envelope received from the context without unpacking it yields `RequestError::Ignored` instead of `Failed` ([#194]).
 - core/config: hide `AnyConfig` contents in message dumps ([#190]).
 - core/config: hide secret values in `Secret<T>` deserialization errors ([#190]).
 - configurer: hide source text in TOML parse errors ([#190]).
@@ -24,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#193]: https://github.com/elfo-rs/elfo/pull/193
 [#190]: https://github.com/elfo-rs/elfo/pull/190
 [#191]: https://github.com/elfo-rs/elfo/pull/191
+[#194]: https://github.com/elfo-rs/elfo/pull/194
 
 ## [0.2.0-alpha.21] - 2026-03-27
 ### Added

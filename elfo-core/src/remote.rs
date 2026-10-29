@@ -1,8 +1,8 @@
 use crate::{
     addr::Addr,
     envelope::Envelope,
-    errors::{RequestError, SendError, TrySendError},
-    request_table::ResponseToken,
+    errors::{SendError, TrySendError},
+    request_table::{RequestFailure, ResponseToken},
 };
 
 #[instability::unstable]
@@ -14,7 +14,7 @@ pub trait RemoteHandle: Send + Sync + 'static {
         recipient: Addr,
         envelope: Envelope,
     ) -> Result<(), SendError<Envelope>>;
-    fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestError>);
+    fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestFailure>);
 }
 
 #[instability::unstable]

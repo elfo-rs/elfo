@@ -18,9 +18,9 @@ use crate::remote::{self, RemoteHandle};
 use crate::{
     actor::Actor,
     addr::Addr,
-    envelope::Envelope,
-    errors::{RequestError, SendError, TrySendError},
-    request_table::ResponseToken,
+    envelope::{Envelope, RejectedEnvelope},
+    errors::{SendError, TrySendError},
+    request_table::{RequestFailure, ResponseToken},
 };
 
 // Reexported in `_priv`.
@@ -103,60 +103,73 @@ impl Object {
         self.addr
     }
 
-    // Tries to send an envelope to the object synchronously.
-    // Only if the object is full, it gets an owned link to the object
-    // (because an EBR guard cannot be hold over the async boundary)
-    // and sends the envelope asynchronously.
+    /// Tries to send an envelope synchronously and returns its result or continuation.
+    ///
+    /// If an object is full, acquires an owned link to it for the continuation,
+    /// because an EBR guard cannot be held across an async boundary.
     #[instability::unstable]
     pub fn send(
-        this: BorrowedObject<'_>,
+        this: ObjectRef<'_>,
         recipient: Addr,
         envelope: Envelope,
-    ) -> impl Future<Output = SendResult> + use<> {
+    ) -> SendFut<impl Future<Output = SendOutput> + use<>> {
         let _ = recipient; // suppress a warning if the "network" feature is disabled
 
         match &this.kind {
             ObjectKind::Actor(handle) => match handle.try_send(envelope) {
                 Ok(()) => SendFut::Ready(Ok(())),
-                Err(TrySendError::Closed(envelope)) => SendFut::Ready(Err(SendError(envelope))),
+                Err(TrySendError::Closed(envelope)) => {
+                    SendFut::Ready(Err(SendError(envelope.reject(this.addr))))
+                }
                 Err(TrySendError::Full(envelope)) => {
                     let Some(this) = this.to_owned() else {
-                        return SendFut::Ready(Err(SendError(envelope)));
+                        return SendFut::Ready(Err(SendError(envelope.reject(this.addr))));
                     };
 
-                    SendFut::WaitActor(async move {
+                    SendFut::Pending(WaitFut::Actor(async move {
                         let actor = this.as_actor().unwrap();
-                        actor.send(envelope).await
-                    })
+                        actor
+                            .send(envelope)
+                            .await
+                            .map_err(|err| err.map(|envelope| envelope.reject(this.addr)))
+                    }))
                 }
             },
             ObjectKind::Group(handle) => {
                 let mut visitor = SendGroupVisitor::default();
                 handle.handle(envelope, &mut visitor);
-                SendFut::WaitGroup(visitor.finish())
+                if visitor.is_ready() {
+                    SendFut::Ready(visitor.finish())
+                } else {
+                    SendFut::Pending(WaitFut::Group(visitor.wait()))
+                }
             }
             #[cfg(feature = "network")]
             ObjectKind::Remote(handle) => match handle.try_send(recipient, envelope) {
                 Ok(()) => SendFut::Ready(Ok(())),
-                Err(TrySendError::Closed(envelope)) => SendFut::Ready(Err(SendError(envelope))),
+                Err(TrySendError::Closed(envelope)) => {
+                    SendFut::Ready(Err(SendError(envelope.reject(Addr::NULL))))
+                }
                 Err(TrySendError::Full(mut envelope)) => {
                     let Some(this) = this.to_owned() else {
-                        return SendFut::Ready(Err(SendError(envelope)));
+                        return SendFut::Ready(Err(SendError(envelope.reject(Addr::NULL))));
                     };
 
-                    SendFut::WaitRemote(async move {
+                    SendFut::Pending(WaitFut::Remote(async move {
                         let handle = this.as_remote().unwrap();
                         loop {
                             match handle.send(recipient, envelope) {
                                 remote::SendResult::Ok => break Ok(()),
-                                remote::SendResult::Err(err) => break Err(err),
+                                remote::SendResult::Err(err) => {
+                                    break Err(err.map(|envelope| envelope.reject(Addr::NULL)));
+                                }
                                 remote::SendResult::Wait(notified, e) => {
                                     envelope = e;
                                     notified.await;
                                 }
                             }
                         }
-                    })
+                    }))
                 }
             },
         }
@@ -167,18 +180,22 @@ impl Object {
         &self,
         recipient: Addr,
         envelope: Envelope,
-    ) -> Result<(), TrySendError<Envelope>> {
+    ) -> Result<(), TrySendError<RejectedEnvelope>> {
         let _ = recipient; // suppress a warning if the "network" feature is disabled
 
         match &self.kind {
-            ObjectKind::Actor(handle) => handle.try_send(envelope),
+            ObjectKind::Actor(handle) => handle
+                .try_send(envelope)
+                .map_err(|err| err.map(|envelope| envelope.reject(self.addr))),
             ObjectKind::Group(handle) => {
                 let mut visitor = TrySendGroupVisitor::default();
                 handle.handle(envelope, &mut visitor);
                 visitor.finish()
             }
             #[cfg(feature = "network")]
-            ObjectKind::Remote(handle) => handle.try_send(recipient, envelope),
+            ObjectKind::Remote(handle) => handle
+                .try_send(recipient, envelope)
+                .map_err(|err| err.map(|envelope| envelope.reject(Addr::NULL))),
         }
     }
 
@@ -187,23 +204,27 @@ impl Object {
         &self,
         recipient: Addr,
         envelope: Envelope,
-    ) -> Result<(), SendError<Envelope>> {
+    ) -> Result<(), SendError<RejectedEnvelope>> {
         let _ = recipient; // suppress a warning if the "network" feature is disabled
 
         match &self.kind {
-            ObjectKind::Actor(handle) => handle.unbounded_send(envelope),
+            ObjectKind::Actor(handle) => handle
+                .unbounded_send(envelope)
+                .map_err(|err| err.map(|envelope| envelope.reject(self.addr))),
             ObjectKind::Group(handle) => {
                 let mut visitor = UnboundedSendGroupVisitor::default();
                 handle.handle(envelope, &mut visitor);
                 visitor.finish()
             }
             #[cfg(feature = "network")]
-            ObjectKind::Remote(handle) => handle.unbounded_send(recipient, envelope),
+            ObjectKind::Remote(handle) => handle
+                .unbounded_send(recipient, envelope)
+                .map_err(|err| err.map(|envelope| envelope.reject(Addr::NULL))),
         }
     }
 
     #[instability::unstable]
-    pub fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestError>) {
+    pub fn respond(&self, token: ResponseToken, response: Result<Envelope, RequestFailure>) {
         match &self.kind {
             ObjectKind::Actor(handle) => handle.request_table().resolve(token, response),
             ObjectKind::Group(_handle) => unreachable!(),
@@ -247,59 +268,114 @@ impl Object {
     }
 }
 
-// === SendFut ===
+// === ObjectRef ===
 
-type SendResult = Result<(), SendError<Envelope>>;
-
-#[cfg(not(feature = "network"))]
-#[pin_project(project = SendFutProj)]
-enum SendFut<A, G> {
-    Ready(SendResult),
-    WaitActor(#[pin] A),
-    WaitGroup(#[pin] G),
+/// Access to an object through an EBR guard or an existing owned handle.
+// Reexported in `_priv`.
+#[doc(hidden)]
+#[instability::unstable]
+#[derive(From)]
+pub enum ObjectRef<'a> {
+    Borrowed(BorrowedObject<'a>),
+    Owned(&'a OwnedObject),
 }
 
-#[cfg(not(feature = "network"))]
-impl<A, G> Future for SendFut<A, G>
-where
-    A: Future<Output = SendResult>,
-    G: Future<Output = SendResult>,
-{
-    type Output = SendResult;
+impl ObjectRef<'_> {
+    #[inline]
+    fn to_owned(&self) -> Option<OwnedObject> {
+        match self {
+            Self::Borrowed(object) => (*object).to_owned(),
+            Self::Owned(object) => Some((*object).clone()),
+        }
+    }
+}
 
+impl Deref for ObjectRef<'_> {
+    type Target = Object;
+
+    #[inline]
+    fn deref(&self) -> &Object {
+        match self {
+            Self::Borrowed(object) => object,
+            Self::Owned(object) => object,
+        }
+    }
+}
+
+// === SendFut ===
+
+type SendOutput = Result<(), SendError<RejectedEnvelope>>;
+
+/// The completed result of [Object::send] or the work needed to finish it.
+// Reexported in `_priv`.
+#[doc(hidden)]
+#[instability::unstable]
+#[must_use]
+#[pin_project(project = SendFutProj)]
+pub enum SendFut<F> {
+    Ready(SendOutput),
+    Pending(#[pin] F),
+}
+
+impl<F: Future<Output = SendOutput>> Future for SendFut<F> {
+    type Output = SendOutput;
+
+    #[inline]
     fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         match self.project() {
             SendFutProj::Ready(result) => Poll::Ready(mem::replace(result, Ok(()))),
-            SendFutProj::WaitActor(fut) => fut.poll(cx),
-            SendFutProj::WaitGroup(fut) => fut.poll(cx),
+            SendFutProj::Pending(future) => future.poll(cx),
+        }
+    }
+}
+
+// === WaitFut ===
+
+#[cfg(not(feature = "network"))]
+#[pin_project(project = WaitFutProj)]
+enum WaitFut<A, G> {
+    Actor(#[pin] A),
+    Group(#[pin] G),
+}
+
+#[cfg(not(feature = "network"))]
+impl<A, G> Future for WaitFut<A, G>
+where
+    A: Future<Output = SendOutput>,
+    G: Future<Output = SendOutput>,
+{
+    type Output = SendOutput;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match self.project() {
+            WaitFutProj::Actor(fut) => fut.poll(cx),
+            WaitFutProj::Group(fut) => fut.poll(cx),
         }
     }
 }
 
 #[cfg(feature = "network")]
-#[pin_project(project = SendFutProj)]
-enum SendFut<A, G, R> {
-    Ready(SendResult),
-    WaitActor(#[pin] A),
-    WaitGroup(#[pin] G),
-    WaitRemote(#[pin] R),
+#[pin_project(project = WaitFutProj)]
+enum WaitFut<A, G, R> {
+    Actor(#[pin] A),
+    Group(#[pin] G),
+    Remote(#[pin] R),
 }
 
 #[cfg(feature = "network")]
-impl<A, G, R> Future for SendFut<A, G, R>
+impl<A, G, R> Future for WaitFut<A, G, R>
 where
-    A: Future<Output = SendResult>,
-    G: Future<Output = SendResult>,
-    R: Future<Output = SendResult>,
+    A: Future<Output = SendOutput>,
+    G: Future<Output = SendOutput>,
+    R: Future<Output = SendOutput>,
 {
-    type Output = SendResult;
+    type Output = SendOutput;
 
     fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         match self.project() {
-            SendFutProj::Ready(result) => Poll::Ready(mem::replace(result, Ok(()))),
-            SendFutProj::WaitActor(fut) => fut.poll(cx),
-            SendFutProj::WaitGroup(fut) => fut.poll(cx),
-            SendFutProj::WaitRemote(fut) => fut.poll(cx),
+            WaitFutProj::Actor(fut) => fut.poll(cx),
+            WaitFutProj::Group(fut) => fut.poll(cx),
+            WaitFutProj::Remote(fut) => fut.poll(cx),
         }
     }
 }
@@ -326,7 +402,8 @@ pub trait GroupVisitor {
 
 #[derive(Default)]
 struct SendGroupVisitor {
-    extra: Option<Envelope>,
+    /// The last rejected envelope, returned to the caller if nobody accepted.
+    extra: Option<RejectedEnvelope>,
     full: SmallVec<[(OwnedObject, Envelope); 1]>,
     has_ok: bool,
 }
@@ -342,13 +419,18 @@ impl SendGroupVisitor {
                 self.full.push((object.clone(), envelope));
             }
             Err(TrySendError::Closed(envelope)) => {
-                self.extra = Some(envelope);
+                self.extra = Some(envelope.reject(object.addr));
             }
         }
     }
 
     #[inline]
-    async fn finish(mut self) -> SendResult {
+    fn is_ready(&self) -> bool {
+        self.full.is_empty()
+    }
+
+    #[inline]
+    async fn wait(mut self) -> SendOutput {
         // Wait until messages reach all full actors.
         #[allow(clippy::comparison_chain)]
         if self.full.len() == 1 {
@@ -358,8 +440,9 @@ impl SendGroupVisitor {
             match actor.send(envelope).await {
                 Ok(()) => self.has_ok = true,
                 Err(SendError(envelope)) => {
+                    let rejected = envelope.reject(object.addr);
                     if !self.has_ok {
-                        self.extra = Some(envelope);
+                        self.extra = Some(rejected);
                     }
                 }
             }
@@ -373,22 +456,27 @@ impl SendGroupVisitor {
                         .expect("group stores only actors")
                         .send(envelope)
                         .await
+                        .map_err(|err| err.map(|envelope| envelope.reject(object.addr)))
                 });
             }
 
             for result in join_all(futures).await {
                 match result {
                     Ok(()) => self.has_ok = true,
-                    Err(SendError(envelope)) => {
+                    Err(SendError(rejected)) => {
                         if !self.has_ok {
-                            self.extra = Some(envelope);
+                            self.extra = Some(rejected);
                         }
                     }
                 }
             }
         }
 
-        debug_assert!(self.full.is_empty());
+        self.finish()
+    }
+
+    fn finish(mut self) -> SendOutput {
+        debug_assert!(self.is_ready());
 
         if self.has_ok {
             Ok(())
@@ -410,11 +498,14 @@ impl GroupVisitor for SendGroupVisitor {
         debug_assert!(self.full.is_empty());
         debug_assert!(self.extra.is_none());
         debug_assert!(!self.has_ok);
-        self.extra = Some(envelope);
+        self.extra = Some(envelope.reject(Addr::NULL));
     }
 
     fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
-        let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
+        let envelope = match self.extra.take() {
+            Some(rejected) => reuse_envelope(rejected, envelope),
+            None => envelope.duplicate(),
+        };
         self.try_send(object, envelope);
     }
 
@@ -427,7 +518,7 @@ impl GroupVisitor for SendGroupVisitor {
 
 #[derive(Default)]
 struct TrySendGroupVisitor {
-    extra: Option<Envelope>,
+    extra: Option<RejectedEnvelope>,
     has_ok: bool,
     has_full: bool,
 }
@@ -443,12 +534,12 @@ impl TrySendGroupVisitor {
                 if err.is_full() {
                     self.has_full = true;
                 }
-                self.extra = Some(err.into_inner());
+                self.extra = Some(err.into_inner().reject(object.addr));
             }
         }
     }
 
-    fn finish(mut self) -> Result<(), TrySendError<Envelope>> {
+    fn finish(mut self) -> Result<(), TrySendError<RejectedEnvelope>> {
         if self.has_ok {
             Ok(())
         } else {
@@ -472,11 +563,14 @@ impl GroupVisitor for TrySendGroupVisitor {
     fn empty(&mut self, envelope: Envelope) {
         debug_assert!(self.extra.is_none());
         debug_assert!(!self.has_ok);
-        self.extra = Some(envelope);
+        self.extra = Some(envelope.reject(Addr::NULL));
     }
 
     fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
-        let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
+        let envelope = match self.extra.take() {
+            Some(rejected) => reuse_envelope(rejected, envelope),
+            None => envelope.duplicate(),
+        };
         self.try_send(object, envelope);
     }
 
@@ -489,7 +583,7 @@ impl GroupVisitor for TrySendGroupVisitor {
 
 #[derive(Default)]
 struct UnboundedSendGroupVisitor {
-    extra: Option<Envelope>,
+    extra: Option<RejectedEnvelope>,
     has_ok: bool,
 }
 
@@ -500,11 +594,11 @@ impl UnboundedSendGroupVisitor {
         let actor = object.as_actor().expect("group stores only actors");
         match actor.unbounded_send(envelope) {
             Ok(()) => self.has_ok = true,
-            Err(err) => self.extra = Some(err.0),
+            Err(err) => self.extra = Some(err.into_inner().reject(object.addr)),
         }
     }
 
-    fn finish(mut self) -> Result<(), SendError<Envelope>> {
+    fn finish(mut self) -> Result<(), SendError<RejectedEnvelope>> {
         if self.has_ok {
             Ok(())
         } else {
@@ -524,15 +618,29 @@ impl GroupVisitor for UnboundedSendGroupVisitor {
     fn empty(&mut self, envelope: Envelope) {
         debug_assert!(self.extra.is_none());
         debug_assert!(!self.has_ok);
-        self.extra = Some(envelope);
+        self.extra = Some(envelope.reject(Addr::NULL));
     }
 
     fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
-        let envelope = self.extra.take().unwrap_or_else(|| envelope.duplicate());
+        let envelope = match self.extra.take() {
+            Some(rejected) => reuse_envelope(rejected, envelope),
+            None => envelope.duplicate(),
+        };
         self.try_send(object, envelope);
     }
 
     fn visit_last(&mut self, object: &OwnedObject, envelope: Envelope) {
         self.try_send(object, envelope);
     }
+}
+
+// The rejected envelope is a duplicate of `source`.
+fn reuse_envelope(rejected: RejectedEnvelope, source: &Envelope) -> Envelope {
+    let mut envelope = rejected.into_inner();
+    debug_assert_eq!(envelope.type_id(), source.type_id());
+    if let (Some(token), Some(source)) = (envelope.token_mut(), source.token()) {
+        debug_assert!(token.is_forgotten());
+        *token = source.duplicate();
+    }
+    envelope
 }

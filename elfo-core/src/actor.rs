@@ -15,7 +15,7 @@ use crate::{
     envelope::Envelope,
     errors::{SendError, TrySendError},
     group::TerminationPolicy,
-    mailbox::{Mailbox, MailboxConsumer, config::MailboxConfig},
+    mailbox::{Mailbox, MailboxConsumer, RecvResult, config::MailboxConfig},
     messages::{ActorStatusReport, Terminate},
     msg,
     object::{MappedOwnedObject, OwnedObject},
@@ -261,8 +261,13 @@ impl Actor {
         drop(control);
 
         if status.kind().is_finished() {
+            let (trace_id, addr) = scope::with(|scope| (scope.trace_id(), scope.actor()));
             // No-op while the mailbox consumer is alive
-            if !self.mailbox.close_and_try_drain(scope::trace_id()) {
+            if let Some(mut consumer) = self.mailbox.close_and_try_take_consumer(trace_id) {
+                while let Some(RecvResult::Data(envelope)) = consumer.try_recv() {
+                    envelope.reject(addr);
+                }
+            } else {
                 error!(
                     "mailbox cannot be drained after termination, a context outlives the actor; pending requests may hang"
                 );

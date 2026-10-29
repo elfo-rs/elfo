@@ -191,15 +191,17 @@ impl RxFlow<'_> {
             })
     }
 
-    pub(super) fn enqueue(self, envelope: Envelope, routed: bool) {
-        let addr = self.addr;
+    pub(super) fn start_queue(&mut self) {
+        debug_assert!(self.is_stable());
+        info!(addr = %self.addr, "destination actor is full, queueing");
+        self.flow.queue = Some(VecDeque::new());
+    }
 
+    pub(super) fn enqueue(self, envelope: Envelope, routed: bool) {
         self.flow
             .queue
-            .get_or_insert_with(|| {
-                info!(addr = %addr, "destination actor is full, queueing");
-                VecDeque::new()
-            })
+            .as_mut()
+            .expect("pusher is not started")
             .push_back((envelope, routed));
 
         if routed {

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use eyre::Result;
 use metrics::{decrement_gauge, histogram, increment_gauge};
@@ -6,8 +6,11 @@ use parking_lot::Mutex;
 use tracing::{debug, error, info, trace, warn};
 
 use elfo_core::{
-    _priv::{AnyMessage, EbrGuard, GroupVisitor, MessageKind, Object, OwnedObject},
-    Context, Envelope, Local, Message, ResponseToken, Topology,
+    _priv::{
+        AnyMessage, EbrGuard, GroupVisitor, MessageKind, Object, ObjectRef, OwnedObject,
+        RejectedEnvelope, RequestFailure, SendFut,
+    },
+    Context, Envelope, Message, MoveOwnership, ResponseToken, Topology, UnattachedSource,
     addr::{Addr, NodeNo},
     errors::{RequestError, SendError, TrySendError},
     message,
@@ -48,7 +51,15 @@ mod requests;
 // TODO: don't send control messages if the peer knows nothing about the flow.
 
 #[message]
-struct StartPusher(Local<Addr>);
+struct StartPusher(MoveOwnership<UnattachedSource<Stream<PusherStopped>>>);
+
+impl StartPusher {
+    fn attach(self, ctx: &mut NetworkContext) {
+        if let Some(source) = self.0.take() {
+            ctx.attach(source);
+        }
+    }
+}
 
 #[message]
 struct PusherStopped;
@@ -215,15 +226,8 @@ impl Worker {
                         break;
                     }
                 }
-                StartPusher(addr) => {
-                    let pusher = Pusher {
-                        ctx: self.ctx.pruned(),
-                        actor_addr: *addr,
-                        tx: local_tx.clone(),
-                        rx_flows: rx_flows.clone(),
-                    };
-
-                    self.ctx.attach(Stream::once(pusher.exec()));
+                msg @ StartPusher => {
+                    msg.attach(&mut self.ctx);
                 }
                 ConnectionClosed => {
                     info!("connection closed by peer");
@@ -356,13 +360,13 @@ fn make_network_envelope(
             (sender, trace_id, payload, None)
         }
         // Failed/Ignored Response
-        (Err(err), Some(token)) => {
-            let sender = Addr::NULL;
+        (Err(failure), Some(token)) => {
+            let sender = failure.addr;
             let trace_id = token.trace_id();
 
             let payload = NetworkEnvelopePayload::Response {
                 request_id: token.request_id(),
-                message: Err(err),
+                message: Err(failure.error),
                 is_last: token.is_last(),
             };
 
@@ -481,7 +485,10 @@ impl SocketReader {
             // so we need to introduce the flow which will be used in `sender.respond()`
             // below.
             self.tx_flows.add_flow_if_needed(details.sender);
-            sender.respond(token, Err(RequestError::Failed));
+            sender.respond(
+                token,
+                Err(RequestFailure::new(Addr::NULL, RequestError::Failed)),
+            );
         } else if details.kind == KIND_RESPONSE_OK
             || details.kind == KIND_RESPONSE_FAILED
             || details.kind == KIND_RESPONSE_IGNORED
@@ -574,16 +581,23 @@ impl SocketReader {
                     return None;
                 };
 
-                let envelope = message.map(|message| {
-                    Envelope::with_trace_id(
-                        message,
-                        MessageKind::Response { sender, request_id },
-                        trace_id,
-                    )
-                });
+                // Allow the requester to send subsequent messages to the responder.
+                if message.is_ok() || message.as_ref().is_err_and(|e| e.is_ignored()) {
+                    self.tx_flows.add_flow_if_needed(network_envelope.sender);
+                }
+
+                let envelope = message
+                    .map(|message| {
+                        Envelope::with_trace_id(
+                            message,
+                            MessageKind::Response { sender, request_id },
+                            trace_id,
+                        )
+                    })
+                    .map_err(|error| RequestFailure::new(sender, error));
 
                 // Since this is a response to a request which originated from this node,
-                // all the neccessary flows have been already added.
+                // all the necessary flows have been already added.
                 object.respond(token, envelope);
 
                 return None;
@@ -628,7 +642,7 @@ impl SocketReader {
             return;
         };
 
-        self.do_handle_message(&mut flows, &object, envelope, false)
+        self.do_handle_message(&mut flows, object.into(), envelope, false)
     }
 
     fn handle_routed_message(&self, envelope: Envelope) {
@@ -647,12 +661,12 @@ impl SocketReader {
             fn visit(&mut self, object: &OwnedObject, envelope: &Envelope) {
                 let envelope = envelope.duplicate();
                 self.this
-                    .do_handle_message(self.flows, object, envelope, true);
+                    .do_handle_message(self.flows, object.into(), envelope, true);
             }
 
             fn visit_last(&mut self, object: &OwnedObject, envelope: Envelope) {
                 self.this
-                    .do_handle_message(self.flows, object, envelope, true);
+                    .do_handle_message(self.flows, object.into(), envelope, true);
             }
         }
 
@@ -678,15 +692,16 @@ impl SocketReader {
     fn do_handle_message(
         &self,
         flows: &mut RxFlows,
-        object: &Object,
+        object: ObjectRef<'_>,
         envelope: Envelope,
         routed: bool,
     ) {
+        let object_addr = object.addr();
         if routed {
             flows.acquire_routed(false);
         }
 
-        let flow = flows.get_flow(object.addr());
+        let flow = flows.get_flow(object_addr);
 
         // Check whether the flow is unstable or not.
         // If the recipient is unstable (i.e. already has pending messages), enqueue and
@@ -700,42 +715,51 @@ impl SocketReader {
         }
 
         // TODO: use `unbounded_send` if the envelope has been sent unboundedly.
-        let result = object.try_send(Addr::NULL, envelope);
+        let result = Object::send(object, Addr::NULL, envelope);
 
-        // If the recipient has gone, close the flow and return.
-        if matches!(result, Err(TrySendError::Closed(_))) {
-            let (close, update) = flows.close(object.addr());
+        let on_send_failed = |flows: &mut RxFlows| {
+            let (close, update) = flows.close(object_addr);
             self.send_back(close);
             self.send_back(update);
 
             if routed {
                 self.send_back(flows.release_routed());
             }
+        };
+
+        // If the recipient has gone, close the flow and return.
+        if matches!(result, SendFut::Ready(Err(_))) {
+            on_send_failed(flows);
             return;
         }
 
         // The recipient is alive, so we should add a new flow if it doesn't exist yet.
-        let mut flow = ward!(flow, flows.get_or_create_flow(object.addr()));
+        let mut flow = ward!(flow, flows.get_or_create_flow(object_addr));
         flow.acquire_direct(!routed);
 
         match result {
-            Ok(()) => {
+            SendFut::Ready(Ok(())) => {
                 self.send_back(flow.release_direct());
 
                 if routed {
                     self.send_back(flows.release_routed());
                 }
             }
-            Err(TrySendError::Full(envelope)) => {
-                flow.enqueue(envelope, routed);
+            SendFut::Pending(pending) => {
+                flow.start_queue();
 
-                // Start a pusher for this actor.
-                let msg = StartPusher(object.addr().into());
-                if let Err(err) = self.ctx.try_send_to(self.ctx.addr(), msg) {
-                    error!(error = %err, "failed to start a pusher");
+                let pusher = Pusher::new(
+                    self.ctx.pruned(),
+                    object_addr,
+                    self.tx.clone(),
+                    self.rx_flows.clone(),
+                );
+                if !pusher.start(&self.ctx, pending, routed) {
+                    debug!("failed to start a pusher");
+                    on_send_failed(flows);
                 }
             }
-            Err(TrySendError::Closed(_)) => unreachable!(),
+            SendFut::Ready(Err(_)) => unreachable!(),
         }
     }
 
@@ -763,25 +787,48 @@ struct Pusher {
 }
 
 impl Pusher {
-    async fn exec(self) -> PusherStopped {
+    fn new(
+        ctx: Context,
+        actor_addr: Addr,
+        tx: kanal::AsyncSender<KanalItem>,
+        rx_flows: Arc<Mutex<RxFlows>>,
+    ) -> Self {
+        Self {
+            ctx,
+            actor_addr,
+            tx,
+            rx_flows,
+        }
+    }
+
+    fn start(
+        self,
+        ctx: &Context,
+        pending_push: impl Future<Output = Result<(), SendError<RejectedEnvelope>>> + Send + 'static,
+        routed: bool,
+    ) -> bool {
+        let source = Stream::once(self.exec(pending_push, routed));
+        let msg = StartPusher(source.into());
+        ctx.unbounded_send_to(ctx.addr(), msg).is_ok()
+    }
+
+    async fn exec(
+        self,
+        pending_push: impl Future<Output = Result<(), SendError<RejectedEnvelope>>>,
+        routed: bool,
+    ) -> PusherStopped {
         debug!(actor_addr = %self.actor_addr, "pusher started");
         increment_gauge!("elfo_network_pushers", 1.);
 
-        loop {
-            let Some((envelope, routed)) = self.rx_flows.lock().dequeue(self.actor_addr) else {
-                break;
-            };
+        if self.post_push(pending_push.await.is_ok(), routed) {
+            loop {
+                let Some((envelope, routed)) = self.rx_flows.lock().dequeue(self.actor_addr) else {
+                    break;
+                };
 
-            if !self.push(envelope, routed).await {
-                let mut flows = self.rx_flows.lock();
-                let (close, update) = flows.close(self.actor_addr);
-                self.send_back(close);
-                self.send_back(update);
-
-                if routed {
-                    self.send_back(flows.release_routed());
+                if !self.post_push(self.push(envelope).await, routed) {
+                    break;
                 }
-                break;
             }
         }
 
@@ -789,31 +836,36 @@ impl Pusher {
         PusherStopped
     }
 
-    async fn push(&self, envelope: Envelope, routed: bool) -> bool {
+    async fn push(&self, envelope: Envelope) -> bool {
         let fut = {
             let guard = EbrGuard::new();
             let object = ward!(self.ctx.book().get(self.actor_addr, &guard), return false);
 
             // TODO: use `unbounded_send` if the envelope has been sent unboundedly.
-            Object::send(object, Addr::NULL, envelope)
+            Object::send(object.into(), Addr::NULL, envelope)
         };
 
-        if fut.await.is_ok() {
-            let mut flows = self.rx_flows.lock();
+        fut.await.is_ok()
+    }
 
-            let Some(mut flow) = flows.get_flow(self.actor_addr) else {
-                return false;
-            };
+    fn post_push(&self, sent: bool, routed: bool) -> bool {
+        let mut flows = self.rx_flows.lock();
 
+        if sent && let Some(mut flow) = flows.get_flow(self.actor_addr) {
             self.send_back(flow.release_direct());
-
             if routed {
                 self.send_back(flows.release_routed());
             }
-            true
-        } else {
-            false
+            return true;
         }
+
+        let (close, update) = flows.close(self.actor_addr);
+        self.send_back(close);
+        self.send_back(update);
+        if routed {
+            self.send_back(flows.release_routed());
+        }
+        false
     }
 
     fn send_back(&self, message: Option<impl Message>) {
@@ -835,7 +887,7 @@ impl Drop for Pusher {
 
 struct KanalItem {
     recipient: NetworkAddr,
-    envelope: Result<Envelope, RequestError>,
+    envelope: Result<Envelope, RequestFailure>,
     token: Option<ResponseToken>,
 }
 
@@ -910,7 +962,7 @@ impl remote::RemoteHandle for RemoteHandle {
         }
     }
 
-    fn respond(&self, token: ResponseToken, envelope: Result<Envelope, RequestError>) {
+    fn respond(&self, token: ResponseToken, envelope: Result<Envelope, RequestFailure>) {
         debug_assert!(!token.is_forgotten());
         debug_assert!(token.sender().is_remote());
 
