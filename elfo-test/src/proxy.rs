@@ -147,7 +147,7 @@ impl Proxy {
 
     /// See [`Context::request()`] for details.
     #[track_caller]
-    pub fn request<R: Request>(&self, request: R) -> impl Future<Output = R::Response> {
+    pub fn request<R: Request>(&self, request: R) -> impl Future<Output = R::Response> + use<R> {
         let location = Location::caller();
         let context = self.context.pruned();
         self.scope.clone().within(async move {
@@ -165,7 +165,7 @@ impl Proxy {
         &self,
         recipient: Addr,
         request: R,
-    ) -> impl Future<Output = Result<R::Response, RequestError>> {
+    ) -> impl Future<Output = Result<R::Response, RequestError>> + use<R> {
         let context = self.context.pruned();
         self.scope
             .clone()
@@ -178,7 +178,7 @@ impl Proxy {
         &self,
         recipient: Addr,
         request: R,
-    ) -> impl Future<Output = R::Response> {
+    ) -> impl Future<Output = R::Response> + use<R> {
         let location = Location::caller();
         let context = self.context.pruned();
         self.scope.clone().within(async move {
