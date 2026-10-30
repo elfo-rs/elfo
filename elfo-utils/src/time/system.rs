@@ -2,7 +2,23 @@
 //!
 //! The main purpose is to provide a way to mock system time in tests.
 
+#[cfg(feature = "system-time-source")]
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime as StdSystemTime};
+
+#[cfg(feature = "system-time-source")]
+static NOW: OnceLock<fn() -> SystemTime> = OnceLock::new();
+
+/// Installs a process-wide source for [`SystemTime::now`].
+///
+/// Returns `true` if installed, or `false` if a source was already installed.
+/// The source cannot be replaced or removed and is called on the calling
+/// thread. It must not call [`SystemTime::now`], which would recurse.
+#[cfg(feature = "system-time-source")]
+#[cfg_attr(docsrs, doc(cfg(feature = "system-time-source")))]
+pub fn set_system_time_source(now: fn() -> SystemTime) -> bool {
+    NOW.set(now).is_ok()
+}
 
 /// A measurement of a system clock.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -13,11 +29,20 @@ impl SystemTime {
     pub const UNIX_EPOCH: Self = Self(0);
 
     /// Returns the current system time.
+    ///
+    /// With the `system-time-source` feature, uses the installed time source, or
+    /// the system clock by default. A thread-local test mock takes precedence
+    /// over either source.
     #[inline]
     pub fn now() -> Self {
         #[cfg(any(test, feature = "test-util"))]
         if let Some(now_ns) = mock::NOW_NS.with(|t| t.get()) {
             return Self(now_ns);
+        }
+
+        #[cfg(feature = "system-time-source")]
+        if let Some(now) = NOW.get() {
+            return now();
         }
 
         StdSystemTime::now().into()
